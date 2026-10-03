@@ -328,9 +328,43 @@ def user_level_installs() -> list[str]:
     return [str(path) for path in candidates if path.exists()]
 
 
+# Hermes's own resolver for its committed dependency environment: it reads the install's
+# selection record (or falls back to the in-tree venv) and never creates state.
+PROJECT_PYTHON = """
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from pm.environments import project_python
+print(project_python(Path(sys.argv[1])))
+"""
+
+
+def hermes_runtime_python(executable: str, agent_dir: Path) -> Path | None:
+    """Ask Hermes which Python runs its dependency environment, or None if it cannot say.
+
+    `hermes --print-runtime-command` names the launcher's interpreter without running the
+    bootstrap (which may sync or relaunch). That interpreter then evaluates
+    pm.environments.project_python with -I -B, so nothing is written to the Hermes install.
+    """
+    try:
+        completed = subprocess.run([executable, "--print-runtime-command"], text=True, encoding="utf-8",
+                                   errors="replace", capture_output=True, stdin=subprocess.DEVNULL,
+                                   timeout=120, check=False)
+        launcher = Path(json.loads(completed.stdout.strip().splitlines()[-1])[0])
+        if completed.returncode or not launcher.is_file():
+            return None
+        resolved = subprocess.run([str(launcher), "-I", "-B", "-c", PROJECT_PYTHON, str(agent_dir)], text=True,
+                                  encoding="utf-8", errors="replace", capture_output=True,
+                                  stdin=subprocess.DEVNULL, timeout=120, check=False)
+    except (OSError, subprocess.TimeoutExpired, ValueError, IndexError, KeyError, TypeError):
+        return None  # e.g. a Hermes release without the launcher contract
+    python = Path(resolved.stdout.strip()) if resolved.returncode == 0 and resolved.stdout.strip() else None
+    return python if python and python.is_file() else None
+
+
 @functools.lru_cache(maxsize=None)
 def hermes_install() -> dict | None:
-    """Locate the Hermes CLI, its source checkout, and its venv Python (once per run)."""
+    """Locate the Hermes CLI, its source checkout, and its dependency-environment Python (once per run)."""
     executable = shutil.which("hermes")
     if not executable:
         return None
@@ -340,8 +374,9 @@ def hermes_install() -> dict | None:
     if not match:
         return None
     agent_dir = Path(match.group(1))
-    python = next((path for path in (agent_dir / "venv" / "Scripts" / "python.exe",
-                                     agent_dir / "venv" / "bin" / "python") if path.is_file()), None)
+    python = hermes_runtime_python(executable, agent_dir) or next(
+        (path for path in (agent_dir / "venv" / "Scripts" / "python.exe", agent_dir / "venv" / "bin" / "python")
+         if path.is_file()), None)
     version = completed.stdout.splitlines()[0].strip() if completed.stdout else ""
     return {"executable": executable, "agent_dir": agent_dir, "python": python, "version": version}
 
@@ -349,8 +384,13 @@ def hermes_install() -> dict | None:
 HERMES_CONFIG_BACKUP = TESTS / ".hermes-config-backup.yaml"
 # Equal when two Hermes configs differ only in fixture (.magos-accept-*) trust entries.
 CONFIG_EQUIVALENCE = """
-import sys, yaml
-first, second = (yaml.safe_load(open(path, encoding="utf-8")) or {} for path in sys.argv[1:3])
+import sys
+try:
+    from yaml import safe_load
+except ImportError:  # newer Hermes environments ship ruamel.yaml only
+    from ruamel.yaml import YAML
+    safe_load = YAML(typ="safe", pure=True).load
+first, second = (safe_load(open(path, encoding="utf-8")) or {} for path in sys.argv[1:3])
 for config in (first, second):
     skills = config.get("skills") or {}
     skills["trusted_project_dirs"] = [entry for entry in (skills.get("trusted_project_dirs") or [])

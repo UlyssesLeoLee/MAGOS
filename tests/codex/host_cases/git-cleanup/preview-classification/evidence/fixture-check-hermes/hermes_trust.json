@@ -1,9 +1,9 @@
 {
-  "config_sha256_before": "736d327b0d5bb6b1385d80a558423f6971ed6cf7a010cbfabdd2f4435fb450c6",
+  "config_sha256_before": "720390355c9b54eb52cc8f9dd66dadfa5d175e35296b876e9f61d33306835f5b",
   "recovered_interrupted_run": null,
-  "trust": "Trusted: C:\\Users\\seiko\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-1ynf6o7_\\repo\n6 project skill(s) will load in sessions started inside this repo (they take precedence over same-named profile skills).",
-  "untrust": "Untrusted: C:\\Users\\seiko\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-1ynf6o7_\\repo\nProject skills from this repo will no longer load.",
+  "trust": "Trusted: C:\\Users\\leo19\\.claude\\skills\\MAGOS\\.claude\\worktrees\\bold-noyce-045e4d\\tests\\codex\\.magos-accept-c8pqva2_\\repo\n7 project skill(s) will load in sessions started inside this repo (they take precedence over same-named profile skills).",
+  "untrust": "Untrusted: C:\\Users\\leo19\\.claude\\skills\\MAGOS\\.claude\\worktrees\\bold-noyce-045e4d\\tests\\codex\\.magos-accept-c8pqva2_\\repo\nProject skills from this repo will no longer load.",
   "restored": true,
   "semantic_comparison": "equal",
-  "config_sha256_after": "736d327b0d5bb6b1385d80a558423f6971ed6cf7a010cbfabdd2f4435fb450c6"
+  "config_sha256_after": "720390355c9b54eb52cc8f9dd66dadfa5d175e35296b876e9f61d33306835f5b"
 }

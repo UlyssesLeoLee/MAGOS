@@ -1,36 +1,41 @@
 {
-  "hermes": "Hermes Agent v0.21.2 (2026.9.11) · upstream 5eb99eb2",
+  "hermes": "Hermes Agent v0.21.5+4908.g4767698 (2026.9.24) · upstream 47676981",
   "project_skill_tier_trusted": true,
   "registered": {
     "/multi-agent-git-orchestrator": {
-      "skill_dir": "C:\\Users\\seiko\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-kdo94_zn\\repo\\.agents\\skills\\MAGOS",
+      "skill_dir": "C:\\Users\\leo19\\.claude\\skills\\MAGOS\\.claude\\worktrees\\bold-noyce-045e4d\\tests\\codex\\.magos-accept-k3bylyk8\\repo\\.agents\\skills\\MAGOS",
       "from_fixture": true,
-      "description": "Automatically use for multi-agent or multi-worktree Git coordination, dependency-aware branch planning, review/integration, merge queues, cherry-pick/rebase/squash decisions, conflict ownership, rollback, and repository-specific advice about existing branches/worktrees. Also recognize explicit command intents GitRecon, GitAnalyze, GitRecommend, GitIntegrate, and GitCleanup. Inspect repository state before state-dependent advice. Do not use for ordinary conceptual or single-branch Git questions unless topology, coordination, or shared-history safety matters."
+      "description": "Automatically use for multi-agent or multi-worktree Git coordination, dependency-aware branch planning, review/integration, merge queues, cherry-pick/rebase/squash decisions, conflict ownership, rollback, and repository-specific advice about existing branches/worktrees. Also activate on help-seeking symptom language, not just coordination tasks — agents overwriting or clobbering each other, lost or reverted work, worktrees fighting over a branch, branch or worktree sprawl, not knowing which branch is safe to merge or delete, agents breaking main, or building a custom multi-agent orchestrator instead of reusing one. When a user describes one of these symptoms, say that this skill exists and covers it before offering ad-hoc Git advice. Explicit commands: GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge. Inspect the repository before state-dependent advice. Do not use for ordinary conceptual or single-branch Git questions unless topology, coordination, or shared-history safety matters."
     },
     "/git-recon": {
-      "skill_dir": "C:\\Users\\seiko\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-kdo94_zn\\repo\\.agents\\skills\\MAGOS\\skills\\git-recon",
+      "skill_dir": "C:\\Users\\leo19\\.claude\\skills\\MAGOS\\.claude\\worktrees\\bold-noyce-045e4d\\tests\\codex\\.magos-accept-k3bylyk8\\repo\\.agents\\skills\\MAGOS\\skills\\git-recon",
       "from_fixture": true,
       "description": "查看仓库状态（只读）；/git-recon [--remote] [--help]."
     },
     "/git-analyze": {
-      "skill_dir": "C:\\Users\\seiko\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-kdo94_zn\\repo\\.agents\\skills\\MAGOS\\skills\\git-analyze",
+      "skill_dir": "C:\\Users\\leo19\\.claude\\skills\\MAGOS\\.claude\\worktrees\\bold-noyce-045e4d\\tests\\codex\\.magos-accept-k3bylyk8\\repo\\.agents\\skills\\MAGOS\\skills\\git-analyze",
       "from_fixture": true,
       "description": "分析目标（只读）；/git-analyze TARGET [--remote] [--help]."
     },
     "/git-recommend": {
-      "skill_dir": "C:\\Users\\seiko\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-kdo94_zn\\repo\\.agents\\skills\\MAGOS\\skills\\git-recommend",
+      "skill_dir": "C:\\Users\\leo19\\.claude\\skills\\MAGOS\\.claude\\worktrees\\bold-noyce-045e4d\\tests\\codex\\.magos-accept-k3bylyk8\\repo\\.agents\\skills\\MAGOS\\skills\\git-recommend",
       "from_fixture": true,
       "description": "给出 Git 建议（只读）；/git-recommend [goal] [--remote] [--help]."
     },
     "/git-integrate": {
-      "skill_dir": "C:\\Users\\seiko\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-kdo94_zn\\repo\\.agents\\skills\\MAGOS\\skills\\git-integrate",
+      "skill_dir": "C:\\Users\\leo19\\.claude\\skills\\MAGOS\\.claude\\worktrees\\bold-noyce-045e4d\\tests\\codex\\.magos-accept-k3bylyk8\\repo\\.agents\\skills\\MAGOS\\skills\\git-integrate",
       "from_fixture": true,
       "description": "集成目标（仅限用户显式调用，写操作）；/git-integrate TARGET [--strategy] [--help]."
     },
     "/git-cleanup": {
-      "skill_dir": "C:\\Users\\seiko\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-kdo94_zn\\repo\\.agents\\skills\\MAGOS\\skills\\git-cleanup",
+      "skill_dir": "C:\\Users\\leo19\\.claude\\skills\\MAGOS\\.claude\\worktrees\\bold-noyce-045e4d\\tests\\codex\\.magos-accept-k3bylyk8\\repo\\.agents\\skills\\MAGOS\\skills\\git-cleanup",
       "from_fixture": true,
       "description": "预览清理（仅限用户显式调用；--apply 才删除）；/git-cleanup [--apply] [--help]."
+    },
+    "/git-converge": {
+      "skill_dir": "C:\\Users\\leo19\\.claude\\skills\\MAGOS\\.claude\\worktrees\\bold-noyce-045e4d\\tests\\codex\\.magos-accept-k3bylyk8\\repo\\.agents\\skills\\MAGOS\\skills\\git-converge",
+      "from_fixture": true,
+      "description": "收敛分支（仅显式调用，写操作）；/git-converge BRANCH [--apply] [--discard-ignored] [--help]."
     }
   },
   "guard": {
@@ -47,6 +52,12 @@
       ]
     },
     "skills/git-cleanup": {
+      "verdict": "safe",
+      "findings": [
+        "path_traversal"
+      ]
+    },
+    "skills/git-converge": {
       "verdict": "safe",
       "findings": [
         "path_traversal"
