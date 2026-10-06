@@ -89,6 +89,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -243,6 +245,8 @@
           "8d059c2be6b84d9fed4e3217fac5ce9f13f89767"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--name-only",
           "724a44b989c793e6aa434c0d4bedd9c523b591a4",
@@ -255,6 +259,8 @@
           "core.ignorecase"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -285,6 +291,8 @@
           "e8105e587743a44b0e3da3606b482b9f8d9b1b9c"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--name-only",
           "724a44b989c793e6aa434c0d4bedd9c523b591a4",
@@ -297,6 +305,8 @@
           "core.ignorecase"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -327,6 +337,8 @@
           "078b9c30f763aff24dca4490addd53bbe8bc8da2"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--name-only",
           "724a44b989c793e6aa434c0d4bedd9c523b591a4",
@@ -339,6 +351,8 @@
           "core.ignorecase"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -416,6 +430,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -489,6 +505,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -562,6 +580,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -635,6 +655,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",

@@ -23,7 +23,7 @@ Recommended portable Git commands:
 
 ```text
 git rev-parse --show-toplevel
-git status --porcelain=v1 --branch
+git status --porcelain=v1 --branch --untracked-files=normal
 git worktree list --porcelain
 git for-each-ref --sort=-committerdate --format="%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(upstream:track)%09%(committerdate:iso8601)" refs/heads
 git remote -v
@@ -33,7 +33,7 @@ git symbolic-ref --quiet --short refs/remotes/origin/HEAD
 For every relevant linked worktree:
 
 ```text
-git -C <worktree-path> status --porcelain=v1 --branch
+git -C <worktree-path> status --porcelain=v1 --branch --untracked-files=normal
 git -C <worktree-path> diff --name-only --diff-filter=U
 ```
 

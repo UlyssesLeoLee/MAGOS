@@ -550,6 +550,79 @@
     ]
   },
   {
+    "mutation": "quoted-ignored-paths",
+    "description": "compare paths in Git's default C-quoted form, with no quoted-name guard",
+    "scenarios": [
+      "ignored-overwrite-nonascii"
+    ],
+    "expect_killed": true,
+    "verdict": "KILLED",
+    "as_expected": true,
+    "failures": [
+      {
+        "scenario": "ignored-overwrite-nonascii",
+        "status": "FAIL",
+        "failed_checks": [
+          "every ignored local file is intact",
+          "the source branch is kept",
+          "the target did not move",
+          "the stop reason is BLOCKED_IGNORED_OVERWRITE"
+        ]
+      }
+    ]
+  },
+  {
+    "mutation": "default-quotepath",
+    "description": "list paths without core.quotePath=false (the guard alone)",
+    "scenarios": [
+      "ignored-nonascii-no-overlap"
+    ],
+    "expect_killed": true,
+    "verdict": "KILLED",
+    "as_expected": true,
+    "failures": [
+      {
+        "scenario": "ignored-nonascii-no-overlap",
+        "status": "FAIL",
+        "failed_checks": [
+          "the source content was merged",
+          "the source branch was deleted",
+          "the run did not stop"
+        ]
+      }
+    ]
+  },
+  {
+    "mutation": "no-case-collision-check",
+    "description": "ignore branch names that differ only in case",
+    "scenarios": [
+      "case-colliding-sources",
+      "case-colliding-target"
+    ],
+    "expect_killed": true,
+    "verdict": "KILLED",
+    "as_expected": true,
+    "failures": [
+      {
+        "scenario": "case-colliding-sources",
+        "status": "FAIL",
+        "failed_checks": [
+          "agent/Feat is kept at its tip",
+          "agent/feat is kept at its tip",
+          "agent/Feat's commit was not merged",
+          "both colliding names are UNKNOWN"
+        ]
+      },
+      {
+        "scenario": "case-colliding-target",
+        "status": "FAIL",
+        "failed_checks": [
+          "the gate is NAME_CASE_COLLISION"
+        ]
+      }
+    ]
+  },
+  {
     "mutation": "target-move-always-stale",
     "description": "treat the target's own merges as a stale preview",
     "scenarios": [

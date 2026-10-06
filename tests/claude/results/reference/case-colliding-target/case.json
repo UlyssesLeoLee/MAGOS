@@ -1,0 +1,5 @@
+{
+  "id": "case-colliding-target",
+  "mode": "apply",
+  "title": "A branch named like the target except for case stops the command"
+}

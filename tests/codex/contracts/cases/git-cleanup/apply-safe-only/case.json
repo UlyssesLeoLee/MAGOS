@@ -21,7 +21,8 @@
   },
   "expected": [
     "Rechecks candidate state immediately before mutation.",
-    "Leaves dirty, unique-work, dependent, and remote branches untouched."
+    "Leaves dirty, unique-work, dependent, and remote branches untouched.",
+    "Never runs a repository-wide `git worktree prune`; removes worktrees only by path and never the invoking one."
   ],
   "checks": [
     {
@@ -30,14 +31,27 @@
         "Re-check each candidate immediately before mutation.",
         "do not use `git branch -D` by default",
         "do not delete dirty worktrees",
-        "do not treat remote deletion as implied by local cleanup"
+        "do not treat remote deletion as implied by local cleanup",
+        "- never run a repository-wide `git worktree prune`: it also drops unclassified prunable entries",
+        "- never remove the invoking worktree, and never delete `main` or the integration target;",
+        "- do not remove a worktree that is in progress or holds ignored files;",
+        "A prunable entry is removed the same way, by its path, for that entry only.",
+        "it is a candidate only when it is on a branch (not detached) that is otherwise a `SAFE_CANDIDATE`, and a detached prunable entry is `UNKNOWN`",
+        "Typical safe operations may include:\n\n```text\ngit worktree remove <path>\ngit branch -d <branch>\n```"
       ]
     },
     {
       "file": "skills/git-cleanup/SKILL.md",
       "contains": [
         "delete only when the explicit command includes `--apply`",
-        "Never delete remote branches unless explicitly asked"
+        "Never delete remote branches unless explicitly asked",
+        "Never run a repository-wide `git worktree prune`; never remove the invoking worktree or a worktree that is dirty, in progress, or holds ignored files; never delete `main` or the integration target."
+      ]
+    },
+    {
+      "file": "commands/GitCleanup.md",
+      "contains": [
+        "Never run a repository-wide `git worktree prune`; never remove the invoking worktree or a worktree that is dirty, in progress, or holds ignored files; never delete `main` or the integration target."
       ]
     }
   ]

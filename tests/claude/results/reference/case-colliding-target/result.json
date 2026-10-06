@@ -1,0 +1,85 @@
+{
+  "checks": [
+    {
+      "name": "a stopped command changes nothing",
+      "passed": true
+    },
+    {
+      "name": "invariant: main did not move",
+      "passed": true
+    },
+    {
+      "name": "invariant: tags unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote-tracking refs unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: no merge left in progress",
+      "passed": true
+    },
+    {
+      "name": "the gate is NAME_CASE_COLLISION",
+      "passed": true
+    },
+    {
+      "name": "command policy: no forbidden git command",
+      "passed": true
+    }
+  ],
+  "note": null,
+  "result": {
+    "report": {
+      "appeared_after_preview": [],
+      "commands": [
+        [
+          "for-each-ref",
+          "--format=%(refname) %(objectname)",
+          "refs/heads"
+        ]
+      ],
+      "deleted": {},
+      "end_sha": null,
+      "final_branches": null,
+      "ops": [],
+      "plan": {
+        "final_branches": [],
+        "gates": [
+          {
+            "code": "NAME_CASE_COLLISION",
+            "message": "agent/release: equal to another local branch name when case is ignored; make the names distinct first (git pack-refs --all, then git branch -m)"
+          }
+        ],
+        "merge_order": [],
+        "notes": {},
+        "removals": [],
+        "residual": [],
+        "sources": [],
+        "target": "agent/release",
+        "tips": {
+          "agent/Release": "a7865dbe7a31d2bb23b950e1254840cd742e243e",
+          "agent/a": "8eccc626541eca675fbf9a169f663a1df71d81d6",
+          "agent/release": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
+          "main": "a7865dbe7a31d2bb23b950e1254840cd742e243e"
+        },
+        "unknown_owner_removals": []
+      },
+      "skipped": [],
+      "start_sha": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
+      "stopped": {
+        "code": "NAME_CASE_COLLISION",
+        "message": "agent/release: equal to another local branch name when case is ignored; make the names distinct first (git pack-refs --all, then git branch -m)"
+      },
+      "validation": "not identifiable",
+      "worktree_appeared": []
+    }
+  },
+  "status": "PASS",
+  "traceback": null
+}

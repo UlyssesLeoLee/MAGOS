@@ -16,8 +16,8 @@ adapters (`commands/GitConverge.md`, `skills/git-converge/`). The tests therefor
 | L0 headers | `cypher_header.py --check` | The Cypher block atop each script still matches the code | no |
 | L1 Git probes | `git_behavior_probes.py` | Each Git behavior the contract relies on holds on the installed Git (15 assertions plus 1 recorded observation) | no |
 | L2 source contracts | `run_claude_contracts.py` | The shipped files state every rule (18 cases, plus the aggregate cases in `tests/codex`) | no |
-| L3 reference scenarios | `run_reference_cases.py` | A deterministic implementation of the contract reaches the right end state in 46 repository shapes | no |
-| L4 mutation checks | `run_mutation_checks.py` | The scenarios notice when a rule is broken (27 mutations) | no |
+| L3 reference scenarios | `run_reference_cases.py` | A deterministic implementation of the contract reaches the right end state in 50 repository shapes | no |
+| L4 mutation checks | `run_mutation_checks.py` | The scenarios notice when a rule is broken (30 mutations) | no |
 | L5 policy unit tests | `test_command_policy.py` | The forbidden-command policy classifies commands correctly | no |
 | L6 Claude runtime | `run_claude_cases.py` | The real Claude CLI, given `/GitConverge ...`, reaches the same end states without forbidden commands | yes |
 | L7 Agent Plugins checks | `tests/codex/contracts/test_agent_plugin.py` | The checks behind the `package/agent-plugin` and `package/install-layout` cases (plugin manifest, Agent Skills frontmatter, git-clone layout) turn red for each planted defect | no |
@@ -99,6 +99,10 @@ runs against the MAGOS checkout. Commits use a fixed author and date so SHAs, an
 | `target-tag-shadow` | a tag named like the target, pointing at a source's tip | the source is merged, not taken as contained |
 | `ignored-overwrite-case` | source adds `.ENV`; local ignored `.env` (core.ignorecase) | stops; local file intact |
 | `ignored-overwrite-dir-file`, `-file-dir` | source adds a file where an ignored directory is, or the reverse | stops; local data intact |
+| `ignored-overwrite-nonascii` | source adds `构建/输出.txt`; local ignored `构建/` (Git C-quotes non-ASCII paths by default) | stops; local file intact |
+| `ignored-nonascii-no-overlap` | local ignored `构建/`; source adds the unrelated `文档/说明.txt` | merged and deleted; no false stop |
+| `case-colliding-sources` | `agent/Feat` (packed, unique commit), `agent/feat` (loose), and an ordinary lane | the colliding pair is `UNKNOWN` (kept, unmerged, each with its own recorded tip); the ordinary lane converges |
+| `case-colliding-target` | a branch named like the target except for case | gate `NAME_CASE_COLLISION`; nothing changes |
 | `sequencer-in-progress` | cherry-pick sequence paused after a resolved step | branch neither merged nor deleted; sequencer kept |
 | `skip-worktree-edits` | local edit to a skip-worktree file (status looks clean) | worktree and branch kept; edit intact |
 | `claude-session-worktree` | worktree under `<repo>/.claude/worktrees/` | kept as active owner; content merged |
@@ -146,5 +150,9 @@ Evidence: `results/git-probes/`, `results/contracts/`, `results/reference/<scena
 - `merge-tree` prediction is per source against the current target; a clash between two sources is found only at merge time.
 - No baseline validation run; a failing check stops deletion but cannot tell a pre-existing failure from a new one.
 - Submodule, rebase, sequencer, and partial-removal fixtures are Windows-verified only.
+- The guard for a path Git still quotes with `core.quotePath=false` (a quote, backslash, or control character in the name)
+  has no scenario of its own. Such a path cannot be checked out on Windows; a fixture would have to commit it through
+  `git update-index` with `core.protectNTFS=false`, which was not built. Mutation `quoted-ignored-paths` removes the guard
+  and `core.quotePath=false` together; `default-quotepath` removes only the latter.
 - Lane records (owner and dependency files) are not modelled by the fixtures; ownership and dependency evidence come from
   locks, harness roots, in-progress markers, and branch tracking only.

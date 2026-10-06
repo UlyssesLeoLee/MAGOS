@@ -32,7 +32,7 @@ Individual layers:
 ```powershell
 python -X utf8 tests/claude/scripts/git_behavior_probes.py      # Git behaviors the contract relies on
 python -X utf8 tests/claude/scripts/run_claude_contracts.py     # source contracts
-python -X utf8 tests/claude/scripts/run_reference_cases.py      # reference executor, 46 scenarios
+python -X utf8 tests/claude/scripts/run_reference_cases.py      # reference executor, 50 scenarios
 python -X utf8 tests/claude/scripts/run_mutation_checks.py      # do the scenarios notice broken rules?
 python -X utf8 tests/claude/scripts/test_command_policy.py      # forbidden-command policy
 python -X utf8 tests/claude/scripts/run_claude_cases.py --fixture-check --case '*'   # harness self-check, no model

@@ -277,10 +277,19 @@ BLOCKED_UNIQUE_WORK
 BLOCKED_ACTIVE_OWNER
 BLOCKED_DEPENDENCY
 BLOCKED_NOT_INTEGRATED
+BLOCKED_IN_PROGRESS
+BLOCKED_IGNORED_FILES
 UNKNOWN
 ```
 
-A branch/worktree is not safe merely because it is old or inactive.
+A branch/worktree is not safe merely because it is old or inactive. The section 6 definitions of **clean**, **in progress**, **active owner**, **Names vs SHAs**, and **Case collisions** apply here unchanged. A case collision is never a gate here: both names are `UNKNOWN`, and the run continues for the other branches. Its **unknown owner** exception does not: a linked worktree with no active-owner evidence and no lane record is `UNKNOWN` ("owner: not recorded"), because the reconnaissance rule `UNKNOWN_OWNER` (do not assume it is free) governs GitCleanup.
+
+- **Never a candidate**: `main`, the integration target, the remote default branch (`origin/HEAD`), any branch the repository documents as long-lived or protected, the invoking worktree (the one that contains the current directory), and its branch. List them under "Not touched", not as blocked.
+- `BLOCKED_DIRTY`: the worktree is not clean as section 6 defines it. `git -C <worktree> status --porcelain=v1 --untracked-files=all` must be empty (always pass the flag: `status.showUntrackedFiles=no` hides untracked files, and `git worktree remove` then deletes them), and no `ls-files -v` entry may hide edits (skip-worktree or assume-unchanged while its file exists on disk; entries absent from disk, as in a sparse checkout, do not count).
+- `BLOCKED_IN_PROGRESS`: the worktree is in progress, or the branch is named as the one a rebase or bisect in another worktree is working on. A worktree stopped mid-rebase looks clean and detached; removing it orphans the rewritten commits.
+- `BLOCKED_IGNORED_FILES`: the worktree holds ignored files (paths listed in full). `git worktree remove` deletes them without asking (for example `.env`). GitCleanup has no override: move or delete them by hand, then run GitCleanup again.
+- `BLOCKED_UNIQUE_WORK` also covers a detached worktree whose HEAD is not reachable from any branch or tag.
+- `UNKNOWN` also covers both branches when two local branch names are equal ignoring case (section 6, **Case collisions**).
 
 ### Apply behavior
 
@@ -291,13 +300,17 @@ Typical safe operations may include:
 ```text
 git worktree remove <path>
 git branch -d <branch>
-git worktree prune
 ```
+
+`git worktree remove <path>` removes one linked worktree: never the invoking one, never with `--force`. A prunable entry (directory missing) has nothing on disk to check: it is a candidate only when it is on a branch (not detached) that is otherwise a `SAFE_CANDIDATE`, and a detached prunable entry is `UNKNOWN`. A prunable entry is removed the same way, by its path, for that entry only. If it exits non-zero, keep the branch and report whether the entry is still listed in `git worktree list --porcelain`. Run `git branch -d <branch>` from the invoking worktree after the branch's worktree is gone.
 
 Constraints:
 
 - do not use `git branch -D` by default;
 - do not delete dirty worktrees;
+- never run a repository-wide `git worktree prune`: it also drops unclassified prunable entries, including detached worktrees whose commits no branch reaches, and orphans those commits;
+- never remove the invoking worktree, and never delete `main` or the integration target;
+- do not remove a worktree that is in progress or holds ignored files;
 - do not remove branches with unique unpreserved commits;
 - do not remove dependency-source branches required by active lanes;
 - do not treat remote deletion as implied by local cleanup;
@@ -308,6 +321,7 @@ Constraints:
 ```text
 Cleanup candidates
 Blocked items + reasons
+Not touched (main, the integration target, the invoking worktree)
 Applied operations (only with --apply)
 Skipped items + reasons
 Remaining risks
@@ -345,10 +359,11 @@ Examples: `/GitConverge agent/release`, `/GitConverge agent/release --apply`, `/
 
 - **target**: `<branch>`, resolved by exact match in `git for-each-ref --format=%(refname) refs/heads`. A name that only matches when case is ignored is rejected with the exact name suggested; `rev-parse` success is not a match (case-insensitive filesystems resolve the wrong case).
 - **kept set**: `main` and target. Every other local branch is a **source**; `main` is also a merge source.
-- **Names vs SHAs**: resolve every branch through its full refname (`refs/heads/<name>`) and record its SHA. In every git command in this section, `<target>` and `<source>` in a revision argument mean `refs/heads/<name>` or the recorded SHA, never the bare name: a same-named tag wins bare-name resolution (`refname '<name>' is ambiguous`). Merge the recorded SHA.
+- **Names vs SHAs**: resolve every branch through its full refname (`refs/heads/<name>`) and record its SHA. Take the SHAs from one `git for-each-ref --format='%(refname) %(objectname)' refs/heads` listing, which reads each ref exactly; `rev-parse refs/heads/<name>` can read another branch's loose ref file on a case-insensitive filesystem. In every git command in this section, `<target>` and `<source>` in a revision argument mean `refs/heads/<name>` or the recorded SHA, never the bare name: a same-named tag wins bare-name resolution (`refname '<name>' is ambiguous`). Merge the recorded SHA.
+- **Case collisions**: when two local branch names are equal ignoring case (`Feat` and `feat`), both are `UNKNOWN` whatever else applies (this is decided before the ordered classification below): neither is merged or deleted, because on a case-insensitive filesystem `refs/heads/<name>` can resolve to the other one and `git branch -d` on one can remove both. The report asks the user to make the names distinct safely: run `git pack-refs --all` first (then no name is a loose ref file, so each resolves exactly), rename one with `git branch -m`, and compare both tips with the recorded SHAs. A plain `git branch -m` on a colliding name can give the new name the other branch's tip and delete both old refs. If the target or `main` is one of them, that is a gate failure.
 - **invoking worktree**: the worktree that contains the current directory. It is the only worktree this command writes into or switches.
 - **clean**: both hold. (1) `git -C <worktree> status --porcelain=v1 --untracked-files=all` is empty; always pass the flag, because `status.showUntrackedFiles=no` would otherwise hide untracked files. (2) No entry of `git -C <worktree> ls-files -v` is tagged `S` (skip-worktree) or with a lowercase letter (assume-unchanged) while its file exists on disk; status cannot see edits to those files, and `git worktree remove` deletes them. Entries absent from disk (sparse checkout) do not count. Ignored files are not covered by "clean".
-- **in progress**: a worktree has a merge, cherry-pick, revert, rebase, am, or bisect underway, or a paused cherry-pick/revert sequence (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `sequencer/`, `rebase-merge/`, `rebase-apply/`, `BISECT_LOG`, each located with `git -C <worktree> rev-parse --git-path <name>`). Check every worktree, including detached ones. A rebase or bisect shows its worktree as `detached`; the branch it is working on is named in `rebase-merge/head-name`, `rebase-apply/head-name`, or `BISECT_START`, and that branch counts as checked out there.
+- **in progress**: a worktree has a merge, cherry-pick, revert, rebase, am, or bisect underway, or a paused cherry-pick/revert sequence (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `sequencer/`, `rebase-merge/`, `rebase-apply/`, `BISECT_LOG`, each located with `git -C <worktree> rev-parse --git-path <name>`; for the main worktree the result is relative to `<worktree>`, so resolve it against that path before testing whether it exists). Check every worktree, including detached ones. A rebase or bisect shows its worktree as `detached`; the branch it is working on is named in `rebase-merge/head-name`, `rebase-apply/head-name`, or `BISECT_START`, and that branch counts as checked out there.
 - **active owner**: a worktree that is locked, lies under an agent-harness worktree root (`<main worktree>/.claude/worktrees/`, where Claude Code keeps its session worktrees; `~/.codex/worktrees/`; or a root the repository documents), or has a lane record naming another owner. Clean is not proof that nobody is using it.
 - **unknown owner**: a linked worktree with no active-owner evidence and no lane record. GitConverge may remove it: this is the one exception to the reconnaissance rule "UNKNOWN_OWNER: do not assume it is free", and `--apply` is the authorization. The plan must list such a removal as "owner: not recorded".
 
@@ -385,7 +400,7 @@ A branch **will remain** when it is `main`, the target, a source whose merge sta
 
 Collect and report:
 
-1. **Gates** (any failure stops the whole command, even for a preview): target missing locally; target is `main`; local `main` missing; target or `main` is checked out only in a prunable (missing-directory) worktree entry; target is checked out in a worktree other than the invoking one (run the command from that worktree); the invoking worktree is detached, dirty, or in progress; target is in progress anywhere.
+1. **Gates** (any failure stops the whole command, even for a preview): target missing locally; target is `main`; local `main` missing; the target or `main` equals another local branch name when case is ignored; target or `main` is checked out only in a prunable (missing-directory) worktree entry; target is checked out in a worktree other than the invoking one (run the command from that worktree); the invoking worktree is detached, dirty, or in progress; target is in progress anywhere.
 2. **Plan header**: target and `main` with SHAs, the invoking worktree, and the recorded tip of every local branch. Report a same-named tag for any branch, the target included. Report `main` being behind or ahead of `origin/main` when the remote-tracking ref exists; remote freshness is local-only.
 3. **Sources to merge**, in merge order: `main` first, then the rest by descending unique-commit count (`git rev-list --count refs/heads/<target>..<sha>`), ties by refname. For each: SHA, exact unique-commit count, and its commit list. A commit list may be shortened only with an explicit "(N more)"; counts and branch sets are never truncated. When `git merge-tree --write-tree` exists, test each source against the current target tip and mark it `PREDICTED_CONFLICT` if it exits 1. This is a hint only: it cannot see a clash between two sources, which appears when the second one merges.
 4. **Contained sources**: delete only.
@@ -404,7 +419,7 @@ The preview does not merge, switch, delete, prune, or fetch. `git merge-tree --w
 4. **Merge every source whose merge status is `MERGE`, in order, whatever its delete blockers**, inside the invoking worktree:
    1. Recheck that the source tip still equals the recorded SHA; if not, skip it and report.
    2. Skip it if it is now an ancestor of target (an earlier source contained it).
-   3. List the paths the source changed since the merge base (`git diff --name-only <merge-base> <sha>`) and the ignored entries in the invoking worktree (`git ls-files --others --ignored --exclude-standard --directory`; a trailing `/` marks an ignored directory). They overlap when a changed path equals an ignored entry, when one lies under the other (a directory/file clash), or, if `git config --bool core.ignorecase` is true, when they match ignoring case. If they overlap, stop: a merge silently overwrites ignored files (`--no-overwrite-ignore` is not honored by merge). Completed merges stay.
+   3. List the paths the source changed since the merge base (`git diff --name-only <merge-base> <sha>`) and the ignored entries in the invoking worktree (`git ls-files --others --ignored --exclude-standard --directory`; a trailing `/` marks an ignored directory). Run both listings from the top level of the invoking worktree as `git -C <top-level> -c core.quotePath=false <command>` (`<top-level>` from `git rev-parse --show-toplevel`): then both list paths relative to the worktree root, and neither prints a non-ASCII path C-quoted (`"\346\236\204..."`, which none of the comparisons below can match). If the worktree has ignored entries and a line of either listing is still wrapped in double quotes (a quote, backslash, or control character in the name), count every changed path as overlapping. They overlap when a changed path equals an ignored entry, when one lies under the other (a directory/file clash), or, if `git config --bool core.ignorecase` is true, when they match ignoring case. If they overlap, stop: a merge silently overwrites ignored files (`--no-overwrite-ignore` is not honored by merge). Completed merges stay.
    4. Run `git merge --no-ff -m "Merge branch '<name>' into <target>" <recorded-sha>`. Use another merge shape only when repository policy requires it, and never squash or rebase, because the later ancestry check needs real merge ancestry. Never pass `--no-verify`, `-X ours`, `-X theirs`, or `--allow-unrelated-histories`.
    5. On any failure: run `git merge --abort` if a merge is in progress, then **stop the whole command and delete nothing**. Keep completed merges and report the failing source, the error text, the target's start SHA, and how to restore it.
 5. **Validate** with the repository's normal checks when identifiable. If they fail because of the merge, stop before any deletion and report. If they cannot be identified, report "not validated" and continue; deletion is still gated by the ancestry check below.

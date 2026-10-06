@@ -2,7 +2,7 @@
   "files": {},
   "heads": {
     "agent/release": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
-    "agent/sub": "91ceed9054f3b197c54ee59aa7837468e3065a55",
+    "agent/sub": "f8b5ad212f68fe1921bf4740cd9e3236edf4e173",
     "main": "a7865dbe7a31d2bb23b950e1254840cd742e243e"
   },
   "invoking_head": "agent/release",
@@ -30,7 +30,7 @@
       "branch": "agent/sub",
       "detached": false,
       "exists": true,
-      "head": "91ceed9054f3b197c54ee59aa7837468e3065a55",
+      "head": "f8b5ad212f68fe1921bf4740cd9e3236edf4e173",
       "locked": false,
       "path": "wt-sub",
       "prunable": false,

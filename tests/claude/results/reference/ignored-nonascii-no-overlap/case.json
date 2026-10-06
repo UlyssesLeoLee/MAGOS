@@ -1,0 +1,5 @@
+{
+  "id": "ignored-nonascii-no-overlap",
+  "mode": "apply",
+  "title": "An ignored non-ASCII directory does not stop an unrelated non-ASCII change"
+}

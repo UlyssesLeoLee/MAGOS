@@ -432,7 +432,7 @@ Use it when finished branches have piled up and you want to tidy up without dele
 | If you leave it out | **Preview only**: lists the objects that can be cleaned and the ones that cannot (with reasons); deletes nothing |
 | What it does with it | For each object marked "can be cleaned", it **checks the current state again** and deletes only if it is still safe: first removes its worktree, then deletes the branch |
 | An object changed between preview and apply | For example the branch got a new change after the preview: it **skips** that one and tells you, rather than deleting from the old list |
-| What it never does | Force-delete; clean a worktree with unsaved edits; delete a branch that holds work found nowhere else; delete online (remote) branches unless you explicitly ask |
+| What it never does | Force-delete; clean a worktree with unsaved edits, an operation half-way through, or ignored files; delete a branch that holds work found nowhere else; run a repository-wide `git worktree prune`; delete `main`, the target, or the worktree you are standing in; delete online (remote) branches unless you explicitly ask |
 
 Suggested habit: **read the list without `--apply` first; add it only when you are happy.**
 
@@ -442,23 +442,29 @@ Suggested habit: **read the list without `--apply` first; add it only when you a
 
 | Status | Plain meaning | Cleaned? |
 |---|---|---|
-| `SAFE_CANDIDATE` | All five conditions hold; safe to clean | Only with `--apply` |
+| `SAFE_CANDIDATE` | All seven conditions hold; safe to clean | Only with `--apply` |
 | `BLOCKED_DIRTY` | Its worktree has unsaved edits | No |
 | `BLOCKED_UNIQUE_WORK` | It holds work that exists nowhere else | No |
 | `BLOCKED_ACTIVE_OWNER` | Someone (or some agent) is using it right now | No |
 | `BLOCKED_DEPENDENCY` | Another branch depends on it | No |
 | `BLOCKED_NOT_INTEGRATED` | Its content is not fully in the main line yet | No |
-| `UNKNOWN` | A key fact could not be established | No (no confidence, no action) |
+| `BLOCKED_IN_PROGRESS` | Its worktree is half-way through an operation (for example a rebase stopped mid-way); it looks clean but is not | No |
+| `BLOCKED_IGNORED_FILES` | Its worktree holds files Git ignores (such as a `.env` with passwords); removing the worktree would delete them | No (move or delete those files yourself, then run `/GitCleanup` again) |
+| `UNKNOWN` | A key fact could not be established: for example a worktree with no recorded owner (someone may still be using it), or two branch names that differ only in case | No (no confidence, no action) |
 
-A branch becomes a `SAFE_CANDIDATE` only when **all** five hold:
+A branch becomes a `SAFE_CANDIDATE` only when **all** seven hold:
 
 ```text
 ✓ fully integrated
 ✓ worktree clean
-✓ no active owner
+✓ nothing half-way through in its worktree
+✓ no ignored files in its worktree
+✓ no active owner (a worktree it has needs a recorded owner)
 ✓ no downstream dependents
 ✓ no unique unsaved work
 ```
+
+`main`, the target, and the worktree you are standing in (with its branch) never go on the list.
 
 **Note: "untouched for a long time" does not mean safe to delete.** Age alone never puts a branch on the cleanup list.
 
@@ -538,7 +544,7 @@ Each branch in the preview has a status. In plain words:
 | `BLOCKED_IGNORED_FILES` | The worktree holds files Git ignores (for example a `.env` with secrets) | Yes | Kept (deleted only with `--discard-ignored`) |
 | `BLOCKED_SUBMODULE` | The worktree contains a sub-project; Git refuses to delete it directly | Yes | Kept |
 | `BLOCKED_UPSTREAM_OF_KEPT` | Another branch that stays depends on it | Yes | Kept |
-| `UNKNOWN` | A key fact could not be established | Untouched | Untouched |
+| `UNKNOWN` | A key fact could not be established, or its name equals another branch's except for case (both stay untouched; the report says how to rename one safely) | Untouched | Untouched |
 
 If any branch is kept, the plan says plainly that you will **not** end up with only `main` and the target, with the reason and the next step.
 
@@ -608,6 +614,7 @@ In these cases it stops **before doing anything** and explains why; the reposito
 | The target does not exist, or the case is wrong | It cannot find the branch; if only the case differs, it tells you the right name | Use the exact name |
 | The target is `main` | `main` cannot be a target | Use `/GitIntegrate`, or pick another branch |
 | There is no local `main` | `main` is missing | Create `main` in the repository first |
+| The target or `main` has the same name as another branch except for case | The names collide, so it cannot tell them apart | Run `git pack-refs --all` first, then rename one with `git branch -m`, then check both tips (renaming without packing first can give the new name the other branch's tip and delete both) |
 | Another folder is using the target | Run it from that folder | Go to the folder it names and run it there |
 | The current folder has unsaved edits, is not on a branch, or is half-way through something | The current folder is not safe | Save or finish what is pending, then run it again |
 | The target or `main` exists only in the record of a folder that was deleted | The record is broken and cannot be switched to | Clear that broken record as it explains, then run again |
@@ -757,6 +764,15 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
 
 ### Claude Code
 
+Claude Code registers the six `/Git...` commands only from `~/.claude/commands/` (all projects) or a project's `.claude/commands/`. Putting this directory in `~/.claude/skills/` gives you the orchestrator skill, which triggers on its own, but not the commands. From the repository root:
+
+```bash
+python -X utf8 scripts/sync_hosts.py --host claude --apply --create-roots
+python -X utf8 scripts/sync_hosts.py --host claude --verify
+```
+
+Or copy the files by hand:
+
 ```bash
 mkdir -p ~/.claude/commands && cp commands/Git*.md ~/.claude/commands/
 ```
@@ -765,7 +781,7 @@ mkdir -p ~/.claude/commands && cp commands/Git*.md ~/.claude/commands/
 New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands\Git*.md "$HOME\.claude\commands\"
 ```
 
-Or just drop the skill into `~/.claude/skills/`. Start a new session, then type `/Git`.
+The copies do not follow later updates. After every `git pull` or new version, run the sync (or the copy) again; `--verify` reports copies that are missing or out of date. `--host claude` covers only `~/.claude/commands`; the skill the commands load (for example `~/.claude/skills/MAGOS`) must be updated separately, for example by keeping it as a git clone and pulling. Start a new session, then type `/Git`.
 
 ### Codex
 

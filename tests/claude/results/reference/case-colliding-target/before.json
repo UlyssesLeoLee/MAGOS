@@ -1,0 +1,31 @@
+{
+  "files": {},
+  "heads": {
+    "agent/Release": "a7865dbe7a31d2bb23b950e1254840cd742e243e",
+    "agent/a": "8eccc626541eca675fbf9a169f663a1df71d81d6",
+    "agent/release": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
+    "main": "a7865dbe7a31d2bb23b950e1254840cd742e243e"
+  },
+  "invoking_head": "agent/release",
+  "merge_head": false,
+  "origin": [
+    "refs/heads/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
+  ],
+  "remote_refs": [
+    "refs/remotes/origin/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
+  ],
+  "tag_refs": [],
+  "tags": [],
+  "worktrees": [
+    {
+      "branch": "agent/release",
+      "detached": false,
+      "exists": true,
+      "head": "a7865dbe7a31d2bb23b950e1254840cd742e243e",
+      "locked": false,
+      "path": "repo",
+      "prunable": false,
+      "status": "A  release.txt"
+    }
+  ]
+}

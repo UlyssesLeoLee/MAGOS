@@ -68,8 +68,14 @@
 #   (f_m_no_dependency_fixpoint_lambda_222_77:Function {name: "m_no_dependency_fixpoint.lambda_222_77", type: "function", signature: "lambda_222_77(entries, target, tracking)"}),
 #   (f_m_exact_ignored_overlap:Function {name: "m_exact_ignored_overlap", type: "function", signature: "m_exact_ignored_overlap(stack)"}),
 #   (f_m_exact_ignored_overlap_exact:Function {name: "m_exact_ignored_overlap.exact", type: "function", signature: "exact(repo, changed)"}),
+#   (f_quoted_lines:Function {name: "quoted_lines", type: "function", signature: "quoted_lines(cwd, *args)"}),
+#   (f_m_quoted_paths:Function {name: "m_quoted_paths", type: "function", signature: "m_quoted_paths(stack)"}),
+#   (f_m_quoted_paths_unguarded:Function {name: "m_quoted_paths.unguarded", type: "function", signature: "unguarded(repo, changed)"}),
+#   (f_m_default_quotepath:Function {name: "m_default_quotepath", type: "function", signature: "m_default_quotepath(stack)"}),
+#   (f_m_no_case_collisions:Function {name: "m_no_case_collisions", type: "function", signature: "m_no_case_collisions(stack)"}),
+#   (f_m_no_case_collisions_lambda_254_75:Function {name: "m_no_case_collisions.lambda_254_75", type: "function", signature: "lambda_254_75(names)"}),
 #   (f_m_target_move_always_stale:Function {name: "m_target_move_always_stale", type: "function", signature: "m_target_move_always_stale(stack)"}),
-#   (f_m_target_move_always_stale_lambda_232_85:Function {name: "m_target_move_always_stale.lambda_232_85", type: "function", signature: "lambda_232_85(repo, old, new, recorded)"}),
+#   (f_m_target_move_always_stale_lambda_258_85:Function {name: "m_target_move_always_stale.lambda_258_85", type: "function", signature: "lambda_258_85(repo, old, new, recorded)"}),
 #   (f_run_mutation:Function {name: "run_mutation", type: "function", signature: "run_mutation(name: str, description: str, install, names: list[str], expect_killed: bool, base: str | None) -> dict"}),
 #   (f_main:Function {name: "main", type: "function", signature: "main() -> int"}),
 #   (file)-[:CONTAINS]->(v_RESULTS_DIR),
@@ -139,8 +145,14 @@
 #   (f_m_no_dependency_fixpoint)-[:CONTAINS]->(f_m_no_dependency_fixpoint_lambda_222_77),
 #   (file)-[:CONTAINS]->(f_m_exact_ignored_overlap),
 #   (f_m_exact_ignored_overlap)-[:CONTAINS]->(f_m_exact_ignored_overlap_exact),
+#   (file)-[:CONTAINS]->(f_quoted_lines),
+#   (file)-[:CONTAINS]->(f_m_quoted_paths),
+#   (f_m_quoted_paths)-[:CONTAINS]->(f_m_quoted_paths_unguarded),
+#   (file)-[:CONTAINS]->(f_m_default_quotepath),
+#   (file)-[:CONTAINS]->(f_m_no_case_collisions),
+#   (f_m_no_case_collisions)-[:CONTAINS]->(f_m_no_case_collisions_lambda_254_75),
 #   (file)-[:CONTAINS]->(f_m_target_move_always_stale),
-#   (f_m_target_move_always_stale)-[:CONTAINS]->(f_m_target_move_always_stale_lambda_232_85),
+#   (f_m_target_move_always_stale)-[:CONTAINS]->(f_m_target_move_always_stale_lambda_258_85),
 #   (file)-[:CONTAINS]->(f_run_mutation),
 #   (file)-[:CONTAINS]->(f_main),
 #   (f_m_ascending_order)-[:CALLS]->(f_wrap),
@@ -399,6 +411,32 @@ def m_exact_ignored_overlap(stack):
     stack.enter_context(mock.patch.object(converge_ref, "ignored_overlap", exact))
 
 
+def quoted_lines(cwd, *args):
+    """`converge_ref.path_lines` without `core.quotePath=false`: Git's default C-quoted path listing."""
+    return converge_ref.git(cwd, *args, check=True).stdout.splitlines()
+
+
+def m_quoted_paths(stack):
+    """The pre-fix check: Git's default C-quoted listings compared as plain strings, with no guard for quoted names."""
+    def unguarded(repo, changed):
+        ignored = [entry.rstrip("/") for entry in converge_ref.ignored_files(repo)]
+        return sorted(path for path in changed
+                      if any(path == entry or path.startswith(entry + "/") or entry.startswith(path + "/")
+                             for entry in ignored))
+    stack.enter_context(mock.patch.object(converge_ref, "path_lines", quoted_lines))
+    stack.enter_context(mock.patch.object(converge_ref, "ignored_overlap", unguarded))
+
+
+def m_default_quotepath(stack):
+    """Keep the quoted-name guard but list paths in Git's default C-quoted form: an ignored non-ASCII entry then
+    looks unreadable and stops an unrelated merge."""
+    stack.enter_context(mock.patch.object(converge_ref, "path_lines", quoted_lines))
+
+
+def m_no_case_collisions(stack):
+    stack.enter_context(mock.patch.object(converge_ref, "case_collisions", lambda names: set()))
+
+
 def m_target_move_always_stale(stack):
     stack.enter_context(mock.patch.object(converge_ref, "target_moved_only_by_plan", lambda repo, old, new, recorded: False))
 
@@ -442,6 +480,12 @@ MUTATIONS = [
      ["dependency-of-remaining-lane", "upstream-of-kept"], True),
     ("exact-ignored-overlap", "compare ignored paths by exact string only", m_exact_ignored_overlap,
      ["ignored-overwrite-dir-file", "ignored-overwrite-file-dir"], True),
+    ("quoted-ignored-paths", "compare paths in Git's default C-quoted form, with no quoted-name guard", m_quoted_paths,
+     ["ignored-overwrite-nonascii"], True),
+    ("default-quotepath", "list paths without core.quotePath=false (the guard alone)", m_default_quotepath,
+     ["ignored-nonascii-no-overlap"], True),
+    ("no-case-collision-check", "ignore branch names that differ only in case", m_no_case_collisions,
+     ["case-colliding-sources", "case-colliding-target"], True),
     ("target-move-always-stale", "treat the target's own merges as a stale preview", m_target_move_always_stale,
      ["rerun-after-interrupted-apply"], True),
     ("ignore-lock-gate", "drop the lock gate (Git still refuses to remove a locked worktree)", m_ignore_lock_gate,

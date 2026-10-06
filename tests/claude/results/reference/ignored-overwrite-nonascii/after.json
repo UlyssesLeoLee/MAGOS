@@ -1,0 +1,32 @@
+{
+  "files": {
+    "构建/输出.txt": "LOCAL_BUILD\n"
+  },
+  "heads": {
+    "agent/release": "7e364b1c0194838b72f68be7ba175187571376c6",
+    "agent/src": "6e64b53e5498e0858654931d4144e2383c8a2d6e",
+    "main": "093d6d5d543ae4d2526a24a9c874ab5f06f2af28"
+  },
+  "invoking_head": "agent/release",
+  "merge_head": false,
+  "origin": [
+    "refs/heads/main 093d6d5d543ae4d2526a24a9c874ab5f06f2af28"
+  ],
+  "remote_refs": [
+    "refs/remotes/origin/main 093d6d5d543ae4d2526a24a9c874ab5f06f2af28"
+  ],
+  "tag_refs": [],
+  "tags": [],
+  "worktrees": [
+    {
+      "branch": "agent/release",
+      "detached": false,
+      "exists": true,
+      "head": "7e364b1c0194838b72f68be7ba175187571376c6",
+      "locked": false,
+      "path": "repo",
+      "prunable": false,
+      "status": ""
+    }
+  ]
+}

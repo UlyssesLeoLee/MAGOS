@@ -1,0 +1,376 @@
+{
+  "checks": [
+    {
+      "name": "the source content was merged",
+      "passed": true
+    },
+    {
+      "name": "the source branch was deleted",
+      "passed": true
+    },
+    {
+      "name": "the ignored local file is intact",
+      "passed": true
+    },
+    {
+      "name": "invariant: main did not move",
+      "passed": true
+    },
+    {
+      "name": "invariant: tags unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote-tracking refs unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: no merge left in progress",
+      "passed": true
+    },
+    {
+      "name": "the run did not stop",
+      "passed": true
+    },
+    {
+      "name": "command policy: no forbidden git command",
+      "passed": true
+    }
+  ],
+  "note": null,
+  "result": {
+    "report": {
+      "appeared_after_preview": [],
+      "commands": [
+        [
+          "for-each-ref",
+          "--format=%(refname) %(objectname)",
+          "refs/heads"
+        ],
+        [
+          "rev-parse",
+          "--show-toplevel"
+        ],
+        [
+          "worktree",
+          "list",
+          "--porcelain"
+        ],
+        [
+          "rev-parse",
+          "--git-path",
+          "MERGE_HEAD",
+          "--git-path",
+          "CHERRY_PICK_HEAD",
+          "--git-path",
+          "REVERT_HEAD",
+          "--git-path",
+          "sequencer",
+          "--git-path",
+          "rebase-merge",
+          "--git-path",
+          "rebase-apply",
+          "--git-path",
+          "BISECT_LOG",
+          "--git-path",
+          "rebase-merge/head-name",
+          "--git-path",
+          "rebase-apply/head-name",
+          "--git-path",
+          "BISECT_START"
+        ],
+        [
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all"
+        ],
+        [
+          "ls-files",
+          "-v"
+        ],
+        [
+          "-c",
+          "core.quotePath=false",
+          "ls-files",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "--directory"
+        ],
+        [
+          "submodule",
+          "status"
+        ],
+        [
+          "merge-base",
+          "refs/heads/agent/release",
+          "ccc7899795a1a32c472f603653788e6cc45b99f0"
+        ],
+        [
+          "rev-list",
+          "--count",
+          "refs/heads/agent/release..ccc7899795a1a32c472f603653788e6cc45b99f0"
+        ],
+        [
+          "log",
+          "--oneline",
+          "--no-decorate",
+          "--max-count=20",
+          "refs/heads/agent/release..ccc7899795a1a32c472f603653788e6cc45b99f0"
+        ],
+        [
+          "merge-tree",
+          "--write-tree",
+          "--no-messages",
+          "refs/heads/agent/release",
+          "ccc7899795a1a32c472f603653788e6cc45b99f0"
+        ],
+        [
+          "for-each-ref",
+          "--format=%(refname:lstrip=2)|%(upstream)",
+          "refs/heads"
+        ],
+        [
+          "merge-base",
+          "refs/heads/agent/release",
+          "093d6d5d543ae4d2526a24a9c874ab5f06f2af28"
+        ],
+        [
+          "tag",
+          "--list"
+        ],
+        [
+          "rev-parse",
+          "--verify",
+          "-q",
+          "refs/remotes/origin/main"
+        ],
+        [
+          "rev-list",
+          "--left-right",
+          "--count",
+          "refs/heads/main...refs/remotes/origin/main"
+        ],
+        [
+          "for-each-ref",
+          "--format=%(refname)",
+          "refs/remotes"
+        ],
+        [
+          "for-each-ref",
+          "--format=%(refname) %(objectname)",
+          "refs/heads"
+        ],
+        [
+          "merge-base",
+          "--is-ancestor",
+          "ccc7899795a1a32c472f603653788e6cc45b99f0",
+          "refs/heads/agent/release"
+        ],
+        [
+          "merge-base",
+          "refs/heads/agent/release",
+          "ccc7899795a1a32c472f603653788e6cc45b99f0"
+        ],
+        [
+          "-c",
+          "core.quotePath=false",
+          "diff",
+          "--name-only",
+          "7e364b1c0194838b72f68be7ba175187571376c6",
+          "ccc7899795a1a32c472f603653788e6cc45b99f0"
+        ],
+        [
+          "config",
+          "--get",
+          "--bool",
+          "core.ignorecase"
+        ],
+        [
+          "-c",
+          "core.quotePath=false",
+          "ls-files",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "--directory"
+        ],
+        [
+          "merge",
+          "--no-ff",
+          "-m",
+          "Merge branch 'agent/src' into agent/release",
+          "ccc7899795a1a32c472f603653788e6cc45b99f0"
+        ],
+        [
+          "for-each-ref",
+          "--format=%(refname) %(objectname)",
+          "refs/heads"
+        ],
+        [
+          "merge-base",
+          "--is-ancestor",
+          "ccc7899795a1a32c472f603653788e6cc45b99f0",
+          "refs/heads/agent/release"
+        ],
+        [
+          "rev-parse",
+          "--show-toplevel"
+        ],
+        [
+          "worktree",
+          "list",
+          "--porcelain"
+        ],
+        [
+          "rev-parse",
+          "--git-path",
+          "MERGE_HEAD",
+          "--git-path",
+          "CHERRY_PICK_HEAD",
+          "--git-path",
+          "REVERT_HEAD",
+          "--git-path",
+          "sequencer",
+          "--git-path",
+          "rebase-merge",
+          "--git-path",
+          "rebase-apply",
+          "--git-path",
+          "BISECT_LOG",
+          "--git-path",
+          "rebase-merge/head-name",
+          "--git-path",
+          "rebase-apply/head-name",
+          "--git-path",
+          "BISECT_START"
+        ],
+        [
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all"
+        ],
+        [
+          "ls-files",
+          "-v"
+        ],
+        [
+          "-c",
+          "core.quotePath=false",
+          "ls-files",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "--directory"
+        ],
+        [
+          "submodule",
+          "status"
+        ],
+        [
+          "for-each-ref",
+          "--format=%(upstream)|%(upstream:short)",
+          "refs/heads/agent/src"
+        ],
+        [
+          "branch",
+          "-d",
+          "agent/src"
+        ],
+        [
+          "rev-parse",
+          "refs/heads/agent/release"
+        ],
+        [
+          "for-each-ref",
+          "--format=%(refname) %(objectname)",
+          "refs/heads"
+        ]
+      ],
+      "deleted": {
+        "agent/src": "ccc7899795a1a32c472f603653788e6cc45b99f0"
+      },
+      "end_sha": "e19505582b87cd1f20f27ed3a5c28aebda241843",
+      "final_branches": [
+        "agent/release",
+        "main"
+      ],
+      "ops": [
+        "merge agent/src",
+        "delete agent/src"
+      ],
+      "plan": {
+        "final_branches": [
+          "agent/release",
+          "main"
+        ],
+        "gates": [],
+        "invoking": {
+          "branch": "agent/release",
+          "path": "<root>/repo"
+        },
+        "merge_order": [
+          "agent/src"
+        ],
+        "notes": {
+          "detached_worktrees": [],
+          "main_vs_origin": "0\t0",
+          "remote_branches": [
+            "refs/remotes/origin/main"
+          ],
+          "tag_collisions": [],
+          "validation": "not identifiable"
+        },
+        "removals": [],
+        "residual": [],
+        "sources": [
+          {
+            "blockers": [],
+            "commits": [],
+            "delete": false,
+            "kept": true,
+            "more": 0,
+            "name": "main",
+            "predicted_conflict": null,
+            "sha": "093d6d5d543ae4d2526a24a9c874ab5f06f2af28",
+            "status": "CONTAINED",
+            "unique": 0,
+            "worktree": null
+          },
+          {
+            "blockers": [],
+            "commits": [
+              "ccc7899 agent/src: 文档/说明.txt"
+            ],
+            "delete": true,
+            "more": 0,
+            "name": "agent/src",
+            "predicted_conflict": false,
+            "sha": "ccc7899795a1a32c472f603653788e6cc45b99f0",
+            "status": "MERGE",
+            "unique": 1,
+            "worktree": null
+          }
+        ],
+        "target": "agent/release",
+        "tips": {
+          "agent/release": "7e364b1c0194838b72f68be7ba175187571376c6",
+          "agent/src": "ccc7899795a1a32c472f603653788e6cc45b99f0",
+          "main": "093d6d5d543ae4d2526a24a9c874ab5f06f2af28"
+        },
+        "unknown_owner_removals": []
+      },
+      "skipped": [],
+      "start_sha": "7e364b1c0194838b72f68be7ba175187571376c6",
+      "stopped": null,
+      "validation": "not identifiable",
+      "worktree_appeared": []
+    }
+  },
+  "status": "PASS",
+  "traceback": null
+}

@@ -60,7 +60,7 @@ Treat the following names as explicit invocation intents. The canonical command 
 | `/GitCleanup` | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` |
 | `/GitConverge` | `/GitConverge` | `/git-converge` | `$git-converge` |
 
-Claude Code reads the command Markdown files in `commands/`. Codex and Hermes discover the six Agent Skills in `skills/` (nested under this package) in addition to this root skill: Codex exposes them as `$git-*` skills (or browse with `/skills`) and does not register arbitrary custom `/Git...` slash commands; Hermes registers each as a `/git-*` slash command. The `skills/` adapters are host-neutral: they read this file and `references/` directly and never route through `commands/`, whose loading steps are Claude-specific. Codex adapters disable implicit selection in `agents/openai.yaml`; Hermes has no per-skill switch, so the write adapters (`git-integrate`, `git-cleanup`, `git-converge`) enforce explicit invocation by instruction. Agent Plugins clients (the root `plugin.json`, specification 1.0.0) discover only these six adapters in `skills/`; for them this root skill is shared package content that the adapters read, not a plugin skill. Only that discovery is verified: Hermes plugin skills get no `/git-*` commands, so the write adapters (which act only on an explicit invocation) are for the skills-directory installs there. See `references/commands.md` **Host Adapter Contract** for argument passing and file resolution per host.
+Claude Code registers the `/Git...` commands only from copies of the `commands/` files in `~/.claude/commands/` (or a project's `.claude/commands/`): installing this skill directory alone does not add them, and the copies do not update when the package does (`references/installation.md` covers installing and re-syncing them). Codex and Hermes discover the six Agent Skills in `skills/` (nested under this package) in addition to this root skill: Codex exposes them as `$git-*` skills (or browse with `/skills`) and does not register arbitrary custom `/Git...` slash commands; Hermes registers each as a `/git-*` slash command. The `skills/` adapters are host-neutral: they read this file and `references/` directly and never route through `commands/`, whose loading steps are Claude-specific. Codex adapters disable implicit selection in `agents/openai.yaml`; Hermes has no per-skill switch, so the write adapters (`git-integrate`, `git-cleanup`, `git-converge`) enforce explicit invocation by instruction. Agent Plugins clients (the root `plugin.json`, specification 1.0.0) discover only these six adapters in `skills/`; for them this root skill is shared package content that the adapters read, not a plugin skill. Only that discovery is verified: Hermes plugin skills get no `/git-*` commands, so the write adapters (which act only on an explicit invocation) are for the skills-directory installs there. See `references/commands.md` **Host Adapter Contract** for argument passing and file resolution per host.
 
 | Command | 中文调用说明 | Default effect |
 |---|---|---|
@@ -79,7 +79,7 @@ Claude Code reads the command Markdown files in `commands/`. Codex and Hermes di
 - `/GitIntegrate` is authorization to attempt a safe integration, not permission to bypass review, freshness, dependency, protected-branch, or repository-policy gates. If gates fail, stop and report the blocker rather than forcing integration.
 - `--strategy auto` is the default. Choose the repository-consistent strategy from observed evidence. A requested explicit strategy is still rejected if unsafe or incompatible with repository policy.
 - `/GitCleanup` without `--apply` MUST NOT delete, prune, reset, force-delete, or rewrite anything.
-- `/GitCleanup --apply` may remove only candidates that are clean, fully integrated or otherwise explicitly disposable, have no active owner/dependent lane, and contain no unique unpreserved work. Never use forced deletion merely to make cleanup succeed.
+- `/GitCleanup --apply` may remove only candidates that are clean (as `references/commands.md` section 6 defines it), not in progress, free of ignored files, fully integrated or otherwise explicitly disposable, have no active owner/dependent lane (a linked worktree whose owner is not recorded stays `UNKNOWN`), and contain no unique unpreserved work. It never touches `main`, the integration target, or the invoking worktree, and never runs a repository-wide `git worktree prune`. Never use forced deletion merely to make cleanup succeed.
 - `/GitConverge` without `--apply` MUST NOT merge, switch, delete, prune, or fetch anything.
 - `/GitConverge <branch> --apply` is the user's explicit acceptance of the source tips in the plan that run records and reports (or in an earlier GitConverge preview in the same conversation). That acceptance stands in for per-lane review of exactly those tips; it is not permission to write any branch other than `<branch>`, to move, reset, or delete `main`, to push or delete remote branches, to touch a worktree with an active owner (`references/commands.md` section 6), or to bypass the gates in `references/commands.md` section 6. If a gate fails, stop and report; never force.
 - All six commands accept `--lang <language>`: it sets the language of every reply (Chinese when absent) and never translates command names, options, branch or worktree names, paths, SHAs, or status codes. See `references/commands.md`.
@@ -117,14 +117,14 @@ Prefer stable machine-readable Git output such as:
 
 ```text
 git rev-parse --show-toplevel
-git status --porcelain=v1 --branch
+git status --porcelain=v1 --branch --untracked-files=normal
 git worktree list --porcelain
 git for-each-ref --sort=-committerdate --format="%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(upstream:track)%09%(committerdate:iso8601)" refs/heads
 git remote -v
 git symbolic-ref --quiet --short refs/remotes/origin/HEAD
 ```
 
-For each relevant linked worktree, inspect its local state with `git -C <path> status --porcelain=v1 --branch`.
+For each relevant linked worktree, inspect its local state with `git -C <path> status --porcelain=v1 --branch --untracked-files=normal` (without the flag, `status.showUntrackedFiles=no` hides untracked files).
 
 Do not assume `main` is the integration target. Infer it from repository policy/configuration or clearly report uncertainty.
 
