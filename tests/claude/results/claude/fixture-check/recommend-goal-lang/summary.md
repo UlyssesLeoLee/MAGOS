@@ -1,6 +1,6 @@
 # recommend-goal-lang
 
-- Prompt: `/GitRecommend which branches should merge first --lang English`
+- Prompt: `/GitRecommend which branches --lang English should merge first`
 - Result: **PASS**
 
 ## Checks

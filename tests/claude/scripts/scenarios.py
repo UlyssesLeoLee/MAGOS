@@ -3,7 +3,7 @@
 #   (file:File {name: "scenarios.py", type: "file", language: "python"}),
 #   (v_TARGET:Variable {name: "TARGET", type: "variable"}),
 #   (v_REGISTRY:Variable {name: "REGISTRY", type: "variable"}),
-#   (f_scenario:Function {name: "scenario", type: "function", signature: "scenario(id: str, title: str, mode: str='apply', discard: bool=False, claude: bool=True, platforms: tuple[str, ...] | None=None, report: tuple[str, ...]=(), lang: str | None=None, command: str='GitConverge', cmd_args: str='')"}),
+#   (f_scenario:Function {name: "scenario", type: "function", signature: "scenario(id: str, title: str, mode: str='apply', discard: bool=False, claude: bool=True, platforms: tuple[str, ...] | None=None, report: tuple[str, ...]=(), lang: str | None=None, command: str='GitConverge', cmd_args: str='', inspects: bool | None=True)"}),
 #   (f_scenario_register:Function {name: "scenario.register", type: "function", signature: "register(builder)"}),
 #   (f_oracle:Function {name: "oracle", type: "function", signature: "oracle(id: str)"}),
 #   (f_oracle_register:Function {name: "oracle.register", type: "function", signature: "register(function)"}),
@@ -22,7 +22,8 @@
 #   (f_check_preview:Function {name: "check_preview", type: "function", signature: "check_preview(ctx, before, after)"}),
 #   (f_plan_preview:Function {name: "plan_preview", type: "function", signature: "plan_preview(ctx, result)"}),
 #   (f_build_preview_english:Function {name: "build_preview_english", type: "function", signature: "build_preview_english(root: Path) -> dict"}),
-#   (f__other_command:Function {name: "_other_command", type: "function", signature: "_other_command(id: str, title: str, command: str, cmd_args: str, lang: str | None)"}),
+#   (f__other_command:Function {name: "_other_command", type: "function", signature: "_other_command(id: str, title: str, command: str, cmd_args: str, lang: str | None, inspects: bool=True)"}),
+#   (f_expects_plan:Function {name: "expects_plan", type: "function", signature: "expects_plan(scen: dict) -> bool"}),
 #   (f_build_ordering:Function {name: "build_ordering", type: "function", signature: "build_ordering(root: Path) -> dict"}),
 #   (f_check_ordering:Function {name: "check_ordering", type: "function", signature: "check_ordering(ctx, before, after)"}),
 #   (f_plan_ordering:Function {name: "plan_ordering", type: "function", signature: "plan_ordering(ctx, result)"}),
@@ -95,7 +96,7 @@
 #   (f_check_tip_moves:Function {name: "check_tip_moves", type: "function", signature: "check_tip_moves(ctx, before, after)"}),
 #   (f_build_validation:Function {name: "build_validation", type: "function", signature: "build_validation(root: Path) -> dict"}),
 #   (f_flow_validation:Function {name: "flow_validation", type: "function", signature: "flow_validation(ctx, ref, scen)"}),
-#   (f_flow_validation_lambda_769_66:Function {name: "flow_validation.lambda_769_66", type: "function", signature: "lambda_769_66(repo)"}),
+#   (f_flow_validation_lambda_783_66:Function {name: "flow_validation.lambda_783_66", type: "function", signature: "lambda_783_66(repo)"}),
 #   (f_check_validation:Function {name: "check_validation", type: "function", signature: "check_validation(ctx, before, after)"}),
 #   (f_build_busy:Function {name: "build_busy", type: "function", signature: "build_busy(root: Path) -> dict"}),
 #   (f_flow_busy:Function {name: "flow_busy", type: "function", signature: "flow_busy(ctx, ref, scen)"}),
@@ -138,7 +139,7 @@
 #   (f_invariants:Function {name: "invariants", type: "function", signature: "invariants(ctx: dict, before: dict, after: dict) -> list[tuple[str, bool]]"}),
 #   (f_rel:Function {name: "rel", type: "function", signature: "rel(ctx: dict, path: str | Path) -> str"}),
 #   (f_snapshot:Function {name: "snapshot", type: "function", signature: "snapshot(ctx: dict) -> dict"}),
-#   (f_snapshot_lambda_1148_43:Function {name: "snapshot.lambda_1148_43", type: "function", signature: "lambda_1148_43(entry)"}),
+#   (f_snapshot_lambda_1162_43:Function {name: "snapshot.lambda_1162_43", type: "function", signature: "lambda_1162_43(entry)"}),
 #   (file)-[:CONTAINS]->(v_TARGET),
 #   (file)-[:CONTAINS]->(v_REGISTRY),
 #   (file)-[:CONTAINS]->(f_scenario),
@@ -161,6 +162,7 @@
 #   (file)-[:CONTAINS]->(f_plan_preview),
 #   (file)-[:CONTAINS]->(f_build_preview_english),
 #   (file)-[:CONTAINS]->(f__other_command),
+#   (file)-[:CONTAINS]->(f_expects_plan),
 #   (file)-[:CONTAINS]->(f_build_ordering),
 #   (file)-[:CONTAINS]->(f_check_ordering),
 #   (file)-[:CONTAINS]->(f_plan_ordering),
@@ -233,7 +235,7 @@
 #   (file)-[:CONTAINS]->(f_check_tip_moves),
 #   (file)-[:CONTAINS]->(f_build_validation),
 #   (file)-[:CONTAINS]->(f_flow_validation),
-#   (f_flow_validation)-[:CONTAINS]->(f_flow_validation_lambda_769_66),
+#   (f_flow_validation)-[:CONTAINS]->(f_flow_validation_lambda_783_66),
 #   (file)-[:CONTAINS]->(f_check_validation),
 #   (file)-[:CONTAINS]->(f_build_busy),
 #   (file)-[:CONTAINS]->(f_flow_busy),
@@ -276,7 +278,7 @@
 #   (file)-[:CONTAINS]->(f_invariants),
 #   (file)-[:CONTAINS]->(f_rel),
 #   (file)-[:CONTAINS]->(f_snapshot),
-#   (f_snapshot)-[:CONTAINS]->(f_snapshot_lambda_1148_43),
+#   (f_snapshot)-[:CONTAINS]->(f_snapshot_lambda_1162_43),
 #   (f__blocked_oracle)-[:USES]->(v_TARGET),
 #   (f__blocked_worktree_builder)-[:CALLS]->(f_base),
 #   (f__blocked_worktree_builder)-[:CALLS]->(f_lane),
@@ -460,16 +462,20 @@ REGISTRY: dict[str, dict] = {}
 
 def scenario(id: str, title: str, mode: str = "apply", discard: bool = False, claude: bool = True,
              platforms: tuple[str, ...] | None = None, report: tuple[str, ...] = (), lang: str | None = None,
-             command: str = "GitConverge", cmd_args: str = ""):
+             command: str = "GitConverge", cmd_args: str = "", inspects: bool | None = True):
     """Register a scenario builder. `mode` is 'preview' or 'apply'; `claude=False` keeps it reference-only.
 
     `report` lists words a real host's final answer must contain, and `lang` is the `--lang` value the runtime runner
     passes (None = the Chinese default); both are checked by the Claude runtime runner only. `command` selects another
     command to run (then `cmd_args` are its arguments); only GitConverge scenarios run on the reference executor.
+    `inspects=False` marks a run that must stop before touching the repository (an argument error): the runtime runner
+    then expects no git command instead of treating their absence as "never inspected". `inspects=None` means either is
+    correct (a refusal the arguments alone can justify, such as a `main` target).
     """
     def register(builder):
         REGISTRY[id] = {"id": id, "title": title, "mode": mode, "discard": discard, "claude": claude,
                         "platforms": platforms, "report": report, "lang": lang, "command": command, "cmd_args": cmd_args,
+                        "inspects": inspects,
                         "build": builder, "oracle": None,
                         "plan_oracle": None, "flow": None}
         return builder
@@ -619,9 +625,12 @@ oracle("preview-lang-english")(check_preview)
 plan_oracle("preview-lang-english")(plan_preview)
 
 
-def _other_command(id: str, title: str, command: str, cmd_args: str, lang: str | None):
-    """Register a read-only run of another command on the happy-path repository (Claude runtime only)."""
-    scenario(id, title, mode="preview", lang=lang, command=command, cmd_args=cmd_args)(build_happy_path)
+def _other_command(id: str, title: str, command: str, cmd_args: str, lang: str | None, inspects: bool = True):
+    """Register a read-only run of another command on the happy-path repository (Claude runtime only).
+
+    `lang` is what the reply must be written in; `cmd_args` may already carry `--lang` (the runner then adds nothing).
+    """
+    scenario(id, title, mode="preview", lang=lang, command=command, cmd_args=cmd_args, inspects=inspects)(build_happy_path)
     oracle(id)(check_preview)
 
 
@@ -629,8 +638,15 @@ _other_command("recon-default-chinese", "GitRecon without --lang replies in Chin
 _other_command("recon-lang-english", "GitRecon --lang English replies in English", "GitRecon", "", "English")
 _other_command("analyze-lang-english", "GitAnalyze with a target and --lang English replies in English", "GitAnalyze",
                "agent/a", "English")
-_other_command("recommend-goal-lang", "--lang inside GitRecommend's free-text goal is removed and honored", "GitRecommend",
-               "which branches should merge first", "English")
+_other_command("recommend-goal-lang", "--lang in the middle of GitRecommend's free-text goal is honored", "GitRecommend",
+               "which branches --lang English should merge first", "English")
+_other_command("recon-lang-missing", "--lang without a value is an error in Chinese; the command does not run", "GitRecon",
+               "--lang", None, inspects=False)
+
+
+def expects_plan(scen: dict) -> bool:
+    """GitConverge runs that get past the gates report a plan naming every local branch; gate refusals do not."""
+    return scen["command"] == "GitConverge" and scen["oracle"] is not _unchanged_oracle
 
 
 @scenario("ordering-and-containment", "Larger sources merge first so a contained source needs no second merge")
@@ -965,7 +981,7 @@ def plan_case(ctx, result):
              bool(gates) and gates[0]["code"] == "TARGET_CASE_MISMATCH" and TARGET in gates[0]["message"])]
 
 
-@scenario("target-is-main", "main is never a target")
+@scenario("target-is-main", "main is never a target", inspects=None)
 def build_target_main(root: Path) -> dict:
     ctx = _gate_builder(root)
     ctx["arg"] = "main"

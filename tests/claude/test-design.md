@@ -15,11 +15,12 @@ adapters (`commands/GitConverge.md`, `skills/git-converge/`). The tests therefor
 |---|---|---|---|
 | L0 headers | `cypher_header.py --check` | The Cypher block atop each script still matches the code | no |
 | L1 Git probes | `git_behavior_probes.py` | Each Git behavior the contract relies on holds on the installed Git (15 assertions plus 1 recorded observation) | no |
-| L2 source contracts | `run_claude_contracts.py` | The shipped files state every rule (18 cases, plus the 21 aggregate cases in `tests/codex`) | no |
+| L2 source contracts | `run_claude_contracts.py` | The shipped files state every rule (18 cases, plus the aggregate cases in `tests/codex`) | no |
 | L3 reference scenarios | `run_reference_cases.py` | A deterministic implementation of the contract reaches the right end state in 46 repository shapes | no |
 | L4 mutation checks | `run_mutation_checks.py` | The scenarios notice when a rule is broken (27 mutations) | no |
 | L5 policy unit tests | `test_command_policy.py` | The forbidden-command policy classifies commands correctly | no |
 | L6 Claude runtime | `run_claude_cases.py` | The real Claude CLI, given `/GitConverge ...`, reaches the same end states without forbidden commands | yes |
+| L7 Agent Plugins checks | `tests/codex/contracts/test_agent_plugin.py` | The checks behind the `package/agent-plugin` and `package/install-layout` cases (plugin manifest, Agent Skills frontmatter, git-clone layout) turn red for each planted defect | no |
 
 L3 is an **executable reading of the contract** (`converge_ref.py`). It is not shipped. It exists so that every scenario
 oracle is proven satisfiable, every rule has a fixture that exercises it, and L4 can measure whether the oracles have teeth.
@@ -50,9 +51,10 @@ first and failed: Git Bash puts `/mingw64/bin` ahead of it.
 
 The runtime runner adds two transcript checks. The final report must name the words a scenario requires: every local
 branch (for GitConverge, where the plan lives in the report), the exact branch name for `case-variant-target`, and the
-worktree to run from for `target-checked-out-elsewhere`. The reply must also be in the requested language: Chinese when
-`--lang` is absent, English for `--lang English` (a share of CJK letters of at least 20% or at most 3%; other languages are
-not checked). The plan is no longer required to appear before the first write; it is recorded first and reported.
+worktree to run from for `target-checked-out-elsewhere`; gate refusals stop before a plan exists and are exempt from the
+branch list. The reply must also be in the requested language: Chinese when `--lang` is absent (at least 20% Han and at
+most 2% kana/Hangul letters, so Japanese or Korean does not pass), English for `--lang English` (at most 3% CJK); other
+languages are not checked. A scenario marked `inspects=False` (an argument error) must run no git command at all. The plan is no longer required to appear before the first write; it is recorded first and reported.
 
 ## Result semantics
 
@@ -105,7 +107,8 @@ runs against the MAGOS checkout. Commits use a fixed author and date so SHAs, an
 | `worktree-appeared-after-preview` | a worktree is added for a previewed branch | branch merged but kept with its worktree (reference only) |
 | `rerun-after-interrupted-apply` | apply stops on a conflict; the user drops the loser; rerun with the earlier plan | not stale; converges (reference only) |
 | `preview-lang-english` | the happy-path repository, `--lang English` | read-only; the reply is English (Claude runtime only) |
-| `recon-default-chinese`, `recon-lang-english`, `analyze-lang-english`, `recommend-goal-lang` | read-only runs of the other commands, with and without `--lang`, and `--lang` inside GitRecommend's free-text goal | repository unchanged; the reply is in the right language (Claude runtime only) |
+| `recon-default-chinese`, `recon-lang-english`, `analyze-lang-english`, `recommend-goal-lang` | read-only runs of the other commands, with and without `--lang`, and `--lang` in the middle of GitRecommend's free-text goal | repository unchanged; the reply is in the right language (Claude runtime only) |
+| `recon-lang-missing` | `/GitRecon --lang` with no value | Chinese error, no git command, repository unchanged (Claude runtime only) |
 | `stale-preview` | a source moves after the preview | stops; nothing changes (reference only) |
 | `appeared-after-preview` | a branch is created after the preview | left untouched (reference only) |
 | `tip-moves-mid-run` | a tip moves between merge and delete | that branch kept with its new commit (reference only) |

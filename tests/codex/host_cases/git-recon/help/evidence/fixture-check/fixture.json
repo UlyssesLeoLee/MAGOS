@@ -20,30 +20,30 @@
   ],
   "initial_state": {
     "files": {
-      ".agents/skills/MAGOS/SKILL.md": "a89a233e2ba04c738bf63841e528c2ac8a79e804b8b5f072f5d3c8226e676dfc",
-      ".agents/skills/MAGOS/references/commands.md": "80168469c46d8943b36099a3c81a3c2b87010427e7541120559b1cd6567db106",
+      ".agents/skills/MAGOS/SKILL.md": "797dd8619a2351c776e004e4fd6ecbb69e316193d2719b334ce93ce22c4cc9b5",
+      ".agents/skills/MAGOS/references/commands.md": "f57dbdb0dff5aff69db0a7ed9601556666485748a6c18f332d48bf2440aff3d6",
       ".agents/skills/MAGOS/references/decision-matrix.md": "954ffefa9c018e25d0b88987c8bed5f07739b148c8aa254b9a9cde41e6ffe141",
       ".agents/skills/MAGOS/references/design-rationale.md": "9b5baf5107530fe275b304002fd37a24072510aebc140908d5702bda2e9f49bd",
       ".agents/skills/MAGOS/references/handoff-and-state.md": "aba702cde8f67378f2898237a6a52cd1dba0f0967f5f28f5dea3d9d62ef593a4",
       ".agents/skills/MAGOS/references/installation.md": "874e116bbda0480323e8caf2613c09e7e680bba2f36f0908f50379c484092035",
-      ".agents/skills/MAGOS/references/pressure-tests.md": "4931c2abd83edfc3effa01f6c916dd1be514f80cb908aed153635b449d9acbfb",
+      ".agents/skills/MAGOS/references/pressure-tests.md": "8028bf95b60d5d9632dca095285ea2feccbab91a7e16d49bfe69b03d7bde3059",
       ".agents/skills/MAGOS/references/reconnaissance.md": "07b02f76c2bdedf5844ff29c5d1031cc60732ba1593bed9e32315d8ce54c9f2b",
-      ".agents/skills/MAGOS/skills/git-analyze/SKILL.md": "426e646ab29982eb986df1388da10189cc601fa0f8a4417971a3dc00df984363",
-      ".agents/skills/MAGOS/skills/git-cleanup/SKILL.md": "b2b9835630e5444a8ee129e69f2a8ed7acedc7186831f061b2ae4757044a14a4",
-      ".agents/skills/MAGOS/skills/git-converge/SKILL.md": "89c0be266587c3f475293e89ad39ba17ba563393bfa9d2b95e4983a0f7d95c00",
-      ".agents/skills/MAGOS/skills/git-integrate/SKILL.md": "30c7100ba883be51f69fa7f87bc6410ca9d5a46426a029d4fca6ef2836b9d546",
-      ".agents/skills/MAGOS/skills/git-recommend/SKILL.md": "b869d9b8308ad8b6b90c930f3d1aa35a687068d43c3e2890480ae9ea3b07e5e1",
-      ".agents/skills/MAGOS/skills/git-recon/SKILL.md": "bc0350766f9e2b58d65dd119dc7911ba884f1a741b514951ab390d043775dd64",
+      ".agents/skills/MAGOS/skills/git-analyze/SKILL.md": "1cea5b6af12c5de01bea79e6413035ea797b4b9c53c0a40001dc6a04f287442e",
+      ".agents/skills/MAGOS/skills/git-cleanup/SKILL.md": "8fcea24be53da0825e2349da5c89f83d63dfd18dfa51905879b41dce0d5d4ae8",
+      ".agents/skills/MAGOS/skills/git-converge/SKILL.md": "6ec2d19ed97b064f71c394351a426ac69bc84cb87ec4665f1310c016b245653d",
+      ".agents/skills/MAGOS/skills/git-integrate/SKILL.md": "7259ea1d2f05ffe731cbe8cd9af5e8215453892a245de38f21ba0e8b59f3eed9",
+      ".agents/skills/MAGOS/skills/git-recommend/SKILL.md": "34ec0f10f12d1821ff6f3ee80d14bf93b0366bd531b4412750694d5080144633",
+      ".agents/skills/MAGOS/skills/git-recon/SKILL.md": "d04204f1c2ffc850486db8293fe355bc403e0097b886ad1845adf0a52da07f67",
       ".agents/skills/MAGOS/skills/git-recon/agents/openai.yaml": "b2f304a87679d17d6bf487e125751d36be3fb1d83ce139467069afbf6b580fec",
       ".agents/skills/MAGOS/skills/git-recommend/agents/openai.yaml": "bb62284310892ec3535845ac6126635f21c33590b06edbccd69e9b6de9918efa",
       ".agents/skills/MAGOS/skills/git-integrate/agents/openai.yaml": "27cd7b6152f356ce6affe8d6c3f909fa4329ccfb3445d30b0d8d5d1142d07b9f",
-      ".agents/skills/MAGOS/skills/git-converge/agents/openai.yaml": "6431eaeffa9f279dc3400ed6f0cd747255031b4f21fa680b697124bb02c3e508",
+      ".agents/skills/MAGOS/skills/git-converge/agents/openai.yaml": "09cb9bfc6747c8e50927d811664f24afe35c0f6376f748f86764b14d8681ba5a",
       ".agents/skills/MAGOS/skills/git-cleanup/agents/openai.yaml": "7a3514189221f869dded7c226ad7e96f138ec336565811e02b3d2a47a24bdfef",
       ".agents/skills/MAGOS/skills/git-analyze/agents/openai.yaml": "f17e63b132f976471d30c35dbd91b2d724933ee988e9053c86f3ac2b0516ecd6"
     },
     "git_repository": true
   },
   "skill": "git-recon",
-  "skill_path": "C:\\Users\\leo19\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-lfweld5f\\empty\\.agents\\skills\\MAGOS\\skills\\git-recon\\SKILL.md",
-  "skill_source_sha256": "bcd95c9b4a041fdb808bcf73b33828e4335f598546c5955571a2a7a1421cac3d"
+  "skill_path": "C:\\Users\\leo19\\.claude\\skills\\MAGOS\\tests\\codex\\.magos-accept-5cinx4m1\\empty\\.agents\\skills\\MAGOS\\skills\\git-recon\\SKILL.md",
+  "skill_source_sha256": "25b972bc3a0260a87f383653f1ff120da05fef46bd2681e88a4243403d8ad27d"
 }

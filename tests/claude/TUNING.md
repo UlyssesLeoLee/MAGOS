@@ -144,9 +144,10 @@ no longer has to be printed before the first merge. The acceptance is of the tip
 
 The user asked for an optional `--lang <language>` on every command: it sets the reply language, Chinese when absent. The
 contract, all six Claude wrappers, all six Codex/Hermes adapters, `SKILL.md`, both READMEs, and the pressure tests were
-updated; a contract case pins it for every command. The runtime runner gained a language check (CJK share at least 20% for
-Chinese, at most 3% for English) and read-only scenarios for GitRecon, GitAnalyze, and GitRecommend, including `--lang`
-written in the middle of GitRecommend's free-text goal.
+updated; a contract case pins it for every command. The runtime runner gained a language check (at least 20% Han and at
+most 2% kana/Hangul for Chinese, at most 3% CJK for English) and read-only scenarios for GitRecon, GitAnalyze, and
+GitRecommend, including `--lang` written in the middle of GitRecommend's free-text goal (`recommend-goal-lang`) and a
+`--lang` with no value (`recon-lang-missing`, which must answer in Chinese without running any git command).
 
 | Attempt | Result |
 |---|---|

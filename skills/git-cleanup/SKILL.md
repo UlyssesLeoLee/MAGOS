@@ -4,9 +4,6 @@ description: "预览清理（仅限用户显式调用；--apply 才删除）；/
 license: Apache-2.0
 metadata:
   short-description: "预览清理；$git-cleanup [--apply] [--help]."
-  hermes:
-    tags: [git, worktree, multi-agent, write, explicit-only]
-    related_skills: [multi-agent-git-orchestrator]
 ---
 
 # GitCleanup

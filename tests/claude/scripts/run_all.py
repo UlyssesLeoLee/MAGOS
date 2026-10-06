@@ -23,7 +23,8 @@
 """Run every GitConverge test layer that needs no AI model, and write tests/claude/results/summary.md.
 
 Layers: Cypher headers, policy unit tests, Git behavior probes, source contracts, reference-executor scenarios,
-mutation checks, Claude-harness fixture checks, and the pre-existing codex source-contract suite.
+mutation checks, Claude-harness fixture checks, the pre-existing codex source-contract suite, and the Agent Plugins
+checker mutation tests.
 Add --runtime to also run the core scenarios through the real Claude CLI (uses model quota).
 Run: python -X utf8 tests/claude/scripts/run_all.py [--runtime] [--fixture-root <short path>]
 """
@@ -54,6 +55,7 @@ def layers(options: argparse.Namespace) -> list[tuple[str, list[str]]]:
         ("mutation checks", [*python, str(SCRIPTS / "run_mutation_checks.py"), *fixture]),
         ("claude harness fixture check", [*python, str(SCRIPTS / "run_claude_cases.py"), "--fixture-check", "--case", "*", *fixture]),
         ("codex source contracts (existing suite)", [*python, str(REPO / "tests" / "codex" / "contracts" / "run_contract_cases.py")]),
+        ("agent plugin checker mutation tests", [*python, str(REPO / "tests" / "codex" / "contracts" / "test_agent_plugin.py")]),
     ]
     if options.runtime:
         found.append(("claude runtime: core scenarios", [*python, str(SCRIPTS / "run_claude_cases.py"), *fixture]))

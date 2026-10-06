@@ -109,7 +109,7 @@
       "passed": true
     },
     {
-      "detail": "0% CJK letters (English allows at most 3%)",
+      "detail": "1% CJK letters (English allows at most 3%)",
       "name": "the reply is in English",
       "passed": true
     },
@@ -119,7 +119,7 @@
     }
   ],
   "claude_returncode": 0,
-  "final_answer": "nd is the largest delivery.\n3. **`agent/b`:** Merge it second. It is also conflict-free and has a single commit. Its worktree `wt-b` is clean, so `agent/b` can be integrated now. Keep `wt-b` until the merge is done.\n4. **`main`:** Merge it last. It brings in the unpublished `61e6b74` and its tip is not in `origin/main`. Merge it only if you want that commit in the release line. Otherwise, hold off until `main` is pushed or reviewed.\n\n## Why\n- All three test merges report no conflicts, and the changed file sets are disjoint. So the order doesn't affect correctness, and I ranked by size and risk.\n- `main` goes last because it is the only branch carrying a commit outside the `agent/*` lanes.\n\n## Blocked or unknown\n- **Semantic dependencies:** I only checked file overlap and Git ancestry. That cannot prove the lanes are independent in meaning.\n- **Review and validation:** I found no lane records, review evidence or test results. I also did not identify a build or test command, so nothing has been validated.\n- **Pairwise conflicts:** The test merges were each against `agent/release` only. They can't show a clash between two branches once the first is merged, so re-check after each merge.\n- **Remote state:** I don't know whether `origin` has moved, because I didn't fetch. Run `/GitRecommend ... --remote` if that matters.\n\nWhen you're ready, `/GitIntegrate agent/a` is the next step. `/GitConverge agent/release` previews merging everything and keeping only `main` and `agent/release`.",
+  "final_answer": "ndidate later.\n2. **`agent/b`:** merge first. It is one commit, touches one file, and has a clean worktree.\n3. **`agent/a`:** merge second. It is two commits, also disjoint and clean.\n4. **`main`:** merge last, or first if you want its `m.txt` commit as the base. Once `main` is in, `agent/release` is the superset.\n\nIf you converge with `/GitConverge agent/release`, it merges `main` first, then `agent/a`, then `agent/b`. Because the changed files are disjoint, the result should be the same either way.\n\n## Why\n\n- Merge order barely matters here, because there is no file overlap and no ancestry dependency between a, b and main.\n- I put the smaller, single-purpose lane first to keep each step easy to review and revert.\n- Use merge commits (`--no-ff`), not rebase or squash. The lanes are only local, but a later ancestry-based cleanup needs real merge history.\n\n## Blocked or unknown\n\n- **Integration target:** please confirm it is `agent/release` and not `main`. If it is `main`, `agent/release`, `agent/a` and `agent/b` are the lanes to merge in, and `main` has no unpushed-commit problem to resolve first.\n- **Review and validation:** none exist for any lane. Tests and checks are not identified.\n- **Remote freshness:** unknown. Run `/GitRecommend ... --remote` to refresh refs.\n- **`wt-b` ownership:** not recorded. Don't delete `agent/b` or its worktree until it is merged.\n- **Next step:** to apply this, run `/GitConverge agent/release` for a preview, then `--apply`. I changed nothing.",
   "git_commands": [
     [
       "--exec-path"
@@ -161,7 +161,71 @@
       "log",
       "--oneline",
       "--graph",
-      "--all"
+      "--all",
+      "--decorate"
+    ],
+    [
+      "rev-list",
+      "--left-right",
+      "--count",
+      "main...refs/heads/agent/a"
+    ],
+    [
+      "rev-list",
+      "--left-right",
+      "--count",
+      "main...refs/heads/agent/b"
+    ],
+    [
+      "rev-list",
+      "--left-right",
+      "--count",
+      "main...refs/heads/agent/c"
+    ],
+    [
+      "rev-list",
+      "--left-right",
+      "--count",
+      "main...refs/heads/agent/release"
+    ],
+    [
+      "rev-list",
+      "--left-right",
+      "--count",
+      "refs/heads/agent/release...refs/heads/agent/a"
+    ],
+    [
+      "rev-list",
+      "--left-right",
+      "--count",
+      "refs/heads/agent/release...refs/heads/agent/b"
+    ],
+    [
+      "diff",
+      "--name-only",
+      "main...refs/heads/agent/release"
+    ],
+    [
+      "diff",
+      "--name-only",
+      "refs/heads/agent/release...refs/heads/agent/a"
+    ],
+    [
+      "diff",
+      "--name-only",
+      "refs/heads/agent/release...refs/heads/agent/b"
+    ],
+    [
+      "merge-tree",
+      "--write-tree",
+      "refs/heads/agent/release",
+      "refs/heads/agent/a"
+    ],
+    [
+      "merge-tree",
+      "--write-tree",
+      "refs/heads/agent/release",
+      "refs/heads/agent/b"
     ],
     [
       "-C",
@@ -171,51 +235,30 @@
       "--untracked-files=all"
     ],
     [
-      "diff",
-      "--name-only",
-      "agent/release...agent/a"
+      "log",
+      "--format=%h %s",
+      "refs/heads/agent/release..refs/heads/agent/a"
     ],
     [
-      "diff",
-      "--name-only",
-      "agent/release...agent/b"
+      "log",
+      "--format=%h %s",
+      "refs/heads/agent/release..refs/heads/agent/b"
     ],
     [
-      "diff",
-      "--name-only",
-      "a7865db",
-      "main"
+      "log",
+      "--format=%h %s",
+      "main..refs/heads/agent/release"
     ],
     [
-      "merge-tree",
-      "--write-tree",
-      "agent/release",
-      "agent/a"
-    ],
-    [
-      "merge-tree",
-      "--write-tree",
-      "agent/release",
-      "agent/b"
-    ],
-    [
-      "merge-tree",
-      "--write-tree",
-      "agent/release",
-      "main"
-    ],
-    [
-      "-C",
-      "../wt-b",
-      "status",
-      "--porcelain=v1",
-      "--untracked-files=all"
+      "log",
+      "--format=%h %s",
+      "origin/main..main"
     ]
   ],
   "id": "recommend-goal-lang",
   "mode": "preview",
-  "prompt": "/GitRecommend which branches should merge first --lang English",
+  "prompt": "/GitRecommend which branches --lang English should merge first",
   "result_subtype": "success",
   "status": "PASS",
-  "title": "--lang inside GitRecommend's free-text goal is removed and honored"
+  "title": "--lang in the middle of GitRecommend's free-text goal is honored"
 }

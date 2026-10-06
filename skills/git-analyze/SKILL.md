@@ -4,9 +4,6 @@ description: "分析目标（只读）；/git-analyze TARGET [--remote] [--help]
 license: Apache-2.0
 metadata:
   short-description: "分析目标；$git-analyze TARGET [--remote] [--help]."
-  hermes:
-    tags: [git, worktree, multi-agent, read-only]
-    related_skills: [multi-agent-git-orchestrator]
 ---
 
 # GitAnalyze

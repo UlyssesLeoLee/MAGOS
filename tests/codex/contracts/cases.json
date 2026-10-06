@@ -738,7 +738,7 @@
   {
     "id": "package/install-layout",
     "skill": "package",
-    "feature": "Codex and Hermes installs contain every file the adapters reference, and a replica of each host's discovery rules finds every skill once",
+    "feature": "Codex and Hermes installs, and a git clone of the repository into a host skills directory, contain every file the adapters reference, and a replica of each host's discovery rules finds every skill once",
     "invocations": {
       "installer": "python -X utf8 scripts/sync_hosts.py --home <temp> --host codex --host hermes --apply --create-roots --json"
     },
@@ -757,17 +757,59 @@
         "git-recommend",
         "git-recon",
         "multi-agent-git-orchestrator"
-      ]
+      ],
+      "checkout_discovery": "the same replicas over the tracked files of the checkout (git clone into ~/.agents/skills/MAGOS or <Hermes home>/skills/MAGOS)",
+      "frontmatter_reader": "strict YAML subset (tests/codex/contracts/skill_frontmatter.py); a frontmatter outside it is reported, never replaced by the directory name"
     },
     "expected": [
       "sync_hosts.py installs the full package (SKILL.md, references/, skills/) for Codex and Hermes.",
       "Every ../../ reference in an adapter and every references/ link in SKILL.md resolves inside the installed tree.",
       "No adapter routes through commands/; all six adapters set policy.allow_implicit_invocation: false.",
-      "Each skill name appears exactly once in the Codex and Hermes discovery replicas."
+      "Each skill name appears exactly once in the Codex and Hermes discovery replicas.",
+      "Every installed SKILL.md frontmatter is inside the strict YAML subset (no flow style, no ': ' in plain values, string-only metadata) and reads the same under PyYAML when it is installed.",
+      "Over the tracked files of a git checkout, the Codex and Hermes replicas also find each skill exactly once.",
+      "No tracked .codex-plugin, .claude-plugin, or .cursor-plugin directory exists; Codex would treat a git-clone install as a plugin root and rename its skills to magos:<name>."
     ],
     "checks": [
       {
         "kind": "install_layout"
+      }
+    ]
+  },
+  {
+    "id": "package/agent-plugin",
+    "skill": "package",
+    "feature": "The repository is a conformant Agent Plugins 1.0.0 package whose discovered skills meet Agent Skills",
+    "invocations": {
+      "manifest": "plugin.json at the repository root",
+      "mutation_tests": "python -X utf8 tests/codex/contracts/test_agent_plugin.py"
+    },
+    "test_object": {
+      "specification": "https://agent-plugins.org/specification (1.0.0)",
+      "manifest_schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json (mirrored in agent_plugin.py)",
+      "skills_rules": "https://agentskills.io/specification, as skills-ref codes them",
+      "plugin_skills": [
+        "git-analyze",
+        "git-cleanup",
+        "git-converge",
+        "git-integrate",
+        "git-recommend",
+        "git-recon"
+      ],
+      "root_skill_exposed_to_plugin_clients": false,
+      "validator": "no official Agent Plugins validator exists; checks are local and standard-library only"
+    },
+    "expected": [
+      "plugin.json validates against the closed 1.0.0 manifest schema: exact $schema, lowercase name, no other fields.",
+      "plugin.json version equals SKILL.md metadata.version as x.y.z, and references/commands.md states the same version.",
+      "Plugin discovery (skills/<dir>/SKILL.md, one level) finds exactly the six command adapters; the root orchestrator SKILL.md is package content they read, not a plugin skill.",
+      "Every discovered skill, and the root SKILL.md, meets Agent Skills: strict YAML, allowed fields only, name equal to its directory (the root as multi-agent-git-orchestrator), description 1-1024, string-only metadata, no metadata.hermes, and double-quoted description, compatibility, and metadata values.",
+      "Every ../ reference in an adapter resolves to a file inside the plugin root, and the package holds no symbolic links or junctions.",
+      "mcp.json is absent (MAGOS ships no MCP servers) or valid."
+    ],
+    "checks": [
+      {
+        "kind": "agent_plugin"
       }
     ]
   },

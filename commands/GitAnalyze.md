@@ -3,7 +3,7 @@ description: 深入分析指定分支或 worktree，评估 merge / rebase / cher
 argument-hint: "<branch|worktree> [--remote] [--lang <language>] [--help]"
 ---
 
-Read `--lang <language>` first: it sets the language of everything you write back (Chinese when absent; translate the explanations but never flags, commands, or examples). Handle `--help` first, even if other arguments are present. Answer solely from the inline help below, then stop before any tool call, file read, skill load, or repository inspection. If the target is missing, ask for it and show this help. For an unknown option, explain the error, show this help, and stop.
+Handle `--help` first, even if other arguments are present. `--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included (Chinese when absent; translate the explanations but never flags, commands, or examples). Answer solely from the inline help below, then stop before any tool call, file read, skill load, or repository inspection. If the target is missing, ask for it and show this help. For an unknown option, explain the error, show this help, and stop.
 
 ## Inline help
 

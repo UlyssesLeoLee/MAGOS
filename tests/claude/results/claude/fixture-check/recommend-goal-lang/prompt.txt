@@ -1,1 +1,1 @@
-/GitRecommend which branches should merge first --lang English
+/GitRecommend which branches --lang English should merge first

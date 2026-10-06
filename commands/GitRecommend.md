@@ -3,7 +3,7 @@ description: 基于当前仓库真实状态给出下一步 Git / 多 Agent 编�
 argument-hint: "[<goal>] [--remote] [--lang <language>] [--help]"
 ---
 
-Read `--lang <language>` first: it sets the language of everything you write back (Chinese when absent; translate the explanations but never flags, commands, or examples). Handle `--help` first, even if other arguments are present. Answer solely from the inline help below, then stop before any tool call, file read, skill load, or repository inspection. Treat a standalone `--remote` token as an option and preserve other trailing text as the optional goal. For an unknown option, explain the error, show this help, and stop.
+Handle `--help` first, even if other arguments are present. `--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included (Chinese when absent; translate the explanations but never flags, commands, or examples). Answer solely from the inline help below, then stop before any tool call, file read, skill load, or repository inspection. Treat a standalone `--remote` token, and `--lang` together with its value, as options wherever they appear; preserve the remaining text as the optional goal. For an unknown option, explain the error, show this help, and stop.
 
 ## Inline help
 

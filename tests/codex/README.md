@@ -12,6 +12,12 @@ python -X utf8 tests/codex/contracts/run_contract_cases.py
 
 These checks verify that Codex skill metadata, inline help, command contracts, and safety rules remain present. Their result is labelled `source-contract`; it does not count as a runtime behavior pass.
 
+`package/agent-plugin` checks the repository as an Agent Plugins 1.0.0 package (`contracts/agent_plugin.py`): the root `plugin.json` against the closed manifest schema, version agreement, plugin discovery of exactly the six adapters, Agent Skills frontmatter rules, and path containment. Frontmatter is read by `contracts/skill_frontmatter.py`, a strict YAML-subset reader that rejects what PyYAML or strictyaml (used by skills-ref) would read differently; `package/install-layout` uses it too and also replays the Codex and Hermes discovery rules over the files a commit would ship (tracked, plus untracked files git does not ignore), as a git clone into a skills directory would see them. `contracts/test_agent_plugin.py` plants one defect at a time in temporary copies (including temporary git work trees, to cover untracked files) and asserts that each turns its check red; it also unit-tests the strict reader:
+
+```powershell
+python -X utf8 tests/codex/contracts/test_agent_plugin.py
+```
+
 Validate that the temporary Git fixtures are constructed correctly without using Codex:
 
 ```powershell

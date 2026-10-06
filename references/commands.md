@@ -22,6 +22,7 @@ Each host reaches the same canonical command through its own adapter. Adapters d
 |---|---|---|---|
 | Claude Code | `commands/Git*.md` (installed into `~/.claude/commands/`) | `$ARGUMENTS` in the command template | loading the orchestrator skill (listed as `MAGOS`, `multi-agent-git-orchestrator`, or `MAGO-Skill`) |
 | Codex | `skills/git-*/SKILL.md` + `agents/openai.yaml` | the text after `$git-*` in the user's message | resolving `../../SKILL.md` and `../../references/*.md` relative to the adapter's `SKILL.md` |
+| Agent Plugins client | `skills/git-*/SKILL.md`, found through the root `plugin.json` | as the client passes skill input | resolving `../../SKILL.md` and `../../references/*.md` inside the plugin root; the root `SKILL.md` is not a plugin skill. Only discovery is verified. The write adapters act only on an explicit invocation, which a plugin client may not be able to express (Hermes plugin skills have no `/git-*` command and no `[Skill directory: ...]` line) |
 | Hermes | `skills/git-*/SKILL.md` | the instruction Hermes appends after the skill content ("...alongside the skill invocation:" for one command, `User instruction:` for stacked commands) | the absolute `[Skill directory: ...]` path plus `../..`, read with the file or terminal tool (the skill viewer rejects `..`), or the root skill `multi-agent-git-orchestrator` and its `references/` files |
 
 Rules for every adapter:
@@ -29,7 +30,7 @@ Rules for every adapter:
 - `skills/` adapters must not read `commands/*.md`; those wrappers contain Claude-specific loading steps.
 - Codex adapters set `policy.allow_implicit_invocation: false`, so they run only when selected explicitly; the root skill keeps semantic activation. Hermes has no per-skill switch, so `git-integrate`, `git-cleanup`, and `git-converge` refuse to write unless invoked explicitly.
 - If the shared rules (`SKILL.md`, `references/commands.md`) cannot be read, read-only commands may continue read-only and report the incomplete installation; `GitIntegrate` must not integrate, `GitCleanup` must not delete, and `GitConverge` must not merge or delete (preview only).
-- An installed package must contain `SKILL.md`, every file under `references/`, and every `skills/git-*/SKILL.md` with its `agents/openai.yaml`, laid out exactly as in this repository, so that the relative paths above resolve.
+- An installed package must contain `SKILL.md`, every file under `references/`, and every `skills/git-*/SKILL.md` with its `agents/openai.yaml`, laid out exactly as in this repository, so that the relative paths above resolve. The root `plugin.json` belongs to the Agent Plugins package (the whole repository), not to the Codex and Hermes skills-directory package.
 
 ## 1. GitRecon
 

@@ -1,0 +1,134 @@
+{
+  "after": {
+    "files": {},
+    "heads": {
+      "agent/a": "d96ccd6be1ca6232764db5f06f7de2bab631b36d",
+      "agent/b": "205b649fda4c74da5e3dbbca14c11cfebaf177cf",
+      "agent/c": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
+      "agent/release": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
+      "main": "61e6b74deaf451972a7bb3ee840417cc217765a2"
+    },
+    "invoking_head": "agent/release",
+    "merge_head": false,
+    "origin": [
+      "refs/heads/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
+    ],
+    "remote_refs": [
+      "refs/remotes/origin/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
+    ],
+    "tag_refs": [],
+    "tags": [],
+    "worktrees": [
+      {
+        "branch": "agent/release",
+        "detached": false,
+        "exists": true,
+        "head": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
+        "locked": false,
+        "path": "repo",
+        "prunable": false,
+        "status": ""
+      },
+      {
+        "branch": "agent/b",
+        "detached": false,
+        "exists": true,
+        "head": "205b649fda4c74da5e3dbbca14c11cfebaf177cf",
+        "locked": false,
+        "path": "wt-b",
+        "prunable": false,
+        "status": ""
+      }
+    ]
+  },
+  "before": {
+    "files": {},
+    "heads": {
+      "agent/a": "d96ccd6be1ca6232764db5f06f7de2bab631b36d",
+      "agent/b": "205b649fda4c74da5e3dbbca14c11cfebaf177cf",
+      "agent/c": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
+      "agent/release": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
+      "main": "61e6b74deaf451972a7bb3ee840417cc217765a2"
+    },
+    "invoking_head": "agent/release",
+    "merge_head": false,
+    "origin": [
+      "refs/heads/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
+    ],
+    "remote_refs": [
+      "refs/remotes/origin/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
+    ],
+    "tag_refs": [],
+    "tags": [],
+    "worktrees": [
+      {
+        "branch": "agent/release",
+        "detached": false,
+        "exists": true,
+        "head": "724a44b989c793e6aa434c0d4bedd9c523b591a4",
+        "locked": false,
+        "path": "repo",
+        "prunable": false,
+        "status": ""
+      },
+      {
+        "branch": "agent/b",
+        "detached": false,
+        "exists": true,
+        "head": "205b649fda4c74da5e3dbbca14c11cfebaf177cf",
+        "locked": false,
+        "path": "wt-b",
+        "prunable": false,
+        "status": ""
+      }
+    ]
+  },
+  "checks": [
+    {
+      "name": "preview changes no ref, worktree, or file",
+      "passed": true
+    },
+    {
+      "name": "invariant: main did not move",
+      "passed": true
+    },
+    {
+      "name": "invariant: tags unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote-tracking refs unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: no merge left in progress",
+      "passed": true
+    },
+    {
+      "detail": "56% Han, 0% kana/Hangul letters (Chinese needs at least 20% Han and at most 2% kana/Hangul)",
+      "name": "the reply is in Chinese (the default)",
+      "passed": true
+    },
+    {
+      "name": "no git command was run (the command must not execute)",
+      "passed": true
+    },
+    {
+      "name": "command policy: no forbidden git command and read-only preview",
+      "passed": true
+    }
+  ],
+  "claude_returncode": 0,
+  "final_answer": "**错误：`--lang` 缺少参数值。**\n\n`--lang` 后面必须跟一个语言名称或代码，例如 `--lang English` 或 `--lang ja`。这次调用没有给出语言，所以参数无效。我没有读取或改动仓库，回复默认用中文。请补上语言后重新运行；如果不需要指定语言，直接运行 `/GitRecon` 即可。\n\n---\n\n## 帮助\n\n用法：`/GitRecon [--remote] [--lang <language>] [--help]`\n\n- `--remote`：先刷新远程跟踪引用，再判断仓库状态。不会切换分支，也不会改动 worktree 或提交历史。\n- `--lang <language>`：设置回复语言，可以写语言名称或代码（例如 `English`、`ja`）。不指定时用中文。命令名、选项、分支名、路径、SHA 和状态码保持原样，不翻译。\n- `--help`：显示本帮助后结束，不检查仓库。\n- 默认行为：基于现有本地引用生成只读快照，不刷新远程。\n\n示例：`/GitRecon`、`/GitRecon --remote`、`/GitRecon --lang English`、`/GitRecon --help`。",
+  "git_commands": [],
+  "id": "recon-lang-missing",
+  "mode": "preview",
+  "prompt": "/GitRecon --lang",
+  "result_subtype": "success",
+  "status": "PASS",
+  "title": "--lang without a value is an error in Chinese; the command does not run"
+}

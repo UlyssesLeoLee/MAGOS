@@ -28,7 +28,7 @@
   "git_calls_seen": 2,
   "id": "recommend-goal-lang",
   "mode": "preview",
-  "prompt": "/GitRecommend which branches should merge first --lang English",
+  "prompt": "/GitRecommend which branches --lang English should merge first",
   "status": "PASS",
-  "title": "--lang inside GitRecommend's free-text goal is removed and honored"
+  "title": "--lang in the middle of GitRecommend's free-text goal is honored"
 }

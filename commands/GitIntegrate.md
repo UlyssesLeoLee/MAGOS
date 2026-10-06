@@ -4,7 +4,7 @@ argument-hint: "<lane|branch> [--strategy auto|merge|squash|cherry-pick] [--lang
 disable-model-invocation: true
 ---
 
-Read `--lang <language>` first: it sets the language of everything you write back (Chinese when absent; translate the explanations but never flags, commands, or examples). Handle `--help` first, even if other arguments are present. Answer solely from the inline help below, then stop before any tool call, file read, skill load, or repository inspection. If the target is missing, or `--strategy` has a missing or unsupported value, show this help and ask for the required value before proceeding. For an unknown option, explain the error, show this help, and stop.
+Handle `--help` first, even if other arguments are present. `--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included (Chinese when absent; translate the explanations but never flags, commands, or examples). Answer solely from the inline help below, then stop before any tool call, file read, skill load, or repository inspection. If the target is missing, or `--strategy` has a missing or unsupported value, show this help and ask for the required value before proceeding. For an unknown option, explain the error, show this help, and stop.
 
 ## Inline help
 

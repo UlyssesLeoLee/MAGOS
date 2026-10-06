@@ -6,7 +6,8 @@
 #   (v_CORE:Variable {name: "CORE", type: "variable"}),
 #   (v_ALLOWED_TOOLS:Variable {name: "ALLOWED_TOOLS", type: "variable"}),
 #   (v_UNAVAILABLE:Variable {name: "UNAVAILABLE", type: "variable"}),
-#   (v_CJK:Variable {name: "CJK", type: "variable"}),
+#   (v_HAN:Variable {name: "HAN", type: "variable"}),
+#   (v_KANA_HANGUL:Variable {name: "KANA_HANGUL", type: "variable"}),
 #   (v_CHINESE_NAMES:Variable {name: "CHINESE_NAMES", type: "variable"}),
 #   (v_ENGLISH_NAMES:Variable {name: "ENGLISH_NAMES", type: "variable"}),
 #   (v_CLI_INTERNAL_MARKERS:Variable {name: "CLI_INTERNAL_MARKERS", type: "variable"}),
@@ -20,9 +21,9 @@
 #   (f_stream_events:Function {name: "stream_events", type: "function", signature: "stream_events(stdout: str) -> list[dict]"}),
 #   (f_result_event:Function {name: "result_event", type: "function", signature: "result_event(stdout: str) -> dict | None"}),
 #   (f_transcript_events:Function {name: "transcript_events", type: "function", signature: "transcript_events(stdout: str) -> list[tuple[str, str]]"}),
-#   (f_cjk_share:Function {name: "cjk_share", type: "function", signature: "cjk_share(text: str) -> float"}),
+#   (f_script_shares:Function {name: "script_shares", type: "function", signature: "script_shares(text: str) -> tuple[float, float]"}),
 #   (f_language_check:Function {name: "language_check", type: "function", signature: "language_check(text: str, lang: str | None) -> tuple[bool | None, str]"}),
-#   (f_unverified_reason:Function {name: "unverified_reason", type: "function", signature: "unverified_reason(run: dict, result: dict | None, events: list[tuple[str, str]]) -> str | None"}),
+#   (f_unverified_reason:Function {name: "unverified_reason", type: "function", signature: "unverified_reason(run: dict, result: dict | None, events: list[tuple[str, str]], inspects: bool | None=True) -> str | None"}),
 #   (f_claude_bin:Function {name: "claude_bin", type: "function", signature: "claude_bin(explicit: str | None) -> str"}),
 #   (f_git_bash:Function {name: "git_bash", type: "function", signature: "git_bash() -> Path | None"}),
 #   (f_fixture_checks:Function {name: "fixture_checks", type: "function", signature: "fixture_checks(ctx: dict, trace: dict, log: Path, before: dict) -> dict"}),
@@ -34,7 +35,8 @@
 #   (file)-[:CONTAINS]->(v_CORE),
 #   (file)-[:CONTAINS]->(v_ALLOWED_TOOLS),
 #   (file)-[:CONTAINS]->(v_UNAVAILABLE),
-#   (file)-[:CONTAINS]->(v_CJK),
+#   (file)-[:CONTAINS]->(v_HAN),
+#   (file)-[:CONTAINS]->(v_KANA_HANGUL),
 #   (file)-[:CONTAINS]->(v_CHINESE_NAMES),
 #   (file)-[:CONTAINS]->(v_ENGLISH_NAMES),
 #   (file)-[:CONTAINS]->(v_CLI_INTERNAL_MARKERS),
@@ -48,7 +50,7 @@
 #   (file)-[:CONTAINS]->(f_stream_events),
 #   (file)-[:CONTAINS]->(f_result_event),
 #   (file)-[:CONTAINS]->(f_transcript_events),
-#   (file)-[:CONTAINS]->(f_cjk_share),
+#   (file)-[:CONTAINS]->(f_script_shares),
 #   (file)-[:CONTAINS]->(f_language_check),
 #   (file)-[:CONTAINS]->(f_unverified_reason),
 #   (file)-[:CONTAINS]->(f_claude_bin),
@@ -57,12 +59,11 @@
 #   (file)-[:CONTAINS]->(f_run_case),
 #   (file)-[:CONTAINS]->(f_write_evidence),
 #   (file)-[:CONTAINS]->(f_main),
-#   (f_cjk_share)-[:USES]->(v_CJK),
 #   (f_cli_internal)-[:USES]->(v_CLI_INTERNAL_MARKERS),
 #   (f_fixture_checks)-[:CALLS]->(f_git_bash),
 #   (f_fixture_checks)-[:CALLS]->(f_read_log),
 #   (f_invoke)-[:CALLS]->(f_decoded),
-#   (f_language_check)-[:CALLS]->(f_cjk_share),
+#   (f_language_check)-[:CALLS]->(f_script_shares),
 #   (f_language_check)-[:USES]->(v_CHINESE_NAMES),
 #   (f_language_check)-[:USES]->(v_ENGLISH_NAMES),
 #   (f_main)-[:CALLS]->(f_run_case),
@@ -84,6 +85,8 @@
 #   (f_run_case)-[:CALLS]->(f_transcript_events),
 #   (f_run_case)-[:CALLS]->(f_unverified_reason),
 #   (f_run_case)-[:USES]->(v_ALLOWED_TOOLS),
+#   (f_script_shares)-[:USES]->(v_HAN),
+#   (f_script_shares)-[:USES]->(v_KANA_HANGUL),
 #   (f_transcript_events)-[:CALLS]->(f_stream_events),
 #   (f_unverified_reason)-[:USES]->(v_UNAVAILABLE),
 #   (file)-[:CALLS]->(f_main);
@@ -124,7 +127,8 @@ CORE = ["preview-readonly", "preview-lang-english", "happy-path", "conflict-stop
 ALLOWED_TOOLS = ["Bash(git:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(test:*)", "Bash(pwd)", "Read", "Glob", "Grep", "Skill"]
 UNAVAILABLE = re.compile(r"session limit|usage limit|rate limit|limit reached|resets \d|not logged in|/login|authentication|"
                          r"invalid api key|credit balance|overloaded|ECONNRESET|ENOTFOUND", re.I)
-CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
+HAN = re.compile(r"[\u3400-\u9fff]")
+KANA_HANGUL = re.compile(r"[\u3040-\u30ff\uac00-\ud7af]")
 CHINESE_NAMES = {"zh", "zh-cn", "chinese", "中文", "简体中文"}
 ENGLISH_NAMES = {"en", "english"}
 # Claude Code runs its own housekeeping git calls with this fixed -c prefix; they are not the agent's commands.
@@ -162,7 +166,7 @@ def prompt_for(scen: dict, ctx: dict) -> str:
         parts = [ctx["arg"], *(["--apply"] if scen["mode"] == "apply" else []), *(["--discard-ignored"] if scen["discard"] else [])]
     else:
         parts = [scen["cmd_args"]]
-    if scen["lang"]:
+    if scen["lang"] and "--lang" not in scen["cmd_args"].split():
         parts += ["--lang", scen["lang"]]
     return " ".join([f"/{scen['command']}", *[part for part in parts if part]])
 
@@ -235,24 +239,29 @@ def transcript_events(stdout: str) -> list[tuple[str, str]]:
     return events
 
 
-def cjk_share(text: str) -> float:
-    """Share of alphabetic characters that are Chinese, Japanese, or Korean."""
+def script_shares(text: str) -> tuple[float, float]:
+    """(Han share, kana + Hangul share) of the alphabetic characters; Japanese and Korean use the second group."""
     letters = [char for char in text if char.isalpha()]
-    return sum(1 for char in letters if CJK.match(char)) / len(letters) if letters else 0.0
+    if not letters:
+        return 0.0, 0.0
+    return (sum(1 for char in letters if HAN.match(char)) / len(letters),
+            sum(1 for char in letters if KANA_HANGUL.match(char)) / len(letters))
 
 
 def language_check(text: str, lang: str | None) -> tuple[bool | None, str]:
     """Is the reply in the requested language? None when the language is not one this heuristic can tell apart."""
-    share = cjk_share(text)
+    han, other = script_shares(text)
     wanted = (lang or "中文").strip().lower()
     if wanted in CHINESE_NAMES:
-        return share >= 0.2, f"{share:.0%} CJK letters (Chinese needs at least 20%)"
+        return han >= 0.2 and other <= 0.02, (f"{han:.0%} Han, {other:.0%} kana/Hangul letters "
+                                              f"(Chinese needs at least 20% Han and at most 2% kana/Hangul)")
     if wanted in ENGLISH_NAMES:
-        return share <= 0.03, f"{share:.0%} CJK letters (English allows at most 3%)"
+        return han + other <= 0.03, f"{han + other:.0%} CJK letters (English allows at most 3%)"
     return None, f"language {lang!r} is not checked"
 
 
-def unverified_reason(run: dict, result: dict | None, events: list[tuple[str, str]]) -> str | None:
+def unverified_reason(run: dict, result: dict | None, events: list[tuple[str, str]],
+                      inspects: bool | None = True) -> str | None:
     """Why a run cannot be judged, or None when it can. Liveness comes from the transcript, not the git trace."""
     text = run["stderr"] + " " + (str(result.get("result", "")) if result else "")
     if run["timed_out"]:
@@ -265,7 +274,7 @@ def unverified_reason(run: dict, result: dict | None, events: list[tuple[str, st
         if UNAVAILABLE.search(text):
             return "CLI unavailable (limit/auth)"
         return f"the CLI ended with {result.get('subtype')!r}"
-    if not any(kind == "bash" and command_policy.shell_git_calls(body) for kind, body in events):
+    if inspects is True and not any(kind == "bash" and command_policy.shell_git_calls(body) for kind, body in events):
         return "the agent never inspected the repository"
     return None
 
@@ -338,18 +347,21 @@ def run_case(scen: dict, options: argparse.Namespace) -> dict:
         events = transcript_events(run["stdout"])
         text = str(result.get("result", "")) if result else run["stdout"][-2000:]
         record["final_answer"] = text[-1500:]
-        reason = unverified_reason(run, result, events)
+        reason = unverified_reason(run, result, events, scen["inspects"])
         if reason:
             record.update({"status": "UNVERIFIED", "reason": reason, "checks": []})
         else:
             pairs = list(scen["oracle"](ctx, before, after)) + scenarios.invariants(ctx, before, after)
-            words = list(scen["report"]) + (sorted(before["heads"]) if scen["command"] == "GitConverge" else [])
+            words = list(scen["report"]) + (sorted(before["heads"]) if scenarios.expects_plan(scen) else [])
             pairs += [(f"the final report mentions {word!r}", word in text) for word in dict.fromkeys(words)]
             checks = [{"name": name, "passed": bool(passed)} for name, passed in pairs]
             spoken, detail = language_check(text, scen["lang"])
             if spoken is not None:
                 checks.append({"name": f"the reply is in {scen['lang'] or 'Chinese (the default)'}", "passed": spoken,
                                "detail": detail})
+            if scen["inspects"] is False:
+                checks.append({"name": "no git command was run (the command must not execute)", "passed": not commands,
+                               **({"detail": [" ".join(c) for c in commands]} if commands else {})})
             breaches = command_policy.violations(commands, scen["mode"])
             checks.append({"name": "command policy: no forbidden git command" + (" and read-only preview" if scen["mode"] == "preview" else ""),
                            "passed": not breaches, **({"detail": breaches} if breaches else {})})

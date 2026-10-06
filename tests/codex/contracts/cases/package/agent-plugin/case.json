@@ -1,0 +1,37 @@
+{
+  "id": "package/agent-plugin",
+  "skill": "package",
+  "feature": "The repository is a conformant Agent Plugins 1.0.0 package whose discovered skills meet Agent Skills",
+  "invocations": {
+    "manifest": "plugin.json at the repository root",
+    "mutation_tests": "python -X utf8 tests/codex/contracts/test_agent_plugin.py"
+  },
+  "test_object": {
+    "specification": "https://agent-plugins.org/specification (1.0.0)",
+    "manifest_schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json (mirrored in agent_plugin.py)",
+    "skills_rules": "https://agentskills.io/specification, as skills-ref codes them",
+    "plugin_skills": [
+      "git-analyze",
+      "git-cleanup",
+      "git-converge",
+      "git-integrate",
+      "git-recommend",
+      "git-recon"
+    ],
+    "root_skill_exposed_to_plugin_clients": false,
+    "validator": "no official Agent Plugins validator exists; checks are local and standard-library only"
+  },
+  "expected": [
+    "plugin.json validates against the closed 1.0.0 manifest schema: exact $schema, lowercase name, no other fields.",
+    "plugin.json version equals SKILL.md metadata.version as x.y.z, and references/commands.md states the same version.",
+    "Plugin discovery (skills/<dir>/SKILL.md, one level) finds exactly the six command adapters; the root orchestrator SKILL.md is package content they read, not a plugin skill.",
+    "Every discovered skill, and the root SKILL.md, meets Agent Skills: strict YAML, allowed fields only, name equal to its directory (the root as multi-agent-git-orchestrator), description 1-1024, string-only metadata, no metadata.hermes, and double-quoted description, compatibility, and metadata values.",
+    "Every ../ reference in an adapter resolves to a file inside the plugin root, and the package holds no symbolic links or junctions.",
+    "mcp.json is absent (MAGOS ships no MCP servers) or valid."
+  ],
+  "checks": [
+    {
+      "kind": "agent_plugin"
+    }
+  ]
+}

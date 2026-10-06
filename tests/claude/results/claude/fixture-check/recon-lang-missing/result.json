@@ -1,0 +1,34 @@
+{
+  "checks": [
+    {
+      "name": "the command and skill are installed in the fixture",
+      "passed": true
+    },
+    {
+      "name": "the .claude folder appears in no worktree status",
+      "passed": true
+    },
+    {
+      "name": "git still runs under Git Bash",
+      "passed": true
+    },
+    {
+      "name": "git still runs under cmd.exe",
+      "passed": true
+    },
+    {
+      "name": "trace2 logged every shell's git call",
+      "passed": true
+    },
+    {
+      "name": "Git Bash was found",
+      "passed": true
+    }
+  ],
+  "git_calls_seen": 2,
+  "id": "recon-lang-missing",
+  "mode": "preview",
+  "prompt": "/GitRecon --lang",
+  "status": "PASS",
+  "title": "--lang without a value is an error in Chinese; the command does not run"
+}

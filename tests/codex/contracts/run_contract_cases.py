@@ -103,6 +103,7 @@ import json
 import re
 from pathlib import Path
 
+import agent_plugin
 import install_layout
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -114,8 +115,13 @@ MANIFEST = TESTS_DIR / "cases.json"
 def run_case(spec: dict) -> dict:
     check_results = []
     for check in spec["checks"]:
-        if check.get("kind") == "install_layout":
-            check_results.extend(install_layout.check(ROOT))
+        if check.get("kind") in ("install_layout", "agent_plugin"):
+            module = install_layout if check["kind"] == "install_layout" else agent_plugin
+            try:
+                check_results.extend(module.check(ROOT))
+            except Exception as error:  # noqa: BLE001 - a crash is a red row, not an aborted run without evidence
+                check_results.append({"file": f"{check['kind']}: the check could not run", "passed": False,
+                                      "missing": [f"{type(error).__name__}: {error}"]})
             continue
         source_path = ROOT / check["file"]
         source = source_path.read_text(encoding="utf-8") if source_path.exists() else ""

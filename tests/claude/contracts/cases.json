@@ -626,7 +626,7 @@
         "file": "commands/GitRecon.md",
         "contains": [
           "[--lang <language>] [--help]",
-          "Read `--lang <language>` first",
+          "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
           "- `--lang <language>`: Language of the reply",
           "--lang English`",
           "Write every reply in the language selected by `--lang` (Chinese when absent).",
@@ -638,7 +638,7 @@
         "file": "commands/GitAnalyze.md",
         "contains": [
           "[--lang <language>] [--help]",
-          "Read `--lang <language>` first",
+          "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
           "- `--lang <language>`: Language of the reply",
           "--lang English`",
           "Write every reply in the language selected by `--lang` (Chinese when absent).",
@@ -650,7 +650,7 @@
         "file": "commands/GitRecommend.md",
         "contains": [
           "[--lang <language>] [--help]",
-          "Read `--lang <language>` first",
+          "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
           "- `--lang <language>`: Language of the reply",
           "--lang English`",
           "Write every reply in the language selected by `--lang` (Chinese when absent).",
@@ -662,7 +662,7 @@
         "file": "commands/GitIntegrate.md",
         "contains": [
           "[--lang <language>] [--help]",
-          "Read `--lang <language>` first",
+          "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
           "- `--lang <language>`: Language of the reply",
           "--lang English`",
           "Write every reply in the language selected by `--lang` (Chinese when absent).",
@@ -674,7 +674,7 @@
         "file": "commands/GitCleanup.md",
         "contains": [
           "[--lang <language>] [--help]",
-          "Read `--lang <language>` first",
+          "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
           "- `--lang <language>`: Language of the reply",
           "--lang English`",
           "Write every reply in the language selected by `--lang` (Chinese when absent).",
@@ -686,7 +686,7 @@
         "file": "commands/GitConverge.md",
         "contains": [
           "[--lang <language>] [--help]",
-          "Read `--lang <language>` first",
+          "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
           "- `--lang <language>`: Language of the reply",
           "--lang English`",
           "Write every reply in the language selected by `--lang` (Chinese when absent).",

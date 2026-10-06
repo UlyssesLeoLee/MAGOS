@@ -61,6 +61,9 @@ def package_files(repo: Path) -> tuple[str, ...]:
 
     The adapters in skills/ resolve ../../SKILL.md and ../../references/*.md, so the
     installed tree must keep this layout. The test harness provisions the same list.
+    plugin.json (the Agent Plugins manifest of the whole repository), commands/, tests/
+    and the READMEs are not part of it; Codex and Hermes skill discovery never reads
+    plugin.json.
     """
     references = sorted(path.relative_to(repo).as_posix()
                         for path in (repo / "references").glob("*.md"))

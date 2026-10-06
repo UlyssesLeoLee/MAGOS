@@ -4,9 +4,6 @@ description: "集成目标（仅限用户显式调用，写操作）；/git-inte
 license: Apache-2.0
 metadata:
   short-description: "集成目标；$git-integrate TARGET [--strategy] [--help]."
-  hermes:
-    tags: [git, worktree, multi-agent, write, explicit-only]
-    related_skills: [multi-agent-git-orchestrator]
 ---
 
 # GitIntegrate

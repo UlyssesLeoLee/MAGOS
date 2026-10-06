@@ -129,7 +129,7 @@
 
 **它控制什么？** 它回复你的一切文字：说明、检查报告、向你提的问题、出错提示，以及 `--help` 的说明。
 
-**哪些东西不会被翻译？** 命令名、参数名、分支名、文件路径、提交编号、Git 命令，以及 `BLOCKED_DIRTY`、`MERGE` 这样的状态代码。因为你可能要原样复制它们去运行或搜索。它会在旁边用你选的语言加一句白话解释，例如英文回复里会写 `BLOCKED_DIRTY` (unsaved edits in its worktree)。
+**哪些东西不会被翻译？** 命令名、参数名、分支名、文件路径、提交编号、Git 命令，以及 `BLOCKED_DIRTY`、`MERGE` 这样的状态代码。因为你可能要原样复制它们去运行或搜索。它可能会在旁边用你选的语言加一句白话解释，例如英文回复里写成 `BLOCKED_DIRTY` (unsaved edits in its worktree)。
 
 | 项目 | 说明 |
 |---|---|
@@ -435,7 +435,7 @@ flowchart TD
 | 不写会怎样 | **只预览**：列出“可清理的对象”和“不能清理的对象及原因”，什么都不删 |
 | 写了之后做什么 | 对清单里“可清理”的对象，**逐个再检查一遍现状**，仍然安全才删：先移除它的工作区，再删除分支 |
 | 预览和执行之间有对象变了 | 比如那条分支在预览之后又有了新修改：它会**跳过**这一个并告诉你，不会照着旧清单硬删 |
-| 它绝对不会做 | 删除网上（远端）的分支；强制删除；清理有未保存修改的工作区；删除含有“别处找不到的成果”的分支 |
+| 它绝对不会做 | 强制删除；清理有未保存修改的工作区；删除含有“别处找不到的成果”的分支；也不会删除网上（远端）的分支，除非你明确要求 |
 
 建议的用法：**先不加 `--apply` 看清单，满意了再加。**
 
@@ -748,6 +748,7 @@ Mutate only when needed.
 ```text
 multi-agent-git-orchestrator/
 ├── SKILL.md
+├── plugin.json                # Agent Plugins 清单：把整个仓库当作一个插件导入时使用
 ├── commands/                  # Claude Code command prompts
 ├── skills/                    # Codex / Hermes command adapters
 └── references/
@@ -833,7 +834,7 @@ Hermes help: /git-integrate --help
 Codex help:  $git-integrate --help
 ```
 
-运行源码契约检查：`python -X utf8 tests/codex/contracts/run_contract_cases.py`。每个用例的输入和结果保存在 `tests/codex/contracts/cases/<group>/<case>/evidence/`。这些检查不启动 AI 宿主；其中 `package/install-layout` 会把 Codex 与 Hermes 包安装到临时 home，确认适配层引用的每个文件都存在，并按两个宿主的发现规则（复刻版）确认每个 Skill 只被发现一次。
+运行源码契约检查：`python -X utf8 tests/codex/contracts/run_contract_cases.py`。每个用例的输入和结果保存在 `tests/codex/contracts/cases/<group>/<case>/evidence/`。这些检查不启动 AI 宿主；其中 `package/install-layout` 会把 Codex 与 Hermes 包安装到临时 home，确认适配层引用的每个文件都存在，并按两个宿主的发现规则（复刻版）确认每个 Skill 只被发现一次，直接 `git clone` 到 Skill 目录时也一样；`package/agent-plugin` 检查仓库是否符合 Agent Plugins 1.0.0 插件格式（见“作为 Agent Plugin 导入”）。
 
 ### Codex / Hermes 的包结构
 
@@ -848,7 +849,7 @@ MAGOS/                       # Codex 包根；Hermes 使用 multi-agent-git-orch
     └── agents/openai.yaml   # Codex：显示说明 + allow_implicit_invocation: false
 ```
 
-`commands/` 只供 Claude Code 使用，Codex / Hermes 包中不需要。推荐用同步脚本安装或更新（`--create-roots` 会创建缺失的安装根目录；脚本从不删除文件）：
+`commands/` 只供 Claude Code 使用，Codex / Hermes 包中不需要。`plugin.json` 也不在这个包里，它只在把整个仓库当作插件导入时使用。推荐用同步脚本安装或更新（`--create-roots` 会创建缺失的安装根目录；脚本从不删除文件）：
 
 ```bash
 python -X utf8 scripts/sync_hosts.py --host codex --host hermes --apply --create-roots
@@ -904,6 +905,30 @@ cp -R SKILL.md references skills "${HERMES_HOME:-$HOME/.hermes}/skills/multi-age
 GitRecon
 GitAnalyze agent/auth
 GitRecommend
+```
+
+### 作为 Agent Plugin 导入
+
+仓库根目录的 `plugin.json` 是一份插件“说明书”，格式遵循 [Agent Plugins 1.0.0 规范](https://agent-plugins.org/specification)。支持这个规范的工具（例如 Codex 的插件安装、Hermes 的 `hermes plugins install`）可以把整个仓库当作一个名叫 `magos` 的插件导入。
+
+导入后会是这样：
+
+| 你关心的问题 | 答案 |
+|---|---|
+| 能用哪些命令？ | `skills/` 下的六个命令 Skill：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`。有的工具会加上插件名前缀，例如 Codex 显示为 `magos:git-recon`。 |
+| 根目录的 `SKILL.md`（总规则）呢？ | 它不算插件 Skill，因为规范只认 `skills/` 下面的文件夹。六个命令会去读它和 `references/` 里的规则；但它不会在你描述问题时自动出现，想要自动触发，请用上面各工具的安装方式。目前验证过的只有“六个命令 Skill 能被识别并加载”，各工具里命令实际怎么运行，还没有逐一实测。 |
+| Claude Code 能用吗？ | Claude Code 不读这个文件（它的插件说明书放在 `.claude-plugin/plugin.json`）。`/GitXxx` 命令请按上面 Claude Code 的方法安装。 |
+| Hermes 用哪种方式？ | 请用上面的同步脚本安装。以插件方式导入的 Skill 要手动启用，不在可用 Skill 列表里，没有 `/git-*` 命令，也拿不到 `[Skill directory: …]` 这条路径提示。三个会修改仓库的命令（`git-integrate`、`git-cleanup`、`git-converge`）只认 `/git-*` 或 `$git-*` 这样的明确调用，所以在 Hermes 里不要用插件方式导入它们。 |
+
+仓库里故意没有 `.claude-plugin/`、`.codex-plugin/` 或 `.cursor-plugin/`：把仓库 `git clone` 到 Codex 的 Skill 目录时，Codex 一看到这些文件夹，就会把 Skill 改名为 `magos:git-recon`，原来的 `$git-recon` 就叫不出来了。只有 `plugin.json` 不会这样。
+
+一处已知的偏差：规范第 8 节要求“只给某一个工具用的文件”放进以反向域名命名的文件夹（例如 `com.example.client/`）。`commands/` 只给 Claude Code 用，却放在顶层。插件工具会直接忽略它，不影响导入；要挪动它，安装脚本和大量测试都得跟着改，所以暂时留在原处。
+
+改版本号时，`plugin.json` 的 `version`、`SKILL.md` 的 `metadata.version` 和 `references/commands.md` 第 3 行要一起改。下面第一条命令检查插件格式（源码契约 `package/agent-plugin`），第二条故意制造各种错误（清单写错、版本号对不上、文件夹里多出链接等），确认检查真的能把它们找出来：
+
+```bash
+python -X utf8 tests/codex/contracts/run_contract_cases.py
+python -X utf8 tests/codex/contracts/test_agent_plugin.py
 ```
 
 ---

@@ -130,7 +130,7 @@ These three work the same way in every command that supports them. Learn them on
 
 **What does it control?** All the text it writes back to you: explanations, reports, questions to you, error messages, and the text of `--help`.
 
-**What is never translated?** Command names, option names, branch names, file paths, commit IDs, Git commands, and status codes such as `BLOCKED_DIRTY` or `MERGE`, because you may need to copy or search for them exactly. A short gloss in your language is added next to them, for example `BLOCKED_DIRTY` (unsaved edits in its worktree).
+**What is never translated?** Command names, option names, branch names, file paths, commit IDs, Git commands, and status codes such as `BLOCKED_DIRTY` or `MERGE`, because you may need to copy or search for them exactly. It may add a short gloss in your language next to them, for example `BLOCKED_DIRTY` (unsaved edits in its worktree).
 
 | Item | Explanation |
 |---|---|
@@ -432,7 +432,7 @@ Use it when finished branches have piled up and you want to tidy up without dele
 | If you leave it out | **Preview only**: lists the objects that can be cleaned and the ones that cannot (with reasons); deletes nothing |
 | What it does with it | For each object marked "can be cleaned", it **checks the current state again** and deletes only if it is still safe: first removes its worktree, then deletes the branch |
 | An object changed between preview and apply | For example the branch got a new change after the preview: it **skips** that one and tells you, rather than deleting from the old list |
-| What it never does | Delete online (remote) branches; force-delete; clean a worktree with unsaved edits; delete a branch that holds work found nowhere else |
+| What it never does | Force-delete; clean a worktree with unsaved edits; delete a branch that holds work found nowhere else; delete online (remote) branches unless you explicitly ask |
 
 Suggested habit: **read the list without `--apply` first; add it only when you are happy.**
 
@@ -732,6 +732,7 @@ Copy the directory into your agent's skills path:
 ```text
 multi-agent-git-orchestrator/
 ├── SKILL.md              # root skill — triggers semantically
+├── plugin.json           # Agent Plugins manifest, used when the whole repository is imported as a plugin
 ├── commands/             # Claude Code slash commands
 ├── skills/               # Codex / Hermes command adapters
 └── references/
@@ -805,6 +806,28 @@ GitAnalyze agent/auth
 GitRecommend
 ```
 
+### Import as an Agent Plugin
+
+`plugin.json` at the repository root is a plugin manifest that follows the [Agent Plugins 1.0.0 specification](https://agent-plugins.org/specification). A tool that supports it (for example Codex plugin installs, or Hermes `hermes plugins install`) can import the whole repository as one plugin named `magos`.
+
+| Question | Answer |
+|---|---|
+| Which commands do I get? | The six command skills under `skills/`: `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`. Some tools add the plugin name as a prefix; Codex shows `magos:git-recon`. |
+| What about the root `SKILL.md` (the shared rules)? | It is not a plugin skill, because the specification only looks inside `skills/`. The six commands read the rules in it and in `references/`; but it will not trigger on its own when you describe a problem, so for that use the host installs above. Only discovery has been verified (the six command skills are recognized and load); how the commands behave inside each tool has not been tested one by one. |
+| Does Claude Code use it? | No. Claude Code reads `.claude-plugin/plugin.json`, not this file. Install the `/GitXxx` commands as described under Claude Code. |
+| Which way for Hermes? | The sync script above. Skills imported as a plugin must be enabled by hand, are not in the available-skills list, get no `/git-*` commands, and do not receive the `[Skill directory: …]` path hint. The three commands that modify the repository (`git-integrate`, `git-cleanup`, `git-converge`) act only on an explicit `/git-*` or `$git-*` invocation, so do not import them as a plugin in Hermes. |
+
+The repository deliberately has no `.claude-plugin/`, `.codex-plugin/`, or `.cursor-plugin/`. If you `git clone` it into a Codex skills directory, Codex treats any of those as a plugin root and renames the skills to `magos:git-recon`, so `$git-recon` stops working. A root `plugin.json` alone does not do that.
+
+One known deviation: section 8 of the specification asks for files meant for a single tool to live in a reverse-domain folder (such as `com.example.client/`). `commands/` serves only Claude Code but sits at the top level. Plugin tools ignore it, so importing is unaffected; moving it would change the install script and many tests, so it stays for now.
+
+When you change the version, update `version` in `plugin.json`, `metadata.version` in `SKILL.md`, and line 3 of `references/commands.md` together. The first command below checks the plugin format (source contract `package/agent-plugin`); the second plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one:
+
+```bash
+python -X utf8 tests/codex/contracts/run_contract_cases.py
+python -X utf8 tests/codex/contracts/test_agent_plugin.py
+```
+
 ---
 
 ## Command matrix
@@ -822,7 +845,7 @@ GitRecommend
 python -X utf8 tests/codex/contracts/run_contract_cases.py
 ```
 
-Runs the source contract checks. Inputs and expected results live in `tests/codex/contracts/cases/<group>/<case>/evidence/`. No AI host is started. The `package/install-layout` case installs the Codex and Hermes packages into a temporary home and confirms every file the adapters reference exists, and that each skill is discovered exactly once under each host's discovery rules.
+Runs the source contract checks. Inputs and expected results live in `tests/codex/contracts/cases/<group>/<case>/evidence/`. No AI host is started. The `package/install-layout` case installs the Codex and Hermes packages into a temporary home and confirms every file the adapters reference exists, and that each skill is discovered exactly once under each host's discovery rules, also for a `git clone` straight into a skills directory. The `package/agent-plugin` case checks the Agent Plugins 1.0.0 package format (see Import as an Agent Plugin).
 
 ---
 

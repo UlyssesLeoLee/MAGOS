@@ -1,7 +1,7 @@
 {
   "case": "package/install-layout",
   "skill": "package",
-  "feature": "Codex and Hermes installs contain every file the adapters reference, and a replica of each host's discovery rules finds every skill once",
+  "feature": "Codex and Hermes installs, and a git clone of the repository into a host skills directory, contain every file the adapters reference, and a replica of each host's discovery rules finds every skill once",
   "passed": true,
   "scope": "source-contract; AI host runtime is not invoked",
   "checks": [
@@ -36,6 +36,11 @@
       "missing": []
     },
     {
+      "file": "install:codex every installed SKILL.md is strict YAML with string-only metadata",
+      "passed": true,
+      "missing": []
+    },
+    {
       "file": "install:hermes relative references resolve",
       "passed": true,
       "missing": []
@@ -52,6 +57,21 @@
     },
     {
       "file": "install:hermes discovery replica finds each skill once",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "install:hermes every installed SKILL.md is strict YAML with string-only metadata",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "install:git-clone checkout, the Codex and Hermes replicas find each skill once",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "install:git-clone checkout has no .codex-plugin/.claude-plugin/.cursor-plugin manifest",
       "passed": true,
       "missing": []
     }

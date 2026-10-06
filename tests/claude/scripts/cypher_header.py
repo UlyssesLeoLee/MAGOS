@@ -2,6 +2,8 @@
 # CREATE
 #   (file:File {name: "cypher_header.py", type: "file", language: "python"}),
 #   (v_SCRIPTS:Variable {name: "SCRIPTS", type: "variable"}),
+#   (v_CONTRACTS:Variable {name: "CONTRACTS", type: "variable"}),
+#   (v_EXTRA:Variable {name: "EXTRA", type: "variable"}),
 #   (v_SCOPES:Variable {name: "SCOPES", type: "variable"}),
 #   (f_identifier:Function {name: "identifier", type: "function", signature: "identifier(prefix: str, name: str) -> str"}),
 #   (f_own_nodes:Function {name: "own_nodes", type: "function", signature: "own_nodes(body)"}),
@@ -14,6 +16,8 @@
 #   (f_split_header:Function {name: "split_header", type: "function", signature: "split_header(text: str) -> tuple[str, str]"}),
 #   (f_main:Function {name: "main", type: "function", signature: "main() -> int"}),
 #   (file)-[:CONTAINS]->(v_SCRIPTS),
+#   (file)-[:CONTAINS]->(v_CONTRACTS),
+#   (file)-[:CONTAINS]->(v_EXTRA),
 #   (file)-[:CONTAINS]->(v_SCOPES),
 #   (file)-[:CONTAINS]->(f_identifier),
 #   (file)-[:CONTAINS]->(f_own_nodes),
@@ -32,6 +36,7 @@
 #   (f_collect_scan)-[:CALLS]->(f_own_nodes),
 #   (f_main)-[:CALLS]->(f_render),
 #   (f_main)-[:CALLS]->(f_split_header),
+#   (f_main)-[:USES]->(v_EXTRA),
 #   (f_main)-[:USES]->(v_SCRIPTS),
 #   (f_own_nodes)-[:USES]->(v_SCOPES),
 #   (f_render)-[:CALLS]->(f_collect),
@@ -41,7 +46,8 @@
 #   (f_render)-[:CALLS]->(f_signature),
 #   (file)-[:CALLS]->(f_main);
 # ```
-"""Generate or verify the Cypher structure header at the top of every Python file under tests/claude/scripts.
+"""Generate or verify the Cypher structure header at the top of every Python file under tests/claude/scripts,
+and of the Agent Plugins check modules in tests/codex/contracts (EXTRA).
 
 The header is derived from the file's own AST (functions, nested functions, lambdas, module-level variables, calls
 between functions defined in the same file, variable reads), so it cannot drift from the code.
@@ -56,6 +62,8 @@ from pathlib import Path
 import re
 
 SCRIPTS = Path(__file__).resolve().parent
+CONTRACTS = SCRIPTS.parents[1] / "codex" / "contracts"
+EXTRA = [CONTRACTS / name for name in ("agent_plugin.py", "skill_frontmatter.py", "test_agent_plugin.py")]
 FENCE_OPEN, FENCE_CLOSE = "# ```cypher", "# ```"
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
 
@@ -175,7 +183,7 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="only verify; exit 1 when a header is missing or stale")
     options = parser.parse_args()
     stale = []
-    for path in sorted(SCRIPTS.glob("*.py")):
+    for path in [*sorted(SCRIPTS.glob("*.py")), *EXTRA]:
         old, body = split_header(path.read_text(encoding="utf-8"))
         scratch = path.with_suffix(".tmp.py")
         scratch.write_text(body, encoding="utf-8", newline="\n")

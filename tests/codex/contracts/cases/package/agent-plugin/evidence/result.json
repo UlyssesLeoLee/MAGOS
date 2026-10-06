@@ -1,0 +1,44 @@
+{
+  "case": "package/agent-plugin",
+  "skill": "package",
+  "feature": "The repository is a conformant Agent Plugins 1.0.0 package whose discovered skills meet Agent Skills",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "plugin: plugin.json is a valid Agent Plugins 1.0.0 manifest",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "plugin: manifest version matches SKILL.md metadata.version and references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "plugin: skills/ discovery (§7.1) finds exactly the six command adapters",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "plugin: every discovered skill meets Agent Skills (strict YAML, allowed fields, name = directory, string-only metadata)",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "plugin: package paths stay inside the plugin root and include no links (§4.1)",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "plugin: mcp.json is absent or valid (§7.2)",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}

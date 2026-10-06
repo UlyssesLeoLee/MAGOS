@@ -11,6 +11,10 @@
     "origin": [
       "refs/heads/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
     ],
+    "remote_refs": [
+      "refs/remotes/origin/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
+    ],
+    "tag_refs": [],
     "tags": [],
     "worktrees": [
       {
@@ -37,6 +41,10 @@
     "origin": [
       "refs/heads/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
     ],
+    "remote_refs": [
+      "refs/remotes/origin/main a7865dbe7a31d2bb23b950e1254840cd742e243e"
+    ],
+    "tag_refs": [],
     "tags": [],
     "worktrees": [
       {
@@ -57,146 +65,42 @@
       "passed": true
     },
     {
+      "name": "invariant: main did not move",
+      "passed": true
+    },
+    {
+      "name": "invariant: tags unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote-tracking refs unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: no merge left in progress",
+      "passed": true
+    },
+    {
+      "detail": "51% Han, 0% kana/Hangul letters (Chinese needs at least 20% Han and at most 2% kana/Hangul)",
+      "name": "the reply is in Chinese (the default)",
+      "passed": true
+    },
+    {
       "name": "command policy: no forbidden git command",
       "passed": true
     }
   ],
   "claude_returncode": 0,
-  "final_answer": "to be a different local branch, and the gate fails the whole command, including the preview, when the target is `main`.\n\nYou're on `agent/release`, which looks like the intended target. To run it:\n\n- `/GitConverge agent/release` previews the plan only.\n- `/GitConverge agent/release --apply` merges `main` and every other local branch's unique commits into `agent/release`, then deletes the merged local branches and their clean worktrees.\n\n## Help\n\nUsage: `/GitConverge <branch> [--apply] [--discard-ignored] [--help]`\n\n- `<branch>`: Required local branch that receives everything. Matched exactly (case-sensitive); it must not be `main`.\n- `--apply`: Merge every local branch's unique commits (`main` first) into `<branch>`, then delete the merged local branches and their clean worktrees so only `main` and `<branch>` remain. A conflict stops the command and deletes nothing. It never moves or deletes `main` and never touches remote branches.\n- `--discard-ignored`: With `--apply`, also allow removing worktrees that hold ignored files (for example `.env`). Without it those worktrees and their branches are kept.\n- `--help`: Show this help and stop without inspecting or changing the repository.\n- Default: Preview the merge plan, blocked items, and the expected final branch list; nothing is changed.\n\nExamples: `/GitConverge agent/release`, `/GitConverge agent/release --apply`, `/GitConverge --help`.\n\nTell me if you want `agent/release` as the target. I'd start with the preview, then apply.",
-  "git_commands": [
-    [
-      "-c",
-      "core.askPass=",
-      "-c",
-      "protocol.ext.allow=never",
-      "-c",
-      "submodule.recurse=false",
-      "-c",
-      "log.showSignature=false",
-      "-c",
-      "gc.auto=0",
-      "-c",
-      "maintenance.auto=false",
-      "-c",
-      "core.hooksPath=\\\\.\\NUL",
-      "-c",
-      "core.fsmonitor=",
-      "remote",
-      "get-url",
-      "origin"
-    ],
-    [
-      "-c",
-      "core.fsmonitor=",
-      "-c",
-      "core.hooksPath=\\\\.\\NUL",
-      "-c",
-      "core.askPass=",
-      "-c",
-      "protocol.ext.allow=never",
-      "-c",
-      "submodule.recurse=false",
-      "-c",
-      "log.showSignature=false",
-      "-c",
-      "gc.auto=0",
-      "-c",
-      "maintenance.auto=false",
-      "--no-optional-locks",
-      "status",
-      "--short",
-      "--ignore-submodules=dirty"
-    ],
-    [
-      "-c",
-      "core.fsmonitor=",
-      "-c",
-      "core.hooksPath=\\\\.\\NUL",
-      "-c",
-      "core.askPass=",
-      "-c",
-      "protocol.ext.allow=never",
-      "-c",
-      "submodule.recurse=false",
-      "-c",
-      "log.showSignature=false",
-      "-c",
-      "gc.auto=0",
-      "-c",
-      "maintenance.auto=false",
-      "--no-optional-locks",
-      "log",
-      "--oneline",
-      "-n",
-      "5"
-    ],
-    [
-      "-c",
-      "core.fsmonitor=",
-      "-c",
-      "core.hooksPath=\\\\.\\NUL",
-      "-c",
-      "core.askPass=",
-      "-c",
-      "protocol.ext.allow=never",
-      "-c",
-      "submodule.recurse=false",
-      "-c",
-      "log.showSignature=false",
-      "-c",
-      "gc.auto=0",
-      "-c",
-      "maintenance.auto=false",
-      "config",
-      "user.name"
-    ],
-    [
-      "-c",
-      "core.askPass=",
-      "-c",
-      "protocol.ext.allow=never",
-      "-c",
-      "submodule.recurse=false",
-      "-c",
-      "log.showSignature=false",
-      "-c",
-      "gc.auto=0",
-      "-c",
-      "maintenance.auto=false",
-      "-c",
-      "core.hooksPath=\\\\.\\NUL",
-      "-c",
-      "core.fsmonitor=",
-      "config",
-      "--get",
-      "remote.origin.url"
-    ],
-    [
-      "-c",
-      "core.askPass=",
-      "-c",
-      "protocol.ext.allow=never",
-      "-c",
-      "submodule.recurse=false",
-      "-c",
-      "log.showSignature=false",
-      "-c",
-      "gc.auto=0",
-      "-c",
-      "maintenance.auto=false",
-      "-c",
-      "core.hooksPath=\\\\.\\NUL",
-      "-c",
-      "core.fsmonitor=",
-      "remote",
-      "get-url",
-      "--push",
-      "origin"
-    ]
-  ],
+  "final_answer": "**错误：`<branch>` 不能是 `main`。**\n\n`/GitConverge` 会把所有本地分支的独有提交（`main` 最先）合并进目标分支，再删除已合并的本地分支，最后只留下 `main` 和 `<branch>`。目标分支如果是 `main`，就违反了\"绝不移动或删除 `main`\"的规则，所以本次没有执行任何操作。我没有加载 skill，没有检查仓库，也没有做任何合并、切换或删除。\n\n## 内置帮助\n\n用法：`/GitConverge <branch> [--apply] [--discard-ignored] [--lang <language>] [--help]`\n\n- `<branch>`：必填，是接收全部内容的本地分支。按名称精确匹配（区分大小写），不能是 `main`。\n- `--apply`：把每个本地分支的独有提交（`main` 最先）合并进 `<branch>`。之后删除已合并的本地分支和它们的干净 worktree，只留下 `main` 和 `<branch>`。遇到冲突时命令停止，不删除任何东西。它不会移动或删除 `main`，也不会动远程分支。\n- `--discard-ignored`：需与 `--apply` 一起使用。允许同时移除含有 ignored 文件（例如 `.env`）的 worktree。不加这个选项时，这些 worktree 和对应分支会保留。\n- `--lang <language>`：回复语言，可写名称或代码（例如 `English`、`ja`），不写时用中文。命令名、选项、分支名、路径、SHA 和状态码不翻译。\n- `--help`：显示本帮助后停止，不检查也不改动仓库。\n- 默认行为：只预览合并计划、受阻项和预期的最终分支列表，不做任何改动。\n\n示例：`/GitConverge agent/release`、`/GitConverge agent/release --apply`、`/GitConverge <branch> --lang English`、`/GitConverge --help`。\n\n请问要把所有分支汇总到哪个分支？当前所在分支是 `agent/release`，如果就是它，可以运行：\n\n```\n/GitConverge agent/release --apply\n```\n\n建议先不加 `--apply` 运行一次，看一下合并计划。",
+  "git_commands": [],
   "id": "target-is-main",
   "mode": "apply",
   "prompt": "/GitConverge main --apply",
+  "result_subtype": "success",
   "status": "PASS",
   "title": "main is never a target"
 }

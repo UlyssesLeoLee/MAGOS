@@ -4,9 +4,6 @@ description: "查看仓库状态（只读）；/git-recon [--remote] [--help]."
 license: Apache-2.0
 metadata:
   short-description: "查看仓库状态；$git-recon [--remote] [--help]."
-  hermes:
-    tags: [git, worktree, multi-agent, read-only]
-    related_skills: [multi-agent-git-orchestrator]
 ---
 
 # GitRecon

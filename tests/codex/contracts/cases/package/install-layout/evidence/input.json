@@ -13,5 +13,7 @@
     "git-recommend",
     "git-recon",
     "multi-agent-git-orchestrator"
-  ]
+  ],
+  "checkout_discovery": "the same replicas over the tracked files of the checkout (git clone into ~/.agents/skills/MAGOS or <Hermes home>/skills/MAGOS)",
+  "frontmatter_reader": "strict YAML subset (tests/codex/contracts/skill_frontmatter.py); a frontmatter outside it is reported, never replaced by the directory name"
 }

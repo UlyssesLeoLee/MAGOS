@@ -4,9 +4,6 @@ description: "给出 Git 建议（只读）；/git-recommend [goal] [--remote] [
 license: Apache-2.0
 metadata:
   short-description: "Git 建议；$git-recommend [goal] [--remote] [--help]."
-  hermes:
-    tags: [git, worktree, multi-agent, read-only]
-    related_skills: [multi-agent-git-orchestrator]
 ---
 
 # GitRecommend

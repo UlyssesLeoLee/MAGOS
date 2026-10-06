@@ -4,9 +4,6 @@ description: "收敛分支（仅显式调用，写操作）；/git-converge BRAN
 license: Apache-2.0
 metadata:
   short-description: "收敛分支；$git-converge BRANCH [--apply] [--discard-ignored] [--help]."
-  hermes:
-    tags: [git, worktree, multi-agent, write, explicit-only]
-    related_skills: [multi-agent-git-orchestrator]
 ---
 
 # GitConverge

@@ -8,5 +8,6 @@
 | GitConverge source contracts | PASS | 18/18 GitConverge source-contract cases passed |
 | reference executor scenarios | PASS | 46/46 scenarios passed (FAIL=0 ERROR=0 SKIPPED=0) |
 | mutation checks | PASS | 26/27 mutations killed; 0 unexpected outcome(s) |
-| claude harness fixture check | PASS | 41/41 passed (FAIL=0 UNVERIFIED=0) |
-| codex source contracts (existing suite) | PASS | 21/21 source-contract cases passed |
+| claude harness fixture check | PASS | 42/42 passed (FAIL=0 UNVERIFIED=0) |
+| codex source contracts (existing suite) | PASS | 22/22 source-contract cases passed |
+| agent plugin checker mutation tests | PASS | OK (skipped=1) |
