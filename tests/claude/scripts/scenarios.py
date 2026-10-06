@@ -117,6 +117,15 @@
 #   (f_plan_overwrite_case:Function {name: "plan_overwrite_case", type: "function", signature: "plan_overwrite_case(ctx, result)"}),
 #   (f_build_overwrite_dir_file:Function {name: "build_overwrite_dir_file", type: "function", signature: "build_overwrite_dir_file(root: Path) -> dict"}),
 #   (f_build_overwrite_file_dir:Function {name: "build_overwrite_file_dir", type: "function", signature: "build_overwrite_file_dir(root: Path) -> dict"}),
+#   (f_build_overwrite_nonascii:Function {name: "build_overwrite_nonascii", type: "function", signature: "build_overwrite_nonascii(root: Path) -> dict"}),
+#   (f_build_nonascii_no_overlap:Function {name: "build_nonascii_no_overlap", type: "function", signature: "build_nonascii_no_overlap(root: Path) -> dict"}),
+#   (f_check_nonascii_no_overlap:Function {name: "check_nonascii_no_overlap", type: "function", signature: "check_nonascii_no_overlap(ctx, before, after)"}),
+#   (f_plan_nonascii_no_overlap:Function {name: "plan_nonascii_no_overlap", type: "function", signature: "plan_nonascii_no_overlap(ctx, result)"}),
+#   (f_build_case_colliding:Function {name: "build_case_colliding", type: "function", signature: "build_case_colliding(root: Path) -> dict"}),
+#   (f_check_case_colliding:Function {name: "check_case_colliding", type: "function", signature: "check_case_colliding(ctx, before, after)"}),
+#   (f_plan_case_colliding:Function {name: "plan_case_colliding", type: "function", signature: "plan_case_colliding(ctx, result)"}),
+#   (f_build_case_colliding_target:Function {name: "build_case_colliding_target", type: "function", signature: "build_case_colliding_target(root: Path) -> dict"}),
+#   (f_plan_case_colliding_target:Function {name: "plan_case_colliding_target", type: "function", signature: "plan_case_colliding_target(ctx, result)"}),
 #   (f_build_sequencer:Function {name: "build_sequencer", type: "function", signature: "build_sequencer(root: Path) -> dict"}),
 #   (f_check_sequencer:Function {name: "check_sequencer", type: "function", signature: "check_sequencer(ctx, before, after)"}),
 #   (f_plan_sequencer:Function {name: "plan_sequencer", type: "function", signature: "plan_sequencer(ctx, result)"}),
@@ -139,7 +148,7 @@
 #   (f_invariants:Function {name: "invariants", type: "function", signature: "invariants(ctx: dict, before: dict, after: dict) -> list[tuple[str, bool]]"}),
 #   (f_rel:Function {name: "rel", type: "function", signature: "rel(ctx: dict, path: str | Path) -> str"}),
 #   (f_snapshot:Function {name: "snapshot", type: "function", signature: "snapshot(ctx: dict) -> dict"}),
-#   (f_snapshot_lambda_1162_43:Function {name: "snapshot.lambda_1162_43", type: "function", signature: "lambda_1162_43(entry)"}),
+#   (f_snapshot_lambda_1242_43:Function {name: "snapshot.lambda_1242_43", type: "function", signature: "lambda_1242_43(entry)"}),
 #   (file)-[:CONTAINS]->(v_TARGET),
 #   (file)-[:CONTAINS]->(v_REGISTRY),
 #   (file)-[:CONTAINS]->(f_scenario),
@@ -256,6 +265,15 @@
 #   (file)-[:CONTAINS]->(f_plan_overwrite_case),
 #   (file)-[:CONTAINS]->(f_build_overwrite_dir_file),
 #   (file)-[:CONTAINS]->(f_build_overwrite_file_dir),
+#   (file)-[:CONTAINS]->(f_build_overwrite_nonascii),
+#   (file)-[:CONTAINS]->(f_build_nonascii_no_overlap),
+#   (file)-[:CONTAINS]->(f_check_nonascii_no_overlap),
+#   (file)-[:CONTAINS]->(f_plan_nonascii_no_overlap),
+#   (file)-[:CONTAINS]->(f_build_case_colliding),
+#   (file)-[:CONTAINS]->(f_check_case_colliding),
+#   (file)-[:CONTAINS]->(f_plan_case_colliding),
+#   (file)-[:CONTAINS]->(f_build_case_colliding_target),
+#   (file)-[:CONTAINS]->(f_plan_case_colliding_target),
 #   (file)-[:CONTAINS]->(f_build_sequencer),
 #   (file)-[:CONTAINS]->(f_check_sequencer),
 #   (file)-[:CONTAINS]->(f_plan_sequencer),
@@ -278,7 +296,7 @@
 #   (file)-[:CONTAINS]->(f_invariants),
 #   (file)-[:CONTAINS]->(f_rel),
 #   (file)-[:CONTAINS]->(f_snapshot),
-#   (f_snapshot)-[:CONTAINS]->(f_snapshot_lambda_1162_43),
+#   (f_snapshot)-[:CONTAINS]->(f_snapshot_lambda_1242_43),
 #   (f__blocked_oracle)-[:USES]->(v_TARGET),
 #   (f__blocked_worktree_builder)-[:CALLS]->(f_base),
 #   (f__blocked_worktree_builder)-[:CALLS]->(f_lane),
@@ -298,6 +316,10 @@
 #   (f_build_busy)-[:CALLS]->(f_base),
 #   (f_build_busy)-[:CALLS]->(f_lane),
 #   (f_build_case)-[:CALLS]->(f__gate_builder),
+#   (f_build_case_colliding)-[:CALLS]->(f_base),
+#   (f_build_case_colliding)-[:CALLS]->(f_lane),
+#   (f_build_case_colliding)-[:USES]->(v_TARGET),
+#   (f_build_case_colliding_target)-[:CALLS]->(f__gate_builder),
 #   (f_build_claude_session)-[:CALLS]->(f_base),
 #   (f_build_claude_session)-[:CALLS]->(f_lane),
 #   (f_build_claude_session)-[:USES]->(v_TARGET),
@@ -325,6 +347,7 @@
 #   (f_build_main_in_progress)-[:CALLS]->(f_lane),
 #   (f_build_main_in_progress)-[:USES]->(v_TARGET),
 #   (f_build_main_prunable)-[:CALLS]->(f__gate_builder),
+#   (f_build_nonascii_no_overlap)-[:CALLS]->(f__overwrite_builder),
 #   (f_build_on_other)-[:CALLS]->(f_base),
 #   (f_build_on_other)-[:CALLS]->(f_lane),
 #   (f_build_ordering)-[:CALLS]->(f_base),
@@ -334,6 +357,7 @@
 #   (f_build_overwrite_case)-[:CALLS]->(f__overwrite_builder),
 #   (f_build_overwrite_dir_file)-[:CALLS]->(f__overwrite_builder),
 #   (f_build_overwrite_file_dir)-[:CALLS]->(f__overwrite_builder),
+#   (f_build_overwrite_nonascii)-[:CALLS]->(f__overwrite_builder),
 #   (f_build_preview)-[:CALLS]->(f_build_happy_path),
 #   (f_build_preview_english)-[:CALLS]->(f_build_happy_path),
 #   (f_build_prunable)-[:CALLS]->(f_base),
@@ -376,6 +400,7 @@
 #   (f_build_worktree_appeared)-[:CALLS]->(f_base),
 #   (f_build_worktree_appeared)-[:CALLS]->(f_lane),
 #   (f_check_appeared)-[:USES]->(v_TARGET),
+#   (f_check_case_colliding)-[:USES]->(v_TARGET),
 #   (f_check_claude_session)-[:USES]->(v_TARGET),
 #   (f_check_conflict)-[:USES]->(v_TARGET),
 #   (f_check_conflict_predicted)-[:USES]->(v_TARGET),
@@ -388,6 +413,7 @@
 #   (f_check_ignored_kept)-[:USES]->(v_TARGET),
 #   (f_check_locked)-[:CALLS]->(f__blocked_oracle),
 #   (f_check_main_in_progress)-[:USES]->(v_TARGET),
+#   (f_check_nonascii_no_overlap)-[:USES]->(v_TARGET),
 #   (f_check_on_other)-[:USES]->(v_TARGET),
 #   (f_check_ordering)-[:USES]->(v_TARGET),
 #   (f_check_overwrite)-[:USES]->(v_TARGET),
@@ -421,6 +447,7 @@
 #   (f_plan_conflict_predicted)-[:CALLS]->(f_stop_code),
 #   (f_plan_happy_path)-[:USES]->(v_TARGET),
 #   (f_plan_main_in_progress)-[:CALLS]->(f_stop_code),
+#   (f_plan_nonascii_no_overlap)-[:CALLS]->(f_stop_code),
 #   (f_plan_oracle_register)-[:USES]->(v_REGISTRY),
 #   (f_plan_overwrite)-[:CALLS]->(f_stop_code),
 #   (f_plan_overwrite_case)-[:CALLS]->(f__overwrite_plan),
@@ -1378,6 +1405,86 @@ def build_overwrite_file_dir(root: Path) -> dict:
 
 oracle("ignored-overwrite-file-dir")(_overwrite_oracle)
 plan_oracle("ignored-overwrite-file-dir")(_overwrite_plan)
+
+
+@scenario("ignored-overwrite-nonascii", "An ignored local file under a non-ASCII directory still stops the merge")
+def build_overwrite_nonascii(root: Path) -> dict:
+    # Git C-quotes non-ASCII paths by default ("\346\236\204..."), which hides the overlap from a plain string compare.
+    return _overwrite_builder(root, "构建/\n", [("构建/输出.txt", "FROM_SOURCE\n")], {"构建/输出.txt": "LOCAL_BUILD\n"})
+
+
+oracle("ignored-overwrite-nonascii")(_overwrite_oracle)
+plan_oracle("ignored-overwrite-nonascii")(_overwrite_plan)
+
+
+@scenario("ignored-nonascii-no-overlap", "An ignored non-ASCII directory does not stop an unrelated non-ASCII change")
+def build_nonascii_no_overlap(root: Path) -> dict:
+    # Without core.quotePath=false the ignored listing is C-quoted, and the quoted-name guard would stop this merge.
+    return _overwrite_builder(root, "构建/\n", [("文档/说明.txt", "doc\n")], {"构建/输出.txt": "LOCAL_BUILD\n"})
+
+
+@oracle("ignored-nonascii-no-overlap")
+def check_nonascii_no_overlap(ctx, before, after):
+    return [("the source content was merged", gitlab.is_ancestor(ctx["repo"], ctx["shas"]["agent/src"], f"refs/heads/{TARGET}")),
+            ("the source branch was deleted", "agent/src" not in after["heads"]),
+            ("the ignored local file is intact", after["files"] == before["files"])]
+
+
+@plan_oracle("ignored-nonascii-no-overlap")
+def plan_nonascii_no_overlap(ctx, result):
+    return [("the run did not stop", stop_code(result) is None)]
+
+
+@scenario("case-colliding-sources", "Two local branches whose names differ only in case are kept unmerged; others converge")
+def build_case_colliding(root: Path) -> dict:
+    ctx = base(root)
+    lane(ctx, "agent/a", [("a.txt", "a\n")])
+    lane(ctx, "agent/Feat", [("feat.txt", "feat\n")])
+    # A packed agent/Feat next to a loose agent/feat: on a case-insensitive filesystem refs/heads/agent/Feat then
+    # resolves to agent/feat's file, and `git branch -d agent/Feat` removes both refs.
+    git(ctx["repo"], "pack-refs", "--all", check=True)
+    git(ctx["repo"], "branch", "agent/feat", f"refs/heads/{TARGET}", check=True)
+    ctx["shas"]["agent/feat"] = ctx["shas"][TARGET]
+    return ctx
+
+
+@oracle("case-colliding-sources")
+def check_case_colliding(ctx, before, after):
+    return [("agent/Feat is kept at its tip", after["heads"].get("agent/Feat") == ctx["shas"]["agent/Feat"]),
+            ("agent/feat is kept at its tip", after["heads"].get("agent/feat") == ctx["shas"]["agent/feat"]),
+            ("agent/Feat's commit was not merged",
+             not gitlab.is_ancestor(ctx["repo"], ctx["shas"]["agent/Feat"], f"refs/heads/{TARGET}")),
+            ("the ordinary source was merged and deleted",
+             gitlab.is_ancestor(ctx["repo"], ctx["shas"]["agent/a"], f"refs/heads/{TARGET}")
+             and "agent/a" not in after["heads"])]
+
+
+@plan_oracle("case-colliding-sources")
+def plan_case_colliding(ctx, result):
+    plan = result["report"]["plan"]
+    statuses = {entry["name"]: entry["status"] for entry in plan["sources"]}
+    return [("both colliding names are UNKNOWN",
+             statuses.get("agent/Feat") == "UNKNOWN" and statuses.get("agent/feat") == "UNKNOWN"),
+            ("each colliding name records its own tip",
+             plan["tips"].get("agent/Feat") == ctx["shas"]["agent/Feat"]
+             and plan["tips"].get("agent/feat") == ctx["shas"]["agent/feat"])]
+
+
+@scenario("case-colliding-target", "A branch named like the target except for case stops the command", report=(TARGET,))
+def build_case_colliding_target(root: Path) -> dict:
+    ctx = _gate_builder(root)
+    git(ctx["repo"], "pack-refs", "--all", check=True)
+    git(ctx["repo"], "branch", "agent/Release", "refs/heads/main", check=True)
+    return ctx
+
+
+oracle("case-colliding-target")(_unchanged_oracle)
+
+
+@plan_oracle("case-colliding-target")
+def plan_case_colliding_target(ctx, result):
+    gates = result["report"]["plan"]["gates"]
+    return [("the gate is NAME_CASE_COLLISION", bool(gates) and gates[0]["code"] == "NAME_CASE_COLLISION")]
 
 
 @scenario("sequencer-in-progress", "A paused cherry-pick sequence keeps its branch: neither merged nor deleted")

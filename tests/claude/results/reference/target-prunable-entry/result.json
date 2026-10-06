@@ -85,6 +85,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",

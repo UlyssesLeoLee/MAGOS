@@ -41,6 +41,10 @@
 | `ignored-overwrite-case` | PASS | 10/10 |
 | `ignored-overwrite-dir-file` | PASS | 10/10 |
 | `ignored-overwrite-file-dir` | PASS | 10/10 |
+| `ignored-overwrite-nonascii` | PASS | 10/10 |
+| `ignored-nonascii-no-overlap` | PASS | 10/10 |
+| `case-colliding-sources` | PASS | 12/12 |
+| `case-colliding-target` | PASS | 8/8 |
 | `sequencer-in-progress` | PASS | 10/10 |
 | `skip-worktree-edits` | PASS | 9/9 |
 | `claude-session-worktree` | PASS | 10/10 |

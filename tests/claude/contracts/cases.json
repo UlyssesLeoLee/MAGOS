@@ -286,7 +286,13 @@
           "`<target>` and `<source>` in a revision argument mean `refs/heads/<name>` or the recorded SHA, never the bare name",
           "Merge the recorded SHA.",
           "Report a same-named tag for any branch, the target included.",
-          "`rev-parse` success is not a match (case-insensitive filesystems resolve the wrong case)"
+          "`rev-parse` success is not a match (case-insensitive filesystems resolve the wrong case)",
+          "Take the SHAs from one `git for-each-ref --format='%(refname) %(objectname)' refs/heads` listing",
+          "- **Case collisions**: when two local branch names are equal ignoring case (`Feat` and `feat`), both are `UNKNOWN` whatever else applies",
+          "If the target or `main` is one of them, that is a gate failure.",
+          "the target or `main` equals another local branch name when case is ignored",
+          "(this is decided before the ordered classification below)",
+          "run `git pack-refs --all` first (then no name is a loose ref file, so each resolves exactly), rename one with `git branch -m`, and compare both tips with the recorded SHAs"
         ]
       }
     ]
@@ -353,7 +359,9 @@
           "BLOCKED_IGNORED_FILES         its worktree holds ignored files (paths listed in full); lifted by --discard-ignored",
           "when one lies under the other (a directory/file clash)",
           "if `git config --bool core.ignorecase` is true, when they match ignoring case",
-          "`git ls-files --others --ignored --exclude-standard --directory`"
+          "`git ls-files --others --ignored --exclude-standard --directory`",
+          "Run both listings from the top level of the invoking worktree as `git -C <top-level> -c core.quotePath=false <command>`",
+          "If the worktree has ignored entries and a line of either listing is still wrapped in double quotes"
         ]
       },
       {
@@ -534,7 +542,8 @@
           "or a paused cherry-pick/revert sequence",
           "`sequencer/`",
           "Check every worktree, including detached ones.",
-          "No entry of `git -C <worktree> ls-files -v` is tagged `S` (skip-worktree) or with a lowercase letter (assume-unchanged) while its file exists on disk"
+          "No entry of `git -C <worktree> ls-files -v` is tagged `S` (skip-worktree) or with a lowercase letter (assume-unchanged) while its file exists on disk",
+          "for the main worktree the result is relative to `<worktree>`, so resolve it against that path before testing whether it exists"
         ]
       }
     ]

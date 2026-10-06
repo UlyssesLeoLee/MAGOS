@@ -101,6 +101,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -144,6 +146,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -250,6 +254,8 @@
           "d2ed7e5d7b7975a6afe8edd524ab25ef51a539f9"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--name-only",
           "724a44b989c793e6aa434c0d4bedd9c523b591a4",
@@ -262,6 +268,8 @@
           "core.ignorecase"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -292,6 +300,8 @@
           "98c0b995231eb30a3f81ed957bfe0849f12298ad"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--name-only",
           "724a44b989c793e6aa434c0d4bedd9c523b591a4",
@@ -304,6 +314,8 @@
           "core.ignorecase"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -370,6 +382,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -413,6 +427,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",

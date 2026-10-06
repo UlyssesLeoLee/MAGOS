@@ -93,6 +93,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -223,6 +225,8 @@
           "78b5fc5eabc1ac60beba287f8e4a0146764a1018"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--name-only",
           "724a44b989c793e6aa434c0d4bedd9c523b591a4",
@@ -235,6 +239,8 @@
           "core.ignorecase"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -265,6 +271,8 @@
           "98c0b995231eb30a3f81ed957bfe0849f12298ad"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--name-only",
           "724a44b989c793e6aa434c0d4bedd9c523b591a4",
@@ -277,6 +285,8 @@
           "core.ignorecase"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -307,6 +317,8 @@
           "04f1a3b084f4ae316f5032ee7c306ebe787bcc4e"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--name-only",
           "724a44b989c793e6aa434c0d4bedd9c523b591a4",
@@ -319,6 +331,8 @@
           "core.ignorecase"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -502,6 +516,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -606,6 +622,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -679,6 +697,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",

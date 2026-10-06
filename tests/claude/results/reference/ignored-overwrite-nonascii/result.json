@@ -1,0 +1,280 @@
+{
+  "checks": [
+    {
+      "name": "every ignored local file is intact",
+      "passed": true
+    },
+    {
+      "name": "the source branch is kept",
+      "passed": true
+    },
+    {
+      "name": "the target did not move",
+      "passed": true
+    },
+    {
+      "name": "invariant: main did not move",
+      "passed": true
+    },
+    {
+      "name": "invariant: tags unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: remote-tracking refs unchanged",
+      "passed": true
+    },
+    {
+      "name": "invariant: no merge left in progress",
+      "passed": true
+    },
+    {
+      "name": "the stop reason is BLOCKED_IGNORED_OVERWRITE",
+      "passed": true
+    },
+    {
+      "name": "command policy: no forbidden git command",
+      "passed": true
+    }
+  ],
+  "note": null,
+  "result": {
+    "report": {
+      "appeared_after_preview": [],
+      "commands": [
+        [
+          "for-each-ref",
+          "--format=%(refname) %(objectname)",
+          "refs/heads"
+        ],
+        [
+          "rev-parse",
+          "--show-toplevel"
+        ],
+        [
+          "worktree",
+          "list",
+          "--porcelain"
+        ],
+        [
+          "rev-parse",
+          "--git-path",
+          "MERGE_HEAD",
+          "--git-path",
+          "CHERRY_PICK_HEAD",
+          "--git-path",
+          "REVERT_HEAD",
+          "--git-path",
+          "sequencer",
+          "--git-path",
+          "rebase-merge",
+          "--git-path",
+          "rebase-apply",
+          "--git-path",
+          "BISECT_LOG",
+          "--git-path",
+          "rebase-merge/head-name",
+          "--git-path",
+          "rebase-apply/head-name",
+          "--git-path",
+          "BISECT_START"
+        ],
+        [
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all"
+        ],
+        [
+          "ls-files",
+          "-v"
+        ],
+        [
+          "-c",
+          "core.quotePath=false",
+          "ls-files",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "--directory"
+        ],
+        [
+          "submodule",
+          "status"
+        ],
+        [
+          "merge-base",
+          "refs/heads/agent/release",
+          "6e64b53e5498e0858654931d4144e2383c8a2d6e"
+        ],
+        [
+          "rev-list",
+          "--count",
+          "refs/heads/agent/release..6e64b53e5498e0858654931d4144e2383c8a2d6e"
+        ],
+        [
+          "log",
+          "--oneline",
+          "--no-decorate",
+          "--max-count=20",
+          "refs/heads/agent/release..6e64b53e5498e0858654931d4144e2383c8a2d6e"
+        ],
+        [
+          "merge-tree",
+          "--write-tree",
+          "--no-messages",
+          "refs/heads/agent/release",
+          "6e64b53e5498e0858654931d4144e2383c8a2d6e"
+        ],
+        [
+          "for-each-ref",
+          "--format=%(refname:lstrip=2)|%(upstream)",
+          "refs/heads"
+        ],
+        [
+          "merge-base",
+          "refs/heads/agent/release",
+          "093d6d5d543ae4d2526a24a9c874ab5f06f2af28"
+        ],
+        [
+          "tag",
+          "--list"
+        ],
+        [
+          "rev-parse",
+          "--verify",
+          "-q",
+          "refs/remotes/origin/main"
+        ],
+        [
+          "rev-list",
+          "--left-right",
+          "--count",
+          "refs/heads/main...refs/remotes/origin/main"
+        ],
+        [
+          "for-each-ref",
+          "--format=%(refname)",
+          "refs/remotes"
+        ],
+        [
+          "for-each-ref",
+          "--format=%(refname) %(objectname)",
+          "refs/heads"
+        ],
+        [
+          "merge-base",
+          "--is-ancestor",
+          "6e64b53e5498e0858654931d4144e2383c8a2d6e",
+          "refs/heads/agent/release"
+        ],
+        [
+          "merge-base",
+          "refs/heads/agent/release",
+          "6e64b53e5498e0858654931d4144e2383c8a2d6e"
+        ],
+        [
+          "-c",
+          "core.quotePath=false",
+          "diff",
+          "--name-only",
+          "7e364b1c0194838b72f68be7ba175187571376c6",
+          "6e64b53e5498e0858654931d4144e2383c8a2d6e"
+        ],
+        [
+          "config",
+          "--get",
+          "--bool",
+          "core.ignorecase"
+        ],
+        [
+          "-c",
+          "core.quotePath=false",
+          "ls-files",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "--directory"
+        ]
+      ],
+      "deleted": {},
+      "end_sha": null,
+      "final_branches": null,
+      "ops": [],
+      "plan": {
+        "final_branches": [
+          "agent/release",
+          "main"
+        ],
+        "gates": [],
+        "invoking": {
+          "branch": "agent/release",
+          "path": "<root>/repo"
+        },
+        "merge_order": [
+          "agent/src"
+        ],
+        "notes": {
+          "detached_worktrees": [],
+          "main_vs_origin": "0\t0",
+          "remote_branches": [
+            "refs/remotes/origin/main"
+          ],
+          "tag_collisions": [],
+          "validation": "not identifiable"
+        },
+        "removals": [],
+        "residual": [],
+        "sources": [
+          {
+            "blockers": [],
+            "commits": [],
+            "delete": false,
+            "kept": true,
+            "more": 0,
+            "name": "main",
+            "predicted_conflict": null,
+            "sha": "093d6d5d543ae4d2526a24a9c874ab5f06f2af28",
+            "status": "CONTAINED",
+            "unique": 0,
+            "worktree": null
+          },
+          {
+            "blockers": [],
+            "commits": [
+              "6e64b53 agent/src: 构建/输出.txt"
+            ],
+            "delete": true,
+            "more": 0,
+            "name": "agent/src",
+            "predicted_conflict": false,
+            "sha": "6e64b53e5498e0858654931d4144e2383c8a2d6e",
+            "status": "MERGE",
+            "unique": 1,
+            "worktree": null
+          }
+        ],
+        "target": "agent/release",
+        "tips": {
+          "agent/release": "7e364b1c0194838b72f68be7ba175187571376c6",
+          "agent/src": "6e64b53e5498e0858654931d4144e2383c8a2d6e",
+          "main": "093d6d5d543ae4d2526a24a9c874ab5f06f2af28"
+        },
+        "unknown_owner_removals": []
+      },
+      "skipped": [],
+      "start_sha": "7e364b1c0194838b72f68be7ba175187571376c6",
+      "stopped": {
+        "code": "BLOCKED_IGNORED_OVERWRITE",
+        "message": "merging agent/src would overwrite ignored files: ['构建/输出.txt']"
+      },
+      "validation": "not identifiable",
+      "worktree_appeared": []
+    }
+  },
+  "status": "PASS",
+  "traceback": null
+}

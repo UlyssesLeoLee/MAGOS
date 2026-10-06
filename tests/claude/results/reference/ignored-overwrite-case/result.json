@@ -93,6 +93,8 @@
           "-v"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",
@@ -175,6 +177,8 @@
           "3408bf679cad94b2bdc2fe34b00084d5ad4e4022"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "diff",
           "--name-only",
           "ae6878e50857f4c6a87628dd83deb79fb7479513",
@@ -187,6 +191,8 @@
           "core.ignorecase"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",

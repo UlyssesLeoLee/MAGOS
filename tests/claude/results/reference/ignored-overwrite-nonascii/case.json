@@ -1,0 +1,5 @@
+{
+  "id": "ignored-overwrite-nonascii",
+  "mode": "apply",
+  "title": "An ignored local file under a non-ASCII directory still stops the merge"
+}

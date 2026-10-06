@@ -77,6 +77,8 @@
           "--untracked-files=all"
         ],
         [
+          "-c",
+          "core.quotePath=false",
           "ls-files",
           "--others",
           "--ignored",

@@ -114,3 +114,31 @@ all confirmed. The 15 most severe were reported; every fix below is covered by a
   Say if you want a line added there.
 - **Parallel scenario execution (efficiency).** The trace is process-global, so running scenarios in parallel would mix
   traces. It was left sequential.
+
+# Full-package review (2026-10)
+
+Eight reviewers (core rules, Claude commands, Codex/Hermes adapters, Git semantics, installer, docs and package, both test
+harnesses) and a completeness critic produced 74 findings. Each was checked by one or two skeptics, who reproduced the Git
+claims in disposable repositories: 59 confirmed, 15 refuted. This round fixed the four high-severity findings, three missing
+GitCleanup protections, and the Claude Code install text. The remaining medium and low findings are open.
+
+| Finding | Disposition | Covered by |
+|---|---|---|
+| GitCleanup listed a repository-wide `git worktree prune` as a safe operation (it orphans detached commits whose directory is missing) | adopted: removed; worktrees, prunable entries included, are removed by path only (a detached prunable entry is `UNKNOWN`); the ban is repeated in the wrapper and the adapter | `git-cleanup/apply-safe-only` pins the exact safe-operations block, so re-adding the command fails it |
+| GitCleanup never defined "dirty": `status.showUntrackedFiles=no` hides untracked files, and `git worktree remove` deletes ignored files such as `.env` | adopted: section 6's **clean** applies; new `BLOCKED_IGNORED_FILES` with no override (move or delete the files by hand, then run GitCleanup again) | `git-cleanup/preview-classification` |
+| GitCleanup had no in-progress rule: a worktree stopped mid-rebase looks clean and detached | adopted: new `BLOCKED_IN_PROGRESS`, using section 6's **in progress** | `git-cleanup/preview-classification` |
+| GitCleanup could list `main`, the integration target, or the invoking worktree | adopted: "never a candidate" | `git-cleanup/preview-classification`, `git-cleanup/apply-safe-only` |
+| The ignored-file overlap check compared raw output: with the default `core.quotePath` a non-ASCII path is C-quoted and never matches | adopted: both listings run from the worktree top level with `-c core.quotePath=false`; when the worktree has ignored entries, a name Git still quotes makes every changed path count as overlapping | `ignored-overwrite-nonascii`, `ignored-nonascii-no-overlap`, mutations `quoted-ignored-paths` and `default-quotepath`, `git-converge/ignored-files` |
+| Two branches whose names differ only in case: `refs/heads/<name>` can read the other one's loose ref, and `git branch -d` can remove both | adopted: SHAs come from one `for-each-ref` listing; both names are `UNKNOWN`; a collision with the target or `main` is gate `NAME_CASE_COLLISION`; the report gives a safe rename (`git pack-refs --all` first: a plain `git branch -m` on a colliding packed name gave the new name the other branch's tip and deleted both refs in a scratch repository) | `case-colliding-sources`, `case-colliding-target`, mutation `no-case-collision-check`, `git-converge/refname-safety` |
+| `rev-parse --git-path` is relative for the main worktree, so an existence test from another directory misses its in-progress markers | adopted in the contract text (the executor already resolved it against the worktree) | `git-converge/hidden-state` |
+| README.en.md said dropping the skill into `~/.claude/skills/` gives the `/Git` commands; no install text said the copies go stale after an update | adopted: both READMEs and the root `SKILL.md` say the commands come only from `~/.claude/commands/` and must be re-synced after every update (`sync_hosts.py --host claude`) | not tested (documentation) |
+
+A second, two-reviewer pass over these fixes found the gaps that the rows above already include: the rename advice, the
+quoted-name guard covering only one listing and firing without ignored entries, listings not anchored to the top level,
+an H1 pin that could not fail, a misleading `/GitConverge --discard-ignored` hint, and a missing rule for prunable entries.
+It also found that importing section 6's **active owner** would have let GitCleanup remove worktrees whose owner is not
+recorded (GitConverge's **unknown owner** exception); GitCleanup now reports them as `UNKNOWN` instead.
+
+Trade-offs: GitCleanup now keeps every worktree that holds ignored files, including `node_modules/` or `.venv/`, because
+it cannot tell a cache from a secret; and it keeps every linked worktree whose owner is not recorded, as the
+reconnaissance rule `UNKNOWN_OWNER` already required.

@@ -14,6 +14,11 @@
       "file": "skills/git-cleanup/SKILL.md",
       "passed": true,
       "missing": []
+    },
+    {
+      "file": "commands/GitCleanup.md",
+      "passed": true,
+      "missing": []
     }
   ]
 }

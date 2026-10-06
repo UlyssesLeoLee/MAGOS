@@ -1,6 +1,6 @@
 # Mutation checks
 
-- Killed: **26/27**; unexpected outcomes: **0**
+- Killed: **29/30**; unexpected outcomes: **0**
 
 | Mutation | Verdict | Expected | Caught by |
 |---|---|---|---|
@@ -29,5 +29,8 @@
 | `no-project-harness-root` — forget <repo>/.claude/worktrees as a harness root | KILLED | killed | `claude-session-worktree`: the session branch is kept, the session worktree is kept |
 | `no-dependency-fixpoint` — ignore branches that a remaining lane tracks | KILLED | killed | `dependency-of-remaining-lane`: the branch it tracks is kept, the lane's upstream still resolves; `upstream-of-kept`: the tracked branch is kept |
 | `exact-ignored-overlap` — compare ignored paths by exact string only | KILLED | killed | `ignored-overwrite-dir-file`: every ignored local file is intact, the source branch is kept, the target did not move, the stop reason is BLOCKED_IGNORED_OVERWRITE; `ignored-overwrite-file-dir`: every ignored local file is intact, the source branch is kept, the target did not move, the stop reason is BLOCKED_IGNORED_OVERWRITE |
+| `quoted-ignored-paths` — compare paths in Git's default C-quoted form, with no quoted-name guard | KILLED | killed | `ignored-overwrite-nonascii`: every ignored local file is intact, the source branch is kept, the target did not move, the stop reason is BLOCKED_IGNORED_OVERWRITE |
+| `default-quotepath` — list paths without core.quotePath=false (the guard alone) | KILLED | killed | `ignored-nonascii-no-overlap`: the source content was merged, the source branch was deleted, the run did not stop |
+| `no-case-collision-check` — ignore branch names that differ only in case | KILLED | killed | `case-colliding-sources`: agent/Feat is kept at its tip, agent/feat is kept at its tip, agent/Feat's commit was not merged, both colliding names are UNKNOWN; `case-colliding-target`: the gate is NAME_CASE_COLLISION |
 | `target-move-always-stale` — treat the target's own merges as a stale preview | KILLED | killed | `rerun-after-interrupted-apply`: only main and the target remain, the rerun is not treated as a stale preview |
 | `ignore-lock-gate` — drop the lock gate (Git still refuses to remove a locked worktree) | SURVIVED | survive (Git enforces it) | - |

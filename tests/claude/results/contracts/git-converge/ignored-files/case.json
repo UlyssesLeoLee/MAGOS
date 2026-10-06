@@ -26,7 +26,9 @@
         "BLOCKED_IGNORED_FILES         its worktree holds ignored files (paths listed in full); lifted by --discard-ignored",
         "when one lies under the other (a directory/file clash)",
         "if `git config --bool core.ignorecase` is true, when they match ignoring case",
-        "`git ls-files --others --ignored --exclude-standard --directory`"
+        "`git ls-files --others --ignored --exclude-standard --directory`",
+        "Run both listings from the top level of the invoking worktree as `git -C <top-level> -c core.quotePath=false <command>`",
+        "If the worktree has ignored entries and a line of either listing is still wrapped in double quotes"
       ]
     },
     {

@@ -23,7 +23,13 @@
         "`<target>` and `<source>` in a revision argument mean `refs/heads/<name>` or the recorded SHA, never the bare name",
         "Merge the recorded SHA.",
         "Report a same-named tag for any branch, the target included.",
-        "`rev-parse` success is not a match (case-insensitive filesystems resolve the wrong case)"
+        "`rev-parse` success is not a match (case-insensitive filesystems resolve the wrong case)",
+        "Take the SHAs from one `git for-each-ref --format='%(refname) %(objectname)' refs/heads` listing",
+        "- **Case collisions**: when two local branch names are equal ignoring case (`Feat` and `feat`), both are `UNKNOWN` whatever else applies",
+        "If the target or `main` is one of them, that is a gate failure.",
+        "the target or `main` equals another local branch name when case is ignored",
+        "(this is decided before the ordered classification below)",
+        "run `git pack-refs --all` first (then no name is a loose ref file, so each resolves exactly), rename one with `git branch -m`, and compare both tips with the recorded SHAs"
       ]
     }
   ]

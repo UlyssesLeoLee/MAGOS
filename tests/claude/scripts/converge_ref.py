@@ -10,7 +10,9 @@
 #   (f_in_progress:Function {name: "in_progress", type: "function", signature: "in_progress(worktree: Path | str) -> dict"}),
 #   (f_hidden_edits:Function {name: "hidden_edits", type: "function", signature: "hidden_edits(worktree: Path | str) -> list[str]"}),
 #   (f_is_clean:Function {name: "is_clean", type: "function", signature: "is_clean(worktree: Path | str) -> bool"}),
+#   (f_path_lines:Function {name: "path_lines", type: "function", signature: "path_lines(cwd: Path | str, *args: str) -> list[str]"}),
 #   (f_ignored_files:Function {name: "ignored_files", type: "function", signature: "ignored_files(worktree: Path | str) -> list[str]"}),
+#   (f_case_collisions:Function {name: "case_collisions", type: "function", signature: "case_collisions(names) -> set[str]"}),
 #   (f_has_submodules:Function {name: "has_submodules", type: "function", signature: "has_submodules(worktree: Path | str) -> bool"}),
 #   (f_harness_owned:Function {name: "harness_owned", type: "function", signature: "harness_owned(path: str, roots: tuple[str, ...]) -> bool"}),
 #   (f_inventory:Function {name: "inventory", type: "function", signature: "inventory(invoking: Path | str, roots: tuple[str, ...]) -> list[dict]"}),
@@ -25,12 +27,12 @@
 #   (f_traced:Function {name: "traced", type: "function", signature: "traced(function)"}),
 #   (f_traced_wrapper:Function {name: "traced.wrapper", type: "function", signature: "wrapper(*args, **kwargs)"}),
 #   (f_survey:Function {name: "survey", type: "function", signature: "survey(invoking: Path | str, target: str, discard_ignored: bool=False, harness_roots: tuple[str, ...]=HARNESS_ROOTS) -> dict"}),
-#   (f_survey_lambda_268_25:Function {name: "survey.lambda_268_25", type: "function", signature: "lambda_268_25(entry)"}),
+#   (f_survey_lambda_290_25:Function {name: "survey.lambda_290_25", type: "function", signature: "lambda_290_25(entry)"}),
 #   (f_survey_gate:Function {name: "survey.gate", type: "function", signature: "gate(code: str, message: str) -> None"}),
 #   (f_stop:Function {name: "stop", type: "function", signature: "stop(report: dict, code: str, message: str) -> dict"}),
 #   (f_ignored_overlap:Function {name: "ignored_overlap", type: "function", signature: "ignored_overlap(repo: Path | str, changed: set[str]) -> list[str]"}),
-#   (f_ignored_overlap_lambda_298_58:Function {name: "ignored_overlap.lambda_298_58", type: "function", signature: "lambda_298_58(value)"}),
-#   (f_ignored_overlap_lambda_298_12:Function {name: "ignored_overlap.lambda_298_12", type: "function", signature: "lambda_298_12(value)"}),
+#   (f_ignored_overlap_lambda_323_58:Function {name: "ignored_overlap.lambda_323_58", type: "function", signature: "lambda_323_58(value)"}),
+#   (f_ignored_overlap_lambda_323_12:Function {name: "ignored_overlap.lambda_323_12", type: "function", signature: "lambda_323_12(value)"}),
 #   (f_target_moved_only_by_plan:Function {name: "target_moved_only_by_plan", type: "function", signature: "target_moved_only_by_plan(repo: Path | str, old: str, new: str, recorded: set[str]) -> bool"}),
 #   (f_delete_branch:Function {name: "delete_branch", type: "function", signature: "delete_branch(repo: Path | str, name: str, sha: str, target: str, ctx: dict, report: dict) -> None"}),
 #   (f_delete_branch_skip:Function {name: "delete_branch.skip", type: "function", signature: "skip(reason: str) -> None"}),
@@ -45,7 +47,9 @@
 #   (file)-[:CONTAINS]->(f_in_progress),
 #   (file)-[:CONTAINS]->(f_hidden_edits),
 #   (file)-[:CONTAINS]->(f_is_clean),
+#   (file)-[:CONTAINS]->(f_path_lines),
 #   (file)-[:CONTAINS]->(f_ignored_files),
+#   (file)-[:CONTAINS]->(f_case_collisions),
 #   (file)-[:CONTAINS]->(f_has_submodules),
 #   (file)-[:CONTAINS]->(f_harness_owned),
 #   (file)-[:CONTAINS]->(f_inventory),
@@ -60,12 +64,12 @@
 #   (file)-[:CONTAINS]->(f_traced),
 #   (f_traced)-[:CONTAINS]->(f_traced_wrapper),
 #   (file)-[:CONTAINS]->(f_survey),
-#   (f_survey)-[:CONTAINS]->(f_survey_lambda_268_25),
+#   (f_survey)-[:CONTAINS]->(f_survey_lambda_290_25),
 #   (f_survey)-[:CONTAINS]->(f_survey_gate),
 #   (file)-[:CONTAINS]->(f_stop),
 #   (file)-[:CONTAINS]->(f_ignored_overlap),
-#   (f_ignored_overlap)-[:CONTAINS]->(f_ignored_overlap_lambda_298_58),
-#   (f_ignored_overlap)-[:CONTAINS]->(f_ignored_overlap_lambda_298_12),
+#   (f_ignored_overlap)-[:CONTAINS]->(f_ignored_overlap_lambda_323_58),
+#   (f_ignored_overlap)-[:CONTAINS]->(f_ignored_overlap_lambda_323_12),
 #   (file)-[:CONTAINS]->(f_target_moved_only_by_plan),
 #   (file)-[:CONTAINS]->(f_delete_branch),
 #   (f_delete_branch)-[:CONTAINS]->(f_delete_branch_skip),
@@ -74,6 +78,7 @@
 #   (f_apply)-[:CALLS]->(f_apply_call_hook),
 #   (f_apply)-[:CALLS]->(f_delete_branch),
 #   (f_apply)-[:CALLS]->(f_ignored_overlap),
+#   (f_apply)-[:CALLS]->(f_path_lines),
 #   (f_apply)-[:CALLS]->(f_stop),
 #   (f_apply)-[:CALLS]->(f_survey),
 #   (f_apply)-[:CALLS]->(f_target_moved_only_by_plan),
@@ -85,6 +90,7 @@
 #   (f_delete_branch)-[:CALLS]->(f_delete_branch_skip),
 #   (f_delete_branch)-[:CALLS]->(f_inventory),
 #   (f_delete_branch)-[:CALLS]->(f_worktree_blockers),
+#   (f_ignored_files)-[:CALLS]->(f_path_lines),
 #   (f_ignored_overlap)-[:CALLS]->(f_ignored_files),
 #   (f_in_progress)-[:USES]->(v_HEAD_NAME_FILES),
 #   (f_in_progress)-[:USES]->(v_PROGRESS_FILES),
@@ -97,6 +103,7 @@
 #   (f_is_clean)-[:CALLS]->(f_hidden_edits),
 #   (f_mark_dependencies)-[:CALLS]->(f_mark_dependencies_remains),
 #   (f_mark_dependencies_remains)-[:USES]->(v_MERGE_STATUSES),
+#   (f_survey)-[:CALLS]->(f_case_collisions),
 #   (f_survey)-[:CALLS]->(f_checked_out),
 #   (f_survey)-[:CALLS]->(f_classify),
 #   (f_survey)-[:CALLS]->(f_inventory),
@@ -159,9 +166,23 @@ def is_clean(worktree: Path | str) -> bool:
     return out(worktree, "status", "--porcelain=v1", "--untracked-files=all") == "" and not hidden_edits(worktree)
 
 
+def path_lines(cwd: Path | str, *args: str) -> list[str]:
+    """A path listing with non-ASCII names printed as-is (`core.quotePath=false`); a name Git must still quote keeps
+    its surrounding double quotes. The output is not stripped: a name may begin or end with a space."""
+    return git(cwd, "-c", "core.quotePath=false", *args, check=True).stdout.splitlines()
+
+
 def ignored_files(worktree: Path | str) -> list[str]:
     """Ignored entries (a trailing '/' marks a whole ignored directory) that `git worktree remove` deletes silently."""
-    return out(worktree, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory").splitlines()
+    return path_lines(worktree, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory")
+
+
+def case_collisions(names) -> set[str]:
+    """Local branch names that equal another local branch name when case is ignored."""
+    groups: dict[str, list[str]] = {}
+    for name in names:
+        groups.setdefault(name.lower(), []).append(name)
+    return {name for group in groups.values() if len(group) > 1 for name in group}
 
 
 def has_submodules(worktree: Path | str) -> bool:
@@ -266,6 +287,9 @@ def classify(repo: Path | str, target: str, name: str, sha: str, ctx: dict) -> d
     holder = ctx["holder"].get(name)
     if holder is not None and not holder["invoking"]:
         entry["worktree"] = holder["path"]
+    if name in ctx["collisions"]:
+        entry["status"] = "UNKNOWN"
+        return entry
     base = git(repo, "merge-base", f"refs/heads/{target}", sha)
     if base.returncode == 1:
         entry["status"] = "BLOCKED_UNRELATED_HISTORY"
@@ -338,6 +362,11 @@ def survey(invoking: Path | str, target: str, discard_ignored: bool = False,
         gate("TARGET_IS_MAIN", "GitConverge never moves main; use GitIntegrate to change main")
     if "main" not in heads:
         gate("MAIN_MISSING", "local branch 'main' does not exist")
+    collisions = case_collisions(heads)
+    clashing = [name for name in (target, "main") if name in collisions]
+    if clashing:
+        gate("NAME_CASE_COLLISION", f"{', '.join(clashing)}: equal to another local branch name when case is ignored; "
+                                    "make the names distinct first (git pack-refs --all, then git branch -m)")
     if plan["gates"]:
         return plan
 
@@ -363,7 +392,7 @@ def survey(invoking: Path | str, target: str, discard_ignored: bool = False,
     if plan["gates"]:
         return plan
 
-    ctx = {"holder": holder, "busy": busy, "discard_ignored": discard_ignored}
+    ctx = {"holder": holder, "busy": busy, "discard_ignored": discard_ignored, "collisions": collisions}
     sources = [classify(repo, target, name, sha, ctx) for name, sha in sorted(heads.items())
                if name not in (target, "main")]
     mark_dependencies(sources, target, local_upstreams(repo))
@@ -401,10 +430,16 @@ def stop(report: dict, code: str, message: str) -> dict:
 
 
 def ignored_overlap(repo: Path | str, changed: set[str]) -> list[str]:
-    """Changed paths that equal, contain, or lie under an ignored entry (case-folded when core.ignorecase is true)."""
+    """Changed paths that equal, contain, or lie under an ignored entry (case-folded when core.ignorecase is true).
+
+    A name Git still quotes (a quote, backslash, or control character in it) cannot be compared safely, so when the
+    worktree has ignored entries, any such name on either side makes every changed path count as overlapping."""
     fold = git(repo, "config", "--get", "--bool", "core.ignorecase").stdout.strip() == "true"
     norm = (lambda value: value.casefold()) if fold else (lambda value: value)
-    ignored = [norm(entry.rstrip("/")) for entry in ignored_files(repo)]
+    listed = ignored_files(repo)
+    if changed and listed and any(name.startswith('"') for name in [*listed, *changed]):
+        return sorted(changed)
+    ignored = [norm(entry.rstrip("/")) for entry in listed]
     hits = []
     for path in changed:
         candidate = norm(path)
@@ -519,7 +554,7 @@ def apply(invoking: Path | str, target: str, discard_ignored: bool = False, earl
             report["ops"].append(f"skip {name}: contained by an earlier merge")
             continue
         base = out(repo, "merge-base", f"refs/heads/{target}", entry["sha"])
-        overlap = ignored_overlap(repo, set(out(repo, "diff", "--name-only", base, entry["sha"]).splitlines()))
+        overlap = ignored_overlap(repo, set(path_lines(repo, "diff", "--name-only", base, entry["sha"])))
         if overlap:
             return stop(report, "BLOCKED_IGNORED_OVERWRITE", f"merging {name} would overwrite ignored files: {overlap}")
         merged = git(repo, "merge", "--no-ff", "-m", f"Merge branch '{name}' into {target}", entry["sha"])

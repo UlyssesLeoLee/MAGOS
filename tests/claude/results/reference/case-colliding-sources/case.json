@@ -1,0 +1,5 @@
+{
+  "id": "case-colliding-sources",
+  "mode": "apply",
+  "title": "Two local branches whose names differ only in case are kept unmerged; others converge"
+}

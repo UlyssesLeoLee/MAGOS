@@ -23,7 +23,8 @@
   },
   "expected": [
     "Shows evidence for each candidate and its block reason.",
-    "Leaves all refs and worktrees unchanged in preview mode."
+    "Leaves all refs and worktrees unchanged in preview mode.",
+    "Never lists main, the integration target, or the invoking worktree as a candidate; blocks worktrees that are dirty (untracked files included), in progress, or hold ignored files."
   ],
   "checks": [
     {
@@ -36,7 +37,16 @@
         "BLOCKED_ACTIVE_OWNER",
         "BLOCKED_DEPENDENCY",
         "BLOCKED_NOT_INTEGRATED",
-        "UNKNOWN"
+        "UNKNOWN",
+        "- **Never a candidate**: `main`, the integration target, the remote default branch (`origin/HEAD`)",
+        "The section 6 definitions of **clean**, **in progress**, **active owner**, **Names vs SHAs**, and **Case collisions** apply here unchanged.",
+        "(always pass the flag: `status.showUntrackedFiles=no` hides untracked files, and `git worktree remove` then deletes them)",
+        "- `BLOCKED_IN_PROGRESS`: the worktree is in progress, or the branch is named as the one a rebase or bisect in another worktree is working on.",
+        "- `BLOCKED_IGNORED_FILES`: the worktree holds ignored files (paths listed in full). `git worktree remove` deletes them without asking",
+        "- `UNKNOWN` also covers both branches when two local branch names are equal ignoring case",
+        "Its **unknown owner** exception does not: a linked worktree with no active-owner evidence and no lane record is `UNKNOWN`",
+        "GitCleanup has no override: move or delete them by hand, then run GitCleanup again.",
+        "Not touched (main, the integration target, the invoking worktree)"
       ]
     },
     {

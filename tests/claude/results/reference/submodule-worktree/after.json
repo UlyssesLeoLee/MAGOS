@@ -1,8 +1,8 @@
 {
   "files": {},
   "heads": {
-    "agent/release": "6fbdb384a48a5d3502700812a8324fce4fcfa3c7",
-    "agent/sub": "91ceed9054f3b197c54ee59aa7837468e3065a55",
+    "agent/release": "d91859a99edd26bc83e329b6b48e95be3ad7c923",
+    "agent/sub": "f8b5ad212f68fe1921bf4740cd9e3236edf4e173",
     "main": "a7865dbe7a31d2bb23b950e1254840cd742e243e"
   },
   "invoking_head": "agent/release",
@@ -20,7 +20,7 @@
       "branch": "agent/release",
       "detached": false,
       "exists": true,
-      "head": "6fbdb384a48a5d3502700812a8324fce4fcfa3c7",
+      "head": "d91859a99edd26bc83e329b6b48e95be3ad7c923",
       "locked": false,
       "path": "repo",
       "prunable": false,
@@ -30,7 +30,7 @@
       "branch": "agent/sub",
       "detached": false,
       "exists": true,
-      "head": "91ceed9054f3b197c54ee59aa7837468e3065a55",
+      "head": "f8b5ad212f68fe1921bf4740cd9e3236edf4e173",
       "locked": false,
       "path": "wt-sub",
       "prunable": false,
