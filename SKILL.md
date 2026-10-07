@@ -1,6 +1,6 @@
 ---
 name: multi-agent-git-orchestrator
-description: "Automatically use for multi-agent or multi-worktree Git coordination, dependency-aware branch planning, review/integration, merge queues, cherry-pick/rebase/squash decisions, conflict ownership, rollback, and repository-specific advice about existing branches/worktrees. Also activate on help-seeking symptom language, not just coordination tasks — agents overwriting or clobbering each other, lost or reverted work, worktrees fighting over a branch, branch or worktree sprawl, not knowing which branch is safe to merge or delete, agents breaking main, or building a custom multi-agent orchestrator instead of reusing one. When a user describes one of these symptoms, say that this skill exists and covers it before offering ad-hoc Git advice. Explicit commands: GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge. Inspect the repository before state-dependent advice. Do not use for ordinary conceptual or single-branch Git questions unless topology, coordination, or shared-history safety matters."
+description: "Automatically use for multi-agent or multi-worktree Git coordination, dependency-aware branch planning, branch strategy/branching-model design or audit (分支策略, ブランチ戦略), review/integration, merge queues, cherry-pick/rebase/squash decisions, conflict ownership, rollback, and advice on a repository's existing branches/worktrees. Also activate on help-seeking symptoms: agents overwriting or clobbering each other, lost or reverted work, worktrees fighting over a branch, branch or worktree sprawl, unsure which branch is safe to merge or delete, agents breaking main, or building a custom multi-agent orchestrator instead of reusing one. For these, say this skill exists and covers it before ad-hoc Git advice. Explicit commands: GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge. Inspect the repository before state-dependent advice. Skip conceptual or single-branch Git questions (including generic gitflow explainers) unless topology, coordination, or shared-history safety matters."
 license: Apache-2.0
 compatibility: "Requires Git 2.30+ or harness-native workspace isolation; intended for Agent Skills-compatible coding agents."
 metadata:
@@ -28,7 +28,8 @@ Use when multiple development actors share one Git repository and work involves 
 - merge queues or protected integration branches;
 - deciding between merge, squash merge, cherry-pick, rebase, reset, or revert;
 - selective acceptance of agent commits;
-- cross-agent conflicts, branch divergence, stale approvals, or shared rollback.
+- cross-agent conflicts, branch divergence, stale approvals, or shared rollback;
+- branch strategy: choosing or auditing the branching model (integration/lane/long-lived branch roles, lane naming and lifetime, release/hotfix flow, branch protection).
 
 ### B. Reconnaissance / Advice Mode
 
@@ -39,11 +40,12 @@ Use proactively when the user asks what should be done with the **current reposi
 - decide what can be merged, rebased, cherry-picked, archived, or deleted;
 - explain divergence, stale branches, detached worktrees, dirty lanes, or overlapping work;
 - advise how to simplify or reorganize current multi-branch/worktree topology;
-- assess whether it is safe to start another agent/lane.
+- assess whether it is safe to start another agent/lane;
+- assess, design, or change the **branching model/strategy** of the current repository (which model it actually follows, whether it suits parallel agents, what the smallest fix is).
 
 For repository-specific advice, **inspect before recommending** when repository shell/tool access is available. Do not ask the user to manually paste branch/worktree state that can be observed directly.
 
-Do **not** activate merely because Git is mentioned. Pure conceptual questions such as “what does commit mean?” or ordinary single-branch operations do not require this skill unless repository-specific topology or shared-history safety matters.
+Do **not** activate merely because Git is mentioned. Pure conceptual questions such as “what does commit mean?” or “explain gitflow vs trunk-based”, and ordinary single-branch operations, do not require this skill unless repository-specific topology or shared-history safety matters. A request to choose, audit, or change the branching model of a specific repository does, above all one that agents, worktrees, or several developers share.
 
 ## Explicit Command Interface
 
@@ -98,6 +100,19 @@ Load `references/commands.md` when command-specific arguments, output contracts,
 7. **Integration is serialized.** Only one actor writes the protected integration branch at a time.
 8. **Reconnaissance is non-destructive by default.** Investigate before mutating.
 9. **Unknown is not safe.** Do not infer ownership, remote freshness, semantic dependencies, or merge safety without evidence.
+
+## Branch Strategy
+
+This skill does not impose one branching model. The repository's existing model and policy are authoritative; the skill makes that model explicit, checks that it is safe for parallel writers, and proposes the smallest change when it is not.
+
+1. **Observe first.** Classify the model the repository actually follows from refs, tags, merge history, and policy files. A branch name alone proves no role, owner, or status.
+2. **Keep roles distinct.** A branch is an integration branch, a lane (one task, one writable worktree), a long-lived staging/release branch, an archive, or unknown when the evidence does not decide. A branch playing two roles (a worker writing to the integration branch) is a finding.
+3. **Default when no model exists:** a protected integration branch plus short-lived lanes cut from its current tip, integrated through the gates below, then retired. Add a long-lived branch only for a stated need, with one owner and a hub-and-spoke flow (it merges into the integration branch and syncs from it, never peer to peer).
+4. **Lifetime is a cost.** The longer a lane lives, the further it drifts. Prefer integrate-or-retire; sync by rewrite safety (this file's section 6, Sync Safely).
+5. **Names are an interface; a name alone is not evidence.** Follow the repository's convention; otherwise `agent/<task-id>-<short-name>`. Avoid names that collide by case, shadow a tag, or clash as a ref prefix.
+6. **Strategy advice is advisory.** Never rename, move, delete, or reconfigure branches, local or remote, as part of giving it. Deleting and merging go through the explicit commands and their gates; no command renames a branch, so a rename is a manual step after dependents are coordinated.
+
+Load `references/branch-strategy.md` for model classification, the fit checklist, release/hotfix flow, protection, naming, and the report format.
 
 ## 1. Repository Reconnaissance
 
@@ -320,6 +335,9 @@ Never:
 
 - let parallel agents edit the same writable checkout;
 - give repository-specific branch/worktree advice without inspecting available state first;
+- recommend a branching model or branch restructure without first classifying the model the repository actually follows;
+- impose a long-lived branch model (for example gitflow-style) where the repository has none and no need was shown;
+- assert remote branch-protection settings that local Git cannot show;
 - mutate/reset/delete/prune branches or worktrees during reconnaissance merely to make the topology cleaner;
 - infer that an old branch is disposable solely from age;
 - infer semantic independence solely from non-overlapping commit topology;
@@ -330,4 +348,4 @@ Never:
 - cherry-pick without dependency checking;
 - integrate from an approval whose lane HEAD or target branch has changed.
 
-For explicit command contracts, read `references/commands.md`. For repository investigation and recommendation rules, read `references/reconnaissance.md`. For edge cases and the full operation matrix, read `references/decision-matrix.md`. For lifecycle data, read `references/handoff-and-state.md`. For rationale and source patterns, read `references/design-rationale.md` only when needed.
+For explicit command contracts, read `references/commands.md`. For repository investigation and recommendation rules, read `references/reconnaissance.md`. For branching-model design or audit, read `references/branch-strategy.md`. For edge cases and the full operation matrix, read `references/decision-matrix.md`. For lifecycle data, read `references/handoff-and-state.md`. For rationale and source patterns, read `references/design-rationale.md` only when needed.

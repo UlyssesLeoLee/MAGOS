@@ -1,6 +1,6 @@
 # Repository Reconnaissance and Advice
 
-Load this reference when the user asks for repository-specific advice about current worktrees, branches, divergence, integration order, cleanup, or where a new agent should work.
+Load this reference when the user asks for repository-specific advice about current worktrees, branches, divergence, integration order, cleanup, or where a new agent should work. For questions about the branching model itself, load `branch-strategy.md` after the Quick Scan.
 
 ## Principle
 
@@ -129,6 +129,10 @@ Before recommending merge/squash/cherry-pick:
 ### Rebase advice
 
 Recommend rebase only when the lane is rewrite-safe. If downstream consumers depend on its commit IDs, prefer merging the updated target into the lane or coordinated retargeting.
+
+### Branch strategy advice
+
+When asked which branching model to use, or whether the current one fits: finish the Quick Scan, classify the model the repository actually follows, and judge it with the fit checklist in `branch-strategy.md`. Existing model and policy win over a preferred one. Propose the smallest change, report remote protection as `unknown` unless it was stated, and do not rename, move, or delete branches while advising.
 
 ### Cleanup advice
 
