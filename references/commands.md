@@ -1,6 +1,6 @@
 # Explicit Command Contracts
 
-This reference defines the command-layer behavior for `multi-agent-git-orchestrator` v3.4.
+This reference defines the command-layer behavior for `multi-agent-git-orchestrator` v1.0.
 
 These are **semantic command intents**. Canonical names use a leading `/`. A host may expose them as slash commands, palette actions, prompt aliases, or plain-text invocations. If slash commands are unsupported, accept the same name without `/`. The behavior must remain the same.
 

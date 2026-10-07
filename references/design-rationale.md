@@ -38,6 +38,10 @@ The orchestrator decides whether to accept a whole lane, a subset, or nothing. I
 - Ruflo: https://github.com/ruvnet/ruflo
 - Agent Skills specification: https://agentskills.io/specification
 
+## Version numbering
+
+The package was versioned 3.x internally before its first public release. That release is **1.0** (`plugin.json` 1.0.0, `SKILL.md` `metadata.version` "1.0"), so the numbers restart. Section labels such as "(v3.2)", "(v3.3)" and "(v3.4)" in this file, `pressure-tests.md`, and the tests name the pre-release design iterations in which a feature was added; they are history, not the current version.
+
 ## Proactive repository reconnaissance (v3.2)
 
 Repository-specific Git advice is unsafe when based only on conversation assumptions. v3.2 adds a non-destructive reconnaissance mode that inventories worktrees, local branches, upstream tracking, dirtiness, ancestry, ahead/behind state, and overlap before recommending operations.
