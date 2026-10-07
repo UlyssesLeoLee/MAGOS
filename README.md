@@ -186,6 +186,7 @@ flowchart LR
 | Merge Queue | 串行写入共享集成分支 |
 | Safe Cleanup | 安全识别已完成 Branch / Worktree |
 | Safe Rollback | 私有历史用 Reset，共享历史优先 Revert |
+| Branch Strategy | 识别仓库实际遵循的分支模型（分支策略 / ブランチ戦略），按“多 Agent 并行是否安全”的清单审计，只给最小改动建议，从不替你改分支 |
 
 ---
 
@@ -761,13 +762,14 @@ multi-agent-git-orchestrator/
 └── references/
     ├── commands.md
     ├── reconnaissance.md
+    ├── branch-strategy.md
     ├── decision-matrix.md
     ├── handoff-and-state.md
     ├── design-rationale.md
     └── pressure-tests.md
 ```
 
-Skill 可以通过语义自动触发。
+Skill 可以通过语义自动触发。除多 Agent 协作和各种“互相覆盖、分支泛滥”的症状外，当你要选择、审计或调整**某个具体仓库**（尤其是多 Agent / 多 Worktree / 多人共用的仓库）的分支策略时，它也会自动出现；单纯问“gitflow 和 trunk-based 有什么区别”这类概念问题不会触发。它只给建议：真正执行仍走对应的 `/Git...` 命令并保留各自的安全检查，哪个命令做什么见 `references/branch-strategy.md` 的 **Strategy Changes**；重命名分支没有对应命令，需要你在协调好依赖方之后手动完成。注意：Hermes 的 Skill 索引只显示 description 的前约 57 个字符，所以在 Hermes 里请直接加载这个 Skill（或用 `/git-recommend`）来做分支策略建议。
 
 ### Claude Code：启用 Slash Command
 

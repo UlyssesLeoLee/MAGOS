@@ -1,0 +1,117 @@
+{
+  "id": "package/branch-strategy",
+  "skill": "package",
+  "feature": "The root skill activates on branch-strategy requests and carries advisory branching-model guidance",
+  "invocations": {
+    "activation": "semantic match on the root SKILL.md description (branch strategy, 分支策略, ブランチ戦略)"
+  },
+  "test_object": {
+    "files": [
+      "SKILL.md",
+      "references/branch-strategy.md",
+      "references/reconnaissance.md",
+      "references/decision-matrix.md",
+      "references/pressure-tests.md",
+      "references/design-rationale.md",
+      "README.md",
+      "README.en.md"
+    ],
+    "scope": "source contract only; whether a host actually activates on these phrases is not tested here"
+  },
+  "expected": [
+    "The root description names branch strategy / branching-model design or audit in English, Chinese, and Japanese, keeps the generic-explainer exclusion, and stays within 1-1024 characters.",
+    "SKILL.md has a Branch Strategy section that is advisory (no rename, move, delete, or reconfigure) and links references/branch-strategy.md.",
+    "SKILL.md hard stops forbid recommending a model without classifying the observed one, imposing a long-lived model, and asserting remote protection.",
+    "references/branch-strategy.md defines observation, branch roles, model classification, the fit checklist, the default model, release/hotfix flow, protection, naming, strategy changes, and the report format; remote protection is reported unknown.",
+    "reconnaissance.md, decision-matrix.md, pressure-tests.md, design-rationale.md, and both READMEs reference the new guidance."
+  ],
+  "checks": [
+    {
+      "file": "SKILL.md",
+      "pattern": "^description: \"(.*)\"$",
+      "length": [
+        1,
+        1024
+      ],
+      "contains": [
+        "branch strategy/branching-model design or audit",
+        "分支策略",
+        "ブランチ戦略",
+        "including generic gitflow explainers",
+        "## Branch Strategy",
+        "Never rename, move, delete, or reconfigure branches",
+        "references/branch-strategy.md",
+        "recommend a branching model or branch restructure without first classifying",
+        "impose a long-lived branch model",
+        "assert remote branch-protection settings",
+        "no command renames a branch",
+        "hub-and-spoke flow"
+      ]
+    },
+    {
+      "file": "references/branch-strategy.md",
+      "contains": [
+        "## Observe the Existing Model",
+        "### Branch roles",
+        "### Model classification",
+        "## Fit Checklist for Parallel Agents",
+        "## Default Model When None Exists",
+        "## Lane Lifecycle and Lifetime",
+        "## Release, Hotfix, and Backport",
+        "## Protection",
+        "## Naming",
+        "## Strategy Changes",
+        "## Strategy Report Format",
+        "## Anti-patterns",
+        "not visible from local Git",
+        "UNKNOWN_ROLE",
+        "**Hub-and-spoke flow:**",
+        "No command renames or moves a branch",
+        "%(*objectname:short)",
+        "GitIntegrate",
+        "GitCleanup",
+        "GitConverge"
+      ]
+    },
+    {
+      "file": "references/reconnaissance.md",
+      "contains": [
+        "branch-strategy.md",
+        "### Branch strategy advice"
+      ]
+    },
+    {
+      "file": "references/decision-matrix.md",
+      "contains": [
+        "branch-strategy.md",
+        "User asks to rename or restructure branches"
+      ]
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "contains": [
+        "## Branch strategy pressure tests",
+        "### Generic concept question",
+        "### Apply the new strategy"
+      ]
+    },
+    {
+      "file": "references/design-rationale.md",
+      "contains": [
+        "## Branch strategy guidance"
+      ]
+    },
+    {
+      "file": "README.md",
+      "contains": [
+        "branch-strategy.md"
+      ]
+    },
+    {
+      "file": "README.en.md",
+      "contains": [
+        "branch-strategy.md"
+      ]
+    }
+  ]
+}

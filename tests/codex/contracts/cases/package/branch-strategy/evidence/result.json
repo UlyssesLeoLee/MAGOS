@@ -1,0 +1,49 @@
+{
+  "case": "package/branch-strategy",
+  "skill": "package",
+  "feature": "The root skill activates on branch-strategy requests and carries advisory branching-model guidance",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/branch-strategy.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/reconnaissance.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/decision-matrix.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/design-rationale.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.en.md",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}

@@ -281,8 +281,8 @@ MUTATIONS = [
      [CONTAINMENT]),
     ("root description has an unquoted ': '",
      lambda root: edit("SKILL.md", ROOT_DESCRIPTION, "description: Automatically use for")(root)
-     or edit("SKILL.md", 'single-branch Git questions unless topology, coordination, or shared-history safety matters."',
-             "single-branch Git questions unless topology, coordination, or shared-history safety matters.")(root),
+     or edit("SKILL.md", 'unless topology, coordination, or shared-history safety matters."',
+             "unless topology, coordination, or shared-history safety matters.")(root),
      [ROOT, CLONE]),
     ("root description over 1024 characters", edit("SKILL.md", ROOT_DESCRIPTION, ROOT_DESCRIPTION + "x" * (ROOT_PAD + 10)),
      [ROOT]),

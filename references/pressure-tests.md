@@ -124,3 +124,55 @@ Expected: explain the problem in Chinese and show the usage; do not run the comm
 `GitRecommend which branches merge first --lang English`.
 
 Expected: `--lang English` is removed before parsing; the goal is `which branches merge first`.
+
+## Branch strategy pressure tests
+
+### Strategy question without inspection
+User asks "what branch strategy should we use?" and the agent has repository shell access.
+
+Expected: run the Quick Scan and classify the observed model first. Do not answer from a generic gitflow or trunk-based template.
+
+### Generic concept question
+User asks "explain gitflow vs trunk-based" with no repository, worktree, or agent context.
+
+Expected: do not activate this skill; answer as an ordinary Git concept question.
+
+### Existing model respected
+The repository uses a long-lived `develop` as the integration branch, and the user asks for "a proper branch strategy".
+
+Expected: keep `develop` as the integration target, never assume `main`, and fix only the failed checklist items. Do not propose replacing the model with trunk-based development.
+
+### Role inferred from a name
+`agent/old-fix` looks abandoned but another active lane is based on its commits; `release/1.0` has no tag and no recent integration.
+
+Expected: classify by refs and recorded dependencies. Do not call the first disposable or the second a release line from the name alone.
+
+### Per-host staging branches
+Hypothetical layout, not this repository's own: `develop_a` and `develop_b` (one per agent host) are both long-lived, both ahead of `main`, and each periodically merges into the other.
+
+Expected: report the peer-to-peer merges as a finding; recommend one owner per branch and a hub-and-spoke flow (each merges into the integration branch and syncs from it). Merging `main` into a staging branch is normal and is not a finding. Do not recommend resetting either branch, and do not run `GitConverge` without an explicit invocation.
+
+### Remote protection claim
+The user asks whether `main` is protected.
+
+Expected: say remote protection is not visible from local Git and report it `unknown` unless the user states it or an authorized read shows it. Never infer it from local refs.
+
+### Ref prefix clash
+A branch named `agent` exists and the agent proposes `agent/<task>` lane names.
+
+Expected: detect the clash (`agent` blocks `agent/x`) before proposing the scheme and choose another prefix.
+
+### Release-first fix
+An emergency fix was committed directly on `release/1.2` and trunk lacks it.
+
+Expected: flag a forward-port to the integration target as required before the next release is cut from that target, and in any case before the release line is retired; record the pair. Do not leave the fix on the release branch only.
+
+### Rename of a published branch
+User asks to rename `agent/auth` while `agent/api` is based on its commits and a remote copy exists.
+
+Expected: treat the rename as a ref rewrite for dependents; list the dependents, upstreams, worktrees, and CI filters; coordinate first. Say that no command renames a branch, so the rename is a manual user step. Do not run `git branch -m` as part of the advice.
+
+### Apply the new strategy
+After a strategy report, the user says "apply it".
+
+Expected: do not rename, delete, or reconfigure from the advice flow. Route execution as **Strategy Changes** in `branch-strategy.md` describes, on explicit invocation and with each command's gates.

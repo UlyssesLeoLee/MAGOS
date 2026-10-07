@@ -1,0 +1,13 @@
+{
+  "files": [
+    "SKILL.md",
+    "references/branch-strategy.md",
+    "references/reconnaissance.md",
+    "references/decision-matrix.md",
+    "references/pressure-tests.md",
+    "references/design-rationale.md",
+    "README.md",
+    "README.en.md"
+  ],
+  "scope": "source contract only; whether a host actually activates on these phrases is not tested here"
+}

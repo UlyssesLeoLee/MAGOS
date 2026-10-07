@@ -187,6 +187,7 @@ The core principle:
 | Merge Queue | Serializes writes into the shared integration branch |
 | Safe Cleanup | Identifies completed branches and worktrees safely |
 | Safe Rollback | `reset` for private history, `revert` for shared history |
+| Branch Strategy | Identifies the branching model a repository actually follows, audits it against a parallel-agent safety checklist, proposes only the smallest change, and never edits branches as advice |
 
 ---
 
@@ -745,13 +746,14 @@ multi-agent-git-orchestrator/
 └── references/
     ├── commands.md
     ├── reconnaissance.md
+    ├── branch-strategy.md
     ├── decision-matrix.md
     ├── handoff-and-state.md
     ├── design-rationale.md
     └── pressure-tests.md
 ```
 
-The root skill triggers on its own through semantic matching. The six commands are optional explicit entry points.
+The root skill triggers on its own through semantic matching. The six commands are optional explicit entry points. Besides multi-agent coordination and symptoms such as agents overwriting each other or branch sprawl, it also triggers when you choose, audit, or change the branch strategy (分支策略, ブランチ戦略) of a specific repository, above all one that agents, worktrees, or several developers share. A pure concept question such as "gitflow vs trunk-based" does not trigger it. It only advises: execution still goes through the matching `/Git...` command with its gates, and **Strategy Changes** in `references/branch-strategy.md` says which command does what. No command renames a branch, so a rename stays a manual step after dependents are coordinated. Note that Hermes shows only about the first 57 characters of a skill description in its index, so on Hermes load the skill by name (or use `/git-recommend`) for branch-strategy advice.
 
 ### Cross-host install (recommended)
 
