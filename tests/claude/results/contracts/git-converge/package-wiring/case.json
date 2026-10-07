@@ -53,7 +53,7 @@
     {
       "file": "SKILL.md",
       "contains": [
-        "version: \"3.4\"",
+        "version: \"1.0\"",
         "| `/GitConverge` | `/GitConverge` | `/git-converge` | `$git-converge` |",
         "discover the six Agent Skills"
       ]

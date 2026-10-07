@@ -252,10 +252,10 @@ MUTATIONS = [
      edit("plugin.json", '"license": "Apache-2.0",',
           '"license": "Apache-2.0",\n  "extensions": {"com.example.client": {"x": NaN}},'),
      [MANIFEST]),
-    ("manifest version drifts from SKILL.md", manifest(lambda data: data.update(version="3.5.0")), [VERSION]),
+    ("manifest version drifts from SKILL.md", manifest(lambda data: data.update(version="1.1.0")), [VERSION]),
     ("manifest version is a number", manifest(lambda data: data.update(version=3)), [MANIFEST, VERSION]),
     ("commands.md states another version",
-     edit("references/commands.md", "`multi-agent-git-orchestrator` v3.4.", "`multi-agent-git-orchestrator` v3.3."),
+     edit("references/commands.md", "`multi-agent-git-orchestrator` v1.0.", "`multi-agent-git-orchestrator` v0.9."),
      [VERSION]),
     ("adapter flow-style list", edit(RECON, SHORT, SHORT + "\n  tags: [git, worktree]"), [SKILLS, CLONE]),
     ("adapter nested metadata.hermes", edit(RECON, SHORT, SHORT + '\n  hermes:\n    tags: "git"'), [SKILLS, CLONE]),
@@ -527,7 +527,7 @@ class StrictFrontmatter(unittest.TestCase):
         except ImportError:
             self.skipTest("PyYAML is not installed, so there is nothing to compare with")
         accepted = ['description: "a b"', "description: plain text", "description: 'it''s'",
-                    'license: Apache-2.0\nmetadata:\n  version: "3.4"\n  short-description: "x; $y [z]"',
+                    'license: Apache-2.0\nmetadata:\n  version: "1.0"\n  short-description: "x; $y [z]"',
                     'description: "查看仓库状态（只读）；/git-recon [--remote] [--help]."',
                     f"description: x{chr(0xA0)}"]
         for line in accepted:
