@@ -17,7 +17,7 @@
 
 - PASS `plugin: plugin.json is a valid Agent Plugins 1.0.0 manifest`
 - PASS `plugin: manifest version matches SKILL.md metadata.version and references/commands.md`
-- PASS `plugin: skills/ discovery (§7.1) finds exactly the seven command adapters`
+- PASS `plugin: skills/ discovery (§7.1) finds exactly the seven command adapters and git-orchestrator`
 - PASS `plugin: every discovered skill meets Agent Skills (strict YAML, allowed fields, name = directory, string-only metadata)`
 - PASS `plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules`
 - PASS `plugin: package paths stay inside the plugin root and include no links (§4.1)`

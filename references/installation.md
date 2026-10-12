@@ -1,5 +1,23 @@
 # 用户级安装同步与验收
 
+## 插件市场安装（推荐）
+
+三个平台都能直接从仓库安装插件 `magos`，不需要下面的同步脚本：
+
+| 平台 | 安装 | 读取的清单 | 命令名 |
+| --- | --- | --- | --- |
+| Claude Code | `/plugin marketplace add UlyssesLeoLee/MAGOS`，然后 `/plugin install magos@magos` | `.claude-plugin/marketplace.json` → `.claude-plugin/plugin.json` | `/magos:GitRecon` … `/magos:GitSweep` |
+| Codex | `codex plugin marketplace add UlyssesLeoLee/MAGOS`，然后 `codex plugin add magos@magos` | `.claude-plugin/marketplace.json`（Codex 也读这个路径）→ 根目录 `plugin.json`（Agent Plugins） | `$magos:git-recon` … `$magos:git-sweep` |
+| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `plugin.yaml` + `__init__.py`（原生插件，优先于 `plugin.json`） | `/magos:git-recon` … `/magos:git-sweep` |
+
+- 市场清单只列一个插件 `magos`，来源是仓库根目录 `./`，Claude Code 与 Codex 都接受这个写法。
+- 插件宿主只加载 `skills/<name>/SKILL.md`，不加载根目录 `SKILL.md`，所以插件里带有入口 Skill `skills/git-orchestrator`（描述与根 Skill 相同，内容是读取 `../../SKILL.md`）。同步脚本的 `PLUGIN_ONLY_SKILLS` 会把它排除在 Codex / Hermes 包之外，因为这两种安装已经有根 Skill。
+- Hermes 的可移植 Agent Plugin 会把命令命名为 `/agent-plugin-magos-<hash>:git-recon`；`plugin.yaml` 与 `__init__.py`（只调用 `ctx.register_skill()`）让 Hermes 改按原生插件加载，命令名才是 `/magos:git-*`。Hermes 的插件 Skill 不进可用 Skill 列表，只能显式加载。
+- Hermes 官方插件目录（`hermes plugins install magos`）需要仓库所有者向 NousResearch/hermes-agent 提交 `plugin-catalog/magos.yaml`，并固定一个 40 位 commit SHA。
+- 以上流程已用本地源实测：Claude Code 2.1.296、Codex CLI 0.162.1、Hermes（2026.9.24）都能安装并启用，命令名与上表一致。
+
+## 同步脚本安装
+
 从仓库根目录运行以下命令。不带参数时列出每个目标文件的状态以及源文件、已安装文件的 SHA-256，不会写入文件。
 
 ```powershell
@@ -23,7 +41,7 @@ python -X utf8 scripts/sync_hosts.py --verify
 
 - **文件清单：**宿主中立包的清单由 `scripts/sync_hosts.py` 的 `package_files()` 根据仓库内容生成，测试工具 `tests/codex/run_host_cases.py` 用同一个函数准备 fixture，因此测试布局与真实安装一致。
 - **`plugin.json`：**Agent Plugins 1.0.0 清单，只在把整个仓库当作插件导入时使用，不在同步范围内。
-- **`.claude-plugin/plugin.json`：**Claude Code 插件清单。把仓库 `git clone` 到 `~/.claude/skills/magos` 时，Claude Code 会把它加载为插件 `magos@skills-dir`，提供 `/magos:GitXxx` 七个命令，`git pull` 即更新。它的 `name`、`version` 必须与 `plugin.json` 一致，且不声明任何组件路径（只用默认的 `commands/` 与 `skills/`）。它不在同步范围内：Codex 一看到 `.claude-plugin/` 就会给 Skill 加上 `magos:` 前缀，所以直接 git clone 到 Codex Skill 目录会得到 `$magos:git-recon`；用同步脚本安装的 Codex 与 Hermes 包不含它，命令名不变。仓库不放 `.codex-plugin/`、`.cursor-plugin/`。
+- **`.claude-plugin/`、`plugin.yaml`、`__init__.py`：**插件清单（见上一节）。`.claude-plugin/plugin.json` 也让 `git clone` 到 `~/.claude/skills/magos` 的仓库被 Claude Code 加载为插件 `magos@skills-dir`。它们的 `name`、`version` 必须与 `plugin.json` 一致；`.claude-plugin/plugin.json` 不声明组件路径，`plugin.yaml` 不声明 hook、工具或依赖。它们都不在同步范围内：Codex 一看到 `.claude-plugin/` 就会给 Skill 加上 `magos:` 前缀，所以直接 git clone 到 Codex Skill 目录会得到 `$magos:git-recon`；用同步脚本安装的 Codex 与 Hermes 包不含它们，命令名不变。仓库不放 `.codex-plugin/`、`.cursor-plugin/`。
 - **同时装了插件与命令副本：**`--host claude` 发现 `~/.claude/skills/*/.claude-plugin/plugin.json` 的 `name` 为 `magos` 时会输出 `NOTE`，提示命令副本只会多出一套旧的 `/GitXxx`。不带 `--host` 运行时，发现这样的插件就跳过 Claude，只处理 Codex 与 Hermes；仍要复制命令时请显式加 `--host claude`。
 - **`commands/`：**Codex 与 Hermes 包不再需要它。旧版本安装留下的 `commands/` 不会被删除，适配层也不会读取它。
 - **写入规则：**脚本只更新表中的相对路径，并创建这些路径所需的子目录；不会删除任何文件。文件已匹配时不会重写。`--apply` 采用同目录临时文件替换目标文件。
@@ -45,7 +63,7 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --home C:\temp\m
 - 七个 `agents/openai.yaml` 都设置了 `allow_implicit_invocation: false`；
 - 按 Codex 与 Hermes 的发现规则（复刻版，并非真实宿主），每个 Skill 只出现一次；对提交后会进入仓库的文件（已跟踪文件，加上未被忽略的未跟踪文件；相当于直接 git clone 到 Skill 目录）也做同样检查；
 - 每个 SKILL.md 的 frontmatter 都在严格 YAML 子集内（无 flow 写法、普通值不含 `: `、metadata 只有字符串），装了 PyYAML 时还会交叉核对；
-- 仓库里除了 `.claude-plugin/plugin.json` 没有别的宿主插件清单（没有 `.codex-plugin/`、`.cursor-plugin/`，`.claude-plugin/` 里也没有别的文件），且该清单的 `name`、`version` 与 `plugin.json` 一致、不声明组件路径；
+- 仓库里的宿主插件清单只有 `.claude-plugin/plugin.json` 与 `.claude-plugin/marketplace.json`（没有 `.codex-plugin/`、`.cursor-plugin/`）；Claude 清单的 `name`、`version` 与 `plugin.json` 一致、只含元数据字段；市场清单只列一个来源为 `./` 的插件 `magos`；`plugin.yaml` 的 `name`、`version` 与 `plugin.json` 一致，`__init__.py` 只注册 Skill；
 - 同步出去的 Codex 与 Hermes 包里没有任何宿主插件清单。
 
 源码契约用例 `package/agent-plugin` 检查 Agent Plugins 1.0.0 格式：`plugin.json` 符合封闭的清单 schema，版本号与 `SKILL.md`、`references/commands.md` 一致，`skills/` 下恰好发现七个适配层且都符合 Agent Skills 规则，路径不越出插件根目录、没有链接。`python -X utf8 tests/codex/contracts/test_agent_plugin.py` 逐一植入各种缺陷（清单字段错误、版本号漂移、多余的链接、frontmatter 写法不合规等），确认每种都会被对应的检查发现；它还单独测试严格 frontmatter 读取器，并在 git 仓库里检查未暂存的新文件。

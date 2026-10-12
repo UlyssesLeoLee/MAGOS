@@ -4,6 +4,7 @@
 #   (module:Module {name: 'sync_hosts', type: 'module', language: 'python'}),
 #   (command_names:Variable {name: 'COMMAND_NAMES', type: 'variable'}),
 #   (command_paths:Variable {name: 'COMMAND_PATHS', type: 'variable'}),
+#   (plugin_only:Variable {name: 'PLUGIN_ONLY_SKILLS', type: 'variable'}),
 #   (package:Function {name: 'package_files', type: 'function'}),
 #   (codex_root:Function {name: 'codex_install_root', type: 'function'}),
 #   (claude_notes:Function {name: 'claude_plugin_notes', type: 'function'}),
@@ -17,6 +18,7 @@
 #   (file)-[:CONTAINS]->(module),
 #   (module)-[:CONTAINS]->(command_names),
 #   (module)-[:CONTAINS]->(command_paths),
+#   (module)-[:CONTAINS]->(plugin_only),
 #   (module)-[:CONTAINS]->(package),
 #   (module)-[:CONTAINS]->(codex_root),
 #   (module)-[:CONTAINS]->(claude_notes),
@@ -28,6 +30,7 @@
 #   (module)-[:CONTAINS]->(main),
 #   (build)-[:USES]->(command_paths),
 #   (build)-[:CALLS]->(package),
+#   (package)-[:USES]->(plugin_only),
 #   (build)-[:CALLS]->(codex_root),
 #   (build)-[:CALLS]->(claude_notes),
 #   (inspect)-[:CALLS]->(build),
@@ -58,6 +61,9 @@ COMMAND_NAMES = ("GitRecon", "GitAnalyze", "GitRecommend", "GitIntegrate", "GitC
 COMMAND_PATHS = tuple(f"commands/{name}.md" for name in COMMAND_NAMES)
 PACKAGE_NAME = "MAGOS"
 HERMES_PACKAGE_NAME = "multi-agent-git-orchestrator"
+# Plugin hosts load only skills/<name>/SKILL.md, never the package-root SKILL.md, so the plugin carries an entry skill
+# that points to it. A skills-directory install already has the root skill, so the entry would only duplicate it.
+PLUGIN_ONLY_SKILLS = frozenset({"git-orchestrator"})
 
 
 def package_files(repo: Path) -> tuple[str, ...]:
@@ -72,7 +78,8 @@ def package_files(repo: Path) -> tuple[str, ...]:
     references = sorted(path.relative_to(repo).as_posix()
                         for path in (repo / "references").glob("*.md"))
     adapters = []
-    for skill in sorted(path.parent for path in (repo / "skills").glob("*/SKILL.md")):
+    for skill in sorted(path.parent for path in (repo / "skills").glob("*/SKILL.md")
+                        if path.parent.name not in PLUGIN_ONLY_SKILLS):
         adapters.append((skill / "SKILL.md").relative_to(repo).as_posix())
         metadata = skill / "agents" / "openai.yaml"
         if metadata.is_file():

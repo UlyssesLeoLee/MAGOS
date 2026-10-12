@@ -775,9 +775,12 @@ Copy the directory into your agent's skills path:
 multi-agent-git-orchestrator/
 ├── SKILL.md              # root skill — triggers semantically
 ├── plugin.json           # Agent Plugins manifest, used when the whole repository is imported as a plugin
-├── .claude-plugin/plugin.json  # Claude Code plugin manifest: clone into ~/.claude/skills/magos
+├── .claude-plugin/
+│   ├── plugin.json       # Claude Code plugin manifest
+│   └── marketplace.json  # plugin marketplace for Claude Code and Codex
+├── plugin.yaml + __init__.py  # Hermes native plugin manifest: registers /magos:git-*
 ├── commands/             # Claude Code slash commands
-├── skills/               # Codex / Hermes command adapters
+├── skills/               # Codex / Hermes command adapters, plus the plugin entry git-orchestrator
 └── references/
     ├── commands.md
     ├── reconnaissance.md
@@ -799,9 +802,34 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
 
 `--verify` checks that every file the adapters reference actually exists, without starting an AI host. The script never deletes files.
 
-### Claude Code (as a plugin, recommended)
+### Install from a plugin marketplace (recommended, all three hosts)
 
-Clone the repository straight into Claude Code's skills directory; no command files to copy:
+All three hosts install the plugin `magos` straight from this repository, with no files to copy and no script to run:
+
+| Host | Install | Update |
+|---|---|---|
+| Claude Code | in a session: `/plugin marketplace add UlyssesLeoLee/MAGOS`, then `/plugin install magos@magos` | `/plugin marketplace update magos`, then `/plugin update magos@magos` |
+| Codex | `codex plugin marketplace add UlyssesLeoLee/MAGOS`, then `codex plugin add magos@magos` | `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos` again |
+| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `hermes plugins update magos` |
+
+Claude Code also works from a shell: `claude plugin marketplace add UlyssesLeoLee/MAGOS && claude plugin install magos@magos`.
+
+After a new session the names line up across hosts:
+
+| Purpose | Claude Code | Codex | Hermes |
+|---|---|---|---|
+| The seven commands | `/magos:GitRecon` … `/magos:GitSweep` | `$magos:git-recon` … `$magos:git-sweep` | `/magos:git-recon` … `/magos:git-sweep` |
+| The orchestrator (triggers when you describe a problem) | `magos:git-orchestrator` | `magos:git-orchestrator` | `/magos:git-orchestrator` (Hermes loads plugin skills only explicitly) |
+
+- Claude Code also lists the seven lowercase `/magos:git-recon` and so on. They are the cross-host adapters and do the same as `/magos:GitXxx`; use the latter.
+- Plugin hosts load only the skills under `skills/`, never the root `SKILL.md`, so the plugin carries an entry skill, `git-orchestrator`, that reads the root `SKILL.md`. Skills-directory installs (the sync script, or a clone into a skills folder) do not need it, and the sync script does not copy it.
+- The manifests pin a version, so Claude Code updates an installed plugin only when the version changes.
+- Hermes warns "custom (unreviewed) source": MAGOS is not in the official Hermes plugin catalog yet. Listing it takes a pull request to NousResearch/hermes-agent by the repository owner, pinned to a commit SHA; after that, `hermes plugins install magos` works.
+- If you installed an older way, remove it first so each command exists once: `~/.claude/commands/Git*.md`, `~/.claude/skills/magos`, Codex `~/.agents/skills/MAGOS`, Hermes `skills/multi-agent-git-orchestrator`.
+
+### Claude Code (clone into the skills folder)
+
+Without the marketplace, clone the repository straight into Claude Code's skills directory. It works the same and updates with `git pull`:
 
 ```bash
 git clone https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
@@ -814,7 +842,7 @@ git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
 The repository root carries `.claude-plugin/plugin.json`, so Claude Code loads the folder as the plugin `magos@skills-dir` in every session, with no `/plugin install` step. Start a new session and you get:
 
 - the seven commands `/magos:GitRecon`, `/magos:GitAnalyze`, `/magos:GitRecommend`, `/magos:GitIntegrate`, `/magos:GitCleanup`, `/magos:GitConverge`, `/magos:GitSweep` (type `/magos:` to complete);
-- the orchestrator skill `/magos`, which also triggers on its own;
+- the orchestrator entry `magos:git-orchestrator`, which triggers on its own;
 - the seven cross-host adapters from `skills/`, listed as `/magos:git-recon` and so on. They do the same as the commands above; in Claude Code use `/magos:GitXxx`.
 
 To update, run `git pull` in that folder; commands and rules update together. `claude plugin list` should show `magos@skills-dir` as loaded.
@@ -883,20 +911,20 @@ GitRecommend
 
 ### Import as an Agent Plugin
 
-`plugin.json` at the repository root is a plugin manifest that follows the [Agent Plugins 1.0.0 specification](https://agent-plugins.org/specification). A tool that supports it (for example Codex plugin installs, or Hermes `hermes plugins install`) can import the whole repository as one plugin named `magos`.
+`plugin.json` at the repository root is a plugin manifest that follows the [Agent Plugins 1.0.0 specification](https://agent-plugins.org/specification). A tool that supports it (for example a Codex plugin install) can import the whole repository as one plugin named `magos`; the Codex marketplace install above goes through it.
 
 | Question | Answer |
 |---|---|
-| Which commands do I get? | The seven command skills under `skills/`: `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`. Some tools add the plugin name as a prefix; Codex shows `magos:git-recon`. |
-| What about the root `SKILL.md` (the shared rules)? | It is not a plugin skill, because the specification only looks inside `skills/`. The seven commands read the rules in it and in `references/`; but it will not trigger on its own when you describe a problem, so for that use the host installs above. Only discovery has been verified (the seven command skills are recognized and load); how the commands behave inside each tool has not been tested one by one. |
-| Does Claude Code use it? | No. Claude Code reads the repository's `.claude-plugin/plugin.json` instead; clone into `~/.claude/skills/magos` as described under Claude Code. |
-| Which way for Hermes? | The sync script above. Skills imported as a plugin must be enabled by hand, are not in the available-skills list, get no `/git-*` commands, and do not receive the `[Skill directory: …]` path hint. The four commands that modify the repository (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`) act only on an explicit `/git-*` or `$git-*` invocation, so do not import them as a plugin in Hermes. |
+| Which commands do I get? | The seven command skills under `skills/`: `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, plus the entry skill `git-orchestrator`. Some tools add the plugin name as a prefix; Codex shows `magos:git-recon`. |
+| What about the root `SKILL.md` (the shared rules)? | It is not a plugin skill, because the specification only looks inside `skills/`. That is why the plugin has the entry skill `git-orchestrator`: it carries the same description (so it triggers on its own) and reads the root `SKILL.md`; the seven commands read it and `references/` too. Verified in Claude Code, Codex, and Hermes: the plugin installs and enables, with the skill names in the table above; running each command end to end in each host has not been tested one by one. |
+| Does Claude Code use it? | No. Claude Code reads `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`; install it from the marketplace as described above. |
+| Which way for Hermes? | Either. `hermes plugins install UlyssesLeoLee/MAGOS --enable` reads the Hermes native manifest `plugin.yaml` (not this `plugin.json`), names the commands `/magos:git-recon` and so on, and passes the `[Skill directory: …]` path hint. Plugin skills are not in the available-skills list, so the orchestrator does not trigger on its own there; for that, use the sync script (commands are then `/git-recon`). The four commands that modify the repository act only on an explicit `/magos:git-*`, `/git-*`, or `$git-*` invocation typed by the user. |
 
-The repository root carries `.claude-plugin/plugin.json`, the Claude Code plugin manifest (see Claude Code above), and deliberately no `.codex-plugin/` or `.cursor-plugin/`. Codex treats any of those folders as a plugin root and prefixes the skill names, so **a `git clone` straight into a Codex skills directory gives `$magos:git-recon` instead of `$git-recon`**. Install Codex and Hermes with the sync script: it copies only `SKILL.md`, `references/`, and `skills/`, never `.claude-plugin/`, so the names stay `$git-recon` and `/git-recon`. A root `plugin.json` alone does not trigger the prefix.
+The repository root carries `.claude-plugin/` (the Claude Code `plugin.json` and the `marketplace.json` that Claude Code and Codex share) and the Hermes `plugin.yaml` and `__init__.py`, and deliberately no `.codex-plugin/` or `.cursor-plugin/`. Codex treats any of those folders as a plugin root and prefixes the skill names, so **a `git clone` straight into a Codex skills directory gives `$magos:git-recon` instead of `$git-recon`**. Install Codex and Hermes with the sync script: it copies only `SKILL.md`, `references/`, and `skills/`, never `.claude-plugin/`, so the names stay `$git-recon` and `/git-recon`. A root `plugin.json` alone does not trigger the prefix.
 
-One known deviation: section 8 of the specification asks for files meant for a single tool to live in a reverse-domain folder (such as `com.example.client/`). `commands/` serves only Claude Code but sits at the top level. Plugin tools ignore it, so importing is unaffected; moving it would change the install script and many tests, so it stays for now.
+One known deviation: section 8 of the specification asks for files meant for a single tool to live in a reverse-domain folder (such as `com.example.client/`). `commands/` serves only Claude Code, and `plugin.yaml` and `__init__.py` only Hermes, but they sit at the top level. Plugin tools ignore it, so importing is unaffected; moving it would change the install script and many tests, so it stays for now.
 
-When you change the version, update `version` in `plugin.json`, `metadata.version` in `SKILL.md`, and line 3 of `references/commands.md` together. The first command below checks the plugin format (source contract `package/agent-plugin`); the second plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one:
+When you change the version, update `version` in `plugin.json`, `.claude-plugin/plugin.json`, and `plugin.yaml`, `metadata.version` in `SKILL.md`, and line 3 of `references/commands.md` together (the source contracts check that they agree). The first command below checks the plugin format (source contract `package/agent-plugin`); the second plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one:
 
 ```bash
 python -X utf8 tests/codex/contracts/run_contract_cases.py

@@ -20,6 +20,9 @@ import skill_frontmatter
 
 EXPECTED_SKILLS = {"multi-agent-git-orchestrator", "git-recon", "git-analyze", "git-recommend",
                    "git-integrate", "git-cleanup", "git-converge", "git-sweep"}
+# A git clone also carries skills/git-orchestrator, the entry skill plugin hosts need because they never load the
+# root SKILL.md; scripts/sync_hosts.py leaves it out of the Codex and Hermes packages (PLUGIN_ONLY_SKILLS).
+CHECKOUT_SKILLS = EXPECTED_SKILLS | {"git-orchestrator"}
 CODEX_MAX_SCAN_DEPTH = 6
 HERMES_SUPPORT_DIRS = {"references", "templates", "assets", "scripts"}
 # Hermes agent/skill_utils.py EXCLUDED_SKILL_DIRS: a SKILL.md below any of these directories is not a skill.
@@ -31,6 +34,9 @@ MAX_DESCRIPTION_LENGTH = 1024
 ROOT_REFERENCE = re.compile(r"`(references/[A-Za-z0-9_.-]+\.md)`")
 HOST_PLUGIN_MANIFEST_DIRS = {".codex-plugin", ".claude-plugin", ".cursor-plugin"}
 CLAUDE_PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
+MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json"
+MARKETPLACE_ENTRY_KEYS = {"name", "source", "description", "version", "author", "homepage", "repository", "license",
+                          "keywords", "category", "tags"}
 # Metadata only: any other key (commands, skills, hooks, monitors, themes, ...) declares a component or setting.
 CLAUDE_METADATA_KEYS = {"name", "version", "description", "author", "homepage", "repository", "license", "keywords"}
 
@@ -159,16 +165,76 @@ def check_checkout(repo: Path) -> list[dict]:
     problems = []
     for host, discover in (("codex", codex_discovery), ("hermes", hermes_discovery)):
         names = discover(repo.parent, skill_files)
-        if sorted(names) != sorted(EXPECTED_SKILLS):
-            problems.append(f"{host} replica discovers {sorted(names)}; expected {sorted(EXPECTED_SKILLS)}")
+        if sorted(names) != sorted(CHECKOUT_SKILLS):
+            problems.append(f"{host} replica discovers {sorted(names)}; expected {sorted(CHECKOUT_SKILLS)}")
     manifests = sorted(relative for relative in tracked if HOST_PLUGIN_MANIFEST_DIRS & set(relative.split("/")))
-    stray = [relative for relative in manifests if relative != CLAUDE_PLUGIN_MANIFEST]
+    stray = [relative for relative in manifests if relative not in (CLAUDE_PLUGIN_MANIFEST, MARKETPLACE_MANIFEST)]
     return [{"file": "install:git-clone checkout, the Codex and Hermes replicas find each skill once",
              "passed": not problems, "missing": problems},
-            {"file": "install:git-clone checkout has no host plugin manifest other than .claude-plugin/plugin.json",
+            {"file": "install:git-clone checkout has no host plugin manifest other than .claude-plugin/plugin.json "
+                     "and .claude-plugin/marketplace.json",
              "passed": not stray, "missing": stray},
             {"file": "install:git-clone checkout's .claude-plugin/plugin.json is the Claude Code manifest of plugin.json",
-             "passed": not (claude := claude_manifest_problems(repo, manifests)), "missing": claude}]
+             "passed": not (claude := claude_manifest_problems(repo, manifests)), "missing": claude},
+            {"file": "install:.claude-plugin/marketplace.json lists this repository root as the one plugin magos",
+             "passed": not (market := marketplace_problems(repo, manifests)), "missing": market},
+            {"file": "install:plugin.yaml is the Hermes native manifest of plugin.json, and __init__.py registers skills/",
+             "passed": not (hermes := hermes_manifest_problems(repo)), "missing": hermes}]
+
+
+def hermes_manifest_problems(repo: Path) -> list[str]:
+    """`hermes plugins install` prefers a native plugin.yaml over the portable plugin.json; with it the skills are
+    /magos:<name> instead of /agent-plugin-magos-<digest>:<name>. Its name and version must match plugin.json, and
+    __init__.py must register the skills/ directory (and nothing else: catalog rule 6 compares declared capabilities)."""
+    try:
+        text = (repo / "plugin.yaml").read_text(encoding="utf-8")
+        package = agent_plugin.load_json(repo / "plugin.json")
+        entry = (repo / "__init__.py").read_text(encoding="utf-8")
+    except (OSError, ValueError) as error:
+        return [f"cannot read the Hermes plugin files: {error}"]
+    fields = dict(re.findall(r'^(name|version): *"?([^"\n]+?)"? *$', text, re.M))
+    problems = [f"plugin.yaml {key} {fields.get(key)!r} != plugin.json {key} {package.get(key)!r}"
+                for key in ("name", "version") if fields.get(key) != package.get(key)]
+    if re.search(r"^(provides_|requires_|capabilities|python_dependencies)", text, re.M):
+        problems.append("plugin.yaml declares hooks, tools, capabilities or dependencies; MAGOS ships skills only")
+    if "ctx.register_skill(" not in entry or re.search(r"ctx\.register_(?!skill\()", entry):
+        problems.append("__init__.py must call ctx.register_skill() and no other ctx.register_*")
+    return problems
+
+
+def marketplace_problems(repo: Path, manifests: list[str]) -> list[str]:
+    """The Claude Code and Codex marketplace must list exactly one plugin, the repository root itself.
+
+    Claude Code (`/plugin marketplace add`) and Codex (`codex plugin marketplace add`, codex-rs
+    MARKETPLACE_MANIFEST_RELATIVE_PATHS) both read this file; "./" is the source form both accept for the
+    marketplace root. Codex installs it through the root plugin.json, Claude Code through .claude-plugin/plugin.json.
+    """
+    if MARKETPLACE_MANIFEST not in manifests:
+        return [f"{MARKETPLACE_MANIFEST} is missing, so no marketplace can list the plugin"]
+    try:
+        market = agent_plugin.load_json(repo / MARKETPLACE_MANIFEST)
+        package = agent_plugin.load_json(repo / "plugin.json")
+    except (OSError, ValueError) as error:
+        return [f"cannot read the manifests: {error}"]
+    if not isinstance(market, dict) or not isinstance(package, dict):
+        return ["a manifest is not a JSON object"]
+    problems = []
+    if not isinstance(market.get("name"), str) or not market["name"]:
+        problems.append(f"{MARKETPLACE_MANIFEST} has no marketplace name")
+    owner = market.get("owner")
+    if not isinstance(owner, dict) or not isinstance(owner.get("name"), str) or not owner["name"]:
+        problems.append(f"{MARKETPLACE_MANIFEST} has no owner.name (Claude Code requires it)")
+    plugins = market.get("plugins")
+    if not isinstance(plugins, list) or len(plugins) != 1 or not isinstance(plugins[0], dict):
+        return problems + [f"{MARKETPLACE_MANIFEST} must list exactly one plugin"]
+    entry = plugins[0]
+    if entry.get("name") != package.get("name"):
+        problems.append(f"marketplace plugin name {entry.get('name')!r} != plugin.json name {package.get('name')!r}")
+    if entry.get("source") != "./":
+        problems.append(f"marketplace plugin source {entry.get('source')!r} is not the repository root './'")
+    problems += [f"marketplace plugin entry declares {key!r}, which is not a metadata key"
+                 for key in sorted(set(entry) - MARKETPLACE_ENTRY_KEYS)]
+    return problems
 
 
 def claude_manifest_problems(repo: Path, manifests: list[str]) -> list[str]:

@@ -30,7 +30,9 @@
 - PASS `install:hermes every installed SKILL.md is strict YAML with string-only metadata`
 - PASS `install:synced Codex and Hermes packages carry no host plugin manifest`
 - PASS `install:git-clone checkout, the Codex and Hermes replicas find each skill once`
-- PASS `install:git-clone checkout has no host plugin manifest other than .claude-plugin/plugin.json`
+- PASS `install:git-clone checkout has no host plugin manifest other than .claude-plugin/plugin.json and .claude-plugin/marketplace.json`
 - PASS `install:git-clone checkout's .claude-plugin/plugin.json is the Claude Code manifest of plugin.json`
+- PASS `install:.claude-plugin/marketplace.json lists this repository root as the one plugin magos`
+- PASS `install:plugin.yaml is the Hermes native manifest of plugin.json, and __init__.py registers skills/`
 
 Evidence scope: source-contract check; no AI host CLI is invoked.
