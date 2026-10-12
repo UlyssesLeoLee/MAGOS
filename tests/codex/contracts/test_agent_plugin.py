@@ -395,6 +395,13 @@ MUTATIONS = [
     ("a symbolic link in the package", add_symlink, [CONTAINMENT]),
     ("a directory junction or link in the package", add_directory_link, [CONTAINMENT]),
     ("an empty directory link pointing outside the root", add_empty_outside_link, [CONTAINMENT]),
+    ("an index line is not a string",
+     edit("__init__.py", '"git-orchestrator": (', '"git-orchestrator": None, "not-a-skill": ('), [HERMES_NATIVE]),
+    ("__init__.py drops the index description but a comment keeps its text",
+     edit("__init__.py", ', description=INDEX_DESCRIPTIONS.get(child.name, ""))', ")  # description=INDEX_DESCRIPTIONS"),
+     [HERMES_NATIVE]),
+    ("an index line names another command",
+     edit("__init__.py", "Use /magos:git-analyze when", "Use /magos:git-recon when"), [HERMES_NATIVE]),
 ]
 
 

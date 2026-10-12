@@ -5,10 +5,10 @@ and so on, the same names the Claude Code and Codex plugins use. Without this fi
 through its portable ``plugin.json`` and name the commands ``/agent-plugin-magos-<digest>:git-recon``.
 
 Hermes lists every registered plugin skill in the system prompt's ``<available_skills>`` index, with the
-``description`` passed here (not the SKILL.md one, which it would cut to 60 characters). The index is how the model
-decides to load a skill on its own, so the orchestrator gets a trigger-rich line, and the commands that write to a
-repository get a line telling the model to leave them to the user. The skills are read-only instructions; this module
-registers nothing else.
+``description`` passed here; it does not read a plugin skill's SKILL.md description, so without one the model sees
+only the bare name. The index is how the model decides to load a skill on its own, so the orchestrator gets a
+trigger-rich line, and the commands that write to a repository get a line telling the model to leave them to the
+user. The skills are read-only instructions; this module registers nothing else.
 """
 
 from pathlib import Path
