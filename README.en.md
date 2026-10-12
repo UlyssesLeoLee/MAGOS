@@ -100,7 +100,7 @@ These three work the same way in every command that supports them. Learn them on
 
 | Item | Explanation |
 |---|---|
-| Which commands | Only the three read-only ones: `/GitRecon`, `/GitAnalyze`, `/GitRecommend`. After any other command it counts as an unknown option, and you get an error and the help |
+| Which commands | Only the three read-only ones: `/GitRecon`, `/GitAnalyze`, `/GitRecommend`. `/GitSweep` has a different option with the same name, `--remote <name>`: it must be followed by a remote name, only selects which remote to sweep, and never refreshes anything. After any other command it counts as an unknown option, and you get an error and the help |
 | No network or no access | It says the refresh failed and notes that its conclusions are based on the records already on your computer |
 | When to add it | You just heard a colleague uploaded something, or you must decide based on how the online copy looks right now |
 
@@ -203,7 +203,7 @@ The core principle:
 | `/GitConverge` | Folds every branch into one and keeps only `main` and it | Not by default; only with `--apply` |
 | `/GitSweep` | Runs `/GitConverge`, then also deletes merged remote branches | Not by default; only with `--apply` (includes remote deletion) |
 
-Every command accepts `--lang <language>` (reply language, Chinese by default) and `--help` (instructions only); the three read-only commands also accept `--remote`. Their details are in "Three arguments that work everywhere" above, so each command below describes only the arguments **it alone** has.
+Every command accepts `--lang <language>` (reply language, Chinese by default) and `--help` (instructions only); the three read-only commands also accept `--remote` (`/GitSweep`'s `--remote <name>` is a different option; see its section). Their details are in "Three arguments that work everywhere" above, so each command below describes only the arguments **it alone** has.
 
 > **Not sure which branches and worktrees you have?** Run `/GitRecon` first and it lists them. In a terminal, `git branch` lists the branches and `git worktree list` lists the worktrees.
 
@@ -684,7 +684,6 @@ It never pushes commits or tags, never force-pushes, and never deletes the remot
 
 ---
 
-
 ## Agent lane lifecycle
 
 ```mermaid
@@ -774,7 +773,7 @@ multi-agent-git-orchestrator/
     └── pressure-tests.md
 ```
 
-The root skill triggers on its own through semantic matching. The six commands are optional explicit entry points. Besides multi-agent coordination and symptoms such as agents overwriting each other or branch sprawl, it also triggers when you choose, audit, or change the branch strategy (分支策略, ブランチ戦略) of a specific repository, above all one that agents, worktrees, or several developers share. A pure concept question such as "gitflow vs trunk-based" does not trigger it. It only advises: execution still goes through the matching `/Git...` command with its gates, and **Strategy Changes** in `references/branch-strategy.md` says which command does what. No command renames a branch, so a rename stays a manual step after dependents are coordinated. Note that Hermes shows only about the first 57 characters of a skill description in its index, so on Hermes load the skill by name (or use `/git-recommend`) for branch-strategy advice.
+The root skill triggers on its own through semantic matching. The seven commands are optional explicit entry points. Besides multi-agent coordination and symptoms such as agents overwriting each other or branch sprawl, it also triggers when you choose, audit, or change the branch strategy (分支策略, ブランチ戦略) of a specific repository, above all one that agents, worktrees, or several developers share. A pure concept question such as "gitflow vs trunk-based" does not trigger it. It only advises: execution still goes through the matching `/Git...` command with its gates, and **Strategy Changes** in `references/branch-strategy.md` says which command does what. No command renames a branch, so a rename stays a manual step after dependents are coordinated. Note that Hermes shows only about the first 57 characters of a skill description in its index, so on Hermes load the skill by name (or use `/git-recommend`) for branch-strategy advice.
 
 ### Cross-host install (recommended)
 
@@ -787,7 +786,7 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
 
 ### Claude Code
 
-Claude Code registers the six `/Git...` commands only from `~/.claude/commands/` (all projects) or a project's `.claude/commands/`. Putting this directory in `~/.claude/skills/` gives you the orchestrator skill, which triggers on its own, but not the commands. From the repository root:
+Claude Code registers the seven `/Git...` commands only from `~/.claude/commands/` (all projects) or a project's `.claude/commands/`. Putting this directory in `~/.claude/skills/` gives you the orchestrator skill, which triggers on its own, but not the commands. From the repository root:
 
 ```bash
 python -X utf8 scripts/sync_hosts.py --host claude --apply --create-roots
@@ -818,7 +817,7 @@ New-Item -ItemType Directory -Force $codexPackage | Out-Null
 Copy-Item -Path .\SKILL.md, .\references, .\skills -Destination $codexPackage -Recurse -Force
 ```
 
-Restart Codex, press `$` to pick a command skill, or call `$git-recon`, `$git-analyze`, `$git-recommend`, `$git-integrate`, `$git-cleanup`, `$git-converge` directly. `/skills` opens the skill browser. Arguments go after the skill name, e.g. `$git-analyze agent/auth --remote`; `--help` prints full usage.
+Restart Codex, press `$` to pick a command skill, or call `$git-recon`, `$git-analyze`, `$git-recommend`, `$git-integrate`, `$git-cleanup`, `$git-converge`, `$git-sweep` directly. `/skills` opens the skill browser. Arguments go after the skill name, e.g. `$git-analyze agent/auth --remote`; `--help` prints full usage.
 
 > Codex's `/` menu only contains built-in commands, so custom `/git-*` slash commands cannot be registered. The skill selector (`$` / `/skills`) is the entry point on Codex.
 
@@ -833,7 +832,7 @@ mkdir -p "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator"
 cp -R SKILL.md references skills "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator/"
 ```
 
-Restart Hermes, then `hermes skills list`, then `/git-recon`, `/git-analyze`, `/git-recommend`, `/git-integrate`, `/git-cleanup`, `/git-converge`. Hermes has no per-skill auto-invoke switch, so the adapter layer specifies that `/git-integrate`, `/git-cleanup`, and `/git-converge` never write to the repository unless you invoke them explicitly.
+Restart Hermes, then `hermes skills list`, then `/git-recon`, `/git-analyze`, `/git-recommend`, `/git-integrate`, `/git-cleanup`, `/git-converge`, `/git-sweep`. Hermes has no per-skill auto-invoke switch, so the adapter layer specifies that `/git-integrate`, `/git-cleanup`, `/git-converge`, and `/git-sweep` never write to the repository unless you invoke them explicitly.
 
 ### Hosts without custom slash commands
 
@@ -851,10 +850,10 @@ GitRecommend
 
 | Question | Answer |
 |---|---|
-| Which commands do I get? | The six command skills under `skills/`: `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`. Some tools add the plugin name as a prefix; Codex shows `magos:git-recon`. |
-| What about the root `SKILL.md` (the shared rules)? | It is not a plugin skill, because the specification only looks inside `skills/`. The six commands read the rules in it and in `references/`; but it will not trigger on its own when you describe a problem, so for that use the host installs above. Only discovery has been verified (the six command skills are recognized and load); how the commands behave inside each tool has not been tested one by one. |
+| Which commands do I get? | The seven command skills under `skills/`: `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`. Some tools add the plugin name as a prefix; Codex shows `magos:git-recon`. |
+| What about the root `SKILL.md` (the shared rules)? | It is not a plugin skill, because the specification only looks inside `skills/`. The seven commands read the rules in it and in `references/`; but it will not trigger on its own when you describe a problem, so for that use the host installs above. Only discovery has been verified (the seven command skills are recognized and load); how the commands behave inside each tool has not been tested one by one. |
 | Does Claude Code use it? | No. Claude Code reads `.claude-plugin/plugin.json`, not this file. Install the `/GitXxx` commands as described under Claude Code. |
-| Which way for Hermes? | The sync script above. Skills imported as a plugin must be enabled by hand, are not in the available-skills list, get no `/git-*` commands, and do not receive the `[Skill directory: …]` path hint. The three commands that modify the repository (`git-integrate`, `git-cleanup`, `git-converge`) act only on an explicit `/git-*` or `$git-*` invocation, so do not import them as a plugin in Hermes. |
+| Which way for Hermes? | The sync script above. Skills imported as a plugin must be enabled by hand, are not in the available-skills list, get no `/git-*` commands, and do not receive the `[Skill directory: …]` path hint. The four commands that modify the repository (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`) act only on an explicit `/git-*` or `$git-*` invocation, so do not import them as a plugin in Hermes. |
 
 The repository deliberately has no `.claude-plugin/`, `.codex-plugin/`, or `.cursor-plugin/`. If you `git clone` it into a Codex skills directory, Codex treats any of those as a plugin root and renames the skills to `magos:git-recon`, so `$git-recon` stops working. A root `plugin.json` alone does not do that.
 

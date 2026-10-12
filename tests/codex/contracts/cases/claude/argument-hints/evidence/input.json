@@ -5,7 +5,8 @@
     "GitRecommend",
     "GitIntegrate",
     "GitCleanup",
-    "GitConverge"
+    "GitConverge",
+    "GitSweep"
   ],
   "argument_hints": {
     "GitRecon": "[--remote] [--lang <language>] [--help]",
@@ -13,6 +14,7 @@
     "GitRecommend": "[<goal>] [--remote] [--lang <language>] [--help]",
     "GitIntegrate": "<lane|branch> [--strategy auto|merge|squash|cherry-pick] [--lang <language>] [--help]",
     "GitCleanup": "[--apply] [--lang <language>] [--help]",
-    "GitConverge": "<branch> [--apply] [--discard-ignored] [--lang <language>] [--help]"
+    "GitConverge": "<branch> [--apply] [--discard-ignored] [--lang <language>] [--help]",
+    "GitSweep": "<branch> [--apply] [--discard-ignored] [--remote <name>] [--lang <language>] [--help]"
   }
 }

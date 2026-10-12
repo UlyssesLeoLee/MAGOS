@@ -12,6 +12,7 @@
     "git-integrate",
     "git-recommend",
     "git-recon",
+    "git-sweep",
     "multi-agent-git-orchestrator"
   ],
   "checkout_discovery": "the same replicas over the tracked files of the checkout (git clone into ~/.agents/skills/MAGOS or <Hermes home>/skills/MAGOS)",

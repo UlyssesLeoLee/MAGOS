@@ -22,5 +22,6 @@
   {"id":"git-cleanup/preview-classification","fixture":"cleanup","args":"","assertion":"cleanup-preview"},
   {"id":"git-cleanup/apply-safe-only","fixture":"cleanup","args":"--apply","assertion":"cleanup-apply","context":"I authorize removing only local candidates that pass every safety recheck. Do not delete remote branches."},
   {"id":"git-cleanup/stale-recheck","fixture":"cleanup","args":"","followup_args":"--apply","assertion":"cleanup-stale","context":"First preview cleanup candidates. After the preview, I will change a candidate. Then recheck before any apply."},
-  {"id":"git-converge/help","fixture":"empty","args":"--help","assertion":"help"}
+  {"id":"git-converge/help","fixture":"empty","args":"--help","assertion":"help"},
+  {"id":"git-sweep/help","fixture":"empty","args":"--help","assertion":"help"}
 ]

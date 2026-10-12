@@ -26,7 +26,7 @@ from tools.skills_tool import skill_view  # noqa: E402
 
 package = (Path.cwd() / ".agents" / "skills" / "MAGOS").resolve()
 expected = ["/multi-agent-git-orchestrator", "/git-recon", "/git-analyze", "/git-recommend",
-            "/git-integrate", "/git-cleanup", "/git-converge"]
+            "/git-integrate", "/git-cleanup", "/git-converge", "/git-sweep"]
 commands = scan_skill_commands()
 registered = {}
 for key in expected:

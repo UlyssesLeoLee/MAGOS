@@ -19,6 +19,7 @@
       "git-integrate",
       "git-recommend",
       "git-recon",
+      "git-sweep",
       "multi-agent-git-orchestrator"
     ],
     "checkout_discovery": "the same replicas over the tracked files of the checkout (git clone into ~/.agents/skills/MAGOS or <Hermes home>/skills/MAGOS)",
@@ -27,7 +28,7 @@
   "expected": [
     "sync_hosts.py installs the full package (SKILL.md, references/, skills/) for Codex and Hermes.",
     "Every ../../ reference in an adapter and every references/ link in SKILL.md resolves inside the installed tree.",
-    "No adapter routes through commands/; all six adapters set policy.allow_implicit_invocation: false.",
+    "No adapter routes through commands/; all seven adapters set policy.allow_implicit_invocation: false.",
     "Each skill name appears exactly once in the Codex and Hermes discovery replicas.",
     "Every installed SKILL.md frontmatter is inside the strict YAML subset (no flow style, no ': ' in plain values, string-only metadata) and reads the same under PyYAML when it is installed.",
     "Over the tracked files of a git checkout, the Codex and Hermes replicas also find each skill exactly once.",

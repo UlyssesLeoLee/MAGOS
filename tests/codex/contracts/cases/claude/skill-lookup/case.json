@@ -14,7 +14,7 @@
   },
   "expected": [
     "Each command accepts MAGOS, multi-agent-git-orchestrator, or MAGO-Skill as the orchestrator skill.",
-    "GitIntegrate does not integrate, GitCleanup and GitConverge only preview when the skill cannot be loaded."
+    "GitIntegrate does not integrate, GitCleanup, GitConverge, and GitSweep only preview when the skill cannot be loaded."
   ],
   "checks": [
     {
@@ -66,6 +66,14 @@
       ]
     },
     {
+      "file": "commands/GitSweep.md",
+      "contains": [
+        "`MAGOS` (install directory)",
+        "`multi-agent-git-orchestrator` (frontmatter name)",
+        "`MAGO-Skill` (older clone directory)"
+      ]
+    },
+    {
       "file": "commands/GitIntegrate.md",
       "contains": [
         "If the skill could not be loaded, do not integrate"
@@ -79,6 +87,12 @@
     },
     {
       "file": "commands/GitConverge.md",
+      "contains": [
+        "if the skill could not be loaded, preview only"
+      ]
+    },
+    {
+      "file": "commands/GitSweep.md",
       "contains": [
         "if the skill could not be loaded, preview only"
       ]

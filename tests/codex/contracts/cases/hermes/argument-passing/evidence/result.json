@@ -34,6 +34,11 @@
       "file": "skills/git-converge/SKILL.md",
       "passed": true,
       "missing": []
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "passed": true,
+      "missing": []
     }
   ]
 }

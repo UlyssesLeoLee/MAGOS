@@ -29,7 +29,7 @@
     {
       "file": "README.md",
       "contains": [
-        "## 六个核心命令",
+        "## 七个核心命令",
         "### `/GitConverge`",
         "| GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` |",
         "└── GitConverge.md"

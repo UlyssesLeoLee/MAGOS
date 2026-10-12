@@ -1,9 +1,9 @@
 ---
 name: git-sweep
-description: "收敛并清除已合并分支（仅显式调用，写操作，含远端删除）；/git-sweep BRANCH [--apply] [--discard-ignored] [--remote NAME] [--help]."
+description: "收敛并清除已合并远端分支（仅显式调用，写操作）；/git-sweep BRANCH [--apply] [--remote NAME] [--help]."
 license: Apache-2.0
 metadata:
-  short-description: "收敛并清除已合并分支；$git-sweep BRANCH [--apply] [--discard-ignored] [--remote NAME] [--help]."
+  short-description: "收敛并清远端分支；$git-sweep BRANCH [--apply] [--remote NAME] [--help]."
 ---
 
 # GitSweep
