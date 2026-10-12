@@ -12,7 +12,7 @@
 
 - 市场清单只列一个插件 `magos`，来源是仓库根目录 `./`，Claude Code 与 Codex 都接受这个写法。
 - 插件宿主只加载 `skills/<name>/SKILL.md`，不加载根目录 `SKILL.md`，所以插件里带有入口 Skill `skills/git-orchestrator`（描述与根 Skill 相同，内容是读取 `../../SKILL.md`）。同步脚本的 `PLUGIN_ONLY_SKILLS` 会把它排除在 Codex / Hermes 包之外，因为这两种安装已经有根 Skill。
-- Hermes 的可移植 Agent Plugin 会把命令命名为 `/agent-plugin-magos-<hash>:git-recon`；`plugin.yaml` 与 `__init__.py`（只调用 `ctx.register_skill()`）让 Hermes 改按原生插件加载，命令名才是 `/magos:git-*`。Hermes 的插件 Skill 不进可用 Skill 列表，只能显式加载。
+- Hermes 的可移植 Agent Plugin 会把命令命名为 `/agent-plugin-magos-<hash>:git-recon`；`plugin.yaml` 与 `__init__.py`（只调用 `ctx.register_skill()`）让 Hermes 改按原生插件加载，命令名才是 `/magos:git-*`。Hermes 会把插件里每个 Skill 列进系统提示的 `<available_skills>`；描述取自 `__init__.py` 的 `INDEX_DESCRIPTIONS`（SKILL.md 里的描述会被 Hermes 截成 60 个字符，不传的话模型只看到名字）。总规则那行写触发场景，会写仓库的命令那几行写“不要自己加载”。
 - Hermes 官方插件目录（`hermes plugins install magos`）需要仓库所有者向 NousResearch/hermes-agent 提交 `plugin-catalog/magos.yaml`，并固定一个 40 位 commit SHA。
 - 以上流程已用本地源实测：Claude Code 2.1.296、Codex CLI 0.162.1、Hermes（2026.9.24）都能安装并启用，命令名与上表一致。
 

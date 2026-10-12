@@ -23,7 +23,7 @@
       ".agents/skills/MAGOS/SKILL.md": "b7734774465dd42c562d1c46a35092b13c52264cb1d2f1ae18bce3fb5a118eb2",
       ".agents/skills/MAGOS/references/handoff-and-state.md": "aae769fe50f3eaf53b3643c51bd0d5897dc57c713a13ec89f73789e308caaf16",
       ".agents/skills/MAGOS/references/decision-matrix.md": "e2c05a70386d6c6bd8eca8d90c5f5e944f6558c24f3134ba60226bfce92e0d31",
-      ".agents/skills/MAGOS/references/installation.md": "9f11a937bcc26c4f451b6a345529f86d67cf3128c685a20db151e3cf3dc24069",
+      ".agents/skills/MAGOS/references/installation.md": "87636bacb6892ea46be24cc56d7194ddbf56ccbb4c7615fa8b8d3424998d123f",
       ".agents/skills/MAGOS/references/pressure-tests.md": "1cd224dbd486657fba4a00b7a2eea5bba0002deb35573a735d05219cfc339919",
       ".agents/skills/MAGOS/references/design-rationale.md": "0c9c6fdc16739840eb6c4214b48d715773e8e2f5cd6af81b4a7ad3ba6f617d83",
       ".agents/skills/MAGOS/references/branch-strategy.md": "a30bb2d8cc9fc5e0a127a391221674a4b38557065ad327819dd2e4e4807ff38d",
@@ -47,6 +47,6 @@
     "git_repository": true
   },
   "skill": "git-recon",
-  "skill_path": "/home/user/MAGOS/tests/codex/.magos-accept-4ihyx3rx/empty/.agents/skills/MAGOS/skills/git-recon/SKILL.md",
-  "skill_source_sha256": "2d523139ba6b79ce7a7371d4731308106456df6a391fc1dc8dc7e9290da7f0d9"
+  "skill_path": "/home/user/MAGOS/tests/codex/.magos-accept-7p94cb7e/empty/.agents/skills/MAGOS/skills/git-recon/SKILL.md",
+  "skill_source_sha256": "c7da87fd5a4d4597089ab5e4648107ddb775b77e0ffa88f6d097e26855134235"
 }

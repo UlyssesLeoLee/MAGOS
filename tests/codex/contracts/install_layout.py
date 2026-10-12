@@ -8,6 +8,7 @@ because users may git clone the repository straight into a Codex or Hermes skill
 every committed SKILL.md is discovered.
 """
 
+import ast
 import json
 import re
 import subprocess
@@ -199,6 +200,34 @@ def hermes_manifest_problems(repo: Path) -> list[str]:
         problems.append("plugin.yaml declares hooks, tools, capabilities or dependencies; MAGOS ships skills only")
     if "ctx.register_skill(" not in entry or re.search(r"ctx\.register_(?!skill\()", entry):
         problems.append("__init__.py must call ctx.register_skill() and no other ctx.register_*")
+    problems += hermes_index_problems(repo, entry)
+    return problems
+
+
+def hermes_index_problems(repo: Path, entry: str) -> list[str]:
+    """Hermes lists every registered plugin skill in <available_skills> with the description passed to
+    ctx.register_skill (without one the model sees the bare name and never loads the skill on its own), so each skill
+    needs an INDEX_DESCRIPTIONS line: the orchestrator a trigger-rich one, a command that writes to a repository one
+    that tells the model to leave it to the user."""
+    try:
+        tree = ast.parse(entry)
+        table = next(ast.literal_eval(node.value) for node in tree.body
+                     if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "INDEX_DESCRIPTIONS"
+                                                              for t in node.targets))
+    except (SyntaxError, StopIteration, ValueError) as error:
+        return [f"__init__.py has no literal INDEX_DESCRIPTIONS table: {error}"]
+    names = sorted(path.parent.name for path in (repo / "skills").glob("*/SKILL.md"))
+    problems = [f"INDEX_DESCRIPTIONS has no line for skills/{name}" for name in names if not table.get(name)]
+    problems += [f"INDEX_DESCRIPTIONS names {name!r}, which is not a skill" for name in sorted(set(table) - set(names))]
+    if "description=INDEX_DESCRIPTIONS" not in entry:
+        problems.append("__init__.py does not pass the INDEX_DESCRIPTIONS line to ctx.register_skill()")
+    orchestrator = table.get("git-orchestrator", "")
+    if not 100 <= len(orchestrator) <= 400:
+        problems.append(f"the git-orchestrator index line has {len(orchestrator)} characters; keep it 100-400, "
+                        "since it sits in every Hermes system prompt")
+    for name in ("git-integrate", "git-cleanup", "git-converge", "git-sweep"):
+        if "Never load it yourself" not in table.get(name, ""):
+            problems.append(f"the {name} index line must tell the model never to load it itself")
     return problems
 
 

@@ -21,13 +21,13 @@
   "initial_state": {
     "git_repository": true,
     "refs": {
-      "refs/heads/agent/auth": "85dfc0509255b07d874607baee26df6fbdeed52b",
-      "refs/heads/main": "153e077e70f0e8ca9963ba1101c68bea0beb128a",
-      "refs/remotes/origin/main": "153e077e70f0e8ca9963ba1101c68bea0beb128a"
+      "refs/heads/agent/auth": "336481bdef26f345c1c97f630e5ecbb07f88c78e",
+      "refs/heads/main": "755a21b6472e5297326a0fda4ab920aef6093504",
+      "refs/remotes/origin/main": "755a21b6472e5297326a0fda4ab920aef6093504"
     },
     "worktrees": {
-      "/home/user/MAGOS/tests/codex/.magos-accept-zjf630z3/repo": {
-        "head": "153e077e70f0e8ca9963ba1101c68bea0beb128a",
+      "/home/user/MAGOS/tests/codex/.magos-accept-dewd8xp3/repo": {
+        "head": "755a21b6472e5297326a0fda4ab920aef6093504",
         "branch": "main",
         "status": ""
       }
@@ -37,7 +37,7 @@
       "repo/.agents/skills/MAGOS/SKILL.md": "b7734774465dd42c562d1c46a35092b13c52264cb1d2f1ae18bce3fb5a118eb2",
       "repo/.agents/skills/MAGOS/references/handoff-and-state.md": "aae769fe50f3eaf53b3643c51bd0d5897dc57c713a13ec89f73789e308caaf16",
       "repo/.agents/skills/MAGOS/references/decision-matrix.md": "e2c05a70386d6c6bd8eca8d90c5f5e944f6558c24f3134ba60226bfce92e0d31",
-      "repo/.agents/skills/MAGOS/references/installation.md": "9f11a937bcc26c4f451b6a345529f86d67cf3128c685a20db151e3cf3dc24069",
+      "repo/.agents/skills/MAGOS/references/installation.md": "87636bacb6892ea46be24cc56d7194ddbf56ccbb4c7615fa8b8d3424998d123f",
       "repo/.agents/skills/MAGOS/references/pressure-tests.md": "1cd224dbd486657fba4a00b7a2eea5bba0002deb35573a735d05219cfc339919",
       "repo/.agents/skills/MAGOS/references/design-rationale.md": "0c9c6fdc16739840eb6c4214b48d715773e8e2f5cd6af81b4a7ad3ba6f617d83",
       "repo/.agents/skills/MAGOS/references/branch-strategy.md": "a30bb2d8cc9fc5e0a127a391221674a4b38557065ad327819dd2e4e4807ff38d",
@@ -59,10 +59,10 @@
       "repo/.agents/skills/MAGOS/skills/git-integrate/agents/openai.yaml": "f9ff6c7573c0e76c9bdd72dd6af6289164e9fa37a27756f7e5613ed0d14f5d99"
     },
     "bare_refs": {
-      "refs/heads/main": "153e077e70f0e8ca9963ba1101c68bea0beb128a"
+      "refs/heads/main": "755a21b6472e5297326a0fda4ab920aef6093504"
     }
   },
   "skill": "git-integrate",
-  "skill_path": "/home/user/MAGOS/tests/codex/.magos-accept-zjf630z3/repo/.agents/skills/MAGOS/skills/git-integrate/SKILL.md",
-  "skill_source_sha256": "2d523139ba6b79ce7a7371d4731308106456df6a391fc1dc8dc7e9290da7f0d9"
+  "skill_path": "/home/user/MAGOS/tests/codex/.magos-accept-dewd8xp3/repo/.agents/skills/MAGOS/skills/git-integrate/SKILL.md",
+  "skill_source_sha256": "c7da87fd5a4d4597089ab5e4648107ddb775b77e0ffa88f6d097e26855134235"
 }
