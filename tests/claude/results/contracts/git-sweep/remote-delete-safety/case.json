@@ -1,0 +1,58 @@
+{
+  "id": "git-sweep/remote-delete-safety",
+  "skill": "git-sweep",
+  "feature": "Remote branches are deleted only when merged into a branch the remote keeps, one lease-guarded delete at a time",
+  "invocations": {
+    "claude": "/GitSweep",
+    "codex": "$git-sweep"
+  },
+  "test_object": {
+    "arguments": [
+      "<branch>",
+      "--apply"
+    ],
+    "also": [
+      "branch merged only locally",
+      "remote default",
+      "moved remote tip"
+    ]
+  },
+  "expected": [
+    "Deletes only SAFE_CANDIDATE remote branches whose tip is an ancestor of the remote default or origin/<branch>.",
+    "Leaves PENDING_PUSH, KEPT_NOT_MERGED, STALE and protected branches alone.",
+    "Uses only the lease-guarded single-branch delete push and never pushes commits or force-pushes."
+  ],
+  "checks": [
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "git push --force-with-lease=refs/heads/<name>:<sha> <remote> :refs/heads/<name>",
+        "never push commits or tags; never force-push",
+        "PENDING_PUSH",
+        "never run `git remote prune`, `git fetch --prune`, or `git branch -d -r`",
+        "never delete a remote branch when phase 1 stopped"
+      ]
+    },
+    {
+      "file": "commands/GitSweep.md",
+      "contains": [
+        "disable-model-invocation: true",
+        "never push commits or tags, never force-push",
+        "Stop on a conflict and delete nothing, locally or remotely."
+      ]
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "Stop on a conflict and delete nothing, locally or remotely.",
+        "never push commits or tags, never force-push"
+      ]
+    },
+    {
+      "file": "skills/git-sweep/agents/openai.yaml",
+      "contains": [
+        "allow_implicit_invocation: false"
+      ]
+    }
+  ]
+}

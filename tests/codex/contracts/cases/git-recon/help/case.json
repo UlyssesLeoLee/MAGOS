@@ -27,7 +27,7 @@
     {
       "file": "references/commands.md",
       "contains": [
-        "All six commands accept `--help`",
+        "All seven commands accept `--help`",
         "## 1. GitRecon",
         "/GitRecon --help"
       ]

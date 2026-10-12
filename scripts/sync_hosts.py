@@ -50,7 +50,7 @@ import sys
 import tempfile
 
 
-COMMAND_NAMES = ("GitRecon", "GitAnalyze", "GitRecommend", "GitIntegrate", "GitCleanup", "GitConverge")
+COMMAND_NAMES = ("GitRecon", "GitAnalyze", "GitRecommend", "GitIntegrate", "GitCleanup", "GitConverge", "GitSweep")
 COMMAND_PATHS = tuple(f"commands/{name}.md" for name in COMMAND_NAMES)
 PACKAGE_NAME = "MAGOS"
 HERMES_PACKAGE_NAME = "multi-agent-git-orchestrator"

@@ -34,7 +34,7 @@ It actively inspects the current repository's **branch / worktree / commit / ahe
 | remote | The copy stored online (for example on GitHub) | The company's shared-drive backup |
 | preview / apply | Look at the plan first, then decide to really do it | Read the renovation plan, then say "go" |
 
-**Every command follows one rule: look first, act only when told.** The three commands that can change your repository (`/GitIntegrate`, `/GitCleanup`, `/GitConverge`) act only when you explicitly ask, and they stop and explain whenever they are unsure instead of pushing on.
+**Every command follows one rule: look first, act only when told.** The four commands that can change your repository (`/GitIntegrate`, `/GitCleanup`, `/GitConverge`, `/GitSweep`) act only when you explicitly ask, and they stop and explain whenever they are unsure instead of pushing on.
 
 ### How do I write a command?
 
@@ -72,7 +72,7 @@ These three work the same way in every command that supports them. Learn them on
 | What it does | Shows how to write the command, what every argument means, what happens when you leave them out, and a few examples, then stops |
 | What it never does | Never reads your repository, never runs Git, never changes anything |
 | When to use it | You forgot the syntax, you are unsure what an argument means, or it is your first time with a command |
-| Which commands | All six |
+| Which commands | All seven |
 
 > **When in doubt, add `--help` first. It is completely safe.**
 
@@ -138,7 +138,7 @@ These three work the same way in every command that supports them. Learn them on
 | Where to put it | Anywhere after the command. In `/GitRecommend which branches should merge first --lang English`, `--lang English` is taken out first, so your question is "which branches should merge first" |
 | If you write it wrongly | If nothing follows `--lang`, or what follows is not a language (for example `--lang xyz123`), it tells you what is wrong in Chinese and shows the usage, **without running the command** |
 | Does it change the result? | No. Only the language of the reply changes; the checks and judgments are identical |
-| Which commands | All six |
+| Which commands | All seven |
 
 ---
 
@@ -191,7 +191,7 @@ The core principle:
 
 ---
 
-## The six commands
+## The seven commands
 
 | Command | In one sentence | Does it change your repository? |
 |---|---|---|
@@ -201,6 +201,7 @@ The core principle:
 | `/GitIntegrate` | Lands one agent's work behind a safety gate | Yes, after a series of checks |
 | `/GitCleanup` | Removes finished branches and worktrees | Not by default; only with `--apply` |
 | `/GitConverge` | Folds every branch into one and keeps only `main` and it | Not by default; only with `--apply` |
+| `/GitSweep` | Runs `/GitConverge`, then also deletes merged remote branches | Not by default; only with `--apply` (includes remote deletion) |
 
 Every command accepts `--lang <language>` (reply language, Chinese by default) and `--help` (instructions only); the three read-only commands also accept `--remote`. Their details are in "Three arguments that work everywhere" above, so each command below describes only the arguments **it alone** has.
 
@@ -664,6 +665,26 @@ flowchart TD
 
 ---
 
+### `/GitSweep <branch>` — converge, then clear merged remote branches
+
+**`/GitConverge` plus a guarded sweep of the remote branches that are already merged.**
+
+Two phases, and nothing happens without `--apply`:
+
+1. **Local converge**: identical to `/GitConverge` (same gates, same merge order). A conflict or failed check stops everything; nothing is deleted locally or remotely.
+2. **Remote sweep**: deletes only remote branches whose tip is already contained in a branch the remote keeps: its default branch or its own `<branch>`. A branch merged only on your machine is `PENDING_PUSH` and stays until you push `<branch>` and run `/GitSweep` again.
+
+```text
+/GitSweep agent/release                              just the plan (no network)
+/GitSweep agent/release --apply                      run the plan
+/GitSweep agent/release --apply --remote upstream    sweep upstream instead of origin
+```
+
+It never pushes commits or tags, never force-pushes, and never deletes the remote default branch, `main`, or `<branch>` itself. Each remote branch is deleted on its own with a lease on its recorded SHA, so the remote refuses if the branch moved meanwhile. Deleting a remote branch closes open pull requests that use it as their head. The report lists every deleted branch with its SHA (`git push <remote> <sha>:refs/heads/<name>` restores it).
+
+---
+
+
 ## Agent lane lifecycle
 
 ```mermaid
@@ -858,6 +879,7 @@ python -X utf8 tests/codex/contracts/test_agent_plugin.py
 | GitIntegrate | `/GitIntegrate` | `/git-integrate` | `$git-integrate` | Integrate a lane through safety gates |
 | GitCleanup | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` | Preview cleanups; `--apply` required to delete |
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | Merge every local branch into one and keep only `main` and it; preview by default, `--apply` to run |
+| GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge`, then delete merged remote branches; preview by default (no network), `--apply` to run |
 
 ```bash
 python -X utf8 tests/codex/contracts/run_contract_cases.py

@@ -1,0 +1,5 @@
+interface:
+  display_name: "git-sweep"
+  short_description: "收敛并清除已合并分支；$git-sweep BRANCH [--apply] [--discard-ignored] [--remote NAME] [--help]"
+policy:
+  allow_implicit_invocation: false

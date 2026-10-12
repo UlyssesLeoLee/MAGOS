@@ -40,7 +40,7 @@
       "file": "references/commands.md",
       "contains": [
         "/GitConverge --help",
-        "All six commands accept `--help`."
+        "All seven commands accept `--help`."
       ]
     }
   ]

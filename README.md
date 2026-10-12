@@ -33,7 +33,7 @@
 | 远端（remote） | 放在网上（比如 GitHub）的那份仓库 | 公司共享网盘上的备份 |
 | 预览 / 执行 | 先只看“打算怎么做”，满意了再真正去做 | 先看装修方案，点头之后才开工 |
 
-**这套命令有一个统一的约定：默认只看、不动手。** 会真正改动仓库的三个命令（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`）必须由你明确下令才会动手；只要遇到没把握的情况，它们会停下来告诉你原因，而不是硬做。
+**这套命令有一个统一的约定：默认只看、不动手。** 会真正改动仓库的四个命令（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`、`/GitSweep`）必须由你明确下令才会动手；只要遇到没把握的情况，它们会停下来告诉你原因，而不是硬做。
 
 ### 命令怎么写？
 
@@ -200,6 +200,7 @@ flowchart LR
 | `/GitIntegrate` | 把某个 AI 的成果安全地并进主线 | 会，但要先过一连串检查 |
 | `/GitCleanup` | 清理已经完成的旧分支和工作区 | 默认不会；加 `--apply` 才会 |
 | `/GitConverge` | 把所有分支的成果汇总到一条分支，只留 `main` 和它 | 默认不会；加 `--apply` 才会 |
+| `/GitSweep` | 先做 `/GitConverge`，再一并清除远端已合并的分支 | 默认不会；加 `--apply` 才会（含删除远端分支） |
 
 每个命令都可以加 `--lang <语言>`（回复语言，不写就是中文）和 `--help`（只看说明）；三个只看的命令还有 `--remote`。它们的详细用法见上面的“三个通用参数”，下面每个命令只写它**自己独有**的参数。
 
@@ -667,6 +668,27 @@ flowchart TD
 
 ---
 
+### `/GitSweep`
+
+**在 `/GitConverge` 的基础上，再一并清除远端已经合并的分支。**
+
+适合：本地已经“收网”，想把 GitHub 等远端上用完的分支也一起清掉，不用再手工逐条删。
+
+分两步，且只有加 `--apply` 才会动手：
+
+1. **本地收敛**：和 `/GitConverge` 完全一样（同样的检查、同样的合并顺序）。遇到冲突或检查失败就整个停下，本地、远端都不会删任何东西。
+2. **清除远端**：只删除“提交已经被远端自己保留的分支包含”的远端分支，也就是已并入远端默认分支或远端的 `<branch>` 的那些。只在你本地合并过、还没推送的分支，会标成 `PENDING_PUSH` 留着，等你把 `<branch>` 推上去后再跑一次 `/GitSweep` 才会删。
+
+```text
+/GitSweep agent/release                          只看计划（不联网）
+/GitSweep agent/release --apply                  照计划执行
+/GitSweep agent/release --apply --remote upstream   清理 upstream 而不是 origin
+```
+
+它**绝不会**：推送提交或标签、强推、删除远端默认分支 / `main` / `<branch>` 本身、删除没有并入的远端分支。每条远端分支单独删除，并带上“远端仍停在记录的 SHA”的保护，对方期间有新提交就会拒绝。删除远端分支会让以它为源的未合并 PR 被关闭，请先确认。报告里会列出每条被删分支的 SHA，可用 `git push <remote> <sha>:refs/heads/<name>` 恢复。
+
+---
+
 ## 多 Agent 生命周期
 
 ```mermaid
@@ -825,6 +847,7 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 | GitIntegrate | `/GitIntegrate` | `/git-integrate` | `$git-integrate` | 通过安全门禁后集成指定 lane 或 branch |
 | GitCleanup | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` | 默认预览可清理项；`--apply` 才允许删除 |
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | 把所有本地分支合并进指定分支并只保留 `main` 和它；默认预览，`--apply` 才执行 |
+| GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge` 之后再删除远端已合并分支；默认预览且不联网，`--apply` 才执行 |
 
 斜杠入口说明：
 

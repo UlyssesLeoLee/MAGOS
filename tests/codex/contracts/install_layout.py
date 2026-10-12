@@ -19,7 +19,7 @@ import agent_plugin
 import skill_frontmatter
 
 EXPECTED_SKILLS = {"multi-agent-git-orchestrator", "git-recon", "git-analyze", "git-recommend",
-                   "git-integrate", "git-cleanup", "git-converge"}
+                   "git-integrate", "git-cleanup", "git-converge", "git-sweep"}
 CODEX_MAX_SCAN_DEPTH = 6
 HERMES_SUPPORT_DIRS = {"references", "templates", "assets", "scripts"}
 # Hermes agent/skill_utils.py EXCLUDED_SKILL_DIRS: a SKILL.md below any of these directories is not a skill.

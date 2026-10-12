@@ -116,7 +116,7 @@ Sources: https://agent-plugins.org/specification (1.0.0), the manifest schema be
 https://agentskills.io/specification as the reference validator skills-ref codes them. No official Agent Plugins
 validator exists, and clients must not fetch schemas while loading (§5.2), so the schema is mirrored here.
 
-Plugin clients discover only skills/<dir>/SKILL.md (§6.1, §7.1). They see the six command adapters; the
+Plugin clients discover only skills/<dir>/SKILL.md (§6.1, §7.1). They see the seven command adapters; the
 orchestrator SKILL.md at the package root is reached through the adapters' ../../ paths and is not a plugin skill.
 """
 
@@ -157,7 +157,7 @@ PLUGIN_SCHEMA = {
 ANNOTATIONS = {"$schema", "$id", "title", "description"}
 TYPES = {"object": dict, "string": str, "array": list}
 
-EXPECTED_PLUGIN_SKILLS = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-recommend", "git-recon"]
+EXPECTED_PLUGIN_SKILLS = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-recommend", "git-recon", "git-sweep"]
 ROOT_SKILL_NAME = "multi-agent-git-orchestrator"
 ALLOWED_FIELDS = {"name", "description", "license", "allowed-tools", "metadata", "compatibility"}
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -448,7 +448,7 @@ def check(root: Path) -> list[dict]:
         ("plugin: plugin.json is a valid Agent Plugins 1.0.0 manifest", lambda: check_manifest(root)),
         ("plugin: manifest version matches SKILL.md metadata.version and references/commands.md",
          lambda: check_version(root)),
-        ("plugin: skills/ discovery (§7.1) finds exactly the six command adapters", discovery),
+        ("plugin: skills/ discovery (§7.1) finds exactly the seven command adapters", discovery),
         ("plugin: every discovered skill meets Agent Skills (strict YAML, allowed fields, name = directory, "
          "string-only metadata)", lambda: [problem for path in found for problem in skill_problems(path, path.parent.name)]),
         ("plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules",

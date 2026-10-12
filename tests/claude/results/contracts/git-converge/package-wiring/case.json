@@ -23,7 +23,7 @@
     {
       "file": "scripts/sync_hosts.py",
       "contains": [
-        "\"GitCleanup\", \"GitConverge\")"
+        "\"GitCleanup\", \"GitConverge\", \"GitSweep\")"
       ]
     },
     {
@@ -55,7 +55,7 @@
       "contains": [
         "version: \"1.0\"",
         "| `/GitConverge` | `/GitConverge` | `/git-converge` | `$git-converge` |",
-        "discover the six Agent Skills"
+        "discover the seven Agent Skills"
       ]
     }
   ]
