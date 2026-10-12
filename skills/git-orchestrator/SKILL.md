@@ -12,7 +12,7 @@ metadata:
 
 This is the entry point of the MAGOS orchestrator when the package is installed as a plugin (the Claude Code or Codex marketplace, `hermes plugins install`, or a clone into `~/.claude/skills/`). Plugin hosts load only the skills under `skills/`, not the package-root `SKILL.md`, so this skill exists to reach it.
 
-Before giving any Git coordination advice, read the package-root `SKILL.md`, two directories above this file (`../../SKILL.md`), and follow it exactly as if it were this skill. Load the `references/` files it names from the same package root when it says to. Hermes: take the absolute path from the `[Skill directory: ...]` line and go up two directories, because the skill viewer rejects paths that contain `..`.
+Before giving any Git coordination advice, read the package-root `SKILL.md`, two directories above this file (`../../SKILL.md`), and follow it exactly as if it were this skill. Load the `references/` files it names from the same package root when it says to. Hermes: take the absolute path from the `[Skill directory: ...]` line (or the `skill_dir` field that `skill_view` returns) and go up two directories, because the skill viewer rejects paths that contain `..`; read the file with the file or terminal tool.
 
 If `../../SKILL.md` cannot be read, say that the MAGOS installation is incomplete and give no state-dependent Git advice.
 

@@ -40,7 +40,7 @@ This adapter belongs to the MAGOS package. The shared files are in the package r
 Locate them as follows:
 
 - Codex: resolve the paths relative to the directory that contains this `SKILL.md`.
-- Hermes: take the absolute path from the `[Skill directory: ...]` line, go up two directories, and read the files with the file or terminal tool. The skill viewer rejects paths that contain `..`. Alternatively, load the skill `multi-agent-git-orchestrator` and view its `references/commands.md` and `references/reconnaissance.md` files.
+- Hermes: take the absolute path from the `[Skill directory: ...]` line (when the skill was loaded with `skill_view` instead of a slash command, from the `skill_dir` field it returns), go up two directories, and read the files with the file or terminal tool. The skill viewer rejects paths that contain `..`. Alternatively, load the skill `multi-agent-git-orchestrator` (`magos:git-orchestrator` under a Hermes plugin install) and view its `references/commands.md` and `references/reconnaissance.md` files.
 - Other hosts: resolve the paths relative to this file.
 
 Do not use `commands/*.md` for this adapter. Those files are Claude Code slash-command wrappers with Claude-specific loading steps.

@@ -8,6 +8,7 @@ because users may git clone the repository straight into a Codex or Hermes skill
 every committed SKILL.md is discovered.
 """
 
+import ast
 import json
 import re
 import subprocess
@@ -199,7 +200,66 @@ def hermes_manifest_problems(repo: Path) -> list[str]:
         problems.append("plugin.yaml declares hooks, tools, capabilities or dependencies; MAGOS ships skills only")
     if "ctx.register_skill(" not in entry or re.search(r"ctx\.register_(?!skill\()", entry):
         problems.append("__init__.py must call ctx.register_skill() and no other ctx.register_*")
+    problems += hermes_index_problems(repo, entry)
     return problems
+
+
+def hermes_index_problems(repo: Path, entry: str) -> list[str]:
+    """Hermes lists every registered plugin skill in <available_skills> with the description passed to
+    ctx.register_skill (without one the model sees the bare name and never loads the skill on its own), so each skill
+    needs an INDEX_DESCRIPTIONS line: the orchestrator a trigger-rich one, a command that writes to a repository (an
+    adapter with an "Explicit invocation only" section) one that tells the model to leave it to the user."""
+    try:
+        tree = ast.parse(entry)
+        table = ast.literal_eval(next(
+            node.value for node in tree.body
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None
+            and any(getattr(target, "id", "") == "INDEX_DESCRIPTIONS"
+                    for target in (node.targets if isinstance(node, ast.Assign) else [node.target]))))
+    except StopIteration:
+        return ["__init__.py has no top-level INDEX_DESCRIPTIONS assignment"]
+    except (SyntaxError, ValueError, TypeError) as error:
+        return [f"__init__.py has no literal INDEX_DESCRIPTIONS table: {error}"]
+    if not isinstance(table, dict) or not all(isinstance(key, str) and isinstance(value, str)
+                                              for key, value in table.items()):
+        return ["__init__.py INDEX_DESCRIPTIONS must be a literal dict from skill name to description string"]
+    names = sorted(path.parent.name for path in (repo / "skills").glob("*/SKILL.md"))
+    problems = [f"INDEX_DESCRIPTIONS has no line for skills/{name}" for name in names if not table.get(name)]
+    problems += [f"INDEX_DESCRIPTIONS names {name!r}, which is not a skill" for name in sorted(set(table) - set(names))]
+    if not passes_index_description(tree):
+        problems.append("__init__.py does not pass the INDEX_DESCRIPTIONS line to ctx.register_skill()")
+    orchestrator = table.get("git-orchestrator", "")
+    if not 100 <= len(orchestrator) <= 400:
+        problems.append(f"the git-orchestrator index line has {len(orchestrator)} characters; keep it 100-400, "
+                        "since it sits in every Hermes system prompt")
+    for name in names:
+        if "\n## Explicit invocation only" in read_text_or_empty(repo / "skills" / name / "SKILL.md") \
+                and "Never load it yourself" not in table.get(name, ""):
+            problems.append(f"the {name} index line must tell the model never to load it itself")
+    for name, line in sorted(table.items()):
+        others = sorted({command for command in re.findall(r"/[\w-]+:([\w-]+)", line) if command != name})
+        if others:
+            problems.append(f"the {name} index line names another command: {', '.join(others)}")
+    return problems
+
+
+def passes_index_description(tree: ast.AST) -> bool:
+    """Every ctx.register_skill() call passes description=<an expression that reads INDEX_DESCRIPTIONS>."""
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+             and isinstance(node.func, ast.Attribute) and node.func.attr == "register_skill"]
+    return bool(calls) and all(
+        any(keyword.arg == "description" and any(isinstance(name, ast.Name) and name.id == "INDEX_DESCRIPTIONS"
+                                                 for name in ast.walk(keyword.value))
+            for keyword in call.keywords)
+        for call in calls)
+
+
+def read_text_or_empty(path: Path) -> str:
+    """The file's text, or "" when it cannot be read; the frontmatter rows already report an unreadable SKILL.md."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
 
 
 def marketplace_problems(repo: Path, manifests: list[str]) -> list[str]:
