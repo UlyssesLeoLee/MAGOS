@@ -36,6 +36,11 @@
       "missing": []
     },
     {
+      "file": "commands/GitSweep.md",
+      "passed": true,
+      "missing": []
+    },
+    {
       "file": "commands/GitIntegrate.md",
       "passed": true,
       "missing": []
@@ -47,6 +52,11 @@
     },
     {
       "file": "commands/GitConverge.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "commands/GitSweep.md",
       "passed": true,
       "missing": []
     }

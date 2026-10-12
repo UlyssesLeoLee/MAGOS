@@ -1,0 +1,9 @@
+{
+  "arguments": [
+    "<branch>"
+  ],
+  "also": [
+    "--help",
+    "--remote <name>"
+  ]
+}

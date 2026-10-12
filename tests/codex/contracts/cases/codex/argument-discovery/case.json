@@ -1,9 +1,9 @@
 {
   "id": "codex/argument-discovery",
   "skill": "all",
-  "feature": "Codex exposes all six skills with compact usage hints",
+  "feature": "Codex exposes all seven skills with compact usage hints",
   "invocations": {
-    "codex": "$git-recon, $git-analyze, $git-recommend, $git-integrate, $git-cleanup, $git-converge"
+    "codex": "$git-recon, $git-analyze, $git-recommend, $git-integrate, $git-cleanup, $git-converge, $git-sweep"
   },
   "test_object": {
     "host": "Codex CLI",
@@ -13,11 +13,12 @@
       "git-recommend",
       "git-integrate",
       "git-cleanup",
-      "git-converge"
+      "git-converge",
+      "git-sweep"
     ]
   },
   "expected": [
-    "All six skill directories have Codex-recognized names and invocation syntax.",
+    "All seven skill directories have Codex-recognized names and invocation syntax.",
     "Each openai.yaml short description includes its $skill selector and --help."
   ],
   "checks": [
@@ -133,6 +134,26 @@
       "file": "skills/git-converge/agents/openai.yaml",
       "contains": [
         "$git-converge",
+        "[--help]"
+      ],
+      "pattern": "^  short_description: \"([^\"]+)\"$",
+      "length": [
+        25,
+        64
+      ]
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "- Codex: `$git-sweep <branch> [--apply] [--discard-ignored] [--remote <name>] [--lang <language>] [--help]`",
+        "`--help`:",
+        "Examples:"
+      ]
+    },
+    {
+      "file": "skills/git-sweep/agents/openai.yaml",
+      "contains": [
+        "$git-sweep",
         "[--help]"
       ],
       "pattern": "^  short_description: \"([^\"]+)\"$",

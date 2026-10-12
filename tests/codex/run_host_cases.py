@@ -86,6 +86,7 @@ HOST_NAME = {
     "git-integrate": "$git-integrate",
     "git-cleanup": "$git-cleanup",
     "git-converge": "$git-converge",
+    "git-sweep": "$git-sweep",
 }
 RUNTIME_ERROR = re.compile(
     r"(?i)(insufficient.?(?:credit|balance)|usage limit|rate limit|quota|"
@@ -663,7 +664,8 @@ def evaluate(spec: dict, fixture: dict, before: dict, after: dict,
         add("usage includes --help", "--help" in text)
         option = {"git-recon": "--remote", "git-analyze": "--remote",
                   "git-recommend": "--remote", "git-integrate": "--strategy",
-                  "git-cleanup": "--apply", "git-converge": "--apply"}[spec["id"].split("/")[0]]
+                  "git-cleanup": "--apply", "git-converge": "--apply",
+                  "git-sweep": "--remote"}[spec["id"].split("/")[0]]
         add("usage describes command option", option in text)
         add("repository state remains unchanged", before == after)
         add("structured trace permits inspection check", trace)

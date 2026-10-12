@@ -8,7 +8,8 @@
     "git-converge",
     "git-integrate",
     "git-recommend",
-    "git-recon"
+    "git-recon",
+    "git-sweep"
   ],
   "root_skill_exposed_to_plugin_clients": false,
   "validator": "no official Agent Plugins validator exists; checks are local and standard-library only"

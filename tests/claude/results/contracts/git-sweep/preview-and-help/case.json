@@ -1,0 +1,45 @@
+{
+  "id": "git-sweep/preview-and-help",
+  "skill": "git-sweep",
+  "feature": "Preview and help neither write nor contact the network",
+  "invocations": {
+    "claude": "/GitSweep",
+    "codex": "$git-sweep"
+  },
+  "test_object": {
+    "arguments": [
+      "<branch>"
+    ],
+    "also": [
+      "--help",
+      "--remote <name>"
+    ]
+  },
+  "expected": [
+    "Help stops before any inspection.",
+    "Default run previews the converge plan and remote candidates without fetching or contacting the remote."
+  ],
+  "checks": [
+    {
+      "file": "commands/GitSweep.md",
+      "contains": [
+        "Usage: `/GitSweep <branch> [--apply] [--discard-ignored] [--remote <name>] [--lang <language>] [--help]`",
+        "nothing is changed and the network is not contacted",
+        "then stop before any tool call, file read, skill load, or repository inspection"
+      ]
+    },
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "The preview does not contact the network and does not fetch",
+        "Run section 6 unchanged"
+      ]
+    },
+    {
+      "file": "SKILL.md",
+      "contains": [
+        "`/GitSweep` without `--apply` MUST NOT merge, switch, delete, prune, fetch, or contact the network."
+      ]
+    }
+  ]
+}

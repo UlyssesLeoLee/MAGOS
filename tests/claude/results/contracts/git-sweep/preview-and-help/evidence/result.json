@@ -1,0 +1,24 @@
+{
+  "case": "git-sweep/preview-and-help",
+  "skill": "git-sweep",
+  "feature": "Preview and help neither write nor contact the network",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "commands/GitSweep.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "SKILL.md",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}

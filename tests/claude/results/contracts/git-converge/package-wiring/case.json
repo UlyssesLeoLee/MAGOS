@@ -23,13 +23,13 @@
     {
       "file": "scripts/sync_hosts.py",
       "contains": [
-        "\"GitCleanup\", \"GitConverge\")"
+        "\"GitCleanup\", \"GitConverge\", \"GitSweep\")"
       ]
     },
     {
       "file": "README.md",
       "contains": [
-        "## 六个核心命令",
+        "## 七个核心命令",
         "### `/GitConverge`",
         "| GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` |",
         "└── GitConverge.md"
@@ -55,7 +55,7 @@
       "contains": [
         "version: \"1.0\"",
         "| `/GitConverge` | `/GitConverge` | `/git-converge` | `$git-converge` |",
-        "discover the six Agent Skills"
+        "discover the seven Agent Skills"
       ]
     }
   ]

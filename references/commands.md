@@ -6,13 +6,13 @@ These are **semantic command intents**. Canonical names use a leading `/`. A hos
 
 ## Argument and Help Behavior
 
-All six commands accept `--help`. When it is present, show that command's usage, argument descriptions, defaults, and examples, then stop before inspecting or changing a repository. `--help` takes precedence over other arguments.
+All seven commands accept `--help`. When it is present, show that command's usage, argument descriptions, defaults, and examples, then stop before inspecting or changing a repository. `--help` takes precedence over other arguments.
 
-**Reply language.** All six commands accept `--lang <language>`. It selects the language of everything the command says to the user: help text, questions, errors, reports (including the final report of a write command after a long run), and recommendations. When it is absent the reply is in Chinese (简体中文). The value is the next token: a language name or a common code (`English`, `en`, `日本語`, `ja`, `Français`); put a multi-word name in quotes. The option may appear anywhere among the arguments and may be combined with `--help`; help is then shown in the requested language, with flags and examples left untouched. Never translate command names, option names, branch or worktree names, paths, SHAs, Git commands, or status codes such as `BLOCKED_DIRTY`; a short gloss in the reply language next to a code is fine. Remove `--lang` and its value from the arguments before any other parsing, so it never becomes part of a goal, target, or branch name. If `--lang` has no value, or the value is not a language, explain the problem (in Chinese) and show the usage without executing the command.
+**Reply language.** All seven commands accept `--lang <language>`. It selects the language of everything the command says to the user: help text, questions, errors, reports (including the final report of a write command after a long run), and recommendations. When it is absent the reply is in Chinese (简体中文). The value is the next token: a language name or a common code (`English`, `en`, `日本語`, `ja`, `Français`); put a multi-word name in quotes. The option may appear anywhere among the arguments and may be combined with `--help`; help is then shown in the requested language, with flags and examples left untouched. Never translate command names, option names, branch or worktree names, paths, SHAs, Git commands, or status codes such as `BLOCKED_DIRTY`; a short gloss in the reply language next to a code is fine. Remove `--lang` and its value from the arguments before any other parsing, so it never becomes part of a goal, target, or branch name. If `--lang` has no value, or the value is not a language, explain the problem (in Chinese) and show the usage without executing the command.
 
 Recognize only the options listed for each command. For an unknown option or a required option value that is missing or invalid, explain the issue and show the relevant usage without executing the command. If a required positional target is missing, ask the user for it. Host adapters should preserve the supplied argument text and route `--help` to this reference.
 
-Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other five). Append the same arguments after the host-specific entry point.
+Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other six). Append the same arguments after the host-specific entry point.
 
 ## Host Adapter Contract
 
@@ -28,8 +28,8 @@ Each host reaches the same canonical command through its own adapter. Adapters d
 Rules for every adapter:
 
 - `skills/` adapters must not read `commands/*.md`; those wrappers contain Claude-specific loading steps.
-- Codex adapters set `policy.allow_implicit_invocation: false`, so they run only when selected explicitly; the root skill keeps semantic activation. Hermes has no per-skill switch, so `git-integrate`, `git-cleanup`, and `git-converge` refuse to write unless invoked explicitly.
-- If the shared rules (`SKILL.md`, `references/commands.md`) cannot be read, read-only commands may continue read-only and report the incomplete installation; `GitIntegrate` must not integrate, `GitCleanup` must not delete, and `GitConverge` must not merge or delete (preview only).
+- Codex adapters set `policy.allow_implicit_invocation: false`, so they run only when selected explicitly; the root skill keeps semantic activation. Hermes has no per-skill switch, so `git-integrate`, `git-cleanup`, `git-converge`, and `git-sweep` refuse to write unless invoked explicitly.
+- If the shared rules (`SKILL.md`, `references/commands.md`) cannot be read, read-only commands may continue read-only and report the incomplete installation; `GitIntegrate` must not integrate, `GitCleanup` must not delete, `GitConverge` must not merge or delete, and `GitSweep` must not merge, delete, or push (preview only).
 - An installed package must contain `SKILL.md`, every file under `references/`, and every `skills/git-*/SKILL.md` with its `agents/openai.yaml`, laid out exactly as in this repository, so that the relative paths above resolve. The root `plugin.json` belongs to the Agent Plugins package (the whole repository), not to the Codex and Hermes skills-directory package.
 
 ## 1. GitRecon
@@ -453,6 +453,108 @@ Validation
 Remaining risks
 ```
 
+## 7. GitSweep
+
+### Invocation
+
+```text
+/GitSweep <branch>
+/GitSweep <branch> --apply
+/GitSweep <branch> --apply --discard-ignored
+/GitSweep <branch> --apply --remote upstream
+/GitSweep <branch> --lang English
+/GitSweep --help
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|---|---:|---|
+| `<branch>` | Yes | Local branch that receives everything; same rules as section 6. |
+| `--apply` | No | Run the section 6 apply procedure, then delete the merged remote branches below. Without it, only show a preview. |
+| `--discard-ignored` | No | Passed through to the section 6 phase unchanged. It has no effect on remote branches. |
+| `--remote <name>` | No | The remote to sweep. Default: `origin`. It must be listed by `git remote`; the value is never used as a revision or a path. |
+| `--lang <language>` | No | Language of the reply, a name or code such as `English` or `ja`. Default: Chinese. See Argument and Help Behavior. |
+| `--help` | No | Show this command's usage and stop without inspecting or changing the repository. |
+
+Examples: `/GitSweep agent/release`, `/GitSweep agent/release --apply`, `/GitSweep --help`.
+
+### 中文描述
+
+在 `/GitConverge` 的基础上多做一步：本地收敛完成后，再删除远端上已经合并的分支。第一阶段与 `/GitConverge` 完全相同（同样的门槛、分类、合并顺序和本地删除规则）；第二阶段只删除"提交已经被远端自己保留的分支包含"的远端分支。默认只预览；只有 `--apply` 才会合并、删除并推送删除。
+
+### Phase 1: converge
+
+Run section 6 unchanged, with its Definitions, Acceptance rule, Classification, gates, apply steps 1-7, and Hard stop conditions, except for the four points below. `/GitSweep <branch> --apply` is the same explicit acceptance as `/GitConverge <branch> --apply`, and it also accepts the phase 2 deletions recorded in its plan.
+
+- **Earlier plan.** In section 6 apply step 1 and its Acceptance rule, the most recent GitSweep or GitConverge preview or apply report for the same `<branch>` earlier in this conversation is the earlier plan. A source tip or `main` that differs from the GitSweep preview the user saw stops the run with a new preview.
+- **Remote writes.** Section 6 bans pushing and deleting remote branches or remote-tracking refs. That ban does not cover the lease-guarded deletions of phase 2; a successful deletion also removes the matching `refs/remotes/<remote>/<name>`, which is expected. Every other part of the ban stands.
+- **Not touched.** Section 6 preview item 7 lists remote branches as not touched; here they appear in the remote classification table instead.
+- **Report.** The section 6 step 7 statement that remote branches still exist applies only to the remote branches phase 2 kept.
+
+Phase 2 starts only after phase 1 finished without stopping: a gate failure, a conflict, a failed check, an `UNKNOWN` needed for a write, or a stale preview stops the whole command and no remote branch is touched. Branches that phase 1 kept (blocked, unrelated history, in progress) are not remote candidates either (`KEPT_LOCAL` below).
+
+### Phase 2: remote sweep
+
+**Definitions.**
+
+- **remote**: `--remote <name>` or `origin`. If it is not in `git remote`, stop before phase 1 (a gate failure).
+- **remote default**: the branch named by `git symbolic-ref refs/remotes/<remote>/HEAD`. That ref is written at clone time and can be stale (`references/branch-strategy.md`), so apply step 2 checks it against the live remote. If that ref is missing, or names a branch with no remote-tracking ref, the remote default is unknown and the whole phase 2 is `UNKNOWN`: report it and suggest `git remote set-head <remote> --auto`. Phase 1 still completes.
+- **mapping**: `git config --get-all remote.<remote>.fetch` must include `refs/heads/*:refs/remotes/<remote>/*` (with or without a leading `+`), so that `refs/remotes/<remote>/<name>` is the remote's `refs/heads/<name>`; without it, phase 2 is `UNKNOWN`. A remote-tracking ref that matches the destination of another fetch refspec (for example `refs/remotes/<remote>/pr/*` from `+refs/pull/*/head:refs/remotes/<remote>/pr/*`) is `NOT_TOUCHED`. If `git remote get-url --push <remote>` differs from `git remote get-url <remote>`, the deletions would go to another repository than the one checked, so phase 2 is `UNKNOWN`.
+- **survivors**: the remote branches the remote keeps, as the ancestry anchor for "merged": the remote default and `refs/remotes/<remote>/<target>` when it exists. A remote branch is **merged** only when its tip is an ancestor of a survivor tip (`git merge-base --is-ancestor <sha> <survivor-sha>`), never merely of the local target. Work that exists only in the local target is not on the remote, so deleting the remote branch would remove the last remote copy; such a branch is `PENDING_PUSH`.
+- Resolve every remote branch through its full refname (`refs/remotes/<remote>/<name>`) and take SHAs from one `git for-each-ref --format='%(refname) %(objectname)' refs/remotes/<remote>` listing. **Names vs SHAs** and **Case collisions** from section 6 apply: two remote names equal ignoring case are both `UNKNOWN`.
+
+**Remote classification** (the first match wins; a case collision is decided before it, as in section 6, and makes both names `UNKNOWN` whatever else applies):
+
+```text
+NOT_TOUCHED          the remote default, `main`, the target, `HEAD`, a ref written by another fetch refspec (see mapping), any branch the repository documents as long-lived or protected, and any branch with a long-lived role (below)
+BLOCKED_BAD_NAME     the name fails `git check-ref-format --branch` or starts with `-`; never passed to a command
+BLOCKED_UPSTREAM     a local branch that will remain tracks it (`branch.<x>.remote` is the remote and `branch.<x>.merge` is `refs/heads/<name>`)
+KEPT_LOCAL           the local branch of the same name remains after phase 1 (blocked, unrelated history, in progress, `UNKNOWN`, or appeared after preview)
+KEPT_NOT_MERGED      its tip is not an ancestor of any survivor and not of the local target; it holds work the remote does not have elsewhere
+PENDING_PUSH         its tip is an ancestor of the local target but not of any survivor; delete it after `<branch>` is pushed and GitSweep is run again
+STALE                the live remote tip differs from the remote-tracking SHA (checked in apply only); skip it
+SAFE_CANDIDATE       merged into a survivor, and none of the above applies
+UNKNOWN              a needed fact could not be established
+```
+
+A **long-lived role** is one of INTEGRATION, STAGING, RELEASE, or ARCHIVE in `references/branch-strategy.md` **Branch roles**. It needs recorded or observed evidence: a policy file, CI trigger filters, matching release tags, or repeated merges into or from the integration branch in its `--first-parent` history. A role inferred only from the name does not count; report the name as the evidence. Such a branch is often fully merged right after a sync, and deleting it on the remote also closes or retargets pull requests that use it as their base.
+
+**Preview (default, read-only).** After the section 6 preview, list every remote branch with its SHA and remote classification, the survivors with their SHAs, and the exact `git push` that would be run for each `SAFE_CANDIDATE`. The preview does not contact the network and does not fetch: remote freshness is local-only, so the report says that `refs/remotes/<remote>/*` may be behind the live remote and that `--apply` rechecks it.
+
+**Apply.** After phase 1:
+
+1. Record the remote candidate list in the plan (included in the final report). Compare it with the most recent GitSweep preview or apply report for the same `<branch>` earlier in this conversation, if any. A candidate that was not a `SAFE_CANDIDATE` there, or whose SHA differs from the one shown there, is reported as "appeared after preview, untouched". Without an earlier GitSweep preview or report, the recorded list is the plan.
+2. Run `git ls-remote --symref <remote> HEAD 'refs/heads/*'` once. This is a network read and changes no refs; it is the only network read before the deletions. Phase 2 is `UNKNOWN` when the live `HEAD` names a branch other than the remote default, when a survivor's live tip differs from its remote-tracking SHA, or when a survivor is missing. A candidate whose live tip differs, or that is missing, is `STALE` and skipped. Do not fetch to resolve either. Tell the user to run `git fetch <remote>` (and `git remote set-head <remote> --auto` if the default changed), then rerun.
+3. For each remaining `SAFE_CANDIDATE`, one at a time, delete it with exactly:
+   `git push --force-with-lease=refs/heads/<name>:<sha> <remote> :refs/heads/<name>`
+   The lease is the per-branch recheck at the moment of deletion: the remote refuses the deletion if the branch moved since it was recorded. On a non-zero exit, record the error text, leave that branch, and continue with the next candidate.
+4. Report each deleted remote branch with its tip SHA (recreate with `git push <remote> <sha>:refs/heads/<name>`) and each skipped one with its classification. Say that a remote deletion also closes any open pull request that uses the branch as its head, and on some hosts closes or retargets pull requests that use it as their base.
+
+### Hard stop conditions
+
+All of section 6, except that the lease-guarded deletion above replaces its ban on pushing and on deleting remote branches and remote-tracking refs. In addition: never push commits or tags; never force-push (the only push is the lease-guarded deletion above, one named branch per command); never use `--mirror`, `--prune`, `--all`, `--tags`, or a refspec pattern (in a push; the pattern in the step 2 `ls-remote` only selects what to read); never run `git remote prune`, `git fetch --prune`, or `git branch -d -r`; never delete the remote default, `main`, the target's remote branch, a branch with a long-lived role, a branch on any remote other than `--remote`, or a branch that is not merged into a survivor; never delete a remote branch when phase 1 stopped. Do not proceed when the skill or this reference could not be loaded; preview only.
+
+### Output
+
+```text
+Plan / Preview header (section 6 output, plus remote and survivors)
+Gates
+Sources to merge (ordered)
+Contained sources
+Blocked items + reasons
+Expected final local branches
+Remote branches: classification table (SAFE_CANDIDATE / PENDING_PUSH / KEPT_NOT_MERGED / ...)
+Not touched
+Applied operations (only with --apply)
+Skipped items + reasons
+Target start SHA -> end SHA
+Deleted local branches + tip SHAs
+Deleted remote branches + tip SHAs
+Validation
+Remaining risks (including: remote lacks the commits now only in local <branch> until you push)
+```
+
 ## Command Relationship
 
 ```text
@@ -468,6 +570,8 @@ Remaining risks
    ↓ guarded lifecycle cleanup
 /GitConverge <branch> [--apply]
    ↓ guarded merge-everything-and-delete convergence
+/GitSweep <branch> [--apply]
+   ↓ GitConverge + guarded deletion of merged remote branches
 ```
 
-`/GitRecon`, `/GitAnalyze`, and `/GitRecommend` are observation/advice commands. `/GitIntegrate` is an integration write-intent. `/GitCleanup` is preview-only unless `--apply` is explicit. `/GitConverge` is preview-only unless `--apply` is explicit; it is the only command that merges unreviewed local branches, and it does so only on the user's acceptance of the plan it prints.
+`/GitRecon`, `/GitAnalyze`, and `/GitRecommend` are observation/advice commands. `/GitIntegrate` is an integration write-intent. `/GitCleanup` is preview-only unless `--apply` is explicit. `/GitConverge` is preview-only unless `--apply` is explicit; it merges unreviewed local branches only on the user's acceptance of the plan it prints. `/GitSweep` runs the same convergence and is the only command that deletes remote branches, and only those already merged into a branch the remote keeps.

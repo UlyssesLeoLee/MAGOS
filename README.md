@@ -33,7 +33,7 @@
 | 远端（remote） | 放在网上（比如 GitHub）的那份仓库 | 公司共享网盘上的备份 |
 | 预览 / 执行 | 先只看“打算怎么做”，满意了再真正去做 | 先看装修方案，点头之后才开工 |
 
-**这套命令有一个统一的约定：默认只看、不动手。** 会真正改动仓库的三个命令（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`）必须由你明确下令才会动手；只要遇到没把握的情况，它们会停下来告诉你原因，而不是硬做。
+**这套命令有一个统一的约定：默认只看、不动手。** 会真正改动仓库的四个命令（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`、`/GitSweep`）必须由你明确下令才会动手；只要遇到没把握的情况，它们会停下来告诉你原因，而不是硬做。
 
 ### 命令怎么写？
 
@@ -71,7 +71,7 @@
 | 它会做什么 | 显示：这个命令怎么写、每个参数是什么意思、不写参数时的默认行为、几个例子；然后立刻停止 |
 | 它不会做什么 | 不读取你的仓库、不运行任何 Git 命令、不改动任何东西 |
 | 什么时候用 | 忘了怎么写；不确定某个参数的意思；第一次用某个命令 |
-| 哪些命令有 | 六个命令都有 |
+| 哪些命令有 | 七个命令都有 |
 
 > 记住：**拿不准的时候，先在命令后面加 `--help`，它是完全安全的。**
 
@@ -99,7 +99,7 @@
 
 | 项目 | 说明 |
 |---|---|
-| 哪些命令有 | 只有三个“只看”的命令：`/GitRecon`、`/GitAnalyze`、`/GitRecommend`。写在别的命令后面会被当成“不认识的参数”，它会提示并显示说明 |
+| 哪些命令有 | 只有三个“只看”的命令：`/GitRecon`、`/GitAnalyze`、`/GitRecommend`。`/GitSweep` 有一个同名但不同的参数 `--remote <名字>`：后面必须跟远端名，只用来指定要清理哪个远端，从不刷新记录。写在其他命令后面会被当成“不认识的参数”，它会提示并显示说明 |
 | 没有网络、或没有访问权限 | 它会说明联网失败，并注明“这次的结论只基于电脑里已有的记录” |
 | 什么时候该加 | 你刚听说同事上传了新东西；或者你要依据“网上现在的样子”做决定 |
 
@@ -137,7 +137,7 @@
 | 放在哪里 | 命令后面的任何位置。`/GitRecommend 哪些分支应该先合并 --lang English` 里，`--lang English` 会被先摘掉，你的问题就是“哪些分支应该先合并” |
 | 写错了会怎样 | `--lang` 后面什么都没写，或写的不是一种语言（比如 `--lang xyz123`），它会用中文告诉你哪里不对并显示用法，**不会继续执行命令** |
 | 会影响检查结果吗 | 不会。只换回复的语言，检查和判断的方式完全一样 |
-| 哪些命令有 | 六个命令都有 |
+| 哪些命令有 | 七个命令都有 |
 
 ---
 
@@ -190,7 +190,7 @@ flowchart LR
 
 ---
 
-## 六个核心命令
+## 七个核心命令
 
 | 命令 | 一句话 | 会改动你的仓库吗？ |
 |---|---|---|
@@ -200,8 +200,9 @@ flowchart LR
 | `/GitIntegrate` | 把某个 AI 的成果安全地并进主线 | 会，但要先过一连串检查 |
 | `/GitCleanup` | 清理已经完成的旧分支和工作区 | 默认不会；加 `--apply` 才会 |
 | `/GitConverge` | 把所有分支的成果汇总到一条分支，只留 `main` 和它 | 默认不会；加 `--apply` 才会 |
+| `/GitSweep` | 先做 `/GitConverge`，再一并清除远端已合并的分支 | 默认不会；加 `--apply` 才会（含删除远端分支） |
 
-每个命令都可以加 `--lang <语言>`（回复语言，不写就是中文）和 `--help`（只看说明）；三个只看的命令还有 `--remote`。它们的详细用法见上面的“三个通用参数”，下面每个命令只写它**自己独有**的参数。
+每个命令都可以加 `--lang <语言>`（回复语言，不写就是中文）和 `--help`（只看说明）；三个只看的命令还有 `--remote`（`/GitSweep` 的 `--remote <名字>` 是另一个参数，见它自己的说明）。它们的详细用法见上面的“三个通用参数”，下面每个命令只写它**自己独有**的参数。
 
 > **不知道自己有哪些分支和工作区？** 先运行 `/GitRecon`，它会把清单列给你。也可以在终端里运行 `git branch`（列出分支）和 `git worktree list`（列出工作区）。
 
@@ -667,6 +668,41 @@ flowchart TD
 
 ---
 
+### `/GitSweep`
+
+**在 `/GitConverge` 的基础上，再一并清除远端已经合并的分支。**
+
+适合：本地已经“收网”，想把 GitHub 等远端上用完的分支也一起清掉，不用再手工逐条删。
+
+分两步，且只有加 `--apply` 才会动手：
+
+1. **本地收敛**：和 `/GitConverge` 完全一样（同样的检查、同样的合并顺序）。遇到冲突或检查失败就整个停下，本地、远端都不会删任何东西。
+2. **清除远端**：只删除“提交已经被远端自己保留的分支包含”的远端分支，也就是已并入远端默认分支或远端的 `<branch>` 的那些。只在你本地合并过、还没推送的分支，会标成 `PENDING_PUSH` 留着，等你把 `<branch>` 推上去后再跑一次 `/GitSweep` 才会删。
+
+```text
+/GitSweep agent/release                          只看计划（不联网）
+/GitSweep agent/release --apply                  照计划执行
+/GitSweep agent/release --apply --remote upstream   清理 upstream 而不是 origin
+```
+
+**参数**：`<branch>`（必填，接收所有成果的本地分支）、`--apply`（才真正执行）、`--discard-ignored`（原样交给第一步，允许清理含 `.env` 的工作区）、`--remote <名字>`（要清理的远端，默认 `origin`，注意它和只看命令里的 `--remote` 开关不同，后面要跟名字，也不会 fetch）。
+
+**哪些远端分支会被留下**（报告里逐条标出原因）：
+
+| 状态 | 含义 |
+|---|---|
+| `PENDING_PUSH` | 只在本地并入了 `<branch>`，远端还没有；推送后再跑才会删 |
+| `KEPT_NOT_MERGED` | 还有远端没有保留的提交，不删 |
+| `KEPT_LOCAL` | 同名本地分支因被阻塞而保留，远端也留着 |
+| `STALE` | 执行时发现远端已经有了新提交，跳过 |
+| 受保护 | 远端默认分支、`main`、`<branch>`，以及有证据表明是长期分支（集成 / 预发 / 发布 / 归档）的分支 |
+
+执行时会先联网核对远端当前的默认分支和各分支的真实位置，对不上就停下，让你先 `git fetch`。
+
+它**绝不会**：推送提交或标签、强推、删除远端默认分支 / `main` / `<branch>` 本身、删除没有并入的远端分支。每条远端分支单独删除，并带上“远端仍停在记录的 SHA”的保护，对方期间有新提交就会拒绝。删除远端分支会让以它为源的未合并 PR 被关闭，请先确认。报告里会列出每条被删分支的 SHA，可用 `git push <remote> <sha>:refs/heads/<name>` 恢复。
+
+---
+
 ## 多 Agent 生命周期
 
 ```mermaid
@@ -773,7 +809,7 @@ Skill 可以通过语义自动触发。除多 Agent 协作和各种“互相覆�
 
 ### Claude Code：启用 Slash Command
 
-Claude Code 只会为每个 Skill 注册**一个**以 Skill 名命名的斜杠命令，`/GitRecon` 等六个命令需要额外安装 `commands/` 下的命令文件：
+Claude Code 只会为每个 Skill 注册**一个**以 Skill 名命名的斜杠命令，`/GitRecon` 等七个命令需要额外安装 `commands/` 下的命令文件：
 
 ```text
 commands/
@@ -802,7 +838,7 @@ mkdir -p ~/.claude/commands && cp commands/Git*.md ~/.claude/commands/
 New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands\Git*.md "$HOME\.claude\commands\"
 ```
 
-复制出去的命令文件**不会随仓库更新**。每次 `git pull` 或升级版本后都要重新同步（或重新复制）；`--verify` 会列出缺失或过期的命令文件。`--host claude` 只管 `~/.claude/commands`，命令运行时读取的 Skill 本身（例如 `~/.claude/skills/MAGOS`）要另外更新，比如把它保留为 git clone 并执行 `git pull`。安装后**重新开启会话**，输入 `/Git` 即可看到六个命令。
+复制出去的命令文件**不会随仓库更新**。每次 `git pull` 或升级版本后都要重新同步（或重新复制）；`--verify` 会列出缺失或过期的命令文件。`--host claude` 只管 `~/.claude/commands`，命令运行时读取的 Skill 本身（例如 `~/.claude/skills/MAGOS`）要另外更新，比如把它保留为 git clone 并执行 `git pull`。安装后**重新开启会话**，输入 `/Git` 即可看到七个命令。
 
 也可以显式调用：
 
@@ -815,7 +851,7 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 /GitConverge <branch>
 ```
 
-六个命令的跨宿主名称和说明：
+七个命令的跨宿主名称和说明：
 
 | 命令 | Claude Code | Hermes | Codex | 说明 |
 |---|---|---|---|---|
@@ -825,13 +861,14 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 | GitIntegrate | `/GitIntegrate` | `/git-integrate` | `$git-integrate` | 通过安全门禁后集成指定 lane 或 branch |
 | GitCleanup | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` | 默认预览可清理项；`--apply` 才允许删除 |
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | 把所有本地分支合并进指定分支并只保留 `main` 和它；默认预览，`--apply` 才执行 |
+| GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge` 之后再删除远端已合并分支；默认预览且不联网，`--apply` 才执行 |
 
 斜杠入口说明：
 
 | 宿主 | 从 `/` 进入 | 前提条件 |
 |---|---|---|
-| Claude Code | 直接输入 `/GitRecon` 等六个命令 | `~/.claude/commands/Git*.md` 已安装（`sync_hosts.py --host claude`），并已新开会话 |
-| Hermes | 直接输入 `/git-recon` 等六个命令 | 包已安装到 `<Hermes home>/skills/`，并已新开会话或执行 `/reload-skills` |
+| Claude Code | 直接输入 `/GitRecon` 等七个命令 | `~/.claude/commands/Git*.md` 已安装（`sync_hosts.py --host claude`），并已新开会话 |
+| Hermes | 直接输入 `/git-recon` 等七个命令 | 包已安装到 `<Hermes home>/skills/`，并已新开会话或执行 `/reload-skills` |
 | Codex | 输入 `/skills`，打开 Skill 列表后选择 `git-*`；也可以直接输入 `$git-recon` | 包已安装到 `~/.agents/skills/MAGOS`（`sync_hosts.py --host codex`），并已重启 Codex |
 
 Codex 的 `/` 菜单只包含内置命令（源码 `codex-rs/tui/src/bottom_pane/command_popup.rs` 中只有 `Builtin` 与 `ServiceTier` 两类条目），无法注册自定义的 `/git-*`。因此在 Codex 中，斜杠入口是内置的 `/skills`。
@@ -860,7 +897,7 @@ Codex 和 Hermes 都安装同一个宿主中立的包，目录结构必须与仓
 MAGOS/                       # Codex 包根；Hermes 使用 multi-agent-git-orchestrator/
 ├── SKILL.md                 # 根 Skill：multi-agent-git-orchestrator（语义自动触发）
 ├── references/*.md          # 全部参考文档
-└── skills/git-*/            # 六个命令适配层
+└── skills/git-*/            # 七个命令适配层
     ├── SKILL.md
     └── agents/openai.yaml   # Codex：显示说明 + allow_implicit_invocation: false
 ```
@@ -874,7 +911,7 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
 
 ### Codex：启用命令 Skill
 
-Codex 的自定义入口是 Skill 选择器（`$`），不是任意命名的 `/Git...` Slash Command。Codex 递归扫描 Skill 根目录，因此会同时加载根 Skill 和 `skills/` 下的六个命令 Skill；`agents/openai.yaml` 中的简短说明会显示在 Skill 列表里。六个命令 Skill 都设置了 `policy.allow_implicit_invocation: false`，只在显式选择时运行，语义自动触发由根 Skill 负责。
+Codex 的自定义入口是 Skill 选择器（`$`），不是任意命名的 `/Git...` Slash Command。Codex 递归扫描 Skill 根目录，因此会同时加载根 Skill 和 `skills/` 下的七个命令 Skill；`agents/openai.yaml` 中的简短说明会显示在 Skill 列表里。七个命令 Skill 都设置了 `policy.allow_implicit_invocation: false`，只在显式选择时运行，语义自动触发由根 Skill 负责。
 
 用户级安装位置是 `~/.agents/skills/MAGOS`。已经安装在旧位置 `$CODEX_HOME/skills/MAGOS`（默认 `~/.codex/skills/MAGOS`）的，同步脚本会继续更新旧位置；两个位置不要同时保留，否则 Codex 会看到重复的 Skill。手动安装（Windows PowerShell）：
 
@@ -891,11 +928,11 @@ mkdir -p "$HOME/.agents/skills/MAGOS"
 cp -R SKILL.md references skills "$HOME/.agents/skills/MAGOS/"
 ```
 
-重新启动 Codex 后，输入 `$` 选择命令 Skill，或直接调用 `$git-recon`、`$git-analyze`、`$git-recommend`、`$git-integrate`、`$git-cleanup`、`$git-converge`。`/skills` 可打开 Skill 浏览入口。参数写在 Skill 名后面，例如 `$git-analyze agent/auth --remote`；加 `--help` 可查看完整参数说明。
+重新启动 Codex 后，输入 `$` 选择命令 Skill，或直接调用 `$git-recon`、`$git-analyze`、`$git-recommend`、`$git-integrate`、`$git-cleanup`、`$git-converge`、`$git-sweep`。`/skills` 可打开 Skill 浏览入口。参数写在 Skill 名后面，例如 `$git-analyze agent/auth --remote`；加 `--help` 可查看完整参数说明。
 
 ### Hermes：启用 Slash Skill
 
-Hermes 会把已安装的每个 Skill 自动注册成一个 Slash Command（名称取自 frontmatter 的 `name`），并将 `description` 用作命令说明。安装后会出现 `/multi-agent-git-orchestrator` 和六个 `/git-*` 命令。
+Hermes 会把已安装的每个 Skill 自动注册成一个 Slash Command（名称取自 frontmatter 的 `name`），并将 `description` 用作命令说明。安装后会出现 `/multi-agent-git-orchestrator` 和七个 `/git-*` 命令。
 
 Hermes 的 home 目录依次取 `HERMES_HOME`、Windows 上的 `%LOCALAPPDATA%\hermes`、其他系统上的 `~/.hermes`；如果其中的 `active_profile` 指定了非默认 profile，则改用 `profiles/<name>`。Skill 放在 home 下的 `skills/`。同步脚本按同样规则定位。如果已有 `<Hermes home>/skills/MAGOS`（例如直接 `git clone` 的安装），脚本会沿用它；如果它是 git checkout，脚本会拒绝复制文件，请改用 git 更新。手动安装（Windows PowerShell）：
 
@@ -913,7 +950,7 @@ mkdir -p "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator"
 cp -R SKILL.md references skills "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator/"
 ```
 
-重新启动 Hermes 后，可运行 `hermes skills list` 查看各命令说明，并调用 `/git-recon`、`/git-analyze`、`/git-recommend`、`/git-integrate`、`/git-cleanup` 或 `/git-converge`。参数直接跟在命令后面，例如 `/git-analyze main --remote`，也可用 `/git-analyze --help` 查看完整说明。Hermes 的 Skill 查看工具不接受含 `..` 的路径，适配层会改用 `[Skill directory: ...]` 给出的绝对路径读取共享文件。Hermes 没有按 Skill 关闭自动调用的开关，因此 `/git-integrate`、`/git-cleanup` 与 `/git-converge` 在适配层中规定：未经用户显式调用时不写入仓库。
+重新启动 Hermes 后，可运行 `hermes skills list` 查看各命令说明，并调用 `/git-recon`、`/git-analyze`、`/git-recommend`、`/git-integrate`、`/git-cleanup`、`/git-converge` 或 `/git-sweep`。参数直接跟在命令后面，例如 `/git-analyze main --remote`，也可用 `/git-analyze --help` 查看完整说明。Hermes 的 Skill 查看工具不接受含 `..` 的路径，适配层会改用 `[Skill directory: ...]` 给出的绝对路径读取共享文件。Hermes 没有按 Skill 关闭自动调用的开关，因此 `/git-integrate`、`/git-cleanup`、`/git-converge` 与 `/git-sweep` 在适配层中规定：未经用户显式调用时不写入仓库。
 
 如果宿主不支持自定义 Slash Command，也可以直接输入：
 
@@ -931,10 +968,10 @@ GitRecommend
 
 | 你关心的问题 | 答案 |
 |---|---|
-| 能用哪些命令？ | `skills/` 下的六个命令 Skill：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`。有的工具会加上插件名前缀，例如 Codex 显示为 `magos:git-recon`。 |
-| 根目录的 `SKILL.md`（总规则）呢？ | 它不算插件 Skill，因为规范只认 `skills/` 下面的文件夹。六个命令会去读它和 `references/` 里的规则；但它不会在你描述问题时自动出现，想要自动触发，请用上面各工具的安装方式。目前验证过的只有“六个命令 Skill 能被识别并加载”，各工具里命令实际怎么运行，还没有逐一实测。 |
+| 能用哪些命令？ | `skills/` 下的七个命令 Skill：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`。有的工具会加上插件名前缀，例如 Codex 显示为 `magos:git-recon`。 |
+| 根目录的 `SKILL.md`（总规则）呢？ | 它不算插件 Skill，因为规范只认 `skills/` 下面的文件夹。七个命令会去读它和 `references/` 里的规则；但它不会在你描述问题时自动出现，想要自动触发，请用上面各工具的安装方式。目前验证过的只有“七个命令 Skill 能被识别并加载”，各工具里命令实际怎么运行，还没有逐一实测。 |
 | Claude Code 能用吗？ | Claude Code 不读这个文件（它的插件说明书放在 `.claude-plugin/plugin.json`）。`/GitXxx` 命令请按上面 Claude Code 的方法安装。 |
-| Hermes 用哪种方式？ | 请用上面的同步脚本安装。以插件方式导入的 Skill 要手动启用，不在可用 Skill 列表里，没有 `/git-*` 命令，也拿不到 `[Skill directory: …]` 这条路径提示。三个会修改仓库的命令（`git-integrate`、`git-cleanup`、`git-converge`）只认 `/git-*` 或 `$git-*` 这样的明确调用，所以在 Hermes 里不要用插件方式导入它们。 |
+| Hermes 用哪种方式？ | 请用上面的同步脚本安装。以插件方式导入的 Skill 要手动启用，不在可用 Skill 列表里，没有 `/git-*` 命令，也拿不到 `[Skill directory: …]` 这条路径提示。四个会修改仓库的命令（`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`）只认 `/git-*` 或 `$git-*` 这样的明确调用，所以在 Hermes 里不要用插件方式导入它们。 |
 
 仓库里故意没有 `.claude-plugin/`、`.codex-plugin/` 或 `.cursor-plugin/`：把仓库 `git clone` 到 Codex 的 Skill 目录时，Codex 一看到这些文件夹，就会把 Skill 改名为 `magos:git-recon`，原来的 `$git-recon` 就叫不出来了。只有 `plugin.json` 不会这样。
 

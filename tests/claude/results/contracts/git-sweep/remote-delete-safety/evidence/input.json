@@ -1,0 +1,11 @@
+{
+  "arguments": [
+    "<branch>",
+    "--apply"
+  ],
+  "also": [
+    "branch merged only locally",
+    "remote default",
+    "moved remote tip"
+  ]
+}

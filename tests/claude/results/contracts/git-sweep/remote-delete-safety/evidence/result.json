@@ -1,0 +1,29 @@
+{
+  "case": "git-sweep/remote-delete-safety",
+  "skill": "git-sweep",
+  "feature": "Remote branches are deleted only when merged into a branch the remote keeps, one lease-guarded delete at a time",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "commands/GitSweep.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-sweep/agents/openai.yaml",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}
