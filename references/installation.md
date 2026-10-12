@@ -24,10 +24,10 @@ python -X utf8 scripts/sync_hosts.py --verify
 - **文件清单：**宿主中立包的清单由 `scripts/sync_hosts.py` 的 `package_files()` 根据仓库内容生成，测试工具 `tests/codex/run_host_cases.py` 用同一个函数准备 fixture，因此测试布局与真实安装一致。
 - **`plugin.json`：**Agent Plugins 1.0.0 清单，只在把整个仓库当作插件导入时使用，不在同步范围内。
 - **`.claude-plugin/plugin.json`：**Claude Code 插件清单。把仓库 `git clone` 到 `~/.claude/skills/magos` 时，Claude Code 会把它加载为插件 `magos@skills-dir`，提供 `/magos:GitXxx` 七个命令，`git pull` 即更新。它的 `name`、`version` 必须与 `plugin.json` 一致，且不声明任何组件路径（只用默认的 `commands/` 与 `skills/`）。它不在同步范围内：Codex 一看到 `.claude-plugin/` 就会给 Skill 加上 `magos:` 前缀，所以直接 git clone 到 Codex Skill 目录会得到 `$magos:git-recon`；用同步脚本安装的 Codex 与 Hermes 包不含它，命令名不变。仓库不放 `.codex-plugin/`、`.cursor-plugin/`。
-- **同时装了插件与命令副本：**`--host claude` 发现 `~/.claude/skills/*/.claude-plugin/plugin.json` 的 `name` 为 `magos` 时会输出 `NOTE`，提示命令副本只会多出一套旧的 `/GitXxx`。
+- **同时装了插件与命令副本：**`--host claude` 发现 `~/.claude/skills/*/.claude-plugin/plugin.json` 的 `name` 为 `magos` 时会输出 `NOTE`，提示命令副本只会多出一套旧的 `/GitXxx`。不带 `--host` 运行时，发现这样的插件就跳过 Claude，只处理 Codex 与 Hermes；仍要复制命令时请显式加 `--host claude`。
 - **`commands/`：**Codex 与 Hermes 包不再需要它。旧版本安装留下的 `commands/` 不会被删除，适配层也不会读取它。
 - **写入规则：**脚本只更新表中的相对路径，并创建这些路径所需的子目录；不会删除任何文件。文件已匹配时不会重写。`--apply` 采用同目录临时文件替换目标文件。
-- **git checkout：**安装根目录本身是 git checkout（含 `.git`，例如直接 clone 到 Skill 目录）时，脚本拒绝写入，并提示改用 git 更新，以免弄脏该 checkout 所在分支。
+- **git checkout：**安装根目录本身是 git checkout（含 `.git`，例如直接 clone 到 Skill 目录）时，脚本拒绝写入，并提示改用 git 更新，以免弄脏该 checkout 所在分支。Codex 的 checkout 里有 `.claude-plugin/` 时，提示里还会说明 Skill 已变成 `$magos:git-*`，应把它移出 Skill 目录并改用同步脚本安装。
 - **重复安装：**Codex 同时扫描 `~/.agents/skills` 和 `$CODEX_HOME/skills`。两个位置都有 MAGOS 时，脚本会输出 `NOTE` 提示重复安装，请只保留一个。
 - **自定义安装位置：**可用 `--codex-root PATH`、`--hermes-root PATH` 覆盖默认安装根目录。
 

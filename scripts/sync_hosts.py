@@ -34,6 +34,7 @@
 #   (inspect)-[:CALLS]->(hash),
 #   (main)-[:CALLS]->(inspect),
 #   (main)-[:CALLS]->(build),
+#   (main)-[:CALLS]->(claude_notes),
 #   (main)-[:CALLS]->(copy),
 #   (main)-[:CALLS]->(render),
 #   (main)-[:USES]->(selected_hosts),
@@ -211,11 +212,16 @@ def inspect(repo: Path, targets: tuple[tuple[str, Path, Path, tuple[str, ...]], 
             })
             continue
         if (required / ".git").exists():
+            reason = "installed root is a git checkout; update it with git instead of copying files"
+            if host == "codex" and (required / ".claude-plugin").exists():
+                # Codex treats any .claude-plugin/ as a plugin root and renames the skills to magos:<name>.
+                reason += ("; this checkout carries .claude-plugin/, so Codex lists its skills as $magos:git-* "
+                           "instead of $git-*: move it out of the skills directory and install with --apply")
             hosts.append({
                 "host": host,
                 "status": "git-checkout",
                 "required_directory": str(required),
-                "reason": "installed root is a git checkout; update it with git instead of copying files",
+                "reason": reason,
             })
             continue
         hosts.append({"host": host, "status": "ready", "required_directory": str(required)})
@@ -327,9 +333,15 @@ def main() -> int:
     repo = Path(__file__).resolve().parents[1]
     explicit_home = args.home is not None
     home = (args.home or Path.home()).expanduser().resolve()
-    selected_hosts = tuple(args.host or ("claude", "codex", "hermes"))
+    # Without --host, a MAGOS plugin clone in ~/.claude/skills replaces the command copies, so leave them out rather
+    # than recreate the second /GitXxx set; an explicit --host claude still copies them (with the same note).
+    plugin_notes = [] if args.host else claude_plugin_notes(home / ".claude")
+    selected_hosts = tuple(args.host or (("codex", "hermes") if plugin_notes else ("claude", "codex", "hermes")))
     targets, notes = build_targets(home, selected_hosts, repo, explicit_home,
                                    args.codex_root, args.hermes_root)
+    if plugin_notes:
+        notes = [*plugin_notes, "Skipping the claude host for that reason; pass --host claude to copy the "
+                                "commands anyway.", *notes]
     created: list[str] = []
     report = inspect(repo, targets, home, selected_hosts, notes)
     counts = report["summary"]

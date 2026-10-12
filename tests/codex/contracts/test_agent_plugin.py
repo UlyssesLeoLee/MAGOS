@@ -24,10 +24,9 @@
 #   (v_MUTATIONS:Variable {name: "MUTATIONS", type: "variable"}),
 #   (f_edit:Function {name: "edit", type: "function", signature: "edit(relative: str, old: str, new: str)"}),
 #   (f_edit_apply:Function {name: "edit.apply", type: "function", signature: "apply(root: Path) -> None"}),
-#   (f_manifest:Function {name: "manifest", type: "function", signature: "manifest(change)"}),
+#   (f_manifest:Function {name: "manifest", type: "function", signature: "manifest(change, relative: str='plugin.json')"}),
 #   (f_manifest_apply:Function {name: "manifest.apply", type: "function", signature: "apply(root: Path) -> None"}),
 #   (f_claude_manifest:Function {name: "claude_manifest", type: "function", signature: "claude_manifest(change)"}),
-#   (f_claude_manifest_apply:Function {name: "claude_manifest.apply", type: "function", signature: "apply(root: Path) -> None"}),
 #   (f_write:Function {name: "write", type: "function", signature: "write(relative: str, content: str)"}),
 #   (f_write_apply:Function {name: "write.apply", type: "function", signature: "apply(root: Path) -> None"}),
 #   (f_add_seventh_skill:Function {name: "add_seventh_skill", type: "function", signature: "add_seventh_skill(root: Path) -> None"}),
@@ -37,23 +36,24 @@
 #   (f_link_directory:Function {name: "link_directory", type: "function", signature: "link_directory(target: Path, link: Path) -> None"}),
 #   (f_add_empty_outside_link:Function {name: "add_empty_outside_link", type: "function", signature: "add_empty_outside_link(root: Path) -> None"}),
 #   (f_add_directory_link:Function {name: "add_directory_link", type: "function", signature: "add_directory_link(root: Path) -> None"}),
-#   (f_lambda_198_21:Function {name: "lambda_198_21", type: "function", signature: "lambda_198_21(data)"}),
 #   (f_lambda_196_21:Function {name: "lambda_196_21", type: "function", signature: "lambda_196_21(data)"}),
-#   (f_lambda_193_66:Function {name: "lambda_193_66", type: "function", signature: "lambda_193_66(data)"}),
-#   (f_lambda_191_44:Function {name: "lambda_191_44", type: "function", signature: "lambda_191_44(root)"}),
-#   (f_lambda_178_5:Function {name: "lambda_178_5", type: "function", signature: "lambda_178_5(root)"}),
-#   (f_lambda_151_46:Function {name: "lambda_151_46", type: "function", signature: "lambda_151_46(data)"}),
-#   (f_lambda_150_55:Function {name: "lambda_150_55", type: "function", signature: "lambda_150_55(data)"}),
-#   (f_lambda_145_5:Function {name: "lambda_145_5", type: "function", signature: "lambda_145_5(root)"}),
-#   (f_lambda_141_14:Function {name: "lambda_141_14", type: "function", signature: "lambda_141_14(data)"}),
-#   (f_lambda_139_50:Function {name: "lambda_139_50", type: "function", signature: "lambda_139_50(data)"}),
-#   (f_lambda_138_45:Function {name: "lambda_138_45", type: "function", signature: "lambda_138_45(data)"}),
-#   (f_lambda_137_58:Function {name: "lambda_137_58", type: "function", signature: "lambda_137_58(data)"}),
-#   (f_lambda_136_42:Function {name: "lambda_136_42", type: "function", signature: "lambda_136_42(data)"}),
-#   (f_lambda_135_39:Function {name: "lambda_135_39", type: "function", signature: "lambda_135_39(data)"}),
-#   (f_lambda_133_43:Function {name: "lambda_133_43", type: "function", signature: "lambda_133_43(data, name=name)"}),
-#   (f_lambda_132_45:Function {name: "lambda_132_45", type: "function", signature: "lambda_132_45(data)"}),
-#   (f_lambda_131_25:Function {name: "lambda_131_25", type: "function", signature: "lambda_131_25(root)"}),
+#   (f_lambda_194_21:Function {name: "lambda_194_21", type: "function", signature: "lambda_194_21(data)"}),
+#   (f_lambda_192_21:Function {name: "lambda_192_21", type: "function", signature: "lambda_192_21(data)"}),
+#   (f_lambda_189_66:Function {name: "lambda_189_66", type: "function", signature: "lambda_189_66(data)"}),
+#   (f_lambda_187_44:Function {name: "lambda_187_44", type: "function", signature: "lambda_187_44(root)"}),
+#   (f_lambda_174_5:Function {name: "lambda_174_5", type: "function", signature: "lambda_174_5(root)"}),
+#   (f_lambda_147_46:Function {name: "lambda_147_46", type: "function", signature: "lambda_147_46(data)"}),
+#   (f_lambda_146_55:Function {name: "lambda_146_55", type: "function", signature: "lambda_146_55(data)"}),
+#   (f_lambda_141_5:Function {name: "lambda_141_5", type: "function", signature: "lambda_141_5(root)"}),
+#   (f_lambda_137_14:Function {name: "lambda_137_14", type: "function", signature: "lambda_137_14(data)"}),
+#   (f_lambda_135_50:Function {name: "lambda_135_50", type: "function", signature: "lambda_135_50(data)"}),
+#   (f_lambda_134_45:Function {name: "lambda_134_45", type: "function", signature: "lambda_134_45(data)"}),
+#   (f_lambda_133_58:Function {name: "lambda_133_58", type: "function", signature: "lambda_133_58(data)"}),
+#   (f_lambda_132_42:Function {name: "lambda_132_42", type: "function", signature: "lambda_132_42(data)"}),
+#   (f_lambda_131_39:Function {name: "lambda_131_39", type: "function", signature: "lambda_131_39(data)"}),
+#   (f_lambda_129_43:Function {name: "lambda_129_43", type: "function", signature: "lambda_129_43(data, name=name)"}),
+#   (f_lambda_128_45:Function {name: "lambda_128_45", type: "function", signature: "lambda_128_45(data)"}),
+#   (f_lambda_127_25:Function {name: "lambda_127_25", type: "function", signature: "lambda_127_25(root)"}),
 #   (f_rows:Function {name: "rows", type: "function", signature: "rows(root: Path) -> dict"}),
 #   (f_install_rows:Function {name: "install_rows", type: "function", signature: "install_rows(root: Path) -> dict"}),
 #   (f_pick:Function {name: "pick", type: "function", signature: "pick(result: dict, fragment: str) -> list[dict]"}),
@@ -85,7 +85,6 @@
 #   (file)-[:CONTAINS]->(f_manifest),
 #   (f_manifest)-[:CONTAINS]->(f_manifest_apply),
 #   (file)-[:CONTAINS]->(f_claude_manifest),
-#   (f_claude_manifest)-[:CONTAINS]->(f_claude_manifest_apply),
 #   (file)-[:CONTAINS]->(f_write),
 #   (f_write)-[:CONTAINS]->(f_write_apply),
 #   (file)-[:CONTAINS]->(f_add_seventh_skill),
@@ -95,23 +94,24 @@
 #   (file)-[:CONTAINS]->(f_link_directory),
 #   (file)-[:CONTAINS]->(f_add_empty_outside_link),
 #   (file)-[:CONTAINS]->(f_add_directory_link),
-#   (file)-[:CONTAINS]->(f_lambda_198_21),
 #   (file)-[:CONTAINS]->(f_lambda_196_21),
-#   (file)-[:CONTAINS]->(f_lambda_193_66),
-#   (file)-[:CONTAINS]->(f_lambda_191_44),
-#   (file)-[:CONTAINS]->(f_lambda_178_5),
-#   (file)-[:CONTAINS]->(f_lambda_151_46),
-#   (file)-[:CONTAINS]->(f_lambda_150_55),
-#   (file)-[:CONTAINS]->(f_lambda_145_5),
-#   (file)-[:CONTAINS]->(f_lambda_141_14),
-#   (file)-[:CONTAINS]->(f_lambda_139_50),
-#   (file)-[:CONTAINS]->(f_lambda_138_45),
-#   (file)-[:CONTAINS]->(f_lambda_137_58),
-#   (file)-[:CONTAINS]->(f_lambda_136_42),
-#   (file)-[:CONTAINS]->(f_lambda_135_39),
-#   (file)-[:CONTAINS]->(f_lambda_133_43),
-#   (file)-[:CONTAINS]->(f_lambda_132_45),
-#   (file)-[:CONTAINS]->(f_lambda_131_25),
+#   (file)-[:CONTAINS]->(f_lambda_194_21),
+#   (file)-[:CONTAINS]->(f_lambda_192_21),
+#   (file)-[:CONTAINS]->(f_lambda_189_66),
+#   (file)-[:CONTAINS]->(f_lambda_187_44),
+#   (file)-[:CONTAINS]->(f_lambda_174_5),
+#   (file)-[:CONTAINS]->(f_lambda_147_46),
+#   (file)-[:CONTAINS]->(f_lambda_146_55),
+#   (file)-[:CONTAINS]->(f_lambda_141_5),
+#   (file)-[:CONTAINS]->(f_lambda_137_14),
+#   (file)-[:CONTAINS]->(f_lambda_135_50),
+#   (file)-[:CONTAINS]->(f_lambda_134_45),
+#   (file)-[:CONTAINS]->(f_lambda_133_58),
+#   (file)-[:CONTAINS]->(f_lambda_132_42),
+#   (file)-[:CONTAINS]->(f_lambda_131_39),
+#   (file)-[:CONTAINS]->(f_lambda_129_43),
+#   (file)-[:CONTAINS]->(f_lambda_128_45),
+#   (file)-[:CONTAINS]->(f_lambda_127_25),
 #   (file)-[:CONTAINS]->(f_rows),
 #   (file)-[:CONTAINS]->(f_install_rows),
 #   (file)-[:CONTAINS]->(f_pick),
@@ -120,8 +120,9 @@
 #   (f_add_directory_link)-[:CALLS]->(f_link_directory),
 #   (f_add_empty_outside_link)-[:CALLS]->(f_link_directory),
 #   (f_add_seventh_skill)-[:CALLS]->(f_edit),
-#   (f_lambda_178_5)-[:CALLS]->(f_edit),
-#   (f_lambda_178_5)-[:USES]->(v_ROOT_DESCRIPTION),
+#   (f_claude_manifest)-[:CALLS]->(f_manifest),
+#   (f_lambda_174_5)-[:CALLS]->(f_edit),
+#   (f_lambda_174_5)-[:USES]->(v_ROOT_DESCRIPTION),
 #   (f_long_named_adapter)-[:CALLS]->(f_edit),
 #   (file)-[:CALLS]->(f_claude_manifest),
 #   (file)-[:CALLS]->(f_edit),
@@ -188,21 +189,17 @@ def edit(relative: str, old: str, new: str):
     return apply
 
 
-def manifest(change):
+def manifest(change, relative: str = "plugin.json"):
     def apply(root: Path) -> None:
-        data = json.loads((root / "plugin.json").read_text(encoding="utf-8"))
-        change(data)
-        (root / "plugin.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
-    return apply
-
-
-def claude_manifest(change):
-    def apply(root: Path) -> None:
-        path = root / ".claude-plugin" / "plugin.json"
+        path = root / relative
         data = json.loads(path.read_text(encoding="utf-8"))
         change(data)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return apply
+
+
+def claude_manifest(change):
+    return manifest(change, ".claude-plugin/plugin.json")
 
 
 def write(relative: str, content: str):
@@ -326,6 +323,8 @@ MUTATIONS = [
      claude_manifest(lambda data: data.update(version="9.9.9")), [CLAUDE_MANIFEST]),
     ("the Claude Code manifest declares a component path",
      claude_manifest(lambda data: data.update(commands="./commands/")), [CLAUDE_MANIFEST]),
+    ("the Claude Code manifest declares monitors",
+     claude_manifest(lambda data: data.update(monitors="./monitors.json")), [CLAUDE_MANIFEST]),
     ("mcp.json without $schema", write("mcp.json", '{"mcpServers": {}}\n'), [MCP]),
     ("a symbolic link in the package", add_symlink, [CONTAINMENT]),
     ("a directory junction or link in the package", add_directory_link, [CONTAINMENT]),

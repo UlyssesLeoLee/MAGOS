@@ -31,8 +31,8 @@ MAX_DESCRIPTION_LENGTH = 1024
 ROOT_REFERENCE = re.compile(r"`(references/[A-Za-z0-9_.-]+\.md)`")
 HOST_PLUGIN_MANIFEST_DIRS = {".codex-plugin", ".claude-plugin", ".cursor-plugin"}
 CLAUDE_PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
-CLAUDE_COMPONENT_KEYS = {"skills", "commands", "agents", "hooks", "mcpServers", "lspServers", "outputStyles",
-                         "workflows", "experimental", "userConfig", "channels", "settings", "dependencies"}
+# Metadata only: any other key (commands, skills, hooks, monitors, themes, ...) declares a component or setting.
+CLAUDE_METADATA_KEYS = {"name", "version", "description", "author", "homepage", "repository", "license", "keywords"}
 
 
 def frontmatter(path: Path) -> dict:
@@ -172,10 +172,11 @@ def check_checkout(repo: Path) -> list[dict]:
 
 
 def claude_manifest_problems(repo: Path, manifests: list[str]) -> list[str]:
-    """The Claude Code manifest must exist, use the Agent Plugins name and version, and declare no component paths.
+    """The Claude Code manifest must exist, use the Agent Plugins name and version, and hold only metadata keys.
 
-    No component keys means Claude Code scans its default commands/ and skills/ directories, the files every other
-    host uses too; a component key would make the Claude plugin diverge from them.
+    Without component keys Claude Code scans its default commands/ and skills/ directories, the files every other
+    host uses too; a component key would make the Claude plugin diverge from them. The check allows the known
+    metadata keys instead of denying known component keys, so a component key Claude Code adds later is still caught.
     """
     if CLAUDE_PLUGIN_MANIFEST not in manifests:
         return [f"{CLAUDE_PLUGIN_MANIFEST} is missing, so a clone into ~/.claude/skills/ loads no commands"]
@@ -188,8 +189,8 @@ def claude_manifest_problems(repo: Path, manifests: list[str]) -> list[str]:
         return ["a manifest is not a JSON object"]
     problems = [f"{CLAUDE_PLUGIN_MANIFEST} {key} {claude.get(key)!r} != plugin.json {key} {package.get(key)!r}"
                 for key in ("name", "version") if claude.get(key) != package.get(key)]
-    problems += [f"{CLAUDE_PLUGIN_MANIFEST} declares component key {key!r}"
-                 for key in sorted(CLAUDE_COMPONENT_KEYS & set(claude))]
+    problems += [f"{CLAUDE_PLUGIN_MANIFEST} declares {key!r}, which is not a metadata key"
+                 for key in sorted(set(claude) - CLAUDE_METADATA_KEYS)]
     return problems
 
 
@@ -219,8 +220,7 @@ def check_installed(repo: Path) -> list[dict]:
         results += check_package("codex", roots["codex"], roots["codex"].parent, codex_discovery)
         results += check_package("hermes", roots["hermes"], roots["hermes"].parent, hermes_discovery)
         shipped = sorted(f"{host}: {path.relative_to(root).as_posix()}" for host, root in roots.items()
-                         if host in ("codex", "hermes") for path in root.rglob("*")
-                         if HOST_PLUGIN_MANIFEST_DIRS & set(path.relative_to(root).parts))
+                         for path in root.rglob("*") if HOST_PLUGIN_MANIFEST_DIRS & set(path.relative_to(root).parts))
         results.append({"file": "install:synced Codex and Hermes packages carry no host plugin manifest",
                         "passed": not shipped, "missing": shipped})
         return results
