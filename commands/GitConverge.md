@@ -21,7 +21,7 @@ Examples: `/GitConverge agent/release`, `/GitConverge agent/release --apply`, `/
 
 For a normal invocation, run the Multi-Agent Git Orchestrator command `/GitConverge $ARGUMENTS`.
 
-1. Load the orchestrator skill with the Skill tool. It may be listed as `MAGOS` (install directory), `multi-agent-git-orchestrator` (frontmatter name), or `MAGO-Skill` (older clone directory); any listed skill described as the Multi-Agent Git Orchestrator is the same skill. If none is listed but `~/.claude/skills/MAGOS/SKILL.md` exists, read that file instead. Only if the skill cannot be loaded at all, tell the user, then continue read-only only: report observations, but do not merge, switch, delete, or prune anything.
+1. Load the orchestrator skill with the Skill tool. It may be listed as `magos` (plugin clone directory), `MAGOS` (install directory), `multi-agent-git-orchestrator` (frontmatter name), or `MAGO-Skill` (older clone directory); any listed skill described as the Multi-Agent Git Orchestrator is the same skill. If none is listed but `~/.claude/skills/magos/SKILL.md` or `~/.claude/skills/MAGOS/SKILL.md` exists, read that file instead. Only if the skill cannot be loaded at all, tell the user, then continue read-only only: report observations, but do not merge, switch, delete, or prune anything.
 2. Execute `/GitConverge` exactly as defined in the skill's **Explicit Command Interface** and `references/commands.md` section **6. GitConverge**. Write every reply in the language selected by `--lang` (Chinese when absent).
    Arguments (may be empty): $ARGUMENTS
 3. Inspect the current repository before giving any state-dependent advice.

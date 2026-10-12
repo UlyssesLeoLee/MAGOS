@@ -793,6 +793,7 @@ Mutate only when needed.
 multi-agent-git-orchestrator/
 ├── SKILL.md
 ├── plugin.json                # Agent Plugins 清单：把整个仓库当作一个插件导入时使用
+├── .claude-plugin/plugin.json # Claude Code 插件清单：clone 到 ~/.claude/skills/magos 即可用
 ├── commands/                  # Claude Code command prompts
 ├── skills/                    # Codex / Hermes command adapters
 └── references/
@@ -807,9 +808,31 @@ multi-agent-git-orchestrator/
 
 Skill 可以通过语义自动触发。除多 Agent 协作和各种“互相覆盖、分支泛滥”的症状外，当你要选择、审计或调整**某个具体仓库**（尤其是多 Agent / 多 Worktree / 多人共用的仓库）的分支策略时，它也会自动出现；单纯问“gitflow 和 trunk-based 有什么区别”这类概念问题不会触发。它只给建议：真正执行仍走对应的 `/Git...` 命令并保留各自的安全检查，哪个命令做什么见 `references/branch-strategy.md` 的 **Strategy Changes**；重命名分支没有对应命令，需要你在协调好依赖方之后手动完成。注意：Hermes 的 Skill 索引只显示 description 的前约 57 个字符，所以在 Hermes 里请直接加载这个 Skill（或用 `/git-recommend`）来做分支策略建议。
 
-### Claude Code：启用 Slash Command
+### Claude Code：作为插件安装（推荐）
 
-Claude Code 只会为每个 Skill 注册**一个**以 Skill 名命名的斜杠命令，`/GitRecon` 等七个命令需要额外安装 `commands/` 下的命令文件：
+把仓库直接 clone 到 Claude Code 的 Skill 目录即可，不用再复制命令文件：
+
+```bash
+git clone https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+```
+
+```powershell
+git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
+```
+
+仓库根目录有 `.claude-plugin/plugin.json`，Claude Code 会把这个文件夹当作插件 `magos@skills-dir` 加载，每次会话都自动生效，不需要 `/plugin install`。重新开启会话后可以用：
+
+- 七个命令：`/magos:GitRecon`、`/magos:GitAnalyze`、`/magos:GitRecommend`、`/magos:GitIntegrate`、`/magos:GitCleanup`、`/magos:GitConverge`、`/magos:GitSweep`（输入 `/magos:` 即可补全）；
+- 总规则 Skill `/magos`，描述问题时也会自动触发；
+- `skills/` 下的七个跨工具适配层也会以 `/magos:git-recon` 等名字出现，它们和上面的命令等价，Claude Code 里用 `/magos:GitXxx` 即可。
+
+以后更新只要在该目录执行 `git pull`，命令和规则会一起更新。用 `claude plugin list` 可以确认它显示为 `magos@skills-dir` 且状态为 loaded。
+
+如果之前按下面的旧方式复制过 `~/.claude/commands/Git*.md`，请删掉这七个文件，否则会同时出现一套旧的 `/GitXxx` 命令。
+
+### Claude Code：旧方式（复制命令文件）
+
+不想用插件时，也可以把 `commands/` 下的命令文件复制到用户级命令目录（所有项目可用）或某个项目的 `.claude/commands/`（仅该项目可用），命令名就是 `/GitRecon` 这样不带前缀的形式：
 
 ```text
 commands/
@@ -818,10 +841,11 @@ commands/
 ├── GitRecommend.md
 ├── GitIntegrate.md
 ├── GitCleanup.md
-└── GitConverge.md
+├── GitConverge.md
+└── GitSweep.md
 ```
 
-在本仓库根目录执行，复制到用户级命令目录（所有项目可用）；也可以复制到某个项目的 `.claude/commands/`（仅该项目可用）。注意不要放进 Skill 目录内部，那里的文件不会被识别为命令。推荐用同步脚本：
+推荐用同步脚本：
 
 ```bash
 python -X utf8 scripts/sync_hosts.py --host claude --apply --create-roots
@@ -838,7 +862,7 @@ mkdir -p ~/.claude/commands && cp commands/Git*.md ~/.claude/commands/
 New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands\Git*.md "$HOME\.claude\commands\"
 ```
 
-复制出去的命令文件**不会随仓库更新**。每次 `git pull` 或升级版本后都要重新同步（或重新复制）；`--verify` 会列出缺失或过期的命令文件。`--host claude` 只管 `~/.claude/commands`，命令运行时读取的 Skill 本身（例如 `~/.claude/skills/MAGOS`）要另外更新，比如把它保留为 git clone 并执行 `git pull`。安装后**重新开启会话**，输入 `/Git` 即可看到七个命令。
+复制出去的命令文件**不会随仓库更新**。每次 `git pull` 或升级版本后都要重新同步（或重新复制）；`--verify` 会列出缺失或过期的命令文件。`--host claude` 只管 `~/.claude/commands`，命令运行时读取的 Skill 本身（例如 `~/.claude/skills/MAGOS`）要另外更新。已经按插件方式装好时，同步脚本会提示 `NOTE`，不必再复制。安装后**重新开启会话**，输入 `/Git` 即可看到七个命令。
 
 也可以显式调用：
 
@@ -970,10 +994,10 @@ GitRecommend
 |---|---|
 | 能用哪些命令？ | `skills/` 下的七个命令 Skill：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`。有的工具会加上插件名前缀，例如 Codex 显示为 `magos:git-recon`。 |
 | 根目录的 `SKILL.md`（总规则）呢？ | 它不算插件 Skill，因为规范只认 `skills/` 下面的文件夹。七个命令会去读它和 `references/` 里的规则；但它不会在你描述问题时自动出现，想要自动触发，请用上面各工具的安装方式。目前验证过的只有“七个命令 Skill 能被识别并加载”，各工具里命令实际怎么运行，还没有逐一实测。 |
-| Claude Code 能用吗？ | Claude Code 不读这个文件（它的插件说明书放在 `.claude-plugin/plugin.json`）。`/GitXxx` 命令请按上面 Claude Code 的方法安装。 |
+| Claude Code 能用吗？ | Claude Code 不读这个文件，它读的是仓库里的 `.claude-plugin/plugin.json`。请按上面“Claude Code：作为插件安装”的方法 clone 到 `~/.claude/skills/magos`。 |
 | Hermes 用哪种方式？ | 请用上面的同步脚本安装。以插件方式导入的 Skill 要手动启用，不在可用 Skill 列表里，没有 `/git-*` 命令，也拿不到 `[Skill directory: …]` 这条路径提示。四个会修改仓库的命令（`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`）只认 `/git-*` 或 `$git-*` 这样的明确调用，所以在 Hermes 里不要用插件方式导入它们。 |
 
-仓库里故意没有 `.claude-plugin/`、`.codex-plugin/` 或 `.cursor-plugin/`：把仓库 `git clone` 到 Codex 的 Skill 目录时，Codex 一看到这些文件夹，就会把 Skill 改名为 `magos:git-recon`，原来的 `$git-recon` 就叫不出来了。只有 `plugin.json` 不会这样。
+仓库根目录有 `.claude-plugin/plugin.json`，这是给 Claude Code 用的插件说明书（见上面的 Claude Code 安装方法），故意没有 `.codex-plugin/` 或 `.cursor-plugin/`。Codex 一看到这类文件夹就会给 Skill 加上插件名前缀，所以**把仓库直接 `git clone` 到 Codex 的 Skill 目录时，命令会变成 `$magos:git-recon` 这样的名字**。Codex 和 Hermes 请用同步脚本安装：它只复制 `SKILL.md`、`references/` 和 `skills/`，不会带上 `.claude-plugin/`，命令名仍是 `$git-recon`、`/git-recon`。只有根目录的 `plugin.json` 不会触发改名。
 
 一处已知的偏差：规范第 8 节要求“只给某一个工具用的文件”放进以反向域名命名的文件夹（例如 `com.example.client/`）。`commands/` 只给 Claude Code 用，却放在顶层。插件工具会直接忽略它，不影响导入；要挪动它，安装脚本和大量测试都得跟着改，所以暂时留在原处。
 

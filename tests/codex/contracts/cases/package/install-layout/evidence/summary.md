@@ -28,7 +28,9 @@
 - PASS `install:hermes adapters disable implicit invocation`
 - PASS `install:hermes discovery replica finds each skill once`
 - PASS `install:hermes every installed SKILL.md is strict YAML with string-only metadata`
+- PASS `install:synced Codex and Hermes packages carry no host plugin manifest`
 - PASS `install:git-clone checkout, the Codex and Hermes replicas find each skill once`
-- PASS `install:git-clone checkout has no .codex-plugin/.claude-plugin/.cursor-plugin manifest`
+- PASS `install:git-clone checkout has no host plugin manifest other than .claude-plugin/plugin.json`
+- PASS `install:git-clone checkout's .claude-plugin/plugin.json is the Claude Code manifest of plugin.json`
 
 Evidence scope: source-contract check; no AI host CLI is invoked.

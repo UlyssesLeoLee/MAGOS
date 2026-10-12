@@ -6,6 +6,7 @@
 #   (command_paths:Variable {name: 'COMMAND_PATHS', type: 'variable'}),
 #   (package:Function {name: 'package_files', type: 'function'}),
 #   (codex_root:Function {name: 'codex_install_root', type: 'function'}),
+#   (claude_notes:Function {name: 'claude_plugin_notes', type: 'function'}),
 #   (build:Function {name: 'build_targets', type: 'function'}),
 #   (hash:Function {name: 'file_sha256', type: 'function'}),
 #   (inspect:Function {name: 'inspect', type: 'function'}),
@@ -18,6 +19,7 @@
 #   (module)-[:CONTAINS]->(command_paths),
 #   (module)-[:CONTAINS]->(package),
 #   (module)-[:CONTAINS]->(codex_root),
+#   (module)-[:CONTAINS]->(claude_notes),
 #   (module)-[:CONTAINS]->(build),
 #   (module)-[:CONTAINS]->(hash),
 #   (module)-[:CONTAINS]->(inspect),
@@ -27,6 +29,7 @@
 #   (build)-[:USES]->(command_paths),
 #   (build)-[:CALLS]->(package),
 #   (build)-[:CALLS]->(codex_root),
+#   (build)-[:CALLS]->(claude_notes),
 #   (inspect)-[:CALLS]->(build),
 #   (inspect)-[:CALLS]->(hash),
 #   (main)-[:CALLS]->(inspect),
@@ -137,6 +140,24 @@ def hermes_install_root(home: Path, explicit_home: bool) -> tuple[Path, list[str
     return preferred, notes
 
 
+def claude_plugin_notes(claude: Path) -> list[str]:
+    """Point out a MAGOS clone that Claude Code already loads as a plugin from ~/.claude/skills/.
+
+    Such a clone gives /magos:GitXxx and updates with git pull, so the copied ~/.claude/commands/Git*.md would
+    only add a second, older set of /GitXxx commands.
+    """
+    notes = []
+    for manifest in sorted((claude / "skills").glob("*/.claude-plugin/plugin.json")):
+        try:
+            name = json.loads(manifest.read_text(encoding="utf-8")).get("name")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if name == "magos":
+            notes.append(f"{manifest.parent.parent} already loads MAGOS as a Claude Code plugin (/magos:GitXxx); "
+                         "update it with git pull. Copies in ~/.claude/commands would add a second /GitXxx set.")
+    return notes
+
+
 def build_targets(home: Path, selected_hosts: tuple[str, ...], repo: Path, explicit_home: bool = True,
                   codex_root: Path | None = None, hermes_root: Path | None = None,
                   ) -> tuple[tuple[str, Path, Path, tuple[str, ...]], list[str]]:
@@ -151,6 +172,8 @@ def build_targets(home: Path, selected_hosts: tuple[str, ...], repo: Path, expli
         hermes_root, hermes_notes = hermes_install_root(home, explicit_home)
         if "hermes" in selected_hosts:
             notes += hermes_notes
+    if "claude" in selected_hosts:
+        notes += claude_plugin_notes(claude)
     package = package_files(repo)
     targets = (
         ("claude", claude, claude / "commands", COMMAND_PATHS),

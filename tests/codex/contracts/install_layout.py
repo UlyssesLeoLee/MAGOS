@@ -30,6 +30,9 @@ MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 ROOT_REFERENCE = re.compile(r"`(references/[A-Za-z0-9_.-]+\.md)`")
 HOST_PLUGIN_MANIFEST_DIRS = {".codex-plugin", ".claude-plugin", ".cursor-plugin"}
+CLAUDE_PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
+CLAUDE_COMPONENT_KEYS = {"skills", "commands", "agents", "hooks", "mcpServers", "lspServers", "outputStyles",
+                         "workflows", "experimental", "userConfig", "channels", "settings", "dependencies"}
 
 
 def frontmatter(path: Path) -> dict:
@@ -144,8 +147,12 @@ def check_checkout(repo: Path) -> list[dict]:
 
     The listing is what a commit would ship (agent_plugin.tracked_files), so a new file is caught before `git add`.
 
-    Codex marks a directory as a plugin root, and renames its skills to <plugin>:<name>, only for the manifests in
+    Codex marks a directory as a plugin root, and renames its skills to <plugin>:<name>, for any directory in
     HOST_PLUGIN_MANIFEST_DIRS (codex-rs DISCOVERABLE_PLUGIN_MANIFEST_PATHS); a root plugin.json is not one of them.
+    The checkout carries .claude-plugin/plugin.json on purpose, so that a clone into ~/.claude/skills/ loads as a
+    Claude Code plugin; a clone into a Codex skills directory therefore shows $magos:<name>, and Codex installs use
+    scripts/sync_hosts.py, whose package never contains a host manifest (check_installed). The replicas here do not
+    model that namespace. Every other host manifest stays forbidden, and the Claude one must match plugin.json.
     """
     tracked = [relative for _, relative in agent_plugin.tracked_files(repo)]
     skill_files = [repo / relative for relative in tracked if relative.split("/")[-1] == "SKILL.md"]
@@ -155,10 +162,35 @@ def check_checkout(repo: Path) -> list[dict]:
         if sorted(names) != sorted(EXPECTED_SKILLS):
             problems.append(f"{host} replica discovers {sorted(names)}; expected {sorted(EXPECTED_SKILLS)}")
     manifests = sorted(relative for relative in tracked if HOST_PLUGIN_MANIFEST_DIRS & set(relative.split("/")))
+    stray = [relative for relative in manifests if relative != CLAUDE_PLUGIN_MANIFEST]
     return [{"file": "install:git-clone checkout, the Codex and Hermes replicas find each skill once",
              "passed": not problems, "missing": problems},
-            {"file": "install:git-clone checkout has no .codex-plugin/.claude-plugin/.cursor-plugin manifest",
-             "passed": not manifests, "missing": manifests}]
+            {"file": "install:git-clone checkout has no host plugin manifest other than .claude-plugin/plugin.json",
+             "passed": not stray, "missing": stray},
+            {"file": "install:git-clone checkout's .claude-plugin/plugin.json is the Claude Code manifest of plugin.json",
+             "passed": not (claude := claude_manifest_problems(repo, manifests)), "missing": claude}]
+
+
+def claude_manifest_problems(repo: Path, manifests: list[str]) -> list[str]:
+    """The Claude Code manifest must exist, use the Agent Plugins name and version, and declare no component paths.
+
+    No component keys means Claude Code scans its default commands/ and skills/ directories, the files every other
+    host uses too; a component key would make the Claude plugin diverge from them.
+    """
+    if CLAUDE_PLUGIN_MANIFEST not in manifests:
+        return [f"{CLAUDE_PLUGIN_MANIFEST} is missing, so a clone into ~/.claude/skills/ loads no commands"]
+    try:
+        claude = agent_plugin.load_json(repo / CLAUDE_PLUGIN_MANIFEST)
+        package = agent_plugin.load_json(repo / "plugin.json")
+    except (OSError, ValueError) as error:
+        return [f"cannot read the manifests: {error}"]
+    if not isinstance(claude, dict) or not isinstance(package, dict):
+        return ["a manifest is not a JSON object"]
+    problems = [f"{CLAUDE_PLUGIN_MANIFEST} {key} {claude.get(key)!r} != plugin.json {key} {package.get(key)!r}"
+                for key in ("name", "version") if claude.get(key) != package.get(key)]
+    problems += [f"{CLAUDE_PLUGIN_MANIFEST} declares component key {key!r}"
+                 for key in sorted(CLAUDE_COMPONENT_KEYS & set(claude))]
+    return problems
 
 
 def check(repo: Path) -> list[dict]:
@@ -186,4 +218,9 @@ def check_installed(repo: Path) -> list[dict]:
             return results
         results += check_package("codex", roots["codex"], roots["codex"].parent, codex_discovery)
         results += check_package("hermes", roots["hermes"], roots["hermes"].parent, hermes_discovery)
+        shipped = sorted(f"{host}: {path.relative_to(root).as_posix()}" for host, root in roots.items()
+                         if host in ("codex", "hermes") for path in root.rglob("*")
+                         if HOST_PLUGIN_MANIFEST_DIRS & set(path.relative_to(root).parts))
+        results.append({"file": "install:synced Codex and Hermes packages carry no host plugin manifest",
+                        "passed": not shipped, "missing": shipped})
         return results

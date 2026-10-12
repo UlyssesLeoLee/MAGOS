@@ -826,14 +826,15 @@
           "## 七个核心命令",
           "### `/GitConverge`",
           "| GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` |",
-          "└── GitConverge.md"
+          "├── GitConverge.md",
+          "└── GitSweep.md"
         ]
       },
       {
         "file": "references/installation.md",
         "contains": [
-          "共 6 个",
-          "六个 `agents/openai.yaml`"
+          "共 7 个",
+          "七个 `agents/openai.yaml`"
         ]
       },
       {

@@ -1081,19 +1081,21 @@
     },
     "test_object": {
       "accepted_skill_names": [
+        "magos",
         "MAGOS",
         "multi-agent-git-orchestrator",
         "MAGO-Skill"
       ]
     },
     "expected": [
-      "Each command accepts MAGOS, multi-agent-git-orchestrator, or MAGO-Skill as the orchestrator skill.",
+      "Each command accepts magos, MAGOS, multi-agent-git-orchestrator, or MAGO-Skill as the orchestrator skill.",
       "GitIntegrate does not integrate, GitCleanup, GitConverge, and GitSweep only preview when the skill cannot be loaded."
     ],
     "checks": [
       {
         "file": "commands/GitRecon.md",
         "contains": [
+          "`magos` (plugin clone directory)",
           "`MAGOS` (install directory)",
           "`multi-agent-git-orchestrator` (frontmatter name)",
           "`MAGO-Skill` (older clone directory)"
@@ -1102,6 +1104,7 @@
       {
         "file": "commands/GitAnalyze.md",
         "contains": [
+          "`magos` (plugin clone directory)",
           "`MAGOS` (install directory)",
           "`multi-agent-git-orchestrator` (frontmatter name)",
           "`MAGO-Skill` (older clone directory)"
@@ -1110,6 +1113,7 @@
       {
         "file": "commands/GitRecommend.md",
         "contains": [
+          "`magos` (plugin clone directory)",
           "`MAGOS` (install directory)",
           "`multi-agent-git-orchestrator` (frontmatter name)",
           "`MAGO-Skill` (older clone directory)"
@@ -1118,6 +1122,7 @@
       {
         "file": "commands/GitIntegrate.md",
         "contains": [
+          "`magos` (plugin clone directory)",
           "`MAGOS` (install directory)",
           "`multi-agent-git-orchestrator` (frontmatter name)",
           "`MAGO-Skill` (older clone directory)"
@@ -1126,6 +1131,7 @@
       {
         "file": "commands/GitCleanup.md",
         "contains": [
+          "`magos` (plugin clone directory)",
           "`MAGOS` (install directory)",
           "`multi-agent-git-orchestrator` (frontmatter name)",
           "`MAGO-Skill` (older clone directory)"
@@ -1134,6 +1140,7 @@
       {
         "file": "commands/GitConverge.md",
         "contains": [
+          "`magos` (plugin clone directory)",
           "`MAGOS` (install directory)",
           "`multi-agent-git-orchestrator` (frontmatter name)",
           "`MAGO-Skill` (older clone directory)"
@@ -1142,6 +1149,7 @@
       {
         "file": "commands/GitSweep.md",
         "contains": [
+          "`magos` (plugin clone directory)",
           "`MAGOS` (install directory)",
           "`multi-agent-git-orchestrator` (frontmatter name)",
           "`MAGO-Skill` (older clone directory)"

@@ -775,6 +775,7 @@ Copy the directory into your agent's skills path:
 multi-agent-git-orchestrator/
 ├── SKILL.md              # root skill — triggers semantically
 ├── plugin.json           # Agent Plugins manifest, used when the whole repository is imported as a plugin
+├── .claude-plugin/plugin.json  # Claude Code plugin manifest: clone into ~/.claude/skills/magos
 ├── commands/             # Claude Code slash commands
 ├── skills/               # Codex / Hermes command adapters
 └── references/
@@ -798,9 +799,31 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
 
 `--verify` checks that every file the adapters reference actually exists, without starting an AI host. The script never deletes files.
 
-### Claude Code
+### Claude Code (as a plugin, recommended)
 
-Claude Code registers the seven `/Git...` commands only from `~/.claude/commands/` (all projects) or a project's `.claude/commands/`. Putting this directory in `~/.claude/skills/` gives you the orchestrator skill, which triggers on its own, but not the commands. From the repository root:
+Clone the repository straight into Claude Code's skills directory; no command files to copy:
+
+```bash
+git clone https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+```
+
+```powershell
+git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
+```
+
+The repository root carries `.claude-plugin/plugin.json`, so Claude Code loads the folder as the plugin `magos@skills-dir` in every session, with no `/plugin install` step. Start a new session and you get:
+
+- the seven commands `/magos:GitRecon`, `/magos:GitAnalyze`, `/magos:GitRecommend`, `/magos:GitIntegrate`, `/magos:GitCleanup`, `/magos:GitConverge`, `/magos:GitSweep` (type `/magos:` to complete);
+- the orchestrator skill `/magos`, which also triggers on its own;
+- the seven cross-host adapters from `skills/`, listed as `/magos:git-recon` and so on. They do the same as the commands above; in Claude Code use `/magos:GitXxx`.
+
+To update, run `git pull` in that folder; commands and rules update together. `claude plugin list` should show `magos@skills-dir` as loaded.
+
+If you copied `~/.claude/commands/Git*.md` the old way, delete those seven files, or you keep a second, older set of `/GitXxx` commands.
+
+### Claude Code (copied commands, older way)
+
+Without the plugin, copy the command files to `~/.claude/commands/` (all projects) or a project's `.claude/commands/`; the commands are then named `/GitRecon` without a prefix. From the repository root:
 
 ```bash
 python -X utf8 scripts/sync_hosts.py --host claude --apply --create-roots
@@ -817,7 +840,7 @@ mkdir -p ~/.claude/commands && cp commands/Git*.md ~/.claude/commands/
 New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands\Git*.md "$HOME\.claude\commands\"
 ```
 
-The copies do not follow later updates. After every `git pull` or new version, run the sync (or the copy) again; `--verify` reports copies that are missing or out of date. `--host claude` covers only `~/.claude/commands`; the skill the commands load (for example `~/.claude/skills/MAGOS`) must be updated separately, for example by keeping it as a git clone and pulling. Start a new session, then type `/Git`.
+The copies do not follow later updates. After every `git pull` or new version, run the sync (or the copy) again; `--verify` reports copies that are missing or out of date. `--host claude` covers only `~/.claude/commands`; the skill the commands load (for example `~/.claude/skills/MAGOS`) must be updated separately. When the plugin is already installed, the sync script prints a `NOTE` and the copies are not needed. Start a new session, then type `/Git`.
 
 ### Codex
 
@@ -866,10 +889,10 @@ GitRecommend
 |---|---|
 | Which commands do I get? | The seven command skills under `skills/`: `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`. Some tools add the plugin name as a prefix; Codex shows `magos:git-recon`. |
 | What about the root `SKILL.md` (the shared rules)? | It is not a plugin skill, because the specification only looks inside `skills/`. The seven commands read the rules in it and in `references/`; but it will not trigger on its own when you describe a problem, so for that use the host installs above. Only discovery has been verified (the seven command skills are recognized and load); how the commands behave inside each tool has not been tested one by one. |
-| Does Claude Code use it? | No. Claude Code reads `.claude-plugin/plugin.json`, not this file. Install the `/GitXxx` commands as described under Claude Code. |
+| Does Claude Code use it? | No. Claude Code reads the repository's `.claude-plugin/plugin.json` instead; clone into `~/.claude/skills/magos` as described under Claude Code. |
 | Which way for Hermes? | The sync script above. Skills imported as a plugin must be enabled by hand, are not in the available-skills list, get no `/git-*` commands, and do not receive the `[Skill directory: …]` path hint. The four commands that modify the repository (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`) act only on an explicit `/git-*` or `$git-*` invocation, so do not import them as a plugin in Hermes. |
 
-The repository deliberately has no `.claude-plugin/`, `.codex-plugin/`, or `.cursor-plugin/`. If you `git clone` it into a Codex skills directory, Codex treats any of those as a plugin root and renames the skills to `magos:git-recon`, so `$git-recon` stops working. A root `plugin.json` alone does not do that.
+The repository root carries `.claude-plugin/plugin.json`, the Claude Code plugin manifest (see Claude Code above), and deliberately no `.codex-plugin/` or `.cursor-plugin/`. Codex treats any of those folders as a plugin root and prefixes the skill names, so **a `git clone` straight into a Codex skills directory gives `$magos:git-recon` instead of `$git-recon`**. Install Codex and Hermes with the sync script: it copies only `SKILL.md`, `references/`, and `skills/`, never `.claude-plugin/`, so the names stay `$git-recon` and `/git-recon`. A root `plugin.json` alone does not trigger the prefix.
 
 One known deviation: section 8 of the specification asks for files meant for a single tool to live in a reverse-domain folder (such as `com.example.client/`). `commands/` serves only Claude Code but sits at the top level. Plugin tools ignore it, so importing is unaffected; moving it would change the install script and many tests, so it stays for now.
 

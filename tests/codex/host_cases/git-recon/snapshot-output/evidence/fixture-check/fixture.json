@@ -25,32 +25,32 @@
   "initial_state": {
     "git_repository": true,
     "refs": {
-      "refs/heads/agent/auth": "9526063225d9d63e86291fe1d5c7d66176355eb8",
-      "refs/heads/main": "a9698699e9ca0a1ad01f6b772dba131b69a78351",
-      "refs/remotes/origin/main": "a9698699e9ca0a1ad01f6b772dba131b69a78351"
+      "refs/heads/agent/auth": "617d665455e9b175475cac9214b1eb4f40da10c3",
+      "refs/heads/main": "f67a498eea15c4e1711537f36efe1dcac27b7c8f",
+      "refs/remotes/origin/main": "f67a498eea15c4e1711537f36efe1dcac27b7c8f"
     },
     "worktrees": {
-      "/home/user/MAGOS/tests/codex/.magos-accept-un019oso/repo": {
-        "head": "a9698699e9ca0a1ad01f6b772dba131b69a78351",
+      "/home/user/MAGOS/tests/codex/.magos-accept-y31g4avw/repo": {
+        "head": "f67a498eea15c4e1711537f36efe1dcac27b7c8f",
         "branch": "main",
         "status": ""
       },
-      "/home/user/MAGOS/tests/codex/.magos-accept-un019oso/auth-worktree": {
-        "head": "9526063225d9d63e86291fe1d5c7d66176355eb8",
+      "/home/user/MAGOS/tests/codex/.magos-accept-y31g4avw/auth-worktree": {
+        "head": "617d665455e9b175475cac9214b1eb4f40da10c3",
         "branch": "agent/auth",
         "status": "M feature.txt"
       }
     },
     "files": {
       "repo/README.md": "e80b71cd14d3cbd65f4173abcbfcf01a545dbca32a72d575108b553a648cc96f",
-      "repo/.agents/skills/MAGOS/SKILL.md": "3bc660cfe128b20dc6a465d42bd8bbc9f2838feb667bad5c59764c19332d1c60",
+      "repo/.agents/skills/MAGOS/SKILL.md": "654752e02a2c06d134ea16bdd6a74c3df493ffc57bfcdc5c36adf4ef16795056",
       "repo/.agents/skills/MAGOS/references/handoff-and-state.md": "aae769fe50f3eaf53b3643c51bd0d5897dc57c713a13ec89f73789e308caaf16",
       "repo/.agents/skills/MAGOS/references/decision-matrix.md": "e2c05a70386d6c6bd8eca8d90c5f5e944f6558c24f3134ba60226bfce92e0d31",
-      "repo/.agents/skills/MAGOS/references/installation.md": "ce0fa28a344a1512dc4c2ff5d40b3ed7dc4d38855a8ff8711d47296fb4aa6216",
+      "repo/.agents/skills/MAGOS/references/installation.md": "1451d52059c75150517f2842713af900a96e42643a62340fdf634565cbc025e6",
       "repo/.agents/skills/MAGOS/references/pressure-tests.md": "1cd224dbd486657fba4a00b7a2eea5bba0002deb35573a735d05219cfc339919",
       "repo/.agents/skills/MAGOS/references/design-rationale.md": "0c9c6fdc16739840eb6c4214b48d715773e8e2f5cd6af81b4a7ad3ba6f617d83",
       "repo/.agents/skills/MAGOS/references/branch-strategy.md": "a30bb2d8cc9fc5e0a127a391221674a4b38557065ad327819dd2e4e4807ff38d",
-      "repo/.agents/skills/MAGOS/references/commands.md": "ad840077e1e02e8a7c8794d022eca2e314cbbc0d2fbdceade92a3d7694eb2ee2",
+      "repo/.agents/skills/MAGOS/references/commands.md": "1090cf86039a21a7bbbfac6aaeed49e801c89212127ee9f231bf339cc2b3e087",
       "repo/.agents/skills/MAGOS/references/reconnaissance.md": "9c7c20249b1e049e61b77a73b3c921b2ce2b0342255fb5d26b3526c12e511f57",
       "repo/.agents/skills/MAGOS/skills/git-integrate/SKILL.md": "7259ea1d2f05ffe731cbe8cd9af5e8215453892a245de38f21ba0e8b59f3eed9",
       "repo/.agents/skills/MAGOS/skills/git-sweep/SKILL.md": "f33ce5b6c4ba503bc603e8d3398542f47e94a638b9203e6f892652b8359c7c93",
@@ -70,10 +70,10 @@
       "auth-worktree/feature.txt": "f0f70f71f6f6a578f2fce5f9d84061d40a8fcdd222326d17a1b3572e15b96fe1"
     },
     "bare_refs": {
-      "refs/heads/main": "a9698699e9ca0a1ad01f6b772dba131b69a78351"
+      "refs/heads/main": "f67a498eea15c4e1711537f36efe1dcac27b7c8f"
     }
   },
   "skill": "git-recon",
-  "skill_path": "/home/user/MAGOS/tests/codex/.magos-accept-un019oso/repo/.agents/skills/MAGOS/skills/git-recon/SKILL.md",
-  "skill_source_sha256": "7cc3d7451a649601ce3d7697c1b0d745f48269f2fcfcdb385d6fe31a9351ea85"
+  "skill_path": "/home/user/MAGOS/tests/codex/.magos-accept-y31g4avw/repo/.agents/skills/MAGOS/skills/git-recon/SKILL.md",
+  "skill_source_sha256": "3cc21838eab1115b0dc2ec3478d728f2f6d612cddeb38a81b192fbc36cb09df4"
 }
