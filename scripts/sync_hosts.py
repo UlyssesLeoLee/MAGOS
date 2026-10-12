@@ -4,8 +4,10 @@
 #   (module:Module {name: 'sync_hosts', type: 'module', language: 'python'}),
 #   (command_names:Variable {name: 'COMMAND_NAMES', type: 'variable'}),
 #   (command_paths:Variable {name: 'COMMAND_PATHS', type: 'variable'}),
+#   (plugin_only:Variable {name: 'PLUGIN_ONLY_SKILLS', type: 'variable'}),
 #   (package:Function {name: 'package_files', type: 'function'}),
 #   (codex_root:Function {name: 'codex_install_root', type: 'function'}),
+#   (claude_notes:Function {name: 'claude_plugin_notes', type: 'function'}),
 #   (build:Function {name: 'build_targets', type: 'function'}),
 #   (hash:Function {name: 'file_sha256', type: 'function'}),
 #   (inspect:Function {name: 'inspect', type: 'function'}),
@@ -16,8 +18,10 @@
 #   (file)-[:CONTAINS]->(module),
 #   (module)-[:CONTAINS]->(command_names),
 #   (module)-[:CONTAINS]->(command_paths),
+#   (module)-[:CONTAINS]->(plugin_only),
 #   (module)-[:CONTAINS]->(package),
 #   (module)-[:CONTAINS]->(codex_root),
+#   (module)-[:CONTAINS]->(claude_notes),
 #   (module)-[:CONTAINS]->(build),
 #   (module)-[:CONTAINS]->(hash),
 #   (module)-[:CONTAINS]->(inspect),
@@ -26,11 +30,14 @@
 #   (module)-[:CONTAINS]->(main),
 #   (build)-[:USES]->(command_paths),
 #   (build)-[:CALLS]->(package),
+#   (package)-[:USES]->(plugin_only),
 #   (build)-[:CALLS]->(codex_root),
+#   (build)-[:CALLS]->(claude_notes),
 #   (inspect)-[:CALLS]->(build),
 #   (inspect)-[:CALLS]->(hash),
 #   (main)-[:CALLS]->(inspect),
 #   (main)-[:CALLS]->(build),
+#   (main)-[:CALLS]->(claude_notes),
 #   (main)-[:CALLS]->(copy),
 #   (main)-[:CALLS]->(render),
 #   (main)-[:USES]->(selected_hosts),
@@ -54,6 +61,9 @@ COMMAND_NAMES = ("GitRecon", "GitAnalyze", "GitRecommend", "GitIntegrate", "GitC
 COMMAND_PATHS = tuple(f"commands/{name}.md" for name in COMMAND_NAMES)
 PACKAGE_NAME = "MAGOS"
 HERMES_PACKAGE_NAME = "multi-agent-git-orchestrator"
+# Plugin hosts load only skills/<name>/SKILL.md, never the package-root SKILL.md, so the plugin carries an entry skill
+# that points to it. A skills-directory install already has the root skill, so the entry would only duplicate it.
+PLUGIN_ONLY_SKILLS = frozenset({"git-orchestrator"})
 
 
 def package_files(repo: Path) -> tuple[str, ...]:
@@ -68,7 +78,8 @@ def package_files(repo: Path) -> tuple[str, ...]:
     references = sorted(path.relative_to(repo).as_posix()
                         for path in (repo / "references").glob("*.md"))
     adapters = []
-    for skill in sorted(path.parent for path in (repo / "skills").glob("*/SKILL.md")):
+    for skill in sorted(path.parent for path in (repo / "skills").glob("*/SKILL.md")
+                        if path.parent.name not in PLUGIN_ONLY_SKILLS):
         adapters.append((skill / "SKILL.md").relative_to(repo).as_posix())
         metadata = skill / "agents" / "openai.yaml"
         if metadata.is_file():
@@ -137,6 +148,24 @@ def hermes_install_root(home: Path, explicit_home: bool) -> tuple[Path, list[str
     return preferred, notes
 
 
+def claude_plugin_notes(claude: Path) -> list[str]:
+    """Point out a MAGOS clone that Claude Code already loads as a plugin from ~/.claude/skills/.
+
+    Such a clone gives /magos:GitXxx and updates with git pull, so the copied ~/.claude/commands/Git*.md would
+    only add a second, older set of /GitXxx commands.
+    """
+    notes = []
+    for manifest in sorted((claude / "skills").glob("*/.claude-plugin/plugin.json")):
+        try:
+            name = json.loads(manifest.read_text(encoding="utf-8")).get("name")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if name == "magos":
+            notes.append(f"{manifest.parent.parent} already loads MAGOS as a Claude Code plugin (/magos:GitXxx); "
+                         "update it with git pull. Copies in ~/.claude/commands would add a second /GitXxx set.")
+    return notes
+
+
 def build_targets(home: Path, selected_hosts: tuple[str, ...], repo: Path, explicit_home: bool = True,
                   codex_root: Path | None = None, hermes_root: Path | None = None,
                   ) -> tuple[tuple[str, Path, Path, tuple[str, ...]], list[str]]:
@@ -151,6 +180,8 @@ def build_targets(home: Path, selected_hosts: tuple[str, ...], repo: Path, expli
         hermes_root, hermes_notes = hermes_install_root(home, explicit_home)
         if "hermes" in selected_hosts:
             notes += hermes_notes
+    if "claude" in selected_hosts:
+        notes += claude_plugin_notes(claude)
     package = package_files(repo)
     targets = (
         ("claude", claude, claude / "commands", COMMAND_PATHS),
@@ -188,11 +219,16 @@ def inspect(repo: Path, targets: tuple[tuple[str, Path, Path, tuple[str, ...]], 
             })
             continue
         if (required / ".git").exists():
+            reason = "installed root is a git checkout; update it with git instead of copying files"
+            if host == "codex" and (required / ".claude-plugin").exists():
+                # Codex treats any .claude-plugin/ as a plugin root and renames the skills to magos:<name>.
+                reason += ("; this checkout carries .claude-plugin/, so Codex lists its skills as $magos:git-* "
+                           "instead of $git-*: move it out of the skills directory and install with --apply")
             hosts.append({
                 "host": host,
                 "status": "git-checkout",
                 "required_directory": str(required),
-                "reason": "installed root is a git checkout; update it with git instead of copying files",
+                "reason": reason,
             })
             continue
         hosts.append({"host": host, "status": "ready", "required_directory": str(required)})
@@ -304,9 +340,15 @@ def main() -> int:
     repo = Path(__file__).resolve().parents[1]
     explicit_home = args.home is not None
     home = (args.home or Path.home()).expanduser().resolve()
-    selected_hosts = tuple(args.host or ("claude", "codex", "hermes"))
+    # Without --host, a MAGOS plugin clone in ~/.claude/skills replaces the command copies, so leave them out rather
+    # than recreate the second /GitXxx set; an explicit --host claude still copies them (with the same note).
+    plugin_notes = [] if args.host else claude_plugin_notes(home / ".claude")
+    selected_hosts = tuple(args.host or (("codex", "hermes") if plugin_notes else ("claude", "codex", "hermes")))
     targets, notes = build_targets(home, selected_hosts, repo, explicit_home,
                                    args.codex_root, args.hermes_root)
+    if plugin_notes:
+        notes = [*plugin_notes, "Skipping the claude host for that reason; pass --host claude to copy the "
+                                "commands anyway.", *notes]
     created: list[str] = []
     report = inspect(repo, targets, home, selected_hosts, notes)
     counts = report["summary"]

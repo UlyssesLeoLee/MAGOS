@@ -24,6 +24,7 @@ Examples: `/git-recon --remote`, `$git-recon --remote`, `$git-recon --lang Engli
 ## Arguments
 
 - Codex: the arguments are the text that follows `$git-recon` in the user's message.
+- Plugin installs prefix the name with the plugin name: `/magos:git-recon` in Claude Code and Hermes, `$magos:git-recon` in Codex. The arguments follow it the same way (Claude Code appends them as `ARGUMENTS: ...`).
 - Hermes: the arguments are the instruction Hermes appends after the skill content, introduced by "The user has provided the following instruction alongside the skill invocation:" (single command) or `User instruction:` (stacked commands). An empty instruction means no arguments.
 
 If `--help` is present, even with other arguments, answer from the inline Usage section above and stop before any tool call, file read, or repository inspection. For an unknown option, explain the error, show the same help, and stop. Read the shared files below only for a normal invocation.

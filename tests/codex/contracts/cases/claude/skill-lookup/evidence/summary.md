@@ -6,7 +6,7 @@
 
 ## Expected behavior
 
-- Each command accepts MAGOS, multi-agent-git-orchestrator, or MAGO-Skill as the orchestrator skill.
+- Each command accepts magos, MAGOS, multi-agent-git-orchestrator, or MAGO-Skill as the orchestrator skill.
 - GitIntegrate does not integrate, GitCleanup, GitConverge, and GitSweep only preview when the skill cannot be loaded.
 
 ## Contract checks

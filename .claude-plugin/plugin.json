@@ -1,0 +1,11 @@
+{
+  "name": "magos",
+  "version": "1.0.0",
+  "description": "Multi-Agent Git Orchestrator (MAGOS) for Claude Code: the orchestrator skill plus seven explicit Git commands (GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge, GitSweep). Clone the repository into ~/.claude/skills/magos to load it.",
+  "author": {
+    "name": "Ulysses Leo Lee"
+  },
+  "repository": "https://github.com/UlyssesLeoLee/MAGOS",
+  "license": "Apache-2.0",
+  "keywords": ["git", "worktree", "multi-agent", "branch", "merge"]
+}

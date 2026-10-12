@@ -2,6 +2,7 @@
 # CREATE
 #   (file:File {name: "test_agent_plugin.py", type: "file", language: "python"}),
 #   (v_HERE:Variable {name: "HERE", type: "variable"}),
+#   (v_PLUGIN_ONLY_SKILLS:Variable {name: "PLUGIN_ONLY_SKILLS", type: "variable"}),
 #   (v_REPO:Variable {name: "REPO", type: "variable"}),
 #   (v_PACKAGE:Variable {name: "PACKAGE", type: "variable"}),
 #   (v_MANIFEST:Variable {name: "MANIFEST", type: "variable"}),
@@ -13,6 +14,9 @@
 #   (v_MCP:Variable {name: "MCP", type: "variable"}),
 #   (v_CLONE:Variable {name: "CLONE", type: "variable"}),
 #   (v_HOST_MANIFEST:Variable {name: "HOST_MANIFEST", type: "variable"}),
+#   (v_CLAUDE_MANIFEST:Variable {name: "CLAUDE_MANIFEST", type: "variable"}),
+#   (v_MARKETPLACE:Variable {name: "MARKETPLACE", type: "variable"}),
+#   (v_HERMES_NATIVE:Variable {name: "HERMES_NATIVE", type: "variable"}),
 #   (v_INSTALL_YAML:Variable {name: "INSTALL_YAML", type: "variable"}),
 #   (v_RECON:Variable {name: "RECON", type: "variable"}),
 #   (v_RECON_DESCRIPTION:Variable {name: "RECON_DESCRIPTION", type: "variable"}),
@@ -23,8 +27,10 @@
 #   (v_MUTATIONS:Variable {name: "MUTATIONS", type: "variable"}),
 #   (f_edit:Function {name: "edit", type: "function", signature: "edit(relative: str, old: str, new: str)"}),
 #   (f_edit_apply:Function {name: "edit.apply", type: "function", signature: "apply(root: Path) -> None"}),
-#   (f_manifest:Function {name: "manifest", type: "function", signature: "manifest(change)"}),
+#   (f_manifest:Function {name: "manifest", type: "function", signature: "manifest(change, relative: str='plugin.json')"}),
 #   (f_manifest_apply:Function {name: "manifest.apply", type: "function", signature: "apply(root: Path) -> None"}),
+#   (f_claude_manifest:Function {name: "claude_manifest", type: "function", signature: "claude_manifest(change)"}),
+#   (f_marketplace:Function {name: "marketplace", type: "function", signature: "marketplace(change)"}),
 #   (f_write:Function {name: "write", type: "function", signature: "write(relative: str, content: str)"}),
 #   (f_write_apply:Function {name: "write.apply", type: "function", signature: "apply(root: Path) -> None"}),
 #   (f_add_seventh_skill:Function {name: "add_seventh_skill", type: "function", signature: "add_seventh_skill(root: Path) -> None"}),
@@ -34,25 +40,38 @@
 #   (f_link_directory:Function {name: "link_directory", type: "function", signature: "link_directory(target: Path, link: Path) -> None"}),
 #   (f_add_empty_outside_link:Function {name: "add_empty_outside_link", type: "function", signature: "add_empty_outside_link(root: Path) -> None"}),
 #   (f_add_directory_link:Function {name: "add_directory_link", type: "function", signature: "add_directory_link(root: Path) -> None"}),
-#   (f_lambda_168_5:Function {name: "lambda_168_5", type: "function", signature: "lambda_168_5(root)"}),
-#   (f_lambda_141_46:Function {name: "lambda_141_46", type: "function", signature: "lambda_141_46(data)"}),
-#   (f_lambda_140_55:Function {name: "lambda_140_55", type: "function", signature: "lambda_140_55(data)"}),
-#   (f_lambda_135_5:Function {name: "lambda_135_5", type: "function", signature: "lambda_135_5(root)"}),
-#   (f_lambda_131_14:Function {name: "lambda_131_14", type: "function", signature: "lambda_131_14(data)"}),
-#   (f_lambda_129_50:Function {name: "lambda_129_50", type: "function", signature: "lambda_129_50(data)"}),
-#   (f_lambda_128_45:Function {name: "lambda_128_45", type: "function", signature: "lambda_128_45(data)"}),
-#   (f_lambda_127_58:Function {name: "lambda_127_58", type: "function", signature: "lambda_127_58(data)"}),
-#   (f_lambda_126_42:Function {name: "lambda_126_42", type: "function", signature: "lambda_126_42(data)"}),
-#   (f_lambda_125_39:Function {name: "lambda_125_39", type: "function", signature: "lambda_125_39(data)"}),
-#   (f_lambda_123_43:Function {name: "lambda_123_43", type: "function", signature: "lambda_123_43(data, name=name)"}),
-#   (f_lambda_122_45:Function {name: "lambda_122_45", type: "function", signature: "lambda_122_45(data)"}),
-#   (f_lambda_121_25:Function {name: "lambda_121_25", type: "function", signature: "lambda_121_25(root)"}),
+#   (f_lambda_227_21:Function {name: "lambda_227_21", type: "function", signature: "lambda_227_21(data)"}),
+#   (f_lambda_225_21:Function {name: "lambda_225_21", type: "function", signature: "lambda_225_21(data)"}),
+#   (f_lambda_223_21:Function {name: "lambda_223_21", type: "function", signature: "lambda_223_21(data)"}),
+#   (f_lambda_220_66:Function {name: "lambda_220_66", type: "function", signature: "lambda_220_66(data)"}),
+#   (f_lambda_218_44:Function {name: "lambda_218_44", type: "function", signature: "lambda_218_44(root)"}),
+#   (f_lambda_216_49:Function {name: "lambda_216_49", type: "function", signature: "lambda_216_49(data)"}),
+#   (f_lambda_211_36:Function {name: "lambda_211_36", type: "function", signature: "lambda_211_36(root)"}),
+#   (f_lambda_207_17:Function {name: "lambda_207_17", type: "function", signature: "lambda_207_17(data)"}),
+#   (f_lambda_204_17:Function {name: "lambda_204_17", type: "function", signature: "lambda_204_17(data)"}),
+#   (f_lambda_201_17:Function {name: "lambda_201_17", type: "function", signature: "lambda_201_17(data)"}),
+#   (f_lambda_198_17:Function {name: "lambda_198_17", type: "function", signature: "lambda_198_17(data)"}),
+#   (f_lambda_196_35:Function {name: "lambda_196_35", type: "function", signature: "lambda_196_35(root)"}),
+#   (f_lambda_183_5:Function {name: "lambda_183_5", type: "function", signature: "lambda_183_5(root)"}),
+#   (f_lambda_156_46:Function {name: "lambda_156_46", type: "function", signature: "lambda_156_46(data)"}),
+#   (f_lambda_155_55:Function {name: "lambda_155_55", type: "function", signature: "lambda_155_55(data)"}),
+#   (f_lambda_150_5:Function {name: "lambda_150_5", type: "function", signature: "lambda_150_5(root)"}),
+#   (f_lambda_146_14:Function {name: "lambda_146_14", type: "function", signature: "lambda_146_14(data)"}),
+#   (f_lambda_144_50:Function {name: "lambda_144_50", type: "function", signature: "lambda_144_50(data)"}),
+#   (f_lambda_143_45:Function {name: "lambda_143_45", type: "function", signature: "lambda_143_45(data)"}),
+#   (f_lambda_142_58:Function {name: "lambda_142_58", type: "function", signature: "lambda_142_58(data)"}),
+#   (f_lambda_141_42:Function {name: "lambda_141_42", type: "function", signature: "lambda_141_42(data)"}),
+#   (f_lambda_140_39:Function {name: "lambda_140_39", type: "function", signature: "lambda_140_39(data)"}),
+#   (f_lambda_138_43:Function {name: "lambda_138_43", type: "function", signature: "lambda_138_43(data, name=name)"}),
+#   (f_lambda_137_45:Function {name: "lambda_137_45", type: "function", signature: "lambda_137_45(data)"}),
+#   (f_lambda_136_25:Function {name: "lambda_136_25", type: "function", signature: "lambda_136_25(root)"}),
 #   (f_rows:Function {name: "rows", type: "function", signature: "rows(root: Path) -> dict"}),
 #   (f_install_rows:Function {name: "install_rows", type: "function", signature: "install_rows(root: Path) -> dict"}),
 #   (f_pick:Function {name: "pick", type: "function", signature: "pick(result: dict, fragment: str) -> list[dict]"}),
 #   (f_remove_tree:Function {name: "remove_tree", type: "function", signature: "remove_tree(path: Path) -> None"}),
 #   (f_remove_tree_make_writable:Function {name: "remove_tree.make_writable", type: "function", signature: "make_writable(function, target, *_)"}),
 #   (file)-[:CONTAINS]->(v_HERE),
+#   (file)-[:CONTAINS]->(v_PLUGIN_ONLY_SKILLS),
 #   (file)-[:CONTAINS]->(v_REPO),
 #   (file)-[:CONTAINS]->(v_PACKAGE),
 #   (file)-[:CONTAINS]->(v_MANIFEST),
@@ -64,6 +83,9 @@
 #   (file)-[:CONTAINS]->(v_MCP),
 #   (file)-[:CONTAINS]->(v_CLONE),
 #   (file)-[:CONTAINS]->(v_HOST_MANIFEST),
+#   (file)-[:CONTAINS]->(v_CLAUDE_MANIFEST),
+#   (file)-[:CONTAINS]->(v_MARKETPLACE),
+#   (file)-[:CONTAINS]->(v_HERMES_NATIVE),
 #   (file)-[:CONTAINS]->(v_INSTALL_YAML),
 #   (file)-[:CONTAINS]->(v_RECON),
 #   (file)-[:CONTAINS]->(v_RECON_DESCRIPTION),
@@ -76,6 +98,8 @@
 #   (f_edit)-[:CONTAINS]->(f_edit_apply),
 #   (file)-[:CONTAINS]->(f_manifest),
 #   (f_manifest)-[:CONTAINS]->(f_manifest_apply),
+#   (file)-[:CONTAINS]->(f_claude_manifest),
+#   (file)-[:CONTAINS]->(f_marketplace),
 #   (file)-[:CONTAINS]->(f_write),
 #   (f_write)-[:CONTAINS]->(f_write_apply),
 #   (file)-[:CONTAINS]->(f_add_seventh_skill),
@@ -85,19 +109,31 @@
 #   (file)-[:CONTAINS]->(f_link_directory),
 #   (file)-[:CONTAINS]->(f_add_empty_outside_link),
 #   (file)-[:CONTAINS]->(f_add_directory_link),
-#   (file)-[:CONTAINS]->(f_lambda_168_5),
-#   (file)-[:CONTAINS]->(f_lambda_141_46),
-#   (file)-[:CONTAINS]->(f_lambda_140_55),
-#   (file)-[:CONTAINS]->(f_lambda_135_5),
-#   (file)-[:CONTAINS]->(f_lambda_131_14),
-#   (file)-[:CONTAINS]->(f_lambda_129_50),
-#   (file)-[:CONTAINS]->(f_lambda_128_45),
-#   (file)-[:CONTAINS]->(f_lambda_127_58),
-#   (file)-[:CONTAINS]->(f_lambda_126_42),
-#   (file)-[:CONTAINS]->(f_lambda_125_39),
-#   (file)-[:CONTAINS]->(f_lambda_123_43),
-#   (file)-[:CONTAINS]->(f_lambda_122_45),
-#   (file)-[:CONTAINS]->(f_lambda_121_25),
+#   (file)-[:CONTAINS]->(f_lambda_227_21),
+#   (file)-[:CONTAINS]->(f_lambda_225_21),
+#   (file)-[:CONTAINS]->(f_lambda_223_21),
+#   (file)-[:CONTAINS]->(f_lambda_220_66),
+#   (file)-[:CONTAINS]->(f_lambda_218_44),
+#   (file)-[:CONTAINS]->(f_lambda_216_49),
+#   (file)-[:CONTAINS]->(f_lambda_211_36),
+#   (file)-[:CONTAINS]->(f_lambda_207_17),
+#   (file)-[:CONTAINS]->(f_lambda_204_17),
+#   (file)-[:CONTAINS]->(f_lambda_201_17),
+#   (file)-[:CONTAINS]->(f_lambda_198_17),
+#   (file)-[:CONTAINS]->(f_lambda_196_35),
+#   (file)-[:CONTAINS]->(f_lambda_183_5),
+#   (file)-[:CONTAINS]->(f_lambda_156_46),
+#   (file)-[:CONTAINS]->(f_lambda_155_55),
+#   (file)-[:CONTAINS]->(f_lambda_150_5),
+#   (file)-[:CONTAINS]->(f_lambda_146_14),
+#   (file)-[:CONTAINS]->(f_lambda_144_50),
+#   (file)-[:CONTAINS]->(f_lambda_143_45),
+#   (file)-[:CONTAINS]->(f_lambda_142_58),
+#   (file)-[:CONTAINS]->(f_lambda_141_42),
+#   (file)-[:CONTAINS]->(f_lambda_140_39),
+#   (file)-[:CONTAINS]->(f_lambda_138_43),
+#   (file)-[:CONTAINS]->(f_lambda_137_45),
+#   (file)-[:CONTAINS]->(f_lambda_136_25),
 #   (file)-[:CONTAINS]->(f_rows),
 #   (file)-[:CONTAINS]->(f_install_rows),
 #   (file)-[:CONTAINS]->(f_pick),
@@ -106,11 +142,18 @@
 #   (f_add_directory_link)-[:CALLS]->(f_link_directory),
 #   (f_add_empty_outside_link)-[:CALLS]->(f_link_directory),
 #   (f_add_seventh_skill)-[:CALLS]->(f_edit),
-#   (f_lambda_168_5)-[:CALLS]->(f_edit),
-#   (f_lambda_168_5)-[:USES]->(v_ROOT_DESCRIPTION),
+#   (f_claude_manifest)-[:CALLS]->(f_manifest),
+#   (f_install_rows)-[:CALLS]->(f_remove_tree),
+#   (f_install_rows)-[:USES]->(v_PLUGIN_ONLY_SKILLS),
+#   (f_lambda_183_5)-[:CALLS]->(f_edit),
+#   (f_lambda_183_5)-[:USES]->(v_ROOT_DESCRIPTION),
+#   (f_lambda_211_36)-[:CALLS]->(f_edit),
 #   (f_long_named_adapter)-[:CALLS]->(f_edit),
+#   (f_marketplace)-[:CALLS]->(f_manifest),
+#   (file)-[:CALLS]->(f_claude_manifest),
 #   (file)-[:CALLS]->(f_edit),
 #   (file)-[:CALLS]->(f_manifest),
+#   (file)-[:CALLS]->(f_marketplace),
 #   (file)-[:CALLS]->(f_write);
 # ```
 """Mutation tests for the Agent Plugins and git-clone layout checks (standard library only).
@@ -138,8 +181,11 @@ import agent_plugin  # noqa: E402
 import install_layout  # noqa: E402
 import skill_frontmatter  # noqa: E402
 
+PLUGIN_ONLY_SKILLS = {"git-orchestrator"}  # scripts/sync_hosts.py leaves these out of the Codex and Hermes packages
+
 REPO = HERE.parents[2]
-PACKAGE = ["plugin.json", "SKILL.md", "LICENSE", "references", "skills", "scripts"]
+PACKAGE = ["plugin.json", ".claude-plugin", "plugin.yaml", "__init__.py", "SKILL.md", "LICENSE", "references",
+           "skills", "scripts"]
 
 MANIFEST = "plugin.json is a valid"
 VERSION = "manifest version matches"
@@ -149,7 +195,10 @@ ROOT = "root SKILL.md"
 CONTAINMENT = "package paths stay inside"
 MCP = "mcp.json is absent or valid"
 CLONE = "git-clone checkout, the Codex"
-HOST_MANIFEST = "git-clone checkout has no"
+HOST_MANIFEST = "git-clone checkout has no host plugin manifest"
+CLAUDE_MANIFEST = "is the Claude Code manifest of plugin.json"
+MARKETPLACE = "marketplace.json lists this repository root"
+HERMES_NATIVE = "plugin.yaml is the Hermes native manifest"
 INSTALL_YAML = "every installed SKILL.md is strict YAML"
 
 RECON = "skills/git-recon/SKILL.md"
@@ -172,12 +221,21 @@ def edit(relative: str, old: str, new: str):
     return apply
 
 
-def manifest(change):
+def manifest(change, relative: str = "plugin.json"):
     def apply(root: Path) -> None:
-        data = json.loads((root / "plugin.json").read_text(encoding="utf-8"))
+        path = root / relative
+        data = json.loads(path.read_text(encoding="utf-8"))
         change(data)
-        (root / "plugin.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return apply
+
+
+def claude_manifest(change):
+    return manifest(change, ".claude-plugin/plugin.json")
+
+
+def marketplace(change):
+    return manifest(change, ".claude-plugin/marketplace.json")
 
 
 def write(relative: str, content: str):
@@ -291,7 +349,40 @@ MUTATIONS = [
     ("root compatibility has 501 characters", edit("SKILL.md", ROOT_COMPATIBILITY, "x" * 501), [ROOT]),
     ("a seventh skill under skills/", add_seventh_skill, [DISCOVERY, CLONE]),
     *[(f"a host plugin manifest in {directory}/", write(f"{directory}/plugin.json", '{"name": "magos"}\n'), [HOST_MANIFEST])
-      for directory in (".claude-plugin", ".codex-plugin", ".cursor-plugin")],
+      for directory in (".codex-plugin", ".cursor-plugin")],
+    ("a third file in .claude-plugin/", write(".claude-plugin/hooks.json", '{"hooks": {}}\n'), [HOST_MANIFEST]),
+    ("the marketplace is missing", lambda root: (root / ".claude-plugin" / "marketplace.json").unlink(), [MARKETPLACE]),
+    ("the marketplace lists the plugin from a subdirectory",
+     marketplace(lambda data: data["plugins"][0].update(source="./plugins/magos")),
+     [MARKETPLACE]),
+    ("the marketplace lists the plugin under another name",
+     marketplace(lambda data: data["plugins"][0].update(name="magos-git")),
+     [MARKETPLACE]),
+    ("the marketplace lists a second plugin",
+     marketplace(lambda data: data["plugins"].append(dict(data["plugins"][0]))),
+     [MARKETPLACE]),
+    ("the marketplace entry declares a component path",
+     marketplace(lambda data: data["plugins"][0].update(commands="./commands/")),
+     [MARKETPLACE]),
+    ("plugin.yaml drifts from the plugin.json version", edit("plugin.yaml", "version: 1.0.0", "version: 9.9.9"),
+     [HERMES_NATIVE]),
+    ("plugin.yaml declares a hook", lambda root: edit("plugin.yaml", "version: 1.0.0", "version: 1.0.0\nprovides_hooks:\n  - pre_tool_call")(root),
+     [HERMES_NATIVE]),
+    ("__init__.py registers a tool", edit("__init__.py", "ctx.register_skill(child.name, skill_md)",
+                                          "ctx.register_skill(child.name, skill_md)\n    ctx.register_tool(None)"),
+     [HERMES_NATIVE]),
+    ("the marketplace has no owner", marketplace(lambda data: data.pop("owner")),
+     [MARKETPLACE]),
+    ("the Claude Code manifest is missing", lambda root: (root / ".claude-plugin" / "plugin.json").unlink(),
+     [CLAUDE_MANIFEST]),
+    ("the Claude Code manifest has another name", claude_manifest(lambda data: data.update(name="magos-claude")),
+     [CLAUDE_MANIFEST]),
+    ("the Claude Code manifest drifts from the plugin.json version",
+     claude_manifest(lambda data: data.update(version="9.9.9")), [CLAUDE_MANIFEST]),
+    ("the Claude Code manifest declares a component path",
+     claude_manifest(lambda data: data.update(commands="./commands/")), [CLAUDE_MANIFEST]),
+    ("the Claude Code manifest declares monitors",
+     claude_manifest(lambda data: data.update(monitors="./monitors.json")), [CLAUDE_MANIFEST]),
     ("mcp.json without $schema", write("mcp.json", '{"mcpServers": {}}\n'), [MCP]),
     ("a symbolic link in the package", add_symlink, [CONTAINMENT]),
     ("a directory junction or link in the package", add_directory_link, [CONTAINMENT]),
@@ -304,9 +395,23 @@ def rows(root: Path) -> dict:
 
 
 def install_rows(root: Path) -> dict:
-    """The installed-package rows of install_layout, run on the copy as if it were a Codex install."""
-    return {row["file"]: row for row in
-            install_layout.check_package("codex", root, root.parent, install_layout.codex_discovery)}
+    """The installed-package rows of install_layout, run on the copy as if it were a Codex install.
+
+    The copy's skills/git-orchestrator is plugin-only (sync_hosts.PLUGIN_ONLY_SKILLS), which a Codex install never
+    carries, so the rows see the copy with that directory moved aside.
+    """
+    aside_root = Path(tempfile.mkdtemp(prefix="magos-parked-"))  # outside root.parent, which discovery scans
+    parked = [(skill, aside_root / skill.name) for skill in (root / "skills").iterdir()
+              if skill.name in PLUGIN_ONLY_SKILLS]
+    for skill, aside in parked:
+        shutil.move(str(skill), str(aside))
+    try:
+        return {row["file"]: row for row in
+                install_layout.check_package("codex", root, root.parent, install_layout.codex_discovery)}
+    finally:
+        for skill, aside in parked:
+            shutil.move(str(aside), str(skill))
+        remove_tree(aside_root)
 
 
 def pick(result: dict, fragment: str) -> list[dict]:
@@ -410,7 +515,7 @@ class GitCheckout(PackageCopy):
 
     def test_untracked_files_are_checked_before_git_add(self):
         root = self.staged_copy()
-        write(".claude-plugin/plugin.json", '{"name": "magos"}\n')(root)
+        write(".codex-plugin/plugin.json", '{"name": "magos"}\n')(root)
         add_seventh_skill(root)
         result = rows(root)
         for fragment in (HOST_MANIFEST, CLONE, DISCOVERY):
@@ -419,10 +524,10 @@ class GitCheckout(PackageCopy):
     def test_ignored_files_are_not_package_files(self):
         """Only git mode honors .gitignore (the directory walk would list the file), so this pins git mode."""
         root = self.staged_copy()
-        write(".gitignore", ".claude-plugin/\n")(root)
-        write(".claude-plugin/plugin.json", '{"name": "magos"}\n')(root)
+        write(".gitignore", ".codex-plugin/\n")(root)
+        write(".codex-plugin/plugin.json", '{"name": "magos"}\n')(root)
         paths = {relative for _, relative in agent_plugin.tracked_files(root)}
-        self.assertNotIn(".claude-plugin/plugin.json", paths)
+        self.assertNotIn(".codex-plugin/plugin.json", paths)
         self.assertTrue(all(row["passed"] for row in pick(rows(root), HOST_MANIFEST)))
 
     def test_links_inside_ignored_directories_are_not_package_links(self):

@@ -25,6 +25,7 @@ Examples: `/git-analyze feature/auth`, `$git-analyze feature/auth --remote`, `$g
 ## Arguments
 
 - Codex: the arguments are the text that follows `$git-analyze` in the user's message.
+- Plugin installs prefix the name with the plugin name: `/magos:git-analyze` in Claude Code and Hermes, `$magos:git-analyze` in Codex. The arguments follow it the same way (Claude Code appends them as `ARGUMENTS: ...`).
 - Hermes: the arguments are the instruction Hermes appends after the skill content, introduced by "The user has provided the following instruction alongside the skill invocation:" (single command) or `User instruction:` (stacked commands). An empty instruction means no arguments.
 
 If `--help` is present, even with other arguments, answer from the inline Usage section above and stop before any tool call, file read, or repository inspection. If the target is missing, ask for it and show this help; for an unknown option, explain the error and show this help. Do not inspect the repository in either error case. Read the shared files below only for a normal invocation.

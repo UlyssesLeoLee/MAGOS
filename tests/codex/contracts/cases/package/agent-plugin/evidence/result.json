@@ -16,7 +16,7 @@
       "missing": []
     },
     {
-      "file": "plugin: skills/ discovery (§7.1) finds exactly the seven command adapters",
+      "file": "plugin: skills/ discovery (§7.1) finds exactly the seven command adapters and git-orchestrator",
       "passed": true,
       "missing": []
     },

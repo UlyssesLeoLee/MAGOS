@@ -66,12 +66,32 @@
       "missing": []
     },
     {
+      "file": "install:synced Codex and Hermes packages carry no host plugin manifest",
+      "passed": true,
+      "missing": []
+    },
+    {
       "file": "install:git-clone checkout, the Codex and Hermes replicas find each skill once",
       "passed": true,
       "missing": []
     },
     {
-      "file": "install:git-clone checkout has no .codex-plugin/.claude-plugin/.cursor-plugin manifest",
+      "file": "install:git-clone checkout has no host plugin manifest other than .claude-plugin/plugin.json and .claude-plugin/marketplace.json",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "install:git-clone checkout's .claude-plugin/plugin.json is the Claude Code manifest of plugin.json",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "install:.claude-plugin/marketplace.json lists this repository root as the one plugin magos",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "install:plugin.yaml is the Hermes native manifest of plugin.json, and __init__.py registers skills/",
       "passed": true,
       "missing": []
     }

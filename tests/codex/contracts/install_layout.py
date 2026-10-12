@@ -20,6 +20,9 @@ import skill_frontmatter
 
 EXPECTED_SKILLS = {"multi-agent-git-orchestrator", "git-recon", "git-analyze", "git-recommend",
                    "git-integrate", "git-cleanup", "git-converge", "git-sweep"}
+# A git clone also carries skills/git-orchestrator, the entry skill plugin hosts need because they never load the
+# root SKILL.md; scripts/sync_hosts.py leaves it out of the Codex and Hermes packages (PLUGIN_ONLY_SKILLS).
+CHECKOUT_SKILLS = EXPECTED_SKILLS | {"git-orchestrator"}
 CODEX_MAX_SCAN_DEPTH = 6
 HERMES_SUPPORT_DIRS = {"references", "templates", "assets", "scripts"}
 # Hermes agent/skill_utils.py EXCLUDED_SKILL_DIRS: a SKILL.md below any of these directories is not a skill.
@@ -30,6 +33,12 @@ MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 ROOT_REFERENCE = re.compile(r"`(references/[A-Za-z0-9_.-]+\.md)`")
 HOST_PLUGIN_MANIFEST_DIRS = {".codex-plugin", ".claude-plugin", ".cursor-plugin"}
+CLAUDE_PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
+MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json"
+MARKETPLACE_ENTRY_KEYS = {"name", "source", "description", "version", "author", "homepage", "repository", "license",
+                          "keywords", "category", "tags"}
+# Metadata only: any other key (commands, skills, hooks, monitors, themes, ...) declares a component or setting.
+CLAUDE_METADATA_KEYS = {"name", "version", "description", "author", "homepage", "repository", "license", "keywords"}
 
 
 def frontmatter(path: Path) -> dict:
@@ -144,21 +153,111 @@ def check_checkout(repo: Path) -> list[dict]:
 
     The listing is what a commit would ship (agent_plugin.tracked_files), so a new file is caught before `git add`.
 
-    Codex marks a directory as a plugin root, and renames its skills to <plugin>:<name>, only for the manifests in
+    Codex marks a directory as a plugin root, and renames its skills to <plugin>:<name>, for any directory in
     HOST_PLUGIN_MANIFEST_DIRS (codex-rs DISCOVERABLE_PLUGIN_MANIFEST_PATHS); a root plugin.json is not one of them.
+    The checkout carries .claude-plugin/plugin.json on purpose, so that a clone into ~/.claude/skills/ loads as a
+    Claude Code plugin; a clone into a Codex skills directory therefore shows $magos:<name>, and Codex installs use
+    scripts/sync_hosts.py, whose package never contains a host manifest (check_installed). The replicas here do not
+    model that namespace. Every other host manifest stays forbidden, and the Claude one must match plugin.json.
     """
     tracked = [relative for _, relative in agent_plugin.tracked_files(repo)]
     skill_files = [repo / relative for relative in tracked if relative.split("/")[-1] == "SKILL.md"]
     problems = []
     for host, discover in (("codex", codex_discovery), ("hermes", hermes_discovery)):
         names = discover(repo.parent, skill_files)
-        if sorted(names) != sorted(EXPECTED_SKILLS):
-            problems.append(f"{host} replica discovers {sorted(names)}; expected {sorted(EXPECTED_SKILLS)}")
+        if sorted(names) != sorted(CHECKOUT_SKILLS):
+            problems.append(f"{host} replica discovers {sorted(names)}; expected {sorted(CHECKOUT_SKILLS)}")
     manifests = sorted(relative for relative in tracked if HOST_PLUGIN_MANIFEST_DIRS & set(relative.split("/")))
+    stray = [relative for relative in manifests if relative not in (CLAUDE_PLUGIN_MANIFEST, MARKETPLACE_MANIFEST)]
     return [{"file": "install:git-clone checkout, the Codex and Hermes replicas find each skill once",
              "passed": not problems, "missing": problems},
-            {"file": "install:git-clone checkout has no .codex-plugin/.claude-plugin/.cursor-plugin manifest",
-             "passed": not manifests, "missing": manifests}]
+            {"file": "install:git-clone checkout has no host plugin manifest other than .claude-plugin/plugin.json "
+                     "and .claude-plugin/marketplace.json",
+             "passed": not stray, "missing": stray},
+            {"file": "install:git-clone checkout's .claude-plugin/plugin.json is the Claude Code manifest of plugin.json",
+             "passed": not (claude := claude_manifest_problems(repo, manifests)), "missing": claude},
+            {"file": "install:.claude-plugin/marketplace.json lists this repository root as the one plugin magos",
+             "passed": not (market := marketplace_problems(repo, manifests)), "missing": market},
+            {"file": "install:plugin.yaml is the Hermes native manifest of plugin.json, and __init__.py registers skills/",
+             "passed": not (hermes := hermes_manifest_problems(repo)), "missing": hermes}]
+
+
+def hermes_manifest_problems(repo: Path) -> list[str]:
+    """`hermes plugins install` prefers a native plugin.yaml over the portable plugin.json; with it the skills are
+    /magos:<name> instead of /agent-plugin-magos-<digest>:<name>. Its name and version must match plugin.json, and
+    __init__.py must register the skills/ directory (and nothing else: catalog rule 6 compares declared capabilities)."""
+    try:
+        text = (repo / "plugin.yaml").read_text(encoding="utf-8")
+        package = agent_plugin.load_json(repo / "plugin.json")
+        entry = (repo / "__init__.py").read_text(encoding="utf-8")
+    except (OSError, ValueError) as error:
+        return [f"cannot read the Hermes plugin files: {error}"]
+    fields = dict(re.findall(r'^(name|version): *"?([^"\n]+?)"? *$', text, re.M))
+    problems = [f"plugin.yaml {key} {fields.get(key)!r} != plugin.json {key} {package.get(key)!r}"
+                for key in ("name", "version") if fields.get(key) != package.get(key)]
+    if re.search(r"^(provides_|requires_|capabilities|python_dependencies)", text, re.M):
+        problems.append("plugin.yaml declares hooks, tools, capabilities or dependencies; MAGOS ships skills only")
+    if "ctx.register_skill(" not in entry or re.search(r"ctx\.register_(?!skill\()", entry):
+        problems.append("__init__.py must call ctx.register_skill() and no other ctx.register_*")
+    return problems
+
+
+def marketplace_problems(repo: Path, manifests: list[str]) -> list[str]:
+    """The Claude Code and Codex marketplace must list exactly one plugin, the repository root itself.
+
+    Claude Code (`/plugin marketplace add`) and Codex (`codex plugin marketplace add`, codex-rs
+    MARKETPLACE_MANIFEST_RELATIVE_PATHS) both read this file; "./" is the source form both accept for the
+    marketplace root. Codex installs it through the root plugin.json, Claude Code through .claude-plugin/plugin.json.
+    """
+    if MARKETPLACE_MANIFEST not in manifests:
+        return [f"{MARKETPLACE_MANIFEST} is missing, so no marketplace can list the plugin"]
+    try:
+        market = agent_plugin.load_json(repo / MARKETPLACE_MANIFEST)
+        package = agent_plugin.load_json(repo / "plugin.json")
+    except (OSError, ValueError) as error:
+        return [f"cannot read the manifests: {error}"]
+    if not isinstance(market, dict) or not isinstance(package, dict):
+        return ["a manifest is not a JSON object"]
+    problems = []
+    if not isinstance(market.get("name"), str) or not market["name"]:
+        problems.append(f"{MARKETPLACE_MANIFEST} has no marketplace name")
+    owner = market.get("owner")
+    if not isinstance(owner, dict) or not isinstance(owner.get("name"), str) or not owner["name"]:
+        problems.append(f"{MARKETPLACE_MANIFEST} has no owner.name (Claude Code requires it)")
+    plugins = market.get("plugins")
+    if not isinstance(plugins, list) or len(plugins) != 1 or not isinstance(plugins[0], dict):
+        return problems + [f"{MARKETPLACE_MANIFEST} must list exactly one plugin"]
+    entry = plugins[0]
+    if entry.get("name") != package.get("name"):
+        problems.append(f"marketplace plugin name {entry.get('name')!r} != plugin.json name {package.get('name')!r}")
+    if entry.get("source") != "./":
+        problems.append(f"marketplace plugin source {entry.get('source')!r} is not the repository root './'")
+    problems += [f"marketplace plugin entry declares {key!r}, which is not a metadata key"
+                 for key in sorted(set(entry) - MARKETPLACE_ENTRY_KEYS)]
+    return problems
+
+
+def claude_manifest_problems(repo: Path, manifests: list[str]) -> list[str]:
+    """The Claude Code manifest must exist, use the Agent Plugins name and version, and hold only metadata keys.
+
+    Without component keys Claude Code scans its default commands/ and skills/ directories, the files every other
+    host uses too; a component key would make the Claude plugin diverge from them. The check allows the known
+    metadata keys instead of denying known component keys, so a component key Claude Code adds later is still caught.
+    """
+    if CLAUDE_PLUGIN_MANIFEST not in manifests:
+        return [f"{CLAUDE_PLUGIN_MANIFEST} is missing, so a clone into ~/.claude/skills/ loads no commands"]
+    try:
+        claude = agent_plugin.load_json(repo / CLAUDE_PLUGIN_MANIFEST)
+        package = agent_plugin.load_json(repo / "plugin.json")
+    except (OSError, ValueError) as error:
+        return [f"cannot read the manifests: {error}"]
+    if not isinstance(claude, dict) or not isinstance(package, dict):
+        return ["a manifest is not a JSON object"]
+    problems = [f"{CLAUDE_PLUGIN_MANIFEST} {key} {claude.get(key)!r} != plugin.json {key} {package.get(key)!r}"
+                for key in ("name", "version") if claude.get(key) != package.get(key)]
+    problems += [f"{CLAUDE_PLUGIN_MANIFEST} declares {key!r}, which is not a metadata key"
+                 for key in sorted(set(claude) - CLAUDE_METADATA_KEYS)]
+    return problems
 
 
 def check(repo: Path) -> list[dict]:
@@ -186,4 +285,8 @@ def check_installed(repo: Path) -> list[dict]:
             return results
         results += check_package("codex", roots["codex"], roots["codex"].parent, codex_discovery)
         results += check_package("hermes", roots["hermes"], roots["hermes"].parent, hermes_discovery)
+        shipped = sorted(f"{host}: {path.relative_to(root).as_posix()}" for host, root in roots.items()
+                         for path in root.rglob("*") if HOST_PLUGIN_MANIFEST_DIRS & set(path.relative_to(root).parts))
+        results.append({"file": "install:synced Codex and Hermes packages carry no host plugin manifest",
+                        "passed": not shipped, "missing": shipped})
         return results

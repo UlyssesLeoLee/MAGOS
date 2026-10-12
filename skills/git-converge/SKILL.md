@@ -26,13 +26,14 @@ Examples: `/git-converge agent/release`, `$git-converge agent/release --apply`, 
 ## Arguments
 
 - Codex: the arguments are the text that follows `$git-converge` in the user's message.
+- Plugin installs prefix the name with the plugin name: `/magos:git-converge` in Claude Code and Hermes, `$magos:git-converge` in Codex. The arguments follow it the same way (Claude Code appends them as `ARGUMENTS: ...`).
 - Hermes: the arguments are the instruction Hermes appends after the skill content, introduced by "The user has provided the following instruction alongside the skill invocation:" (single command) or `User instruction:` (stacked commands). An empty instruction means no arguments.
 
 If `--help` is present, even with other arguments, answer from the inline Usage section above and stop before any tool call, file read, or repository inspection. If the branch is missing, show this help and ask for it; for an unknown option, explain the error and show this help. Do not inspect or change the repository in these error cases. Read the shared files below only for a normal invocation.
 
 ## Explicit invocation only
 
-A semantic match or automatic skill selection is not authorization to write. Codex disables implicit selection for this adapter through `agents/openai.yaml`; Hermes has no per-skill switch, so this rule applies there by instruction. An explicit invocation is the user's `/git-converge` command (Hermes renders it as "The user has invoked the "git-converge" skill" followed by the arguments) or `$git-converge` in Codex. If this adapter was selected without such an invocation, preview at most and merge and delete nothing.
+A semantic match or automatic skill selection is not authorization to write. Codex disables implicit selection for this adapter through `agents/openai.yaml`; Hermes has no per-skill switch, so this rule applies there by instruction. An explicit invocation is the user's `/git-converge` command (Hermes renders it as "The user has invoked the "git-converge" skill" followed by the arguments) or `$git-converge` in Codex. With a plugin install, the user's `/magos:git-converge` (Claude Code, Hermes) or `$magos:git-converge` (Codex) is the same explicit invocation; in Claude Code, the `/magos:Git*` command of the same name is the preferred form. If this adapter was selected without such an invocation, preview at most and merge and delete nothing.
 
 ## Shared files
 

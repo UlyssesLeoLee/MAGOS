@@ -17,7 +17,7 @@
 #   (f_load_json:Function {name: "load_json", type: "function", signature: "load_json(path: Path)"}),
 #   (f_load_json_pairs:Function {name: "load_json.pairs", type: "function", signature: "pairs(items)"}),
 #   (f_is_link:Function {name: "is_link", type: "function", signature: "is_link(path: Path) -> bool"}),
-#   (f_is_link_lambda_108_61:Function {name: "is_link.lambda_108_61", type: "function", signature: "lambda_108_61()"}),
+#   (f_is_link_lambda_110_61:Function {name: "is_link.lambda_110_61", type: "function", signature: "lambda_110_61()"}),
 #   (f_git_lines:Function {name: "git_lines", type: "function", signature: "git_lines(root: Path, *arguments: str) -> list[str]"}),
 #   (f_is_work_tree_root:Function {name: "is_work_tree_root", type: "function", signature: "is_work_tree_root(root: Path) -> bool"}),
 #   (f_walk_package:Function {name: "walk_package", type: "function", signature: "walk_package(root: Path, skip: set[str]) -> tuple[list[str], list[str]]"}),
@@ -32,12 +32,12 @@
 #   (f_check_mcp:Function {name: "check_mcp", type: "function", signature: "check_mcp(root: Path) -> list[str]"}),
 #   (f_guarded:Function {name: "guarded", type: "function", signature: "guarded(compute) -> list[str]"}),
 #   (f_check:Function {name: "check", type: "function", signature: "check(root: Path) -> list[dict]"}),
-#   (f_check_lambda_345_56:Function {name: "check.lambda_345_56", type: "function", signature: "lambda_345_56()"}),
-#   (f_check_lambda_344_91:Function {name: "check.lambda_344_91", type: "function", signature: "lambda_344_91()"}),
-#   (f_check_lambda_343_9:Function {name: "check.lambda_343_9", type: "function", signature: "lambda_343_9()"}),
-#   (f_check_lambda_341_34:Function {name: "check.lambda_341_34", type: "function", signature: "lambda_341_34()"}),
-#   (f_check_lambda_338_9:Function {name: "check.lambda_338_9", type: "function", signature: "lambda_338_9()"}),
-#   (f_check_lambda_336_72:Function {name: "check.lambda_336_72", type: "function", signature: "lambda_336_72()"}),
+#   (f_check_lambda_347_56:Function {name: "check.lambda_347_56", type: "function", signature: "lambda_347_56()"}),
+#   (f_check_lambda_346_91:Function {name: "check.lambda_346_91", type: "function", signature: "lambda_346_91()"}),
+#   (f_check_lambda_345_9:Function {name: "check.lambda_345_9", type: "function", signature: "lambda_345_9()"}),
+#   (f_check_lambda_343_34:Function {name: "check.lambda_343_34", type: "function", signature: "lambda_343_34()"}),
+#   (f_check_lambda_340_9:Function {name: "check.lambda_340_9", type: "function", signature: "lambda_340_9()"}),
+#   (f_check_lambda_338_72:Function {name: "check.lambda_338_72", type: "function", signature: "lambda_338_72()"}),
 #   (f_check_discovery:Function {name: "check.discovery", type: "function", signature: "discovery() -> list[str]"}),
 #   (file)-[:CONTAINS]->(v_SCHEMA_URL),
 #   (file)-[:CONTAINS]->(v_MCP_SCHEMA_URL),
@@ -55,7 +55,7 @@
 #   (file)-[:CONTAINS]->(f_load_json),
 #   (f_load_json)-[:CONTAINS]->(f_load_json_pairs),
 #   (file)-[:CONTAINS]->(f_is_link),
-#   (f_is_link)-[:CONTAINS]->(f_is_link_lambda_108_61),
+#   (f_is_link)-[:CONTAINS]->(f_is_link_lambda_110_61),
 #   (file)-[:CONTAINS]->(f_git_lines),
 #   (file)-[:CONTAINS]->(f_is_work_tree_root),
 #   (file)-[:CONTAINS]->(f_walk_package),
@@ -70,12 +70,12 @@
 #   (file)-[:CONTAINS]->(f_check_mcp),
 #   (file)-[:CONTAINS]->(f_guarded),
 #   (file)-[:CONTAINS]->(f_check),
-#   (f_check)-[:CONTAINS]->(f_check_lambda_345_56),
-#   (f_check)-[:CONTAINS]->(f_check_lambda_344_91),
-#   (f_check)-[:CONTAINS]->(f_check_lambda_343_9),
-#   (f_check)-[:CONTAINS]->(f_check_lambda_341_34),
-#   (f_check)-[:CONTAINS]->(f_check_lambda_338_9),
-#   (f_check)-[:CONTAINS]->(f_check_lambda_336_72),
+#   (f_check)-[:CONTAINS]->(f_check_lambda_347_56),
+#   (f_check)-[:CONTAINS]->(f_check_lambda_346_91),
+#   (f_check)-[:CONTAINS]->(f_check_lambda_345_9),
+#   (f_check)-[:CONTAINS]->(f_check_lambda_343_34),
+#   (f_check)-[:CONTAINS]->(f_check_lambda_340_9),
+#   (f_check)-[:CONTAINS]->(f_check_lambda_338_72),
 #   (f_check)-[:CONTAINS]->(f_check_discovery),
 #   (f_adapter_skill_files)-[:CALLS]->(f_skill_md_of),
 #   (f_check)-[:CALLS]->(f_guarded),
@@ -84,13 +84,13 @@
 #   (f_check_containment)-[:CALLS]->(f_tracked_files),
 #   (f_check_containment)-[:USES]->(v_ADAPTER_REFERENCE),
 #   (f_check_discovery)-[:CALLS]->(f_discovered_skills),
-#   (f_check_lambda_336_72)-[:CALLS]->(f_check_manifest),
-#   (f_check_lambda_338_9)-[:CALLS]->(f_check_version),
-#   (f_check_lambda_341_34)-[:CALLS]->(f_skill_problems),
-#   (f_check_lambda_343_9)-[:CALLS]->(f_skill_problems),
-#   (f_check_lambda_343_9)-[:USES]->(v_ROOT_SKILL_NAME),
-#   (f_check_lambda_344_91)-[:CALLS]->(f_check_containment),
-#   (f_check_lambda_345_56)-[:CALLS]->(f_check_mcp),
+#   (f_check_lambda_338_72)-[:CALLS]->(f_check_manifest),
+#   (f_check_lambda_340_9)-[:CALLS]->(f_check_version),
+#   (f_check_lambda_343_34)-[:CALLS]->(f_skill_problems),
+#   (f_check_lambda_345_9)-[:CALLS]->(f_skill_problems),
+#   (f_check_lambda_345_9)-[:USES]->(v_ROOT_SKILL_NAME),
+#   (f_check_lambda_346_91)-[:CALLS]->(f_check_containment),
+#   (f_check_lambda_347_56)-[:CALLS]->(f_check_mcp),
 #   (f_check_manifest)-[:CALLS]->(f_load_json),
 #   (f_check_manifest)-[:CALLS]->(f_validate),
 #   (f_check_manifest)-[:USES]->(v_PLUGIN_SCHEMA),
@@ -116,8 +116,9 @@ Sources: https://agent-plugins.org/specification (1.0.0), the manifest schema be
 https://agentskills.io/specification as the reference validator skills-ref codes them. No official Agent Plugins
 validator exists, and clients must not fetch schemas while loading (§5.2), so the schema is mirrored here.
 
-Plugin clients discover only skills/<dir>/SKILL.md (§6.1, §7.1). They see the seven command adapters; the
-orchestrator SKILL.md at the package root is reached through the adapters' ../../ paths and is not a plugin skill.
+Plugin clients discover only skills/<dir>/SKILL.md (§6.1, §7.1). They see the seven command adapters and the
+git-orchestrator entry skill; the orchestrator SKILL.md at the package root is not a plugin skill, so the entry skill
+and the adapters reach it through their ../../ paths.
 """
 
 import json
@@ -157,7 +158,8 @@ PLUGIN_SCHEMA = {
 ANNOTATIONS = {"$schema", "$id", "title", "description"}
 TYPES = {"object": dict, "string": str, "array": list}
 
-EXPECTED_PLUGIN_SKILLS = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-recommend", "git-recon", "git-sweep"]
+EXPECTED_PLUGIN_SKILLS = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-orchestrator",
+                         "git-recommend", "git-recon", "git-sweep"]
 ROOT_SKILL_NAME = "multi-agent-git-orchestrator"
 ALLOWED_FIELDS = {"name", "description", "license", "allowed-tools", "metadata", "compatibility"}
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -448,7 +450,7 @@ def check(root: Path) -> list[dict]:
         ("plugin: plugin.json is a valid Agent Plugins 1.0.0 manifest", lambda: check_manifest(root)),
         ("plugin: manifest version matches SKILL.md metadata.version and references/commands.md",
          lambda: check_version(root)),
-        ("plugin: skills/ discovery (§7.1) finds exactly the seven command adapters", discovery),
+        ("plugin: skills/ discovery (§7.1) finds exactly the seven command adapters and git-orchestrator", discovery),
         ("plugin: every discovered skill meets Agent Skills (strict YAML, allowed fields, name = directory, "
          "string-only metadata)", lambda: [problem for path in found for problem in skill_problems(path, path.parent.name)]),
         ("plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules",
