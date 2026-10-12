@@ -680,6 +680,20 @@ Two phases, and nothing happens without `--apply`:
 /GitSweep agent/release --apply --remote upstream    sweep upstream instead of origin
 ```
 
+**Arguments**: `<branch>` (required, the local branch that receives everything), `--apply` (actually run), `--discard-ignored` (passed to phase 1: also clear worktrees that hold `.env`), `--remote <name>` (the remote to sweep, `origin` by default; unlike the read-only commands' `--remote` switch it takes a value and never fetches).
+
+**What stays on the remote** (each one is reported with its reason):
+
+| Status | Meaning |
+|---|---|
+| `PENDING_PUSH` | Merged only locally; push `<branch>` and rerun to delete it |
+| `KEPT_NOT_MERGED` | Holds commits the remote does not keep elsewhere |
+| `KEPT_LOCAL` | The local branch of the same name was kept (blocked), so the remote one stays too |
+| `STALE` | The live remote branch moved since the plan; skipped |
+| Protected | The remote default, `main`, `<branch>`, and any branch with evidence of a long-lived role (integration, staging, release, archive) |
+
+At apply time it first checks the live remote's default branch and branch tips and stops if they differ from what it recorded; run `git fetch` and retry.
+
 It never pushes commits or tags, never force-pushes, and never deletes the remote default branch, `main`, or `<branch>` itself. Each remote branch is deleted on its own with a lease on its recorded SHA, so the remote refuses if the branch moved meanwhile. Deleting a remote branch closes open pull requests that use it as their head. The report lists every deleted branch with its SHA (`git push <remote> <sha>:refs/heads/<name>` restores it).
 
 ---
