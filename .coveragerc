@@ -1,0 +1,12 @@
+[run]
+source = .
+relative_files = True
+omit =
+    tests/*
+    .venv/*
+    .quality/*
+    */__pycache__/*
+
+[report]
+show_missing = True
+skip_empty = True

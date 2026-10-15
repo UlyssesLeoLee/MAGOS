@@ -103,6 +103,7 @@ Load `references/commands.md` when command-specific arguments, output contracts,
 7. **Integration is serialized.** Only one actor writes the protected integration branch at a time.
 8. **Reconnaissance is non-destructive by default.** Investigate before mutating.
 9. **Unknown is not safe.** Do not infer ownership, remote freshness, semantic dependencies, or merge safety without evidence.
+10. **A lane's files are planned before the lane exists.** Where the lane guard is installed, creating a branch or worktree needs a registered file manifest; overlap with another branch or worktree is denied at creation and every conflicting branch is named (`references/lane-split.md`). Existing lanes are never stopped.
 
 ## Branch Strategy
 
@@ -192,7 +193,8 @@ Before creating anything:
 - inspect current branch/worktree state and existing lane ownership;
 - require a clean or explicitly understood baseline;
 - run the repository's normal baseline checks and record pre-existing failures;
-- capture `<base-branch>` and `<base-SHA>`.
+- capture `<base-branch>` and `<base-SHA>`;
+- plan the new lane's files first: `check`, then `plan` (`references/lane-split.md`): always for a worktree, and for a branch once other lanes exist; a denial names the conflicting lanes.
 
 Do not create a nested/redundant worktree when already isolated.
 
@@ -225,6 +227,8 @@ Fallback when no native isolation exists:
 ```bash
 git worktree add <path> -b agent/<task-id>-<short-name> <base-branch>
 ```
+
+Register the lane's manifest first (`magos_guard.py plan --branch agent/<task-id>-<short-name> --paths <files>`) as its own step, then create exactly that branch; release the claim when the lane is integrated or abandoned.
 
 Keep unrelated refactors outside the lane unless approved as separate scope.
 
@@ -337,6 +341,8 @@ Recommended integration: merge | squash-merge | cherry-pick <commits> | reject
 Never:
 
 - let parallel agents edit the same writable checkout;
+- create a branch or worktree without a registered file manifest where the lane guard applies, or bypass, disable or edit the guard (`override`, `arm`, `disarm`, `install`, `magos.*` config, `core.hooksPath`, `GIT_CONFIG_*`, `.git/hooks`, `.git/magos`): only the user does;
+- delete a lane that holds an open guard claim as if it were unowned;
 - give repository-specific branch/worktree advice without inspecting available state first;
 - recommend a branching model or branch restructure without first classifying the model the repository actually follows;
 - impose a long-lived branch model (for example gitflow-style) where the repository has none and no need was shown;
@@ -351,4 +357,4 @@ Never:
 - cherry-pick without dependency checking;
 - integrate from an approval whose lane HEAD or target branch has changed.
 
-For explicit command contracts, read `references/commands.md`. For repository investigation and recommendation rules, read `references/reconnaissance.md`. For branching-model design or audit, read `references/branch-strategy.md`. For edge cases and the full operation matrix, read `references/decision-matrix.md`. For lifecycle data, read `references/handoff-and-state.md`. For rationale and source patterns, read `references/design-rationale.md` only when needed.
+For planning lane files and the creation guard, read `references/lane-split.md`. For explicit command contracts, read `references/commands.md`. For repository investigation and recommendation rules, read `references/reconnaissance.md`. For branching-model design or audit, read `references/branch-strategy.md`. For edge cases and the full operation matrix, read `references/decision-matrix.md`. For lifecycle data, read `references/handoff-and-state.md`. For rationale and source patterns, read `references/design-rationale.md` only when needed.

@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+Source-SHA256: `bc0cdc56507e68c2dabbc2d1aa0ab0bc2746c6b3ac0ec8f70397c6616a8ceb54`
 
 ## Test Strategy
 
@@ -11,21 +11,21 @@ separate project test worktree described in `AGENTS.md`). Three levels:
 
 1. **Pure unit tests** import `scripts/magos_guard.py` as a module: manifest parsing, normalisation, the glob-intersection
    dynamic programme (checked against a brute-force oracle that enumerates a universe of candidate paths), the decision
-   table, message rendering in both languages, the command lexer and detector.
+   table, message rendering in both languages, the command lexer and detector, the tamper filter.
 2. **Real-Git integration tests** build throw-away repositories in `tmp_path` with real linked worktrees (committed-ahead
-   branch, dirty worktree, untracked file, rename, delete, merge or rebase in progress, locked and prunable worktree,
-   remote-tracking branch ahead of the target, case collision, unborn repository, detached HEAD) and drive the CLI in
-   process (`main(argv)`) and as a subprocess. Git runs with an isolated `HOME`, `GIT_CONFIG_GLOBAL` and
-   `GIT_CONFIG_NOSYSTEM`.
+   branch, dirty worktree, untracked file, rename, delete, detached worktree with commits, merge or rebase in progress,
+   locked and prunable worktree, remote-tracking branch ahead of the target, bare repository, case collision, unborn
+   repository) and drive the CLI in process (`main(argv)`) and as a subprocess. Git runs with an isolated `HOME`,
+   `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_NOSYSTEM`.
 3. **Host-protocol and process tests** feed Claude, Codex and Hermes PreToolUse payloads (including PowerShell BOM and
-   CRLF stdin) to `hook`, run the embedded `HOOK_SH` under Git's `sh`, run `run-guard.cmd` through cmd.exe and `sh`, and
-   run two concurrent planners in separate processes.
+   CRLF stdin) to `hook`, run the embedded `HOOK_SH` through real Git (`arm`) and directly under Git's `sh`, run
+   `run-guard.cmd` through cmd.exe and `sh`, and run two concurrent planners in separate processes.
 
-The frozen detector corpus (`tests/codex/guard/data/corpus.jsonl`, 150 or more labelled command strings) is replayed with
-precision and recall floors; every row is replayed again against an armed repository with the host hook disabled to prove
-the git layer catches what the lexer misses. Coverage is measured with line coverage for `scripts/magos_guard.py` and for
-every tracked source of the project (`__init__.py`, `scripts/sync_hosts.py`), each strictly above 90 percent; the two
-older files are exercised in process by `test_project_sources.py`.
+The frozen detector corpus (`tests/codex/guard/data/corpus.jsonl`, 1,155 labelled command strings) is replayed with
+precision and recall floors; every residual miss and false positive is listed in `data/known_gaps.json`. Coverage is
+measured with coverage.py (line coverage) for `scripts/magos_guard.py` and for every tracked source of the project
+(`__init__.py`, `scripts/sync_hosts.py`), each strictly above 90 percent; the two older files are exercised in process by
+`test_project_sources.py`.
 
 ## Test Cases
 
@@ -33,63 +33,69 @@ older files are exercised in process by `test_project_sources.py`.
 | --- | --- | --- | --- |
 | TC-001 | Manifest entries `src/a/`, `src\a\x.py`, `./src//a`, `Src/A`, NFD and NFC spellings | Normalised to one canonical, case-folded NFC form; directory entries also match everything below | tests/codex/guard/test_manifest.py::test_normalisation |
 | TC-002 | Entries that are empty, start with `:` or `!`, are absolute (`/x`, `C:x`, UNC), contain `..`, `.git`, `**` inside a segment, match everything (`**`, `*/*`), or exceed 200 entries or 1024 characters | Exit 12 with every reason listed; nothing is written | tests/codex/guard/test_manifest.py::test_invalid_entries |
-| TC-003 | `pages/[id].tsx` against its literal path and against `pages/i.tsx` | Brackets are ordinary characters: literal path overlaps, one-character path does not; the optional class alternative over-approximates | tests/codex/guard/test_manifest.py::test_brackets |
-| TC-004 | Randomised pairs of patterns over a small alphabet, 500 or more, including `docs/**` vs `**/*.md`, `src/*.py` vs `src/a?.py`, `a/**/b` vs `a/x/y/b`, `*.lock` vs `web/package-lock.json` | Overlap predicate equals the brute-force oracle on every pair | tests/codex/guard/test_manifest.py::test_overlap_matches_oracle |
-| TC-005 | Changed file `src/c` against entry `src/c/x.py`; `src/a` against `src/ab.py` | File equal to a proper prefix of the entry overlaps; `src/a` does not overlap `src/ab.py` | tests/codex/guard/test_manifest.py::test_file_dir_rule |
-| TC-006 | Branch ahead of the target by a commit touching `src/x.py`; manifest names `src/x.py` | Deny exit 10, branch named, evidence kind committed, file listed | tests/codex/guard/test_evidence.py::test_committed_overlap |
-| TC-007 | Sibling worktree with an unstaged edit, a staged edit and an untracked file inside the manifest | Deny, evidence kind uncommitted with the three paths; the sibling worktree is byte-identical afterwards | tests/codex/guard/test_evidence.py::test_uncommitted_overlap |
-| TC-008 | Rename `a.py` to `b.py` committed on another branch; manifest names `a.py` or `b.py` | Both names are in the footprint; either manifest is denied | tests/codex/guard/test_evidence.py::test_rename_both_sides |
-| TC-009 | Branch squash-merged into the target (tip not an ancestor) | Stops claiming; a later divergent edit claims again | tests/codex/guard/test_evidence.py::test_squash_merged_branch |
-| TC-010 | Merge, rebase, cherry-pick or revert in progress in a worktree; `git am` in progress; unreadable operation state | Warning OP_IN_PROGRESS for the first group; UNKNOWN for `am` or unreadable state | tests/codex/guard/test_evidence.py::test_in_progress_operations |
-| TC-011 | Remote-tracking branch ahead of the target with no local copy; remote copy diverged from the local copy | Claimant with warning REMOTE_AS_OF_LAST_FETCH; diverged copy is UNKNOWN | tests/codex/guard/test_evidence.py::test_remote_tracking |
-| TC-012 | Target resolution: `--target`, `magos.target`, `origin/HEAD`, `init.defaultBranch`, exactly one of main/master/develop/trunk, several candidates, none | Confidence high or medium (TARGET_INFERRED); several or none gives UNKNOWN TARGET_UNCERTAIN naming `git config magos.target <branch>` | tests/codex/guard/test_evidence.py::test_target_resolution |
-| TC-013 | Dirty primary worktree with 1,000 deleted paths under `tests/`; manifest under `references/` | Allow (presence in a checkout claims nothing); manifest naming one of the deleted paths is denied | tests/codex/guard/test_evidence.py::test_dirty_primary_replica |
-| TC-014 | `plan` with no claimant overlap | Exit 0, claim file written with all fields, audit line appended, creation command printed | tests/codex/guard/test_plan_store.py::test_plan_registers_claim |
-| TC-015 | Second `plan` with identical entries; with different entries; with different entries and `--amend`; removal-only amend | No-op exit 0; exit 14; re-judged with own claim excluded; removal-only skips overlap | tests/codex/guard/test_plan_store.py::test_amend_semantics |
-| TC-016 | Two lanes with overlapping declared manifests, lane two planned second | Deny naming lane one as `declared`, planned only | tests/codex/guard/test_plan_store.py::test_declared_overlap |
-| TC-017 | Two processes plan overlapping manifests at the same instant; two plan disjoint manifests | Exactly one overlapping planner wins and the loser is denied naming it; both disjoint planners win | tests/codex/guard/test_plan_store.py::test_concurrent_planners |
-| TC-018 | `release` of a planned claim, of an active lane, of an unknown claim | Deleted and audited; exit 16 with the claim kept; exit 0 with a note | tests/codex/guard/test_plan_store.py::test_release |
-| TC-019 | `list` and `list --drift --json` | States planned, active, idle; drift lists footprint files matched by no entry; exit 0 | tests/codex/guard/test_plan_store.py::test_list_states_and_drift |
-| TC-020 | `override` without a console, with a wrong retyped fingerprint, with a right one; replanning after a changed repository | Exit 17 without hang; refusal; one-shot record used once; changed target sha voids it | tests/codex/guard/test_plan_store.py::test_override_gate |
-| TC-021 | Lock file held by another process for longer than the timeout; claim file replaced while a reader reads | Exit 13 after 30 s (shortened by a test hook); reader retries `PermissionError` and never sees a partial claim | tests/codex/guard/test_plan_store.py::test_lock_timeout_and_atomic_write |
-| TC-022 | Branch names: reserved device names, `D/F` prefix clash with a claim or branch, NFC or case collision, forbidden characters, over 100 characters | Rejected with the exact reason before any claim is written | tests/codex/guard/test_plan_store.py::test_branch_names |
-| TC-023 | Detector on every lane-creating form (`worktree add -b`, `switch -c`, `checkout -b`, `branch new`, `branch -m`, `update-ref refs/heads/x`, `symbolic-ref`, refspec pushes) in bash, PowerShell and cmd, with `-C`, `-c`, env prefixes, chains, `bash -c`, `-EncodedCommand` | Recognised with kind, names, repository hint and worktree path | tests/codex/guard/test_detector.py::test_lane_creating_forms |
-| TC-024 | Detector on negatives: `branch --list`, `branch -d`, `worktree list`, `checkout file`, `log --branches`, strings inside `echo`, comments and heredocs | Not recognised as creation | tests/codex/guard/test_detector.py::test_negatives |
-| TC-025 | Frozen corpus replay | Precision at least 0.97 and recall at least 0.85 on non-adversarial rows; residual misses listed in `known_gaps.json` | tests/codex/guard/test_detector.py::test_corpus_floors |
-| TC-026 | Dynamic words (`git $CMD`, backticks, `%x%`) in lane position; unresolved repository with a lane verb | Deny UNPARSEABLE in armed repositories; allowed in auto mode for branch-only creation | tests/codex/guard/test_detector.py::test_dynamic_words |
-| TC-027 | Claude, Codex and Hermes payloads for Bash, PowerShell, terminal, EnterWorktree, Agent with worktree isolation, session MCP tools | Allow is `{}`; deny is the single universal JSON object, exit 0, empty stderr, full conflict list in the message | tests/codex/guard/test_hook.py::test_host_payloads |
-| TC-028 | Named creation with no claim; with a claim; with a claim whose files a sibling dirtied after planning; claim for a different worktree path | NO_MANIFEST with the exact plan command; allow; revalidation denies naming the sibling; path mismatch denied | tests/codex/guard/test_hook.py::test_creation_revalidation |
-| TC-029 | Auto-named creations (agent isolation, `claude --worktree`, `gh pr checkout`) with and without another lane | UNPLANNABLE deny when another lane exists or the repository is armed; allow otherwise | tests/codex/guard/test_hook.py::test_unplannable |
-| TC-030 | Tamper commands: `core.hooksPath`, `GIT_CONFIG_COUNT`, `git config magos.guard`, writes into `.git/hooks`, `override`, `arm`, `install`, also inside `bash -c`; allowed reads such as `git config --get magos.guard` and `for-each-ref` | PROTECTED deny for the first group; allow for the reads | tests/codex/guard/test_hook.py::test_tamper_protection |
-| TC-031 | Hook with a crash after a recognised creation; with a crash on an unrelated command; PowerShell stdin with BOM and CRLF | Deny JSON; `{}` plus a stderr warning; parsed normally | tests/codex/guard/test_hook.py::test_failure_handling |
-| TC-032 | `arm`, `arm --strict`, `arm --dry-run`, `arm` twice, with `core.hooksPath` set, with differing worktree hook directories, with an existing `.magos-prev` | Files written and printed; idempotent; exit 3 with the reason in the refusals; nothing written in dry run | tests/codex/guard/test_gitlayer.py::test_arm_disarm |
-| TC-033 | In an armed repository: `git branch x`, `switch -c`, `checkout -b`, `checkout --orphan`, `update-ref refs/heads/x`, `worktree add -b`, `fetch . main:x`, DWIM switch of a remote-only name, push creating a branch | Each vetoed with the MAGOS message, no branch, no worktree directory, no admin directory left; the same commands pass once a claim exists | tests/codex/guard/test_gitlayer.py::test_reference_transaction_veto |
-| TC-034 | Armed repository: `commit`, `tag`, `stash`, `fetch`, `pull`, `gc`, `pack-refs`, `switch` to an existing branch, `worktree add --detach`, `worktree add <path> <existing-branch>`, rebase | All pass untouched | tests/codex/guard/test_gitlayer.py::test_reference_transaction_passes |
-| TC-035 | `HOOK_SH` under Git Bash `sh` and `dash`; run from a linked worktree and a subdirectory; foreign hook chained; strict mode with exempt and non-exempt branches | Same decisions; chained hook receives the original arguments and stdin; strict vetoes the first advance of a non-exempt unclaimed branch | tests/codex/guard/test_gitlayer.py::test_hook_sh_matrix |
-| TC-036 | `install --host claude|codex|hermes`, `--dry-run`, `--home` | Canonical copy written with the same relative layout; generated snippet printed; user configuration files untouched | tests/codex/guard/test_gitlayer.py::test_install |
-| TC-037 | `doctor` in healthy, missing-hook and mismatched-hook repositories | Reports problems and exits 1; self-test branch removed; exit 0 when healthy | tests/codex/guard/test_gitlayer.py::test_doctor |
-| TC-038 | `run-guard.cmd` through cmd.exe and sh with guard exit 0, deny JSON, crash, exit 7, missing script, no Python, `MAGOS_GUARD=off`, a space and CJK directory | Pass-through of stdout and stdin; strict gives exit 2, soft gives warning and exit 0; off gives exit 0 | tests/codex/guard/test_launcher.py::test_launcher_matrix |
-| TC-039 | End-to-end replica of this repository: dirty primary worktree, branches `develop_claude`, `test_claude`, `tests_codex`, new lane for `SKILL.md` and `references/lane-split.md` | Allowed; a second lane for `references/` is denied naming the first | tests/codex/guard/test_pressure.py::test_repository_replica |
-| TC-040 | Armed replay of the corpus with the host hook disabled | No new `refs/heads/*` except the documented hook-invisible routes | tests/codex/guard/test_pressure.py::test_armed_replay |
-| TC-041 | `hooks/hooks.json` parse and matcher anchors; `.gitattributes` endings; the package contract rows | Valid schema, anchored matchers, LF endings; no third file in `.claude-plugin/`; description unchanged at 1017 characters | tests/codex/guard/test_package.py::test_wiring_and_package_rows |
-| TC-042 | In-process calls of `scripts/sync_hosts.py` and `__init__.py` | Every statement path of both older files is exercised for the project coverage gate | tests/codex/guard/test_project_sources.py::test_sync_hosts_and_init |
+| TC-003 | `pages/[id].tsx` against its literal path and against `pages/i.tsx` | Brackets are ordinary characters: literal path overlaps; the class reading over-approximates and can only add conflicts | tests/codex/guard/test_manifest.py::test_brackets_are_ordinary_characters |
+| TC-004 | Every pair of 63 patterns over a small alphabet (3,969 pairs), including `**` and `?` combinations | Overlap predicate equals the brute-force oracle on every pair | tests/codex/guard/test_manifest.py::test_overlap_matches_oracle |
+| TC-005 | `docs/**` vs `**/*.md`, `*.lock` vs `web/package-lock.json`, `src/a` vs `src/ab.py`, a changed file `src/c` against entry `src/c/x.py` | Exact intersection, not a text prefix; a file equal to a proper prefix of the entry's literal part collides | tests/codex/guard/test_manifest.py::test_file_dir_rule |
+| TC-006 | Branch ahead of the target by a commit touching `src/a.py`; manifest names `src/a.py` | Deny exit 10, branch named, evidence kind committed, file listed | tests/codex/guard/test_plan_store.py::test_committed_overlap_names_branch |
+| TC-007 | Sibling worktree with an unstaged edit, a staged edit and an untracked file inside the manifest | Deny, evidence kind uncommitted with the three paths; the sibling worktree is byte-identical afterwards | tests/codex/guard/test_plan_store.py::test_uncommitted_overlap_and_sibling_untouched |
+| TC-008 | Rename and delete committed or staged on another branch; manifest names the old or the new path | Both names are in the footprint; either manifest is denied | tests/codex/guard/test_plan_store.py::test_rename_claims_both_names_and_delete_claims |
+| TC-009 | Branch squash-merged into the target (tip not an ancestor); later divergent edit | Stops claiming after the squash; a later divergent edit claims again | tests/codex/guard/test_plan_store.py::test_squash_merged_branch_stops_claiming |
+| TC-010 | Merge in progress in a worktree; `git am` state; unreadable operation state | Warning OP_IN_PROGRESS for the first; UNKNOWN OP_METADATA_UNREADABLE for `am` | tests/codex/guard/test_plan_store.py::test_in_progress_operations |
+| TC-011 | Remote-tracking branch ahead of the target with no local copy; same name checked out locally; remote copy ahead of the local one | One claimant per branch; warning REMOTE_AS_OF_LAST_FETCH | tests/codex/guard/test_plan_store.py::test_remote_tracking_branch_ahead |
+| TC-012 | Target resolution: `--target`, `magos.target`, `origin/HEAD`, `init.defaultBranch`, exactly one of main/master/develop/trunk, several candidates, none, a `--target` that does not resolve | Confidence high or medium (TARGET_INFERRED); several or none gives UNKNOWN TARGET_UNCERTAIN naming `git config magos.target <branch>`; diverged local and remote copies are UNKNOWN | tests/codex/guard/test_plan_store.py::test_target_resolution |
+| TC-013 | Dirty primary worktree with 300 deleted paths; manifests under other directories and naming one deleted path | Allow for the unrelated manifest (presence in a checkout claims nothing); deny for the deleted path | tests/codex/guard/test_plan_store.py::test_dirty_primary_replica |
+| TC-014 | `plan` with no claimant overlap | Exit 0, claim file written with all fields, audit line appended, quoted creation command printed | tests/codex/guard/test_plan_store.py::test_plan_registers_claim_and_prints_creation_command |
+| TC-015 | Second `plan` with identical entries; with different entries; with different entries and `--amend`; removal-only amend; a new `--worktree` path | No-op exit 0; exit 14; re-judged with own claim excluded; removal-only skips overlap; a different registered path needs `--amend` | tests/codex/guard/test_plan_store.py::test_amend_semantics |
+| TC-016 | Two lanes with overlapping declared manifests, lane two planned second | Deny naming lane one as `declared`, planned only; nothing registered for lane two | tests/codex/guard/test_plan_store.py::test_declared_manifests_collide_even_before_any_branch_exists |
+| TC-017 | Two processes plan overlapping manifests at the same instant (three rounds); two plan disjoint manifests | Exactly one overlapping planner wins and the loser is denied naming one lane; both disjoint planners win | tests/codex/guard/test_plan_store.py::test_concurrent_planners_one_winner |
+| TC-018 | `release` of a planned claim, an unknown claim, a branch with unmerged work, a merged lane with a clean or a dirty worktree, an unreadable claim file | Deleted and audited; exit 0 with a note; exit 16; allowed when clean; exit 16 when dirty; the unreadable file is removed | tests/codex/guard/test_plan_store.py::test_release |
+| TC-019 | `list` and `list --drift --json` with planned, active, idle and drifting lanes | States planned, active, idle; drift lists footprint files matched by no entry; exit 0 | tests/codex/guard/test_plan_store.py::test_list_states_and_drift |
+| TC-020 | `override` without a console, with a wrong retyped fingerprint, with a right one; replanning; an expired record; a changed repository | Exit 17 without hang; refusal; one-shot record used once; changed target sha voids it | tests/codex/guard/test_plan_store.py::test_override_gate_and_consumption |
+| TC-021 | Lock held by another handle past the timeout; claim file replaced while a reader reads; `PermissionError` on replace and on read | Exit 13 (shortened by `MAGOS_LOCK_TIMEOUT`); retries; never a partial claim | tests/codex/guard/test_plan_store.py::test_lock_timeout_and_release |
+| TC-022 | Branch names: reserved device names, `D/F` prefix clash with a claim or branch, case collision, forbidden characters, over 100 characters, a leading dash | Rejected with the exact reason before any claim is written | tests/codex/guard/test_plan_store.py::test_branch_name_rules |
+| TC-023 | Detector on every lane-creating form in bash, PowerShell and cmd, with `-C`, `-c`, env prefixes, chains, `bash -c`, `-EncodedCommand`, heredocs, aliases, scripts on disk, bundled flags | Recognised with kind, names, repository hint and worktree path | tests/codex/guard/test_detector.py::test_lane_creating_forms |
+| TC-024 | Detector on negatives: `branch --list`, `branch -d`, `worktree list`, `checkout file`, strings inside `echo`, comments and heredocs | Not recognised as creation | tests/codex/guard/test_detector.py::test_negatives |
+| TC-025 | Frozen corpus replay | Precision at least 0.93 and recall at least 0.88 on non-adversarial rows; residual rows listed in `known_gaps.json` | tests/codex/guard/test_detector.py::test_corpus_floors_and_known_gaps |
+| TC-026 | Dynamic words (`git $CMD`, backticks, `%x%`) in lane position; a dynamic subcommand; unresolved repository with a lane verb | Flagged dynamic; denied UNPARSEABLE once the creation is guarded | tests/codex/guard/test_hook.py::test_dynamic_names |
+| TC-027 | Claude, Codex and Hermes payloads for Bash, PowerShell, terminal, EnterWorktree, Agent isolation, session MCP tools (also `hand_off_to_session`) | Allow is `{}`; deny is the single universal JSON object, exit 0, empty stderr, full conflict list in the message | tests/codex/guard/test_hook.py::test_every_host_gets_the_same_deny_object |
+| TC-028 | Named creation with no claim; with a claim; with a claim whose files a sibling dirtied after planning; claim for a different worktree path | NO_MANIFEST with the exact plan command; allow; revalidation denies naming the sibling; path mismatch denied | tests/codex/guard/test_hook.py::test_revalidation_denies_when_a_sibling_dirties_a_planned_file |
+| TC-029 | Auto-named creations (agent isolation, `gh pr checkout`, `hand_off_to_session`) with and without another lane | UNPLANNABLE deny when another lane exists or the repository is armed; allow otherwise | tests/codex/guard/test_hook.py::test_auto_named_worktrees_cannot_be_planned |
+| TC-030 | Tamper commands: `core.hooksPath`, `GIT_CONFIG_COUNT`, `git config magos.guard`, writes into `.git/hooks`, `override`, `arm`, `install`; ordinary commands that merely name them | PROTECTED deny for the writers; allow for reads, commit messages, greps and heredoc text | tests/codex/guard/test_detector.py::test_protected_denies_real_writers |
+| TC-031 | Hook with a crash after a recognised creation; with a crash on an unrelated command; PowerShell stdin with BOM and CRLF; git missing from PATH | Deny JSON; `{}` plus a stderr warning; parsed normally; deny | tests/codex/guard/test_hook.py::test_internal_errors_fail_closed_only_for_lane_creation |
+| TC-032 | `arm`, `arm --dry-run`, `arm` twice, with `core.hooksPath` set, with differing worktree hook directories, with a foreign `.magos-prev`; without a console | Files written and printed; idempotent; exit 3 with the reason; exit 17 without a console; nothing written in dry run | tests/codex/guard/test_gitlayer.py::test_arm_writes_the_hook_and_switches |
+| TC-033 | In an armed repository: `git branch`, `switch -c`, `checkout -b`, `checkout --orphan`, `update-ref refs/heads/x`, `fetch . main:x`, `worktree add -b` | Each vetoed with the MAGOS message, no branch, no worktree directory, no admin directory left; the same commands pass once a claim exists | tests/codex/guard/test_gitlayer.py::test_creations_without_a_claim_are_vetoed |
+| TC-034 | Armed repository: `commit`, `tag`, `stash`, `fetch`, `gc`, `pack-refs`, `switch` to an existing branch, `worktree add --detach`, `worktree add <path> <existing-branch>`, rebase, merge; commits on a lane that existed before arming | All pass untouched | tests/codex/guard/test_gitlayer.py::test_everything_else_passes |
+| TC-035 | `HOOK_SH` from a linked worktree and a subdirectory; foreign hook chained with its original stdin; 5,000-line transaction | Same decisions; chained hook sees prepared and committed; linear time | tests/codex/guard/test_gitlayer.py::test_disarm_restores_a_foreign_hook |
+| TC-036 | `install --host` with claude, codex and hermes, `--dry-run`, `--home` | Canonical copy written with the same relative layout; generated snippet printed with a quoted launcher; user configuration files untouched | tests/codex/guard/test_gitlayer.py::test_install_copies_the_guard_and_prints_the_snippet |
+| TC-037 | `doctor` in healthy, missing-hook, mismatched-hook, hook-bypassed and broken-backstop repositories | Reports problems and exits 1; self-test branch removed; exit 0 when healthy | tests/codex/guard/test_gitlayer.py::test_doctor |
+| TC-038 | `run-guard.cmd` through cmd.exe and `sh` with guard exit 0, deny JSON, crash, exit 7, missing script, no Python, `MAGOS_GUARD=off`, a space and CJK directory | Pass-through of stdout and stdin; strict gives exit 2, soft gives warning and exit 0; off gives exit 0 | tests/codex/guard/test_launcher.py::test_cmd_failure_map |
+| TC-039 | End-to-end replica of this repository: dirty primary worktree, branches `develop_claude`, `test_claude`, `tests_codex`, new lane for `SKILL.md` and `references/lane-split.md` | Allowed; a second lane for `references/` is denied naming the first | tests/codex/guard/test_pressure.py::test_replica_of_the_users_repository |
+| TC-040 | Work-around attempts in an armed repository (variable subcommand, substitution, `bash -c`, `-C`, other tools through the git layer) | Each denied by the host hook or vetoed by the git layer; no new `refs/heads/*` | tests/codex/guard/test_pressure.py::test_workaround_attempts_in_an_armed_repository |
+| TC-041 | `hooks/hooks.json` parse, anchored matchers and `shell`; `.gitattributes` endings; launcher executable bit; package contract rows | Valid schema, LF endings; no third file in `.claude-plugin/`; description unchanged | tests/codex/guard/test_package.py::test_hooks_json_wiring |
+| TC-042 | In-process calls of `scripts/sync_hosts.py` and `__init__.py` | Every statement path of both older files is exercised for the project coverage gate | tests/codex/guard/test_project_sources.py::test_plan_verify_apply_cycle |
+| TC-043 | Committed work on a detached worktree; `worktree add --detach` and `<path> <commit>` | The detached worktree claims its commits; the creation needs a claim keyed `detached/<directory>` | tests/codex/guard/test_review_fixes.py::test_detached_worktrees_need_a_manifest_keyed_by_their_directory |
+| TC-044 | Integrated lane without a workspace, fresh branch without a worktree, case-variant branch spelling | Idle claims stop blocking; fresh lanes keep blocking; spelling does not change the state | tests/codex/guard/test_review_fixes.py::test_fresh_branch_without_a_worktree_is_still_a_lane |
+| TC-045 | Bare repository with linked worktrees; submodule layout; locked worktree missing on disk | Guarded; the work tree is the repository top; UNKNOWN WORKTREE_UNREADABLE | tests/codex/guard/test_review_fixes.py::test_bare_repository_layout_is_guarded |
+| TC-046 | UTF-16 and ANSI manifest files; no username; a `--target` that does not resolve; an exhausted comparison budget | Read or rejected with a clear exit 12; plan still works; exit 11; BUDGET_EXCEEDED | tests/codex/guard/test_review_fixes.py::test_manifest_encodings |
 
 ## Boundary & Failure Cases
 
-- Empty manifest, 200 and 201 entries, 1024 and 1025 character entries, a manifest file outside and inside a worktree.
-- Repositories with no commits (unborn HEAD), detached HEAD, bare repository, shallow clone, no merge base (unrelated
-  history gives UNKNOWN NO_MERGE_BASE), submodule gitlink as a directory claim, more than 120 unmerged branches
-  (UNKNOWN TOO_MANY_CLAIMANTS), more than 5,000 paths in one claimant (coarsened to directory prefixes, never dropped).
-- Git failures: missing `git`, non-zero exit, timeout, `WinError 1455` retried twice; each ends as UNKNOWN GIT_FAILED or
-  GIT_MISSING and a denied `plan` or `check`.
+- Empty manifest, 200 and 201 entries, 1024 and 1025 character entries, a manifest file outside and inside a worktree,
+  UTF-8 with BOM, UTF-16 and ANSI encodings.
+- Repositories with no commits, detached HEAD, bare repository, submodule, no merge base (unrelated history gives the
+  warning UNRELATED_HISTORY and the branch is ignored), more than 120 unmerged local branches (UNKNOWN TOO_MANY_CLAIMANTS),
+  more than 300 remote-tracking branches (warning REMOTE_TRUNCATED), more than 5,000 paths in one claimant.
+- Git failures: missing `git` (an error, never "not a repository"), non-zero exit, timeout, `WinError 1455` retried
+  twice; each ends as UNKNOWN GIT_FAILED or GIT_MISSING and a denied `plan` or `check`.
 - Locale and encoding: non-ASCII branch and path names with `core.quotepath` forced off, case-insensitive collisions,
-  Unicode normalisation forms, trailing dots and spaces, Windows reserved names, long paths.
+  Unicode normalisation forms, trailing dots and spaces, Windows reserved names, Git Bash path spellings (`/c/Users/x`).
 - Concurrency: a claim written while a reader lists, two lock holders, a claim file removed between the existence test
   and the read in the git layer (treated as absent, transient deny).
 - Hostile input: huge stdin, invalid UTF-8, JSON that is not an object, unknown tool names, nested wrappers deeper than 3,
-  base64 that is not UTF-16LE.
+  base64 that is not UTF-16LE, a 100,000 character command (bounded filter).
 - Regression: a lane that merely checks out files without modifying them never claims them; a denial never creates a
-  branch, directory or administrative directory; an override never survives a changed target sha.
+  branch, directory or administrative directory; an override never survives a changed target sha; no hook denies a
+  commit, merge, edit or read inside an existing lane.
 
 ## Regression Scope
 

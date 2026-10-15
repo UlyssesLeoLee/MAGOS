@@ -68,4 +68,21 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --home C:\temp\m
 
 源码契约用例 `package/agent-plugin` 检查 Agent Plugins 1.0.0 格式：`plugin.json` 符合封闭的清单 schema，版本号与 `SKILL.md`、`references/commands.md` 一致，`skills/` 下恰好发现七个适配层且都符合 Agent Skills 规则，路径不越出插件根目录、没有链接。`python -X utf8 tests/codex/contracts/test_agent_plugin.py` 逐一植入各种缺陷（清单字段错误、版本号漂移、多余的链接、frontmatter 写法不合规等），确认每种都会被对应的检查发现；它还单独测试严格 frontmatter 读取器，并在 git 仓库里检查未暂存的新文件。
 
+## 车道守卫（强约束钩子）
+
+创建分支或工作树之前必须先登记计划修改的文件清单；清单与任何已有分支、工作树或已声明车道重叠时，创建动作被拒绝，并列出每一个冲突的分支与工作树。契约见 `references/lane-split.md`，实现是单文件 `scripts/magos_guard.py`（Python 3.9+，只用标准库，Git 2.36+）。守卫不属于 `sync_hosts.py` 的同步范围，也不改任何插件清单；它不会自己写入宿主配置。
+
+| 层 | 作用 | 怎么装 |
+| --- | --- | --- |
+| Claude Code 钩子 | 创建前拒绝（Bash、PowerShell、EnterWorktree、带 worktree 隔离的子代理） | 随插件加载根目录 `hooks/hooks.json`；也可 `py -3 scripts/magos_guard.py install --host claude` 生成用户级片段，自己合并进 `~/.claude/settings.json` |
+| Codex 钩子 | 同上（Bash） | `install --host codex` 生成 `~/.magos/guard/generated/codex.json`，自己合并进 `~/.codex/hooks.json`，并在 Codex 的 `/hooks` 里信任它 |
+| Hermes 钩子 | 同上（terminal） | `install --host hermes` 生成 `hermes.yaml`，自己合并进 `config.yaml`，首次使用时批准 |
+| Git 兜底 | 任何工具用 git 创建没有清单的分支，都被 `reference-transaction` 拒绝；不需要 Python | 在目标仓库里由用户在真实终端里运行 `arm`，`disarm` 撤销（都需要控制台），`doctor` 自检 |
+
+- `install` 把守卫和 `hooks/run-guard.cmd` 复制到 `~/.magos/guard/`（`--home` 或 `MAGOS_HOME` 可改），Codex 与 Hermes 的钩子都指向这份副本；升级 MAGOS 后重新运行 `install`。
+- 默认是 AUTO：命名的工作树创建总是受控，只建分支的创建仅在已有其他车道时受控，单工作树、无未合并分支的仓库不受影响。`arm` 后进入 ARMED：每个新分支都需要清单。
+- 关闭：`git config --local magos.guard off`（只关闭该仓库的宿主钩子），`disarm`（关闭 Git 兜底），`claude plugin disable magos`（关闭 Claude 插件钩子），宿主进程环境变量 `MAGOS_GUARD=off`。
+- 覆盖（`override`）、`arm`、`disarm`、`install` 只能由用户在自己的终端里运行；守卫的清单存放在 `<git 公共目录>/magos/`，不随 fetch、push、clone 传输。
+- 已知限制：钩子读命令文本，脚本或混淆命令可能漏判；Git 兜底看不到 `git -c core.hooksPath`、之后才设置的 `core.hooksPath`、直接改 `.git/refs`、libgit2 与克隆；Codex 钩子在基础设施故障时放行；Git 兜底否决发生在 git 创建引用时，带起点的 `switch -c` 与 `--orphan` 的检出步骤可能已经执行。详见 `references/lane-split.md` 第 12 节。
+
 `--verify` 只校验磁盘上的安装内容。参数灰字提示由各宿主的命令或 Skill 选择界面决定；更新安装文件后，可能需要重新载入宿主会话才能看到新的说明，界面效果仍需在对应宿主中单独检查。

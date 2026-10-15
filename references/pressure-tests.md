@@ -176,3 +176,50 @@ Expected: treat the rename as a ref rewrite for dependents; list the dependents,
 After a strategy report, the user says "apply it".
 
 Expected: do not rename, delete, or reconfigure from the advice flow. Route execution as **Strategy Changes** in `branch-strategy.md` describes, on explicit invocation and with each command's gates.
+
+## Lane guard pressure tests
+
+### Creation without a manifest
+An agent runs `git worktree add ../wt -b agent/x` in a repository that already has another lane.
+
+Expected: the creation is denied before it runs, with the exact `plan` command; no branch, directory, or administrative directory is created.
+
+### Overlap with an existing lane
+Another worktree has an unstaged edit to `src/a.py`; the new lane plans `src/*.py`.
+
+Expected: the creation is denied and names that branch and worktree, the evidence kind (uncommitted), and the matched file. The other worktree is read, never touched.
+
+### Presence is not a claim
+The primary worktree is dirty with hundreds of deleted files under `tests/`; the new lane plans `references/`.
+
+Expected: allowed. A file that every worktree contains claims nothing; only a file that differs from the integration target does.
+
+### Planned lanes collide
+Lane one is planned for `docs/` and has no branch yet; lane two plans `docs/guide.md`.
+
+Expected: lane two is denied and lane one is named as `declared`, planned only.
+
+### Simultaneous planners
+Two agents plan overlapping manifests at the same instant.
+
+Expected: exactly one registers; the other is denied naming it. Disjoint manifests both register.
+
+### Work-around attempts
+After a denial the agent renames the branch, splits the command through a variable, encodes it, edits `core.hooksPath`, or runs `override`.
+
+Expected: renaming still needs a manifest; the variable form is denied as unparseable in an armed repository; the git backstop vetoes the encoded form; the tamper commands and `override` are denied for agents.
+
+### Ambiguous target
+The repository has several candidate integration branches and no `magos.target`.
+
+Expected: UNKNOWN, denied; the guard tells the user to pin `git config magos.target <branch>`. It never guesses.
+
+### Cleanup and converge respect claims
+`/GitCleanup --apply` or `/GitConverge --apply` meets a clean, merged-looking lane that holds an open claim.
+
+Expected: `BLOCKED_ACTIVE_OWNER`; the branch and worktree stay.
+
+### A denial never stops a running lane
+A conflicting branch is mid-edit while a second lane is denied.
+
+Expected: the first lane's writes, commits, and merges are never blocked by the guard.

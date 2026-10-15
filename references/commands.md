@@ -59,7 +59,7 @@ Examples: `/GitRecon --remote`, `/GitRecon --help`.
 
 ### Required behavior
 
-1. Run the Quick Scan from `reconnaissance.md`.
+1. Run the Quick Scan from `reconnaissance.md`; when the lane guard is installed, add `magos_guard.py list` (open claims).
 2. Deep-scan only branches/worktrees needed to explain risks or topology.
 3. Classify worktrees and branches.
 4. Report integration-target confidence and remote freshness.
@@ -112,7 +112,7 @@ Examples: `/GitAnalyze feature/auth`, `/GitAnalyze feature/auth --remote`, `/Git
 2. Establish the integration target or mark it uncertain.
 3. Compute ancestry/ahead-behind and unique commits.
 4. Inspect worktree cleanliness if the target has a linked worktree.
-5. Inspect recorded downstream dependencies and clearly separate inferred semantic risks.
+5. Inspect recorded downstream dependencies and clearly separate inferred semantic risks; include the lane's guard manifest (`magos_guard.py list`) when the guard is installed.
 6. Produce an operation-by-operation safety assessment.
 
 ### Output
@@ -171,7 +171,7 @@ Example goals:
 1. Reuse a reconnaissance snapshot only if it is still fresh; otherwise refresh it.
 2. Deep-scan only entities material to the user's goal.
 3. Rank recommendations by risk and dependency, not by branch age alone.
-4. Each recommendation must include evidence and expected next action.
+4. Each recommendation must include evidence and expected next action; when the lane guard is installed, base lane advice on its open claims (`magos_guard.py list`).
 5. Do not mutate repository state.
 
 ### Output
@@ -227,6 +227,7 @@ Examples: `/GitIntegrate agent/auth`, `/GitIntegrate agent/auth --strategy squas
    - `cherry-pick`: only dependency-safe accepted commits; if the accepted commit set is not known, stop and report what is needed.
 7. Run post-integration validation.
 8. Record source lane/commits and resulting integration commit(s).
+9. When the lane guard is installed, run `magos_guard.py release --branch <lane> --reason integrated` after a successful integration.
 
 ### Hard stop conditions
 
@@ -364,7 +365,7 @@ Examples: `/GitConverge agent/release`, `/GitConverge agent/release --apply`, `/
 - **invoking worktree**: the worktree that contains the current directory. It is the only worktree this command writes into or switches.
 - **clean**: both hold. (1) `git -C <worktree> status --porcelain=v1 --untracked-files=all` is empty; always pass the flag, because `status.showUntrackedFiles=no` would otherwise hide untracked files. (2) No entry of `git -C <worktree> ls-files -v` is tagged `S` (skip-worktree) or with a lowercase letter (assume-unchanged) while its file exists on disk; status cannot see edits to those files, and `git worktree remove` deletes them. Entries absent from disk (sparse checkout) do not count. Ignored files are not covered by "clean".
 - **in progress**: a worktree has a merge, cherry-pick, revert, rebase, am, or bisect underway, or a paused cherry-pick/revert sequence (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `sequencer/`, `rebase-merge/`, `rebase-apply/`, `BISECT_LOG`, each located with `git -C <worktree> rev-parse --git-path <name>`; for the main worktree the result is relative to `<worktree>`, so resolve it against that path before testing whether it exists). Check every worktree, including detached ones. A rebase or bisect shows its worktree as `detached`; the branch it is working on is named in `rebase-merge/head-name`, `rebase-apply/head-name`, or `BISECT_START`, and that branch counts as checked out there.
-- **active owner**: a worktree that is locked, lies under an agent-harness worktree root (`<main worktree>/.claude/worktrees/`, where Claude Code keeps its session worktrees; `~/.codex/worktrees/`; or a root the repository documents), or has a lane record naming another owner. Clean is not proof that nobody is using it.
+- **active owner**: a worktree that is locked, lies under an agent-harness worktree root (`<main worktree>/.claude/worktrees/`, where Claude Code keeps its session worktrees; `~/.codex/worktrees/`; or a root the repository documents), or has a lane record naming another owner, or holds an open lane-guard claim (`magos_guard.py list`: `planned` or `active`). Clean is not proof that nobody is using it.
 - **unknown owner**: a linked worktree with no active-owner evidence and no lane record. GitConverge may remove it: this is the one exception to the reconnaissance rule "UNKNOWN_OWNER: do not assume it is free", and `--apply` is the authorization. The plan must list such a removal as "owner: not recorded".
 
 ### Acceptance rule

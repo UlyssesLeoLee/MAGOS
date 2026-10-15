@@ -1,0 +1,19 @@
+{
+  "description": "MAGOS lane guard: a planned file manifest must be registered before a branch or worktree is created.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^EnterWorktree$",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-guard.cmd\" --strict hook claude pre-tool", "shell": "bash", "timeout": 25 }
+        ]
+      },
+      {
+        "matcher": "^(Bash|PowerShell|Agent|Task|Workflow)$|^mcp__.*(start_session|worktree|branch|hand_off_to_session)",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-guard.cmd\" hook claude pre-tool", "shell": "bash", "timeout": 25 }
+        ]
+      }
+    ]
+  }
+}

@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+Source-SHA256: `bc0cdc56507e68c2dabbc2d1aa0ab0bc2746c6b3ac0ec8f70397c6616a8ceb54`
 
 ## Responsibility
 
@@ -28,9 +28,11 @@ The file holds six cooperating parts.
 2. **Evidence gatherer.** A Git runner (argv lists, scrubbed environment, `-z` machine formats, per-call timeout and a
    total deadline) enumerates claimants: every non-bare worktree, every local branch not merged into the target, every
    unmerged remote-tracking branch, and every open claim. Committed evidence is the three-dot diff against each merge
-   base minus content the target already holds. Uncommitted evidence is `status --porcelain=v2 -z --untracked-files=all`
-   (a rename claims both names). A merge, rebase, cherry-pick or revert in progress is a warning; `git am` or unreadable
-   operation metadata is unknown.
+   base minus content the target already holds; a detached worktree contributes the commits of its own HEAD. Uncommitted
+   evidence is `status --porcelain=v2 -z --untracked-files=all` (a rename claims both names). A merge, rebase,
+   cherry-pick or revert in progress is a warning; `git am`, unreadable operation metadata or a locked worktree that is
+   missing on disk is unknown; a branch with no history in common with the target is ignored with a warning because a
+   merge could not collide. Bare repositories and submodules are opened like any other repository.
 3. **Claim store.** `<git-common-dir>/magos/claims/<branch>.claim` files, written under an OS file lock with a
    temporary file and `os.replace`, plus an append-only `audit.log`. The store is shared by all worktrees, is never part
    of a work tree and is not carried by fetch, push, clone, bundle or mirror.
@@ -46,7 +48,7 @@ The file holds six cooperating parts.
 ## Dependencies
 
 Upstream: Python 3.9+ standard library only (`argparse`, `hashlib`, `json`, `os`, `re`, `subprocess`, `threading`,
-`unicodedata`, `msvcrt` or `fcntl`). Git 2.31+ (`status --porcelain=v2`, `worktree list --porcelain -z`,
+`unicodedata`, `msvcrt` or `fcntl`). Git 2.36+ (`status --porcelain=v2`, `worktree list --porcelain -z`,
 `for-each-ref --merged`, `reference-transaction`). No network access, no `fetch`, no `push`.
 
 Downstream callers:
@@ -77,21 +79,26 @@ Commands an agent may run: `check`, `plan`, `list`, `release`, `doctor`. Command
   with the lane's own claim excluded, and a removal-only amend skips the overlap check. A branch that already exists with
   no open claim is refused (exit 15). On success it prints the creation command, for example
   `git worktree add <path> -b <B> <target>`.
-- `list [--drift] [--json]`: each claim as `planned` (no branch), `active` (branch unmerged or checked out) or `idle`
-  (merged, no worktree). `--drift` reports files in the lane's footprint matched by none of its entries; it never denies.
-- `release --branch B [--reason R]`: deletes the claim and audits it. Refused with exit 16 while the lane is `active`.
+- `list [--drift] [--json]`: each claim as `planned` (no branch yet), `active` (unmerged work, a workspace, or a fresh
+  branch at the target tip or the plan's base) or `idle` (integrated: merged, moved beyond the plan's base and the target
+  tip, no worktree). An idle claim stops blocking other lanes. `--drift` reports files in the lane's footprint matched
+  by none of its entries; it never denies.
+- `release --branch B [--reason R]`: deletes the claim and audits it. Refused with exit 16 while the branch has
+  unmerged work or its worktree has uncommitted changes; a merged lane whose clean worktree is still there can be
+  released. A claim file that cannot be parsed is removed by `release` as well.
 - `override --fingerprint FP --reason R`: refuses (exit 17) unless stdin and stdout are a real console; the user retypes
   the fingerprint; writes a one-shot record valid for one hour that the next `plan` with the same denial fingerprint
   consumes.
-- `hook <host> pre-tool`: the PreToolUse entry. Allow is `{}` with exit 0. Deny is exactly one ASCII-escaped JSON
+- `hook <host> pre-tool`: the PreToolUse entry; it also guards `git worktree add --detach` and `<path> <commit>`, whose lane
+  is keyed `detached/<directory name>`. Allow is `{}` with exit 0. Deny is exactly one ASCII-escaped JSON
   object on stdout, exit 0, nothing on stderr:
   `{"decision":"block","reason":MSG,"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":MSG}}`.
   A deny is never an exit code.
-- `arm [--strict] [--lang L] [--dry-run]`: writes `<hooks dir>/reference-transaction` (a foreign hook is chained as
-  `.magos-prev`), `<store>/ARMED`, `lang`, `guard` and, with `--strict`, `strict` plus an exemption file per existing
-  branch; disables `maintenance.pack-refs` and `gc.packRefs` for the repository. Refuses (exit 3) when `core.hooksPath`
+- `arm [--lang L] [--dry-run]`: needs a real console (exit 17 otherwise, except `--dry-run`). Writes
+  `<hooks dir>/reference-transaction` (a foreign hook is chained as `.magos-prev`), `<store>/ARMED`, `lang` and `guard`;
+  disables `maintenance.pack-refs` and `gc.packRefs` for the repository. It can be re-run over its own hook. Refuses (exit 3) when `core.hooksPath`
   is set, hook directories differ across worktrees, or `.magos-prev` already exists. Idempotent.
-- `disarm [--dry-run]`: removes `ARMED` and `strict`, deletes the hook if it is MAGOS's and restores `.magos-prev`;
+- `disarm [--dry-run]`: needs a real console; removes `ARMED`, deletes the hook if it is MAGOS's and restores `.magos-prev`;
   keeps claims and audit.
 - `install --host claude|codex|hermes [--dry-run] [--home DIR]`: copies `scripts/magos_guard.py` and
   `hooks/run-guard.cmd` to `<home or ~/.magos>/guard/{scripts,hooks}/` and writes the exact host snippet to
@@ -106,7 +113,7 @@ closed); 12 INVALID_MANIFEST; 13 LOCK_TIMEOUT (30 s); 14 LANE_EXISTS; 15 BRANCH_
 
 Claim file (LF, the git layer reads only line 1): `state=active`, `v=1`, `branch`, `worktree`, `target`, `base`,
 `created`, `by`, `override`, then one `entry=<raw entry>` line per manifest entry. Store layout:
-`<git-common-dir>/magos/{ARMED,strict,lang,guard,exempt/,claims/,override/,audit.log,lock}`.
+`<git-common-dir>/magos/{ARMED,lang,guard,claims/,override/,audit.log,lock}`.
 
 Verdict (`--json`): `{decision, code, conflicts:[{key, branch, worktrees, planned, evidence:[{kind committed|uncommitted|declared,
 files, matched, theirs}]}], unknowns, warnings, target:{name,sha,confidence}, fingerprint, overridden, message, exit_code}`.
@@ -117,7 +124,7 @@ Invariants:
 
 1. Creation is denied before it happens; a denial leaves no branch, worktree directory or administrative directory.
 2. Existing lanes are never stopped, modified, stashed, merged or moved; the guard only reads them.
-3. Unknown is not safe: an ambiguous target, unrelated history, `git am`, unreadable operation metadata, more than 120
+3. Unknown is not safe: an ambiguous target (or a `--target` that does not resolve), `git am`, unreadable operation metadata, a locked worktree missing on disk, more than 120
    unmerged claimants, a Git failure or an exhausted budget (18 s total, 30 s per Git call) deny creation in `plan`,
    `check` and in an armed repository; in auto mode the host hook allows an unanalysable branch-only creation.
 4. Hard overlap is a direct path, directory prefix, glob, rename side, case or Unicode collision, or a declared manifest

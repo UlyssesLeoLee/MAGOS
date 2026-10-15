@@ -1,0 +1,17 @@
+{
+  "min_coverage_exclusive": 90,
+  "design_first": true,
+  "require_design_commit_first": true,
+  "require_project_coverage": true,
+  "require_branch_coverage": false,
+  "auto_detect_coverage": false,
+  "coverage_report": ".quality/coverage/lcov.info",
+  "coverage_commands": [
+    ["python", "-m", "coverage", "erase", "--rcfile=.coveragerc"],
+    ["python", "-m", "coverage", "run", "--rcfile=.coveragerc", "-m", "pytest", "tests/codex/guard", "-q", "-p", "no:cacheprovider"],
+    ["python", "-m", "coverage", "lcov", "--rcfile=.coveragerc", "-o", ".quality/coverage/lcov.info"]
+  ],
+  "mappings": {},
+  "excluded_sources": [],
+  "test_timeout_seconds": 1500
+}

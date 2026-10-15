@@ -1,0 +1,1155 @@
+{"id": "c000", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add ../w1 -b lane-a", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c001", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add -b lane-b ../w2 main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c002", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add ../w3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c003", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add --detach ../w4", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c004", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add -f ../w5 existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c005", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add --orphan ../w6", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c006", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add -B resetme ../w7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c007", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add ../w8 feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c008", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add --lock --reason \"agent lane\" ../w9 -b lane-c", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c009", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add ../w10 HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c010", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add \"../my lane\" -b spaced-lane", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c011", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add '../my other lane' -b spaced-lane2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c012", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add ../w12 -b lane-é", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c013", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add ../ünï-w13 -b lane-uni", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c014", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add --no-checkout ../w14 -b lane-nc", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c015", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add -q ../w15 -b lane-q", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c016", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add --track -b lane-t ../w16 origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c017", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add -d ../w17", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c018", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add -bq14 ../w18", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c019", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add ../w19 -b lane/with/slash", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c020", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add ../w20 existing -b lane-from-existing", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c021", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add --checkout ../w21 -b lane-co", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c022", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add --guess-remote ../feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c023", "cat": "worktree-add", "dialect": "bash", "cmd": "git worktree add ../w23 origin/feature-r", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c024", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch -c s1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c025", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch -C s2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c026", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch --create s3 main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c027", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch --force-create s4", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c028", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch --orphan s5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c029", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch -c s6 origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c030", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch --track origin/feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c031", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch -t origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c032", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch --crea s7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c033", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch --cre s8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c034", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch -cq s9", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c035", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch -fc s10", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c036", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch --force-c s11", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c037", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch --orph s12", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c038", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch -c s13 --track origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c039", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout -b c1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c040", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout -B c2 main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c041", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout --orphan c3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c042", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout -b c4 origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c043", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout --track origin/feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c044", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout -t origin/feature-r -b c5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c045", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout -bq c6", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c046", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout main -b c7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c047", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout -fb c8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c048", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout --orph c9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c049", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout -b c10", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c050", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c051", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c052", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c053", "cat": "switch-checkout", "dialect": "bash", "cmd": "git checkout feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c054", "cat": "switch-checkout", "dialect": "bash", "cmd": "git switch -c \"feat/x y\"", "adv": false, "scope": "in", "branch": false, "note": "invalid ref name: fails, never creates"}
+{"id": "c055", "cat": "branch", "dialect": "bash", "cmd": "git branch b1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c056", "cat": "branch", "dialect": "bash", "cmd": "git branch b2 main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c057", "cat": "branch", "dialect": "bash", "cmd": "git branch -f b3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c058", "cat": "branch", "dialect": "bash", "cmd": "git branch --force b4 existing", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c059", "cat": "branch", "dialect": "bash", "cmd": "git branch -c b5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c060", "cat": "branch", "dialect": "bash", "cmd": "git branch -C existing b6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c061", "cat": "branch", "dialect": "bash", "cmd": "git branch -m b7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c062", "cat": "branch", "dialect": "bash", "cmd": "git branch -M existing b8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c063", "cat": "branch", "dialect": "bash", "cmd": "git branch --move wt3 b9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c064", "cat": "branch", "dialect": "bash", "cmd": "git branch -q b10", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c065", "cat": "branch", "dialect": "bash", "cmd": "git branch -v b11", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c066", "cat": "branch", "dialect": "bash", "cmd": "git branch --track b12 origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c067", "cat": "branch", "dialect": "bash", "cmd": "git branch --no-track b13 main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c068", "cat": "branch", "dialect": "bash", "cmd": "git branch --sort=-committerdate b14", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c069", "cat": "branch", "dialect": "bash", "cmd": "git branch -i b15", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c070", "cat": "branch", "dialect": "bash", "cmd": "git branch --copy existing b16", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c071", "cat": "branch", "dialect": "bash", "cmd": "git branch -t b17 origin/feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c072", "cat": "branch", "dialect": "bash", "cmd": "git branch --create-reflog b18", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c073", "cat": "branch", "dialect": "bash", "cmd": "git branch -vv b19", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c074", "cat": "branch", "dialect": "bash", "cmd": "git branch --column b20", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c075", "cat": "branch", "dialect": "bash", "cmd": "git branch -m existing b21", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c076", "cat": "branch", "dialect": "bash", "cmd": "git branch --copy b22", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c077", "cat": "branch", "dialect": "bash", "cmd": "git branch -f existing main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c078", "cat": "branch", "dialect": "bash", "cmd": "git branch feat/slash/deep", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c079", "cat": "branch", "dialect": "bash", "cmd": "git branch \"dq-name\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c080", "cat": "branch", "dialect": "bash", "cmd": "git branch 'sq-name'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c081", "cat": "branch", "dialect": "bash", "cmd": "git branch ünï-branch", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c082", "cat": "branch", "dialect": "bash", "cmd": "git branch --recurse-submodules b26", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c083", "cat": "branch", "dialect": "bash", "cmd": "git branch --track=inherit b27 origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c084", "cat": "branch", "dialect": "bash", "cmd": "git branch --abbrev=7 b28", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c085", "cat": "branch", "dialect": "bash", "cmd": "git branch --color b29", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c086", "cat": "branch", "dialect": "bash", "cmd": "git branch --no-color b30", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c087", "cat": "refs", "dialect": "bash", "cmd": "git update-ref refs/heads/u1 HEAD", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c088", "cat": "refs", "dialect": "bash", "cmd": "git update-ref -m \"agent\" refs/heads/u2 HEAD", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c089", "cat": "refs", "dialect": "bash", "cmd": "git update-ref --no-deref refs/heads/u3 HEAD", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c090", "cat": "refs", "dialect": "bash", "cmd": "git update-ref refs/heads/u4 $(git rev-parse HEAD)", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c091", "cat": "refs", "dialect": "bash", "cmd": "git symbolic-ref HEAD refs/heads/u5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c092", "cat": "refs", "dialect": "bash", "cmd": "git symbolic-ref refs/heads/u6 refs/heads/main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c093", "cat": "refs", "dialect": "bash", "cmd": "echo \"create refs/heads/u7 HEAD\" | git update-ref --stdin", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c094", "cat": "refs", "dialect": "bash", "cmd": "printf 'create refs/heads/u8 HEAD\\n' | git update-ref --stdin", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c095", "cat": "refs", "dialect": "bash", "cmd": "git update-ref --stdin <<EOF\ncreate refs/heads/u9 HEAD\nEOF", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c096", "cat": "refs", "dialect": "bash", "cmd": "git update-ref --create-reflog refs/heads/u10 HEAD", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c097", "cat": "refs", "dialect": "bash", "cmd": "git update-ref refs/heads/u11 main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c098", "cat": "refs", "dialect": "bash", "cmd": "git update-ref refs/heads/feat/u12 HEAD", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c099", "cat": "refs", "dialect": "bash", "cmd": "git symbolic-ref HEAD refs/heads/u13/deep", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c100", "cat": "refs", "dialect": "bash", "cmd": "git fetch origin feature-r:f1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c101", "cat": "refs", "dialect": "bash", "cmd": "git fetch origin +feature-r:f2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c102", "cat": "refs", "dialect": "bash", "cmd": "git fetch origin feature-r:refs/heads/f3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c103", "cat": "refs", "dialect": "bash", "cmd": "git fetch origin 'refs/heads/*:refs/heads/*'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c104", "cat": "refs", "dialect": "bash", "cmd": "git pull origin feature-r:f4", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c105", "cat": "refs", "dialect": "bash", "cmd": "git push . main:f5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c106", "cat": "refs", "dialect": "bash", "cmd": "git push . HEAD:refs/heads/f6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c107", "cat": "refs", "dialect": "bash", "cmd": "git fetch . main:f7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c108", "cat": "refs", "dialect": "bash", "cmd": "git fetch --update-head-ok origin feature-s:f8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c109", "cat": "refs", "dialect": "bash", "cmd": "git fetch -q origin feature-r:f9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c110", "cat": "refs", "dialect": "bash", "cmd": "git fetch --no-tags origin feature-s:f10", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c111", "cat": "refs", "dialect": "bash", "cmd": "git push . existing:f11", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c112", "cat": "refs", "dialect": "bash", "cmd": "git push --force . main:refs/heads/f12", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c113", "cat": "refs", "dialect": "bash", "cmd": "echo x >> a.txt && git stash && git stash branch st1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c114", "cat": "refs", "dialect": "bash", "cmd": "echo x >> a.txt; git stash push -m wip; git stash branch st2 stash@{0}", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c115", "cat": "alias", "dialect": "bash", "cmd": "git -c alias.wta='worktree add' wta ../p6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c116", "cat": "alias", "dialect": "bash", "cmd": "git -c alias.x='!git branch al1' x", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c117", "cat": "alias", "dialect": "bash", "cmd": "git -c alias.a1=b1 -c alias.b1='branch al2' a1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c118", "cat": "alias", "dialect": "bash", "cmd": "git -c alias.sw='switch -c' sw al3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c119", "cat": "alias", "dialect": "bash", "cmd": "git -c alias.x='!f() { git branch $1; }; f' x al4", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c120", "cat": "alias", "dialect": "bash", "cmd": "git mk al5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c121", "cat": "alias", "dialect": "bash", "cmd": "git mkl al6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c122", "cat": "alias", "dialect": "bash", "cmd": "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.zz GIT_CONFIG_VALUE_0='switch -c' git zz al7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c123", "cat": "alias", "dialect": "bash", "cmd": "ALVAL=branch git --config-env=alias.zz=ALVAL zz al8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c124", "cat": "alias", "dialect": "bash", "cmd": "git config alias.q 'branch' && git q al9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c125", "cat": "alias", "dialect": "bash", "cmd": "git config --local alias.nb \"switch -c\" && git nb al10", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c126", "cat": "alias", "dialect": "bash", "cmd": "git -c alias.go='checkout -b' go al11", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c127", "cat": "alias", "dialect": "bash", "cmd": "git -c alias.mkwt='!git worktree add ../$1 -b $1 #' mkwt al12", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c128", "cat": "alias", "dialect": "bash", "cmd": "git ws al13", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c129", "cat": "alias", "dialect": "bash", "cmd": "git chain al14", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c130", "cat": "hints", "dialect": "bash", "cmd": "git -C . branch h1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c131", "cat": "hints", "dialect": "bash", "cmd": "git --git-dir=.git branch h2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c132", "cat": "hints", "dialect": "bash", "cmd": "git --no-pager branch h3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c133", "cat": "hints", "dialect": "bash", "cmd": "git -P branch h4", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c134", "cat": "hints", "dialect": "bash", "cmd": "git -c core.pager=cat branch h5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c135", "cat": "hints", "dialect": "bash", "cmd": "GIT_DIR=.git git branch h6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c136", "cat": "hints", "dialect": "bash", "cmd": "git -C ../other branch h7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c137", "cat": "hints", "dialect": "bash", "cmd": "cd ../other && git switch -c h8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c138", "cat": "hints", "dialect": "bash", "cmd": "git -C ../other worktree add ../hw9 -b h9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c139", "cat": "hints", "dialect": "bash", "cmd": "git --git-dir=../other/.git branch h10", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c140", "cat": "hints", "dialect": "bash", "cmd": "git --work-tree=. branch h11", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c141", "cat": "hints", "dialect": "bash", "cmd": "GIT_DIR=../other/.git git branch h12", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c142", "cat": "hints", "dialect": "bash", "cmd": "(cd ../other; git branch h13)", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c143", "cat": "hints", "dialect": "bash", "cmd": "cd ../other; git branch h14", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c144", "cat": "hints", "dialect": "bash", "cmd": "pushd ../other >/dev/null && git branch h15", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c145", "cat": "hints", "dialect": "bash", "cmd": "git --no-replace-objects --no-pager branch h16", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c146", "cat": "hints", "dialect": "bash", "cmd": "git --namespace=ns branch h17", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c147", "cat": "hints", "dialect": "bash", "cmd": "git -c user.name=a -c user.email=b@c.d switch -c h18", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c148", "cat": "hints", "dialect": "bash", "cmd": "git --literal-pathspecs branch h19", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c149", "cat": "hints", "dialect": "bash", "cmd": "git -C ../other -C . branch h20", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c150", "cat": "hints", "dialect": "bash", "cmd": "git --exec-path=. branch h21", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c151", "cat": "hints", "dialect": "bash", "cmd": "git --bare --git-dir=../other/.git branch h22", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c152", "cat": "hints", "dialect": "bash", "cmd": "git -C ../other branch hx1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c153", "cat": "hints", "dialect": "bash", "cmd": "cd ../other && git branch hx2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c154", "cat": "hints", "dialect": "bash", "cmd": "GIT_DIR=../other/.git git branch hx3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c155", "cat": "wrappers", "dialect": "bash", "cmd": "FOO=bar BAR=baz git branch e2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c156", "cat": "wrappers", "dialect": "bash", "cmd": "env git branch e3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c157", "cat": "wrappers", "dialect": "bash", "cmd": "env GIT_AUTHOR_NAME=x git branch e5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c158", "cat": "wrappers", "dialect": "bash", "cmd": "command git branch e6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c159", "cat": "wrappers", "dialect": "bash", "cmd": "time git branch e7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c160", "cat": "wrappers", "dialect": "bash", "cmd": "nohup git branch e8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c161", "cat": "wrappers", "dialect": "bash", "cmd": "exec git branch e9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c162", "cat": "wrappers", "dialect": "bash", "cmd": "timeout 20 git branch e11", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c163", "cat": "wrappers", "dialect": "bash", "cmd": "env -u FOO git branch e12", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c164", "cat": "wrappers", "dialect": "bash", "cmd": "command -p git branch e13", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c165", "cat": "wrappers", "dialect": "bash", "cmd": "echo x1 | xargs git branch", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c166", "cat": "wrappers", "dialect": "bash", "cmd": "echo lane | xargs -I{} git worktree add ../{} -b {}", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c167", "cat": "wrappers", "dialect": "bash", "cmd": "find . -maxdepth 0 -exec git branch fx1 \\;", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c168", "cat": "wrappers", "dialect": "bash", "cmd": "echo a b | xargs -n1 git branch", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c169", "cat": "wrappers", "dialect": "bash", "cmd": "bash -c \"git branch hd6\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c170", "cat": "wrappers", "dialect": "bash", "cmd": "bash -lc \"git branch hd7\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c171", "cat": "wrappers", "dialect": "bash", "cmd": "sh -c 'git \"branch\" hd8'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c172", "cat": "wrappers", "dialect": "bash", "cmd": "bash -c \"bash -c 'git branch hd9'\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c173", "cat": "wrappers", "dialect": "bash", "cmd": "eval \"git branch hd10\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c174", "cat": "wrappers", "dialect": "bash", "cmd": "eval git branch hd11", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c175", "cat": "wrappers", "dialect": "bash", "cmd": "bash -c 'echo $0; git branch hd12' arg0", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c176", "cat": "wrappers", "dialect": "bash", "cmd": "bash -ec 'git branch hd13'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c177", "cat": "wrappers", "dialect": "bash", "cmd": "bash --norc -c \"git branch hd14\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c178", "cat": "wrappers", "dialect": "bash", "cmd": "sh -c \"git branch hd15; git status\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c179", "cat": "wrappers", "dialect": "bash", "cmd": "env bash -c \"git branch hd16\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c180", "cat": "wrappers", "dialect": "bash", "cmd": "bash -c 'git -C ../other branch hd17'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c181", "cat": "wrappers", "dialect": "bash", "cmd": "cmd.exe /c \"git branch cm1\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c182", "cat": "wrappers", "dialect": "bash", "cmd": "cmd.exe /c git branch cm2", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c183", "cat": "wrappers", "dialect": "bash", "cmd": "cmd //c \"git branch cm3\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c184", "cat": "wrappers", "dialect": "bash", "cmd": "powershell.exe -NoProfile -Command \"git branch cm4\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c185", "cat": "wrappers", "dialect": "bash", "cmd": "powershell -Command 'git branch cm5'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c186", "cat": "wrappers", "dialect": "bash", "cmd": "git.exe branch cm6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c187", "cat": "wrappers", "dialect": "bash", "cmd": "/mingw64/bin/git branch cm7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c188", "cat": "wrappers", "dialect": "bash", "cmd": "\"C:/Program Files/Git/cmd/git.exe\" branch cm8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c189", "cat": "wrappers", "dialect": "bash", "cmd": "GIT=git; $GIT branch cm9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c190", "cat": "wrappers", "dialect": "bash", "cmd": "G=git; \"$G\" branch cm10", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c191", "cat": "wrappers", "dialect": "bash", "cmd": "sudo -u root git branch e10", "adv": false, "scope": "in", "branch": false, "note": "sudo absent on Git Bash; asserted"}
+{"id": "c192", "cat": "wrappers", "dialect": "bash", "cmd": "watch -n1 git branch w1", "adv": false, "scope": "in", "branch": false, "note": "interactive; asserted"}
+{"id": "c193", "cat": "wrappers", "dialect": "bash", "cmd": "wsl git branch w2", "adv": false, "scope": "in", "branch": false, "note": "WSL; asserted"}
+{"id": "c194", "cat": "wrappers", "dialect": "bash", "cmd": "uv run git branch w3", "adv": false, "scope": "in", "branch": false, "note": "runner; asserted"}
+{"id": "c195", "cat": "wrappers", "dialect": "bash", "cmd": "npx -y git-wrapper git branch w4", "adv": false, "scope": "in", "branch": false, "note": "runner; asserted"}
+{"id": "c196", "cat": "wrappers", "dialect": "bash", "cmd": "gh pr checkout 123", "adv": false, "scope": "in", "branch": false, "note": "creates local branch; asserted"}
+{"id": "c197", "cat": "wrappers", "dialect": "bash", "cmd": "gh issue develop 12 -c", "adv": false, "scope": "in", "branch": false, "note": "creates local branch; asserted"}
+{"id": "c198", "cat": "wrappers", "dialect": "bash", "cmd": "git flow feature start x", "adv": false, "scope": "in", "branch": false, "note": "git-flow external; asserted"}
+{"id": "c199", "cat": "wrappers", "dialect": "bash", "cmd": "git town hack x", "adv": false, "scope": "in", "branch": false, "note": "git-town external; asserted"}
+{"id": "c200", "cat": "wrappers", "dialect": "bash", "cmd": "gt create -m \"x\"", "adv": false, "scope": "in", "branch": false, "note": "graphite; asserted"}
+{"id": "c201", "cat": "wrappers", "dialect": "bash", "cmd": "claude --worktree feature-x", "adv": false, "scope": "in", "branch": false, "note": "Claude Code CLI worktree; asserted"}
+{"id": "c202", "cat": "chain", "dialect": "bash", "cmd": "git status && git switch -c ch1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c203", "cat": "chain", "dialect": "bash", "cmd": "git status; git branch ch2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c204", "cat": "chain", "dialect": "bash", "cmd": "false || git branch ch3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c205", "cat": "chain", "dialect": "bash", "cmd": "git log | head -1; git branch ch4", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c206", "cat": "chain", "dialect": "bash", "cmd": "(git branch ch5)", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c207", "cat": "chain", "dialect": "bash", "cmd": "{ git branch ch6; }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c208", "cat": "chain", "dialect": "bash", "cmd": "echo $(git branch ch7)", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c209", "cat": "chain", "dialect": "bash", "cmd": "echo `git branch ch8`", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c210", "cat": "chain", "dialect": "bash", "cmd": "git status\ngit branch ch9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c211", "cat": "chain", "dialect": "bash", "cmd": "git status \\\n && git branch ch10", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c212", "cat": "chain", "dialect": "bash", "cmd": "for b in a b; do git branch ch-$b; done", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c213", "cat": "chain", "dialect": "bash", "cmd": "if git rev-parse HEAD; then git branch ch11; fi", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c214", "cat": "chain", "dialect": "bash", "cmd": "git branch ch12 2>/dev/null", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c215", "cat": "chain", "dialect": "bash", "cmd": "git branch ch13 > out.txt", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c216", "cat": "chain", "dialect": "bash", "cmd": "git branch ch14 &", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c217", "cat": "chain", "dialect": "bash", "cmd": "cd src && git branch ch15", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c218", "cat": "chain", "dialect": "bash", "cmd": "pushd src >/dev/null; git branch ch16", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c219", "cat": "chain", "dialect": "bash", "cmd": "x=ch17; git branch $x", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c220", "cat": "chain", "dialect": "bash", "cmd": "names=(ch19 ch20); git branch ${names[0]}", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c221", "cat": "chain", "dialect": "bash", "cmd": "git branch \"${B:-ch21}\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c222", "cat": "chain", "dialect": "bash", "cmd": "case $x in *) git branch ch22 ;; esac", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c223", "cat": "chain", "dialect": "bash", "cmd": "while read b; do git branch $b; done <<< \"ch23\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c224", "cat": "chain", "dialect": "bash", "cmd": "git branch ch24 && git worktree add ../ch24w ch24", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c225", "cat": "chain", "dialect": "bash", "cmd": "echo start; git switch -c ch25; echo done", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c226", "cat": "chain", "dialect": "bash", "cmd": "git status || { git branch ch26; }", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c227", "cat": "chain", "dialect": "bash", "cmd": "true && (git branch ch27) && true", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c228", "cat": "chain", "dialect": "bash", "cmd": "git diff --quiet; git checkout -b ch28", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c229", "cat": "chain", "dialect": "bash", "cmd": "ls | wc -l ; git branch ch29", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c230", "cat": "chain", "dialect": "bash", "cmd": "git add -A && git commit -m wip --allow-empty && git switch -c ch30", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c231", "cat": "chain", "dialect": "bash", "cmd": "git fetch origin && git switch -c ch31 origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c232", "cat": "chain", "dialect": "bash", "cmd": "git switch main && git pull --ff-only; git worktree add ../ch32 -b ch32", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c233", "cat": "chain", "dialect": "bash", "cmd": "B=ch33; git worktree add ../$B -b $B", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c234", "cat": "chain", "dialect": "bash", "cmd": "git branch ch34;git branch ch35", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c235", "cat": "chain", "dialect": "bash", "cmd": "git branch ch36 |cat", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c236", "cat": "chain", "dialect": "bash", "cmd": "git branch ch37|&cat", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c237", "cat": "chain", "dialect": "bash", "cmd": "git branch ch38 ; ", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c238", "cat": "chain", "dialect": "bash", "cmd": "echo a && echo b && git branch ch39", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c239", "cat": "chain", "dialect": "bash", "cmd": "! git branch ch40", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c240", "cat": "chain", "dialect": "bash", "cmd": "time { git branch ch41; }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c241", "cat": "chain", "dialect": "bash", "cmd": "git branch ch42 # comment with git branch ch43", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c242", "cat": "quote", "dialect": "bash", "cmd": "git branch 'q1'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c243", "cat": "quote", "dialect": "bash", "cmd": "git branch \"q2\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c244", "cat": "quote", "dialect": "bash", "cmd": "git branch q\\3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c245", "cat": "quote", "dialect": "bash", "cmd": "git \"branch\" q4", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c246", "cat": "quote", "dialect": "bash", "cmd": "'git' branch q5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c247", "cat": "quote", "dialect": "bash", "cmd": "g\"it\" branch q6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c248", "cat": "quote", "dialect": "bash", "cmd": "git bra\"\"nch q7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c249", "cat": "quote", "dialect": "bash", "cmd": "$'\\x67it' branch q8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c250", "cat": "quote", "dialect": "bash", "cmd": "git $'\\x62ranch' q9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c251", "cat": "quote", "dialect": "bash", "cmd": "git branch $'q\\x31\\x30'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c252", "cat": "quote", "dialect": "bash", "cmd": "git {branch,q11}", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c253", "cat": "quote", "dialect": "bash", "cmd": "git branch q\"1\"2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c254", "cat": "quote", "dialect": "bash", "cmd": "git branch 'q'13", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c255", "cat": "quote", "dialect": "bash", "cmd": "git b\\ranch q14", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c256", "cat": "quote", "dialect": "bash", "cmd": "git branch \\q15", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c257", "cat": "quote", "dialect": "bash", "cmd": "git \\branch q16", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c258", "cat": "quote", "dialect": "bash", "cmd": "git branch \"q$((1+16))\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c259", "cat": "quote", "dialect": "bash", "cmd": "git branch q$(echo 18)", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c260", "cat": "quote", "dialect": "bash", "cmd": "git branch `echo q19`", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c261", "cat": "quote", "dialect": "bash", "cmd": "git bran\\\nch q20", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c262", "cat": "quote", "dialect": "bash", "cmd": "git branch q\\\n21", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c263", "cat": "sinks", "dialect": "bash", "cmd": "bash <<'EOF'\ngit branch hs1\nEOF", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c264", "cat": "sinks", "dialect": "bash", "cmd": "cat <<EOF | bash\ngit branch hs2\nEOF", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c265", "cat": "sinks", "dialect": "bash", "cmd": "sh <<< \"git branch hs3\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c266", "cat": "sinks", "dialect": "bash", "cmd": "echo \"git branch hs4\" | sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c267", "cat": "sinks", "dialect": "bash", "cmd": "printf 'git branch hs5\\n' | bash", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c268", "cat": "sinks", "dialect": "bash", "cmd": "source /dev/stdin <<< 'git branch hs6'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c269", "cat": "sinks", "dialect": "bash", "cmd": "bash <(echo \"git branch hs7\")", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c270", "cat": "sinks", "dialect": "bash", "cmd": ". <(echo \"git branch hs8\")", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c271", "cat": "sinks", "dialect": "bash", "cmd": "bash << 'X'\n  git worktree add ../hsw9 -b hs9\nX", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c272", "cat": "sinks", "dialect": "bash", "cmd": "echo git branch hs10 | bash -s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c273", "cat": "sinks", "dialect": "bash", "cmd": "echo \"git branch hs11\" | bash -", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c274", "cat": "sinks", "dialect": "bash", "cmd": "cat <<EOF | sh -s\ngit branch hs12\nEOF", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c275", "cat": "sinks", "dialect": "bash", "cmd": "sh <<EOF\ngit switch -c hs13\nEOF", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c276", "cat": "sinks", "dialect": "bash", "cmd": "bash mk.sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c277", "cat": "sinks", "dialect": "bash", "cmd": "./mk.sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c278", "cat": "sinks", "dialect": "bash", "cmd": "sh ./mk.sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c279", "cat": "sinks", "dialect": "bash", "cmd": "source mk.sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c280", "cat": "sinks", "dialect": "bash", "cmd": ". ./mk.sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c281", "cat": "sinks", "dialect": "bash", "cmd": "bash scripts/lane.sh feat", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c282", "cat": "sinks", "dialect": "bash", "cmd": "cat > mk.sh <<EOF\ngit branch sc7\nEOF\nbash mk.sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c283", "cat": "sinks", "dialect": "bash", "cmd": "echo \"git branch sc8\" > mk.sh && sh mk.sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c284", "cat": "sinks", "dialect": "bash", "cmd": "bash mk2.sh", "adv": false, "scope": "in", "branch": false, "note": "script without git: negative"}
+{"id": "c285", "cat": "ps-basic", "dialect": "powershell", "cmd": "git branch p1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c286", "cat": "ps-basic", "dialect": "powershell", "cmd": "git switch -c p2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c287", "cat": "ps-basic", "dialect": "powershell", "cmd": "git checkout -b p3", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c288", "cat": "ps-basic", "dialect": "powershell", "cmd": "& git branch p4", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c289", "cat": "ps-basic", "dialect": "powershell", "cmd": "& 'C:\\Program Files\\Git\\cmd\\git.exe' branch p5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c290", "cat": "ps-basic", "dialect": "powershell", "cmd": "git.exe branch p6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c291", "cat": "ps-basic", "dialect": "powershell", "cmd": "git worktree add ..\\w7 -b p7", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c292", "cat": "ps-basic", "dialect": "powershell", "cmd": "git worktree add \"..\\w 8\" -b p8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c293", "cat": "ps-basic", "dialect": "powershell", "cmd": "git branch 'p9'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c294", "cat": "ps-basic", "dialect": "powershell", "cmd": "git branch \"p10\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c295", "cat": "ps-basic", "dialect": "powershell", "cmd": "git -C ..\\other branch p11", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c296", "cat": "ps-basic", "dialect": "powershell", "cmd": "git --git-dir=..\\other\\.git branch p12", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c297", "cat": "ps-basic", "dialect": "powershell", "cmd": "Set-Location ..\\other; git switch -c p13", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c298", "cat": "ps-basic", "dialect": "powershell", "cmd": "cd ..\\other; git branch p14", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c299", "cat": "ps-basic", "dialect": "powershell", "cmd": "git status; git branch p15", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c300", "cat": "ps-basic", "dialect": "powershell", "cmd": "git branch p16; git status", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c301", "cat": "ps-basic", "dialect": "powershell", "cmd": "if ($true) { git branch p17 }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c302", "cat": "ps-basic", "dialect": "powershell", "cmd": "foreach ($n in 'p18','p19') { git branch $n }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c303", "cat": "ps-basic", "dialect": "powershell", "cmd": "1..2 | ForEach-Object { git branch \"p2$_\" }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c304", "cat": "ps-basic", "dialect": "powershell", "cmd": "$env:GIT_DIR='.git'; git branch p22", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c305", "cat": "ps-basic", "dialect": "powershell", "cmd": "git branch ('p4' + '3')", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c306", "cat": "ps-basic", "dialect": "powershell", "cmd": "git branch $('p44')", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c307", "cat": "ps-basic", "dialect": "powershell", "cmd": "git worktree add ..\\w45", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c308", "cat": "ps-basic", "dialect": "powershell", "cmd": "git switch --orphan p46", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c309", "cat": "ps-basic", "dialect": "powershell", "cmd": "git update-ref refs/heads/p47 HEAD", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c310", "cat": "ps-basic", "dialect": "powershell", "cmd": "git symbolic-ref HEAD refs/heads/p48", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c311", "cat": "ps-basic", "dialect": "powershell", "cmd": "git fetch origin feature-r:p49", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c312", "cat": "ps-basic", "dialect": "powershell", "cmd": "git push . main:p50", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c313", "cat": "ps-basic", "dialect": "powershell", "cmd": "git branch -m p51", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c314", "cat": "ps-basic", "dialect": "powershell", "cmd": "git branch --copy existing p52", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c315", "cat": "ps-basic", "dialect": "powershell", "cmd": "git checkout -fb p53", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c316", "cat": "ps-basic", "dialect": "powershell", "cmd": "git switch --crea p54", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c317", "cat": "ps-basic", "dialect": "powershell", "cmd": "git worktree add --detach ..\\w55", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c318", "cat": "ps-basic", "dialect": "powershell", "cmd": "git worktree add ..\\w56 feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c319", "cat": "ps-basic", "dialect": "powershell", "cmd": "git switch feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c320", "cat": "ps-basic", "dialect": "powershell", "cmd": "git checkout feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c321", "cat": "ps-basic", "dialect": "powershell", "cmd": "git branch p57 `\n  main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c322", "cat": "ps-basic", "dialect": "powershell", "cmd": "git `\n  branch p58", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c323", "cat": "ps-wrap", "dialect": "powershell", "cmd": "Invoke-Expression \"git branch pw1\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c324", "cat": "ps-wrap", "dialect": "powershell", "cmd": "iex \"git branch pw2\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c325", "cat": "ps-wrap", "dialect": "powershell", "cmd": "powershell -NoProfile -Command \"git branch pw3\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c326", "cat": "ps-wrap", "dialect": "powershell", "cmd": "powershell -Command 'git branch pw4'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c327", "cat": "ps-wrap", "dialect": "powershell", "cmd": "cmd /c \"git branch pw5\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c328", "cat": "ps-wrap", "dialect": "powershell", "cmd": "cmd.exe /c git branch pw6", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c329", "cat": "ps-wrap", "dialect": "powershell", "cmd": "Start-Process git -ArgumentList 'branch','pw7' -NoNewWindow -Wait", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c330", "cat": "ps-wrap", "dialect": "powershell", "cmd": "Start-Process -FilePath git -ArgumentList \"branch pw8\" -Wait -NoNewWindow", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c331", "cat": "ps-wrap", "dialect": "powershell", "cmd": "Set-Alias g git; g branch pw9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c332", "cat": "ps-wrap", "dialect": "powershell", "cmd": "function mk { git branch $args[0] }; mk pw10", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c333", "cat": "ps-wrap", "dialect": "powershell", "cmd": "[scriptblock]::Create('git branch pw11').Invoke()", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c334", "cat": "ps-wrap", "dialect": "powershell", "cmd": "& { git branch pw12 }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c335", "cat": "ps-wrap", "dialect": "powershell", "cmd": "Invoke-Command -ScriptBlock { git branch pw13 }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c336", "cat": "ps-wrap", "dialect": "powershell", "cmd": "\"git branch pw14\" | iex", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c337", "cat": "ps-wrap", "dialect": "powershell", "cmd": "'git branch pw15' | Invoke-Expression", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c338", "cat": "ps-wrap", "dialect": "powershell", "cmd": "$s = @'\ngit branch pw16\n'@\nIex $s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c339", "cat": "ps-wrap", "dialect": "powershell", "cmd": "$b = 'pw17'; git branch $b", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c340", "cat": "ps-wrap", "dialect": "powershell", "cmd": "$g = 'git'; & $g branch pw18", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c341", "cat": "ps-wrap", "dialect": "powershell", "cmd": "$cmd = 'git branch pw19'; Invoke-Expression $cmd", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c342", "cat": "ps-wrap", "dialect": "powershell", "cmd": "& git worktree add ..\\pw20 -b pw20", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c343", "cat": "ps-wrap", "dialect": "powershell", "cmd": "git -c alias.x='branch pw21' x", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c344", "cat": "ps-wrap", "dialect": "powershell", "cmd": "sal g git; g switch -c pw22", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c345", "cat": "ps-wrap", "dialect": "powershell", "cmd": "bash -c 'git branch pw23'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c346", "cat": "ps-wrap", "dialect": "powershell", "cmd": "sh -c \"git branch pw24\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c347", "cat": "ps-wrap", "dialect": "powershell", "cmd": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { git branch pw25 }\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c348", "cat": "ps-wrap", "dialect": "powershell", "cmd": "Start-Job { git branch pw26 } | Wait-Job | Out-Null", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c349", "cat": "ps-wrap", "dialect": "powershell", "cmd": "$x = git branch pw27", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c350", "cat": "ps-wrap", "dialect": "powershell", "cmd": "git branch pw28 | Out-Null", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c351", "cat": "ps-wrap", "dialect": "powershell", "cmd": "git branch pw29 2>&1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c352", "cat": "ps-wrap", "dialect": "powershell", "cmd": "git branch pw30 > $null", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c353", "cat": "ps-wrap", "dialect": "powershell", "cmd": "Push-Location ..\\other; git branch pw31; Pop-Location", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c354", "cat": "ps-wrap", "dialect": "powershell", "cmd": "& cmd /c git branch pw32", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c355", "cat": "ps-wrap", "dialect": "powershell", "cmd": "git branch pw33 *> $null", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c356", "cat": "ps-wrap", "dialect": "powershell", "cmd": "'git branch pw34' | powershell -NoProfile -Command -", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c357", "cat": "ps-wrap", "dialect": "powershell", "cmd": "git --% branch pw35", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c358", "cat": "ps-wrap", "dialect": "powershell", "cmd": "@('pw36','pw37') | % { git branch $_ }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c359", "cat": "ps-wrap", "dialect": "powershell", "cmd": "powershell -NoProfile -EncodedCommand ZwBpAHQAIABiAHIAYQBuAGMAaAAgAHAAdwAzADgA", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c360", "cat": "ps-wrap", "dialect": "powershell", "cmd": "powershell -EncodedCommand ZwBpAHQAIABiAHIAYQBuAGMAaAAgAHAAdwAzADkA", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c361", "cat": "ps-wrap", "dialect": "bash", "cmd": "bash -c \"powershell -NoProfile -EncodedCommand ZwBpAHQAIABiAHIAYQBuAGMAaAAgAHAAdwA0ADAA\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c362", "cat": "ps-wrap", "dialect": "powershell", "cmd": ".\\mk.ps1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c363", "cat": "ps-wrap", "dialect": "powershell", "cmd": "powershell -NoProfile -File mk.ps1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c364", "cat": "ps-wrap", "dialect": "powershell", "cmd": "cmd /c mk.bat", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c365", "cat": "ps-wrap", "dialect": "powershell", "cmd": "& .\\mk.ps1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c366", "cat": "ps-wrap", "dialect": "cmd", "cmd": "git branch pw45", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c367", "cat": "ps-wrap", "dialect": "cmd", "cmd": "git status && git branch pw46", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c368", "cat": "ps-wrap", "dialect": "cmd", "cmd": "set B=pw47 && git branch %B%", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c369", "cat": "ps-wrap", "dialect": "cmd", "cmd": "for %i in (a) do git branch pw48-%i", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c370", "cat": "ps-wrap", "dialect": "cmd", "cmd": "cd ..\\other && git switch -c pw49", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "c371", "cat": "adv-bash", "dialect": "bash", "cmd": "echo Z2l0IGJyYW5jaCBvYjE= | base64 -d | sh", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c372", "cat": "adv-bash", "dialect": "bash", "cmd": "echo Z2l0IGJyYW5jaCBvYjI= | base64 --decode | bash", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c373", "cat": "adv-bash", "dialect": "bash", "cmd": "bash -c \"$(echo Z2l0IGJyYW5jaCBvYjM= | base64 -d)\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c374", "cat": "adv-bash", "dialect": "bash", "cmd": "eval \"$(echo Z2l0IGJyYW5jaCBvYjQ= | base64 -d)\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c375", "cat": "adv-bash", "dialect": "bash", "cmd": "printf '\\x67\\x69\\x74 branch ob5' | sh", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c376", "cat": "adv-bash", "dialect": "bash", "cmd": "echo -e '\\x67it branch ob6' | sh", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c377", "cat": "adv-bash", "dialect": "bash", "cmd": "`echo git` branch ob7", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c378", "cat": "adv-bash", "dialect": "bash", "cmd": "$(echo git) branch ob8", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c379", "cat": "adv-bash", "dialect": "bash", "cmd": "read c <<< branch; git $c ob12", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c380", "cat": "adv-bash", "dialect": "bash", "cmd": "cmd=(git branch ob13); \"${cmd[@]}\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c381", "cat": "adv-bash", "dialect": "bash", "cmd": "c=switch; git $c -c ob14", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c382", "cat": "adv-bash", "dialect": "bash", "cmd": "git $(echo branch) ob15", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c383", "cat": "adv-bash", "dialect": "bash", "cmd": "git `echo branch` ob16", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c384", "cat": "adv-bash", "dialect": "bash", "cmd": "x=\"git branch ob17\"; $x", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c385", "cat": "adv-bash", "dialect": "bash", "cmd": "x=\"git branch ob18\"; eval $x", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c386", "cat": "adv-bash", "dialect": "bash", "cmd": "x=\"git branch ob19\"; bash -c \"$x\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c387", "cat": "adv-bash", "dialect": "bash", "cmd": "x=\"git branch ob20\"; sh -c \"$x\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c388", "cat": "adv-bash", "dialect": "bash", "cmd": "a=git; b=branch; $a $b ob21", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c389", "cat": "adv-bash", "dialect": "bash", "cmd": "a=git; b=branch; \"$a\" \"$b\" ob22", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c390", "cat": "adv-bash", "dialect": "bash", "cmd": "g() { git \"$@\"; }; g branch ob23", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c391", "cat": "adv-bash", "dialect": "bash", "cmd": "alias gb=\"git branch\"; shopt -s expand_aliases; gb ob24", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "c392", "cat": "adv-bash", "dialect": "bash", "cmd": "echo \"git branch ob25\" > /tmp/ob25.sh; bash /tmp/ob25.sh", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c393", "cat": "adv-bash", "dialect": "bash", "cmd": "IFS=:; set -- git:branch:ob26; \"$@\"", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "c394", "cat": "adv-bash", "dialect": "bash", "cmd": "git branch ${EMPTY:-ob27}", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c395", "cat": "adv-bash", "dialect": "bash", "cmd": "git branch \"$(echo ob28)\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c396", "cat": "adv-bash", "dialect": "bash", "cmd": "exec 3>&1; git branch ob29 >&3", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c397", "cat": "adv-bash", "dialect": "bash", "cmd": "git branch ob30 `# comment`", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c398", "cat": "adv-bash", "dialect": "bash", "cmd": "git${IFS}branch${IFS}ob31", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "c399", "cat": "adv-bash", "dialect": "bash", "cmd": "git\tbranch\tob32", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c400", "cat": "adv-bash", "dialect": "bash", "cmd": "git  branch  ob33", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c401", "cat": "adv-bash", "dialect": "bash", "cmd": "git branch -- ob34", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c402", "cat": "adv-bash", "dialect": "bash", "cmd": "git branch ob35 --", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c403", "cat": "adv-bash", "dialect": "bash", "cmd": "GIT_EXEC_PATH=. git branch ob36", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c404", "cat": "adv-bash", "dialect": "bash", "cmd": "bash -c 'x=branch; git $x ob37'", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c405", "cat": "adv-bash", "dialect": "bash", "cmd": "bash -c 'git $0 ob38' branch", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c406", "cat": "adv-bash", "dialect": "bash", "cmd": "bash -c 'git $1 ob39' _ branch", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c407", "cat": "adv-bash", "dialect": "bash", "cmd": "git -c alias.zz=branch zz ob40", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c408", "cat": "adv-bash", "dialect": "bash", "cmd": "xargs -I{} git branch {} <<< ob41", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c409", "cat": "adv-bash", "dialect": "bash", "cmd": "echo ob42 | while read b; do git branch $b; done", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c410", "cat": "adv-bash", "dialect": "bash", "cmd": "git branch $(printf ob43)", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c411", "cat": "adv-bash", "dialect": "bash", "cmd": "bash -c \"bash -c \\\"git branch ob44\\\"\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c412", "cat": "adv-bash", "dialect": "bash", "cmd": "sh -c 'sh -c \"git branch ob45\"'", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c413", "cat": "adv-bash", "dialect": "bash", "cmd": "eval \"eval \\\"git branch ob46\\\"\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c414", "cat": "adv-bash", "dialect": "bash", "cmd": "env sh -c \"git branch ob47\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c415", "cat": "adv-bash", "dialect": "bash", "cmd": "nohup bash -c \"git branch ob48\" >/dev/null 2>&1", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c416", "cat": "adv-bash", "dialect": "bash", "cmd": "git branch ob49 && echo ok || echo bad", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c417", "cat": "adv-bash", "dialect": "bash", "cmd": "echo $(( 1 + 1 )) && git branch ob50", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c418", "cat": "adv-bash", "dialect": "bash", "cmd": "echo 'git branch ob51' | base64 | base64 -d | sh", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c419", "cat": "adv-bash", "dialect": "bash", "cmd": "curl -s file:///nonexistent | sh", "adv": true, "scope": "in", "branch": false, "note": "network pipe without git token: allowed by policy"}
+{"id": "c420", "cat": "adv-bash", "dialect": "bash", "cmd": "git branch \"$(cat <<EOF\nob52\nEOF\n)\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c421", "cat": "adv-bash", "dialect": "bash", "cmd": "git worktree add ../ow1 -b \"$(basename ../ow1)\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c422", "cat": "adv-bash", "dialect": "bash", "cmd": "git config alias.mk2 '!sh -c \"git branch $0\"' && git mk2 ob53", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "c423", "cat": "adv-bash", "dialect": "bash", "cmd": "f=$(mktemp); echo \"git branch ob54\" > $f; sh $f", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c424", "cat": "adv-bash", "dialect": "bash", "cmd": "python -c \"import subprocess; subprocess.run(['git','branch','py1'])\"", "adv": true, "scope": "in", "branch": true, "note": "RESIDUAL: interpreter code"}
+{"id": "c425", "cat": "adv-bash", "dialect": "bash", "cmd": "python -c \"import os; os.system('git branch py2')\"", "adv": true, "scope": "in", "branch": true, "note": "RESIDUAL: interpreter code"}
+{"id": "c426", "cat": "adv-bash", "dialect": "bash", "cmd": "node -e \"require('child_process').execSync('git branch js1')\"", "adv": true, "scope": "in", "branch": true, "note": "RESIDUAL: interpreter code"}
+{"id": "c427", "cat": "adv-bash", "dialect": "bash", "cmd": "perl -e 'system(\"git\",\"branch\",\"pl1\")'", "adv": true, "scope": "in", "branch": true, "note": "RESIDUAL: interpreter code"}
+{"id": "c428", "cat": "adv-bash", "dialect": "bash", "cmd": "mkdir -p .git/refs/heads/dir && cp .git/refs/heads/main .git/refs/heads/direct1", "adv": true, "scope": "in", "branch": true, "note": "RESIDUAL: direct ref file write"}
+{"id": "c429", "cat": "adv-bash", "dialect": "bash", "cmd": "cp .git/refs/heads/main .git/refs/heads/direct2", "adv": true, "scope": "in", "branch": true, "note": "RESIDUAL: direct ref file write"}
+{"id": "c430", "cat": "adv-bash", "dialect": "bash", "cmd": "cp -r . ../clonedir && cd ../clonedir && git branch cp1", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "c431", "cat": "adv-bash", "dialect": "bash", "cmd": "git branch ob55 && git worktree prune", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "c432", "cat": "adv-bash", "dialect": "bash", "cmd": "make lane", "adv": true, "scope": "in", "branch": false, "note": "RESIDUAL: build tool recipe"}
+{"id": "c433", "cat": "adv-bash", "dialect": "bash", "cmd": "npm run mklane", "adv": true, "scope": "in", "branch": false, "note": "package script readable from cwd; asserted (npm not run)"}
+{"id": "c434", "cat": "adv-bash", "dialect": "bash", "cmd": "git rebase --exec \"git branch rx1\" HEAD", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "c435", "cat": "adv-bash", "dialect": "bash", "cmd": "git rebase -x \"git branch rx2\" HEAD~0", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "c436", "cat": "adv-bash", "dialect": "bash", "cmd": "git submodule foreach \"git branch sm1\"", "adv": true, "scope": "in", "branch": false, "note": "no submodules in fixture: asserted"}
+{"id": "c437", "cat": "adv-bash", "dialect": "bash", "cmd": "git bisect run git branch bi1", "adv": true, "scope": "in", "branch": false, "note": "bisect session needed: asserted"}
+{"id": "c438", "cat": "adv-bash", "dialect": "bash", "cmd": "git -c core.pager=\"git branch pg1\" log -1", "adv": true, "scope": "in", "branch": false, "note": "pager runs only on a tty: asserted"}
+{"id": "c439", "cat": "adv-bash", "dialect": "bash", "cmd": "git -c core.editor=\"git branch ed1\" commit --allow-empty", "adv": true, "scope": "in", "branch": false, "note": "editor not launched with -m-less empty commit in oracle: asserted"}
+{"id": "c440", "cat": "adv-bash", "dialect": "bash", "cmd": "eval \"$(ssh-agent -s)\"", "adv": false, "scope": "in", "branch": false, "note": "benign env init"}
+{"id": "c441", "cat": "adv-bash", "dialect": "bash", "cmd": "curl -fsSL https://get.example.invalid/install.sh | sh", "adv": false, "scope": "in", "branch": false, "note": "installer with no git token"}
+{"id": "c442", "cat": "adv-bash", "dialect": "bash", "cmd": "curl -fsSL https://get.example.invalid/x | bash -s -- git branch", "adv": true, "scope": "in", "branch": false, "note": "remote code + git hint: asserted positive"}
+{"id": "c443", "cat": "neg-git", "dialect": "bash", "cmd": "git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c444", "cat": "neg-git", "dialect": "bash", "cmd": "git status --short", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c445", "cat": "neg-git", "dialect": "bash", "cmd": "git diff HEAD~1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c446", "cat": "neg-git", "dialect": "bash", "cmd": "git diff --stat", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c447", "cat": "neg-git", "dialect": "bash", "cmd": "git log --oneline", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c448", "cat": "neg-git", "dialect": "bash", "cmd": "git log --oneline --branches", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c449", "cat": "neg-git", "dialect": "bash", "cmd": "git log --all --graph", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c450", "cat": "neg-git", "dialect": "bash", "cmd": "git log -p -- src/app.py", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c451", "cat": "neg-git", "dialect": "bash", "cmd": "git show main:a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c452", "cat": "neg-git", "dialect": "bash", "cmd": "git add -A", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c453", "cat": "neg-git", "dialect": "bash", "cmd": "git add -A && git commit -m \"git branch x\" --allow-empty", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c454", "cat": "neg-git", "dialect": "bash", "cmd": "git commit -m \"feat: git switch -c fix\" --allow-empty", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c455", "cat": "neg-git", "dialect": "bash", "cmd": "git commit --allow-empty -m \"chore: remove git worktree add helper\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c456", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout -- a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c457", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c458", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout HEAD -- a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c459", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c460", "cat": "neg-git", "dialect": "bash", "cmd": "git switch main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c461", "cat": "neg-git", "dialect": "bash", "cmd": "git switch existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c462", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c463", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout -", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c464", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout origin/feature-r", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c465", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout --detach main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c466", "cat": "neg-git", "dialect": "bash", "cmd": "git switch --detach main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c467", "cat": "neg-git", "dialect": "bash", "cmd": "git switch -d origin/feature-r", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c468", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout HEAD~0", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c469", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout main --", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c470", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout -f main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c471", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout -m main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c472", "cat": "neg-git", "dialect": "bash", "cmd": "git branch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c473", "cat": "neg-git", "dialect": "bash", "cmd": "git branch -a", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c474", "cat": "neg-git", "dialect": "bash", "cmd": "git branch -r", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c475", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --list \"feat*\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c476", "cat": "neg-git", "dialect": "bash", "cmd": "git branch -l", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c477", "cat": "neg-git", "dialect": "bash", "cmd": "git branch -d existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c478", "cat": "neg-git", "dialect": "bash", "cmd": "git branch -D wt3", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c479", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --delete existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c480", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --show-current", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c481", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --contains HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c482", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --merged main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c483", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --no-merged main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c484", "cat": "neg-git", "dialect": "bash", "cmd": "git branch -u origin/main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c485", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --set-upstream-to=origin/main existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c486", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --unset-upstream", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c487", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --points-at HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c488", "cat": "neg-git", "dialect": "bash", "cmd": "git branch -a --list \"*r\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c489", "cat": "neg-git", "dialect": "bash", "cmd": "git branch -r --list \"origin/*\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c490", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --format=\"%(refname:short)\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c491", "cat": "neg-git", "dialect": "bash", "cmd": "git branch -d -r origin/feature-r", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c492", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c493", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree list --porcelain", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c494", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree prune", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c495", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree remove ../nope", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c496", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree lock ../nope", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c497", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree repair", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c498", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree move ../nope ../nope2", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c499", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree unlock ../nope", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c500", "cat": "neg-git", "dialect": "bash", "cmd": "git tag t1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c501", "cat": "neg-git", "dialect": "bash", "cmd": "git tag -a t2 -m x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c502", "cat": "neg-git", "dialect": "bash", "cmd": "git tag -d t1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c503", "cat": "neg-git", "dialect": "bash", "cmd": "git update-ref refs/tags/t3 HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c504", "cat": "neg-git", "dialect": "bash", "cmd": "git update-ref -d refs/heads/existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c505", "cat": "neg-git", "dialect": "bash", "cmd": "git update-ref refs/notes/n HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c506", "cat": "neg-git", "dialect": "bash", "cmd": "git update-ref HEAD HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c507", "cat": "neg-git", "dialect": "bash", "cmd": "git update-ref heads/q1 HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c508", "cat": "neg-git", "dialect": "bash", "cmd": "git symbolic-ref HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c509", "cat": "neg-git", "dialect": "bash", "cmd": "git symbolic-ref -q HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c510", "cat": "neg-git", "dialect": "bash", "cmd": "git symbolic-ref HEAD refs/heads/main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c511", "cat": "neg-git", "dialect": "bash", "cmd": "git symbolic-ref --short HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c512", "cat": "neg-git", "dialect": "bash", "cmd": "git fetch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c513", "cat": "neg-git", "dialect": "bash", "cmd": "git fetch --all", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c514", "cat": "neg-git", "dialect": "bash", "cmd": "git fetch origin", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c515", "cat": "neg-git", "dialect": "bash", "cmd": "git fetch origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c516", "cat": "neg-git", "dialect": "bash", "cmd": "git fetch origin main:refs/remotes/o/main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c517", "cat": "neg-git", "dialect": "bash", "cmd": "git fetch origin 'refs/heads/*:refs/remotes/origin/*'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c518", "cat": "neg-git", "dialect": "bash", "cmd": "git fetch --tags", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c519", "cat": "neg-git", "dialect": "bash", "cmd": "git fetch -p", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c520", "cat": "neg-git", "dialect": "bash", "cmd": "git pull", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c521", "cat": "neg-git", "dialect": "bash", "cmd": "git pull origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c522", "cat": "neg-git", "dialect": "bash", "cmd": "git push origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c523", "cat": "neg-git", "dialect": "bash", "cmd": "git push origin main:newremote", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c524", "cat": "neg-git", "dialect": "bash", "cmd": "git push --set-upstream origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c525", "cat": "neg-git", "dialect": "bash", "cmd": "git push -u origin HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c526", "cat": "neg-git", "dialect": "bash", "cmd": "git push --delete origin feature-s", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c527", "cat": "neg-git", "dialect": "bash", "cmd": "git push origin :feature-r", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c528", "cat": "neg-git", "dialect": "bash", "cmd": "git fetch origin refs/tags/*:refs/tags/*", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c529", "cat": "neg-git", "dialect": "bash", "cmd": "git push origin HEAD:refs/heads/remote-new", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c530", "cat": "neg-git", "dialect": "bash", "cmd": "git stash", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c531", "cat": "neg-git", "dialect": "bash", "cmd": "git stash list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c532", "cat": "neg-git", "dialect": "bash", "cmd": "git stash show", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c533", "cat": "neg-git", "dialect": "bash", "cmd": "git stash drop", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c534", "cat": "neg-git", "dialect": "bash", "cmd": "git rebase main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c535", "cat": "neg-git", "dialect": "bash", "cmd": "git merge existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c536", "cat": "neg-git", "dialect": "bash", "cmd": "git cherry-pick HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c537", "cat": "neg-git", "dialect": "bash", "cmd": "git reset --hard", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c538", "cat": "neg-git", "dialect": "bash", "cmd": "git reset --soft HEAD~0", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c539", "cat": "neg-git", "dialect": "bash", "cmd": "git restore a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c540", "cat": "neg-git", "dialect": "bash", "cmd": "git restore --staged a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c541", "cat": "neg-git", "dialect": "bash", "cmd": "git rm -r --cached src", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c542", "cat": "neg-git", "dialect": "bash", "cmd": "git mv a.txt b.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c543", "cat": "neg-git", "dialect": "bash", "cmd": "git remote -v", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c544", "cat": "neg-git", "dialect": "bash", "cmd": "git remote add o2 ../origin.git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c545", "cat": "neg-git", "dialect": "bash", "cmd": "git remote set-url origin ../origin.git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c546", "cat": "neg-git", "dialect": "bash", "cmd": "git config user.name x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c547", "cat": "neg-git", "dialect": "bash", "cmd": "git config --get-regexp \"^alias\\.\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c548", "cat": "neg-git", "dialect": "bash", "cmd": "git rev-parse --abbrev-ref HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c549", "cat": "neg-git", "dialect": "bash", "cmd": "git for-each-ref refs/heads", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c550", "cat": "neg-git", "dialect": "bash", "cmd": "git ls-files", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c551", "cat": "neg-git", "dialect": "bash", "cmd": "git blame a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c552", "cat": "neg-git", "dialect": "bash", "cmd": "git grep git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c553", "cat": "neg-git", "dialect": "bash", "cmd": "git describe --always", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c554", "cat": "neg-git", "dialect": "bash", "cmd": "git reflog", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c555", "cat": "neg-git", "dialect": "bash", "cmd": "git gc", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c556", "cat": "neg-git", "dialect": "bash", "cmd": "git clean -fd", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c557", "cat": "neg-git", "dialect": "bash", "cmd": "git cat-file -p HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c558", "cat": "neg-git", "dialect": "bash", "cmd": "git show-ref", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c559", "cat": "neg-git", "dialect": "bash", "cmd": "git merge-base main HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c560", "cat": "neg-git", "dialect": "bash", "cmd": "git submodule status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c561", "cat": "neg-git", "dialect": "bash", "cmd": "git bisect log", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c562", "cat": "neg-git", "dialect": "bash", "cmd": "git -C src status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c563", "cat": "neg-git", "dialect": "bash", "cmd": "git -C . log -1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c564", "cat": "neg-git", "dialect": "bash", "cmd": "cd src && git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c565", "cat": "neg-git", "dialect": "bash", "cmd": "git --no-pager log -1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c566", "cat": "neg-git", "dialect": "bash", "cmd": "git -c user.name=x commit --allow-empty -m m", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c567", "cat": "neg-git", "dialect": "bash", "cmd": "GIT_PAGER=cat git log -1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c568", "cat": "neg-git", "dialect": "bash", "cmd": "git status --short | wc -l", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c569", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree list | grep main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c570", "cat": "neg-git", "dialect": "bash", "cmd": "git rev-parse --show-toplevel", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c571", "cat": "neg-git", "dialect": "bash", "cmd": "git ls-remote origin", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c572", "cat": "neg-git", "dialect": "bash", "cmd": "git archive HEAD -o ../a.tar", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c573", "cat": "neg-git", "dialect": "bash", "cmd": "git tag --list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c574", "cat": "neg-git", "dialect": "bash", "cmd": "git notes list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c575", "cat": "neg-git", "dialect": "bash", "cmd": "git shortlog -sn", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c576", "cat": "neg-git", "dialect": "bash", "cmd": "git count-objects -v", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c577", "cat": "neg-git", "dialect": "bash", "cmd": "git fsck", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c578", "cat": "neg-git", "dialect": "bash", "cmd": "git maintenance run", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c579", "cat": "neg-git", "dialect": "bash", "cmd": "git sparse-checkout list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c580", "cat": "neg-git", "dialect": "bash", "cmd": "git diff main...existing --stat", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c581", "cat": "neg-git", "dialect": "bash", "cmd": "git log main..existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c582", "cat": "neg-git", "dialect": "bash", "cmd": "git merge-tree --write-tree main existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c583", "cat": "neg-git", "dialect": "bash", "cmd": "git read-tree HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c584", "cat": "neg-git", "dialect": "bash", "cmd": "git config --list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c585", "cat": "neg-git", "dialect": "bash", "cmd": "git config alias.lg \"log --oneline\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c586", "cat": "neg-git", "dialect": "bash", "cmd": "git -c alias.st=status st", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c587", "cat": "neg-git", "dialect": "bash", "cmd": "git lg", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c588", "cat": "neg-git", "dialect": "bash", "cmd": "git stage a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c589", "cat": "neg-git", "dialect": "bash", "cmd": "git version", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c590", "cat": "neg-git", "dialect": "bash", "cmd": "git --version", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c591", "cat": "neg-git", "dialect": "bash", "cmd": "git help branch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c592", "cat": "neg-git", "dialect": "bash", "cmd": "git branch --help", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c593", "cat": "neg-git", "dialect": "bash", "cmd": "git switch --help", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c594", "cat": "neg-git", "dialect": "bash", "cmd": "git worktree --help", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c595", "cat": "neg-git", "dialect": "bash", "cmd": "git checkout --help", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c596", "cat": "neg-git", "dialect": "bash", "cmd": "git lg", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c597", "cat": "neg-git", "dialect": "bash", "cmd": "git sh", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c598", "cat": "neg-git", "dialect": "bash", "cmd": "git chk existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c599", "cat": "neg-git", "dialect": "bash", "cmd": "git lsb", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c600", "cat": "neg-inert", "dialect": "bash", "cmd": "echo \"git branch x\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c601", "cat": "neg-inert", "dialect": "bash", "cmd": "echo git switch -c x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c602", "cat": "neg-inert", "dialect": "bash", "cmd": "printf 'git worktree add ../x\\n'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c603", "cat": "neg-inert", "dialect": "bash", "cmd": "# git branch x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c604", "cat": "neg-inert", "dialect": "bash", "cmd": "echo hi # git branch x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c605", "cat": "neg-inert", "dialect": "bash", "cmd": "cat <<'EOF'\ngit branch x\nEOF", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c606", "cat": "neg-inert", "dialect": "bash", "cmd": "cat > notes.md <<EOF\ngit checkout -b x\nEOF", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c607", "cat": "neg-inert", "dialect": "bash", "cmd": "grep -r \"git checkout -b\" .", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c608", "cat": "neg-inert", "dialect": "bash", "cmd": "rg -n \"worktree add\" .", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c609", "cat": "neg-inert", "dialect": "bash", "cmd": "man git-branch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c610", "cat": "neg-inert", "dialect": "bash", "cmd": "man git branch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c611", "cat": "neg-inert", "dialect": "bash", "cmd": "which git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c612", "cat": "neg-inert", "dialect": "bash", "cmd": "type git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c613", "cat": "neg-inert", "dialect": "bash", "cmd": "command -v git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c614", "cat": "neg-inert", "dialect": "bash", "cmd": "echo 'git branch x' > plan.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c615", "cat": "neg-inert", "dialect": "bash", "cmd": "git log --grep=\"git branch\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c616", "cat": "neg-inert", "dialect": "bash", "cmd": "ls -la", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c617", "cat": "neg-inert", "dialect": "bash", "cmd": "cat a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c618", "cat": "neg-inert", "dialect": "bash", "cmd": "python -c \"print('git branch x')\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c619", "cat": "neg-inert", "dialect": "bash", "cmd": "python -c \"import sys; print(sys.version)\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c620", "cat": "neg-inert", "dialect": "bash", "cmd": "pytest -q tests/ 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c621", "cat": "neg-inert", "dialect": "bash", "cmd": "for f in *.txt; do echo $f; done", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c622", "cat": "neg-inert", "dialect": "bash", "cmd": "for b in $(git branch --list); do echo $b; done", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c623", "cat": "neg-inert", "dialect": "bash", "cmd": "git branch --list | while read b; do echo $b; done", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c624", "cat": "neg-inert", "dialect": "bash", "cmd": "x=$(git rev-parse HEAD); echo $x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c625", "cat": "neg-inert", "dialect": "bash", "cmd": "git diff | head", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c626", "cat": "neg-inert", "dialect": "bash", "cmd": "sed -i 's/git branch/git tag/' a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c627", "cat": "neg-inert", "dialect": "bash", "cmd": "awk '{print}' a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c628", "cat": "neg-inert", "dialect": "bash", "cmd": "find . -name \"*.py\" -exec wc -l {} \\;", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c629", "cat": "neg-inert", "dialect": "bash", "cmd": "echo $((1+2))", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c630", "cat": "neg-inert", "dialect": "bash", "cmd": "bash -c 'echo hi'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c631", "cat": "neg-inert", "dialect": "bash", "cmd": "bash -c \"echo $PWD\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c632", "cat": "neg-inert", "dialect": "bash", "cmd": "sh ./nothere.sh", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c633", "cat": "neg-inert", "dialect": "bash", "cmd": "wc -l a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c634", "cat": "neg-inert", "dialect": "bash", "cmd": "echo 'to create a lane run: git worktree add ../x -b x'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c635", "cat": "neg-inert", "dialect": "bash", "cmd": "echo \"use git checkout -b <name>\" >> a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c636", "cat": "neg-inert", "dialect": "bash", "cmd": "head -n 3 a.txt | tr a-z A-Z", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c637", "cat": "neg-inert", "dialect": "bash", "cmd": "git log --format='%H' | head -3 | xargs -n1 echo", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c638", "cat": "neg-inert", "dialect": "bash", "cmd": "echo branch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c639", "cat": "neg-inert", "dialect": "bash", "cmd": "echo \"branch\" \"switch\" \"checkout\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c640", "cat": "neg-inert", "dialect": "bash", "cmd": "printf '%s\\n' git branch x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c641", "cat": "neg-inert", "dialect": "bash", "cmd": "echo 'x' | xargs echo git branch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c642", "cat": "neg-inert", "dialect": "bash", "cmd": "node -e \"console.log(1)\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c643", "cat": "neg-inert", "dialect": "bash", "cmd": "make -n", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c644", "cat": "neg-inert", "dialect": "bash", "cmd": "ls ../other", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c645", "cat": "neg-inert", "dialect": "bash", "cmd": "mkdir -p build/git && ls build", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c646", "cat": "neg-inert", "dialect": "bash", "cmd": "touch git branch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c647", "cat": "neg-inert", "dialect": "bash", "cmd": "cat <<EOF > t.sh\n#!/bin/sh\ngit branch x\nEOF\nchmod +x t.sh", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c648", "cat": "neg-inert", "dialect": "bash", "cmd": "echo \"git worktree add\" | grep worktree", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c649", "cat": "neg-inert", "dialect": "bash", "cmd": "date; pwd; whoami", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c650", "cat": "neg-inert", "dialect": "bash", "cmd": "ls -la | grep git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c651", "cat": "neg-inert", "dialect": "bash", "cmd": "cd ..; cd -", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c652", "cat": "neg-inert", "dialect": "bash", "cmd": "export FOO=bar; echo $FOO", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c653", "cat": "neg-inert", "dialect": "bash", "cmd": "set -e; echo ok", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c654", "cat": "neg-inert", "dialect": "bash", "cmd": "unset FOO", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c655", "cat": "neg-inert", "dialect": "bash", "cmd": "test -d .git && echo yes", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c656", "cat": "neg-inert", "dialect": "bash", "cmd": "[ -f a.txt ] && echo yes", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c657", "cat": "neg-inert", "dialect": "bash", "cmd": "echo $GIT_DIR", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c658", "cat": "neg-inert", "dialect": "bash", "cmd": "echo \"$(git rev-parse --short HEAD)\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c659", "cat": "neg-inert", "dialect": "bash", "cmd": "echo `git rev-parse HEAD`", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c660", "cat": "neg-inert", "dialect": "bash", "cmd": "echo $'\\x67it branch x'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c661", "cat": "neg-inert", "dialect": "bash", "cmd": "tar -tf ../a.tar | head", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c662", "cat": "neg-inert", "dialect": "bash", "cmd": "cp a.txt b.txt && mv b.txt c.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c663", "cat": "neg-inert", "dialect": "bash", "cmd": "diff a.txt src/app.py; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c664", "cat": "neg-inert", "dialect": "bash", "cmd": "echo \"branch=x\" > .env", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c665", "cat": "neg-inert", "dialect": "bash", "cmd": "git_branch=x; echo $git_branch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c666", "cat": "neg-inert", "dialect": "bash", "cmd": "GIT_BRANCH=x; echo $GIT_BRANCH", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c667", "cat": "neg-inert", "dialect": "bash", "cmd": "echo git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c668", "cat": "neg-inert", "dialect": "bash", "cmd": "bash -c \"git status\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c669", "cat": "neg-inert", "dialect": "bash", "cmd": "sh -c \"git log -1\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c670", "cat": "neg-inert", "dialect": "bash", "cmd": "eval \"git status\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c671", "cat": "neg-inert", "dialect": "bash", "cmd": "eval git log -1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c672", "cat": "neg-inert", "dialect": "bash", "cmd": "env git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c673", "cat": "neg-inert", "dialect": "bash", "cmd": "time git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c674", "cat": "neg-inert", "dialect": "bash", "cmd": "xargs echo < /dev/null", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c675", "cat": "neg-inert", "dialect": "bash", "cmd": "echo x | xargs -I{} echo {}", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c676", "cat": "neg-inert", "dialect": "bash", "cmd": "find . -maxdepth 0 -exec git status \\;", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c677", "cat": "neg-inert", "dialect": "bash", "cmd": "echo \"git branch x\" | cat", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c678", "cat": "neg-inert", "dialect": "bash", "cmd": "echo \"git branch x\" | tee notes.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c679", "cat": "neg-inert", "dialect": "bash", "cmd": "echo git branch x | wc -c", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c680", "cat": "neg-inert", "dialect": "bash", "cmd": "echo 'git branch x' | base64", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c681", "cat": "neg-inert", "dialect": "bash", "cmd": "echo Z2l0 | base64 -d", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c682", "cat": "neg-inert", "dialect": "bash", "cmd": "echo Z2l0IHN0YXR1cw== | base64 -d | cat", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c683", "cat": "neg-inert", "dialect": "bash", "cmd": "sleep 0", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c684", "cat": "neg-inert", "dialect": "bash", "cmd": "true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c685", "cat": "neg-inert", "dialect": "bash", "cmd": "exit 0", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c686", "cat": "neg-inert", "dialect": "bash", "cmd": ":", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c687", "cat": "neg-inert", "dialect": "bash", "cmd": "echo done", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c688", "cat": "neg-inert", "dialect": "bash", "cmd": "echo $(( 1 + 1 ))", "adv": false, "scope": "in", "branch": false, "note": "arith"}
+{"id": "c689", "cat": "neg-inert", "dialect": "bash", "cmd": "$EDITOR a.txt", "adv": false, "scope": "in", "branch": false, "note": "unresolved program, no git token"}
+{"id": "c690", "cat": "neg-inert", "dialect": "bash", "cmd": "eval \"$(direnv hook bash)\"", "adv": false, "scope": "in", "branch": false, "note": "benign env init"}
+{"id": "c691", "cat": "neg-inert", "dialect": "bash", "cmd": "eval \"$(pyenv init -)\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c692", "cat": "neg-inert", "dialect": "bash", "cmd": "curl -s https://example.invalid/x | head", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c693", "cat": "neg-inert", "dialect": "bash", "cmd": "ssh host \"git branch x\"", "adv": false, "scope": "in", "branch": false, "note": "remote host: not a local lane"}
+{"id": "c694", "cat": "neg-inert", "dialect": "bash", "cmd": "docker run --rm img git branch x", "adv": false, "scope": "in", "branch": false, "note": "container: not a local lane"}
+{"id": "c695", "cat": "neg-inert", "dialect": "bash", "cmd": "sudo apt-get install -y git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c696", "cat": "neg-inert", "dialect": "bash", "cmd": "npm install git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c697", "cat": "neg-inert", "dialect": "bash", "cmd": "pip install gitpython", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c698", "cat": "neg-inert", "dialect": "bash", "cmd": "cd git && ls", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c699", "cat": "neg-inert", "dialect": "bash", "cmd": "ls git branch", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c700", "cat": "neg-inert", "dialect": "bash", "cmd": "chmod +x git.sh", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c701", "cat": "neg-inert", "dialect": "bash", "cmd": "bash -c \"$CMD\"", "adv": false, "scope": "in", "branch": false, "note": "dynamic code, no git token anywhere"}
+{"id": "c702", "cat": "neg-inert", "dialect": "bash", "cmd": "source ~/.bashrc", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c703", "cat": "neg-inert", "dialect": "bash", "cmd": "source venv/bin/activate", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c704", "cat": "neg-inert", "dialect": "bash", "cmd": "git status; source venv/bin/activate", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c705", "cat": "neg-inert", "dialect": "bash", "cmd": "for c in status log; do git $c; done", "adv": false, "scope": "in", "branch": false, "note": "dynamic subcommand loop: fail-closed FP"}
+{"id": "c706", "cat": "neg-inert", "dialect": "bash", "cmd": "git \"$@\"", "adv": false, "scope": "in", "branch": false, "note": "wrapper pass-through: fail-closed FP"}
+{"id": "c707", "cat": "neg-inert", "dialect": "bash", "cmd": "git $GIT_OPTS status", "adv": false, "scope": "in", "branch": false, "note": "dynamic option position: git status"}
+{"id": "c708", "cat": "ps-neg", "dialect": "powershell", "cmd": "git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c709", "cat": "ps-neg", "dialect": "powershell", "cmd": "git log --oneline -5", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c710", "cat": "ps-neg", "dialect": "powershell", "cmd": "Get-ChildItem | Select-Object -First 3", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c711", "cat": "ps-neg", "dialect": "powershell", "cmd": "Write-Output \"git branch x\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c712", "cat": "ps-neg", "dialect": "powershell", "cmd": "echo 'git switch -c x'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c713", "cat": "ps-neg", "dialect": "powershell", "cmd": "\"git checkout -b x\" | Out-File notes.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c714", "cat": "ps-neg", "dialect": "powershell", "cmd": "Select-String -Path a.txt -Pattern \"git branch\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c715", "cat": "ps-neg", "dialect": "powershell", "cmd": "git branch --show-current", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c716", "cat": "ps-neg", "dialect": "powershell", "cmd": "git worktree list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c717", "cat": "ps-neg", "dialect": "powershell", "cmd": "foreach ($f in 1..3) { Write-Host $f }", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c718", "cat": "ps-neg", "dialect": "powershell", "cmd": "$x = git rev-parse HEAD; Write-Host $x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c719", "cat": "ps-neg", "dialect": "powershell", "cmd": "Get-Content a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c720", "cat": "ps-neg", "dialect": "powershell", "cmd": "git checkout -- a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c721", "cat": "ps-neg", "dialect": "powershell", "cmd": "git stash list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c722", "cat": "ps-neg", "dialect": "powershell", "cmd": "& git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c723", "cat": "ps-neg", "dialect": "powershell", "cmd": "powershell -NoProfile -Command \"git status\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c724", "cat": "ps-neg", "dialect": "powershell", "cmd": "Invoke-Expression \"git status\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c725", "cat": "ps-neg", "dialect": "powershell", "cmd": "iex 'git log -1'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c726", "cat": "ps-neg", "dialect": "powershell", "cmd": "Start-Process git -ArgumentList 'status' -NoNewWindow -Wait", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c727", "cat": "ps-neg", "dialect": "powershell", "cmd": "git branch -a", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c728", "cat": "ps-neg", "dialect": "powershell", "cmd": "git branch --list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c729", "cat": "ps-neg", "dialect": "powershell", "cmd": "git branch -d existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c730", "cat": "ps-neg", "dialect": "powershell", "cmd": "git checkout main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c731", "cat": "ps-neg", "dialect": "powershell", "cmd": "git switch main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c732", "cat": "ps-neg", "dialect": "powershell", "cmd": "git switch -", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c733", "cat": "ps-neg", "dialect": "powershell", "cmd": "git diff --stat", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c734", "cat": "ps-neg", "dialect": "powershell", "cmd": "Get-Location", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c735", "cat": "ps-neg", "dialect": "powershell", "cmd": "Set-Location src; git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c736", "cat": "ps-neg", "dialect": "powershell", "cmd": "cd src; git log -1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c737", "cat": "ps-neg", "dialect": "powershell", "cmd": "Write-Host \"git worktree add\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c738", "cat": "ps-neg", "dialect": "powershell", "cmd": "$env:FOO = \"bar\"; git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c739", "cat": "ps-neg", "dialect": "powershell", "cmd": "git -C src status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c740", "cat": "ps-neg", "dialect": "powershell", "cmd": "git commit --allow-empty -m \"git branch x\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c741", "cat": "ps-neg", "dialect": "powershell", "cmd": "\"branch\" | Out-Null", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c742", "cat": "ps-neg", "dialect": "powershell", "cmd": "Get-Process | Select-Object -First 1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c743", "cat": "ps-neg", "dialect": "powershell", "cmd": "Test-Path .git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c744", "cat": "ps-neg", "dialect": "powershell", "cmd": "Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c745", "cat": "ps-neg", "dialect": "powershell", "cmd": "powershell -Command \"Get-Date\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c746", "cat": "ps-neg", "dialect": "powershell", "cmd": "cmd /c dir", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c747", "cat": "ps-neg", "dialect": "powershell", "cmd": "cmd /c \"git status\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c748", "cat": "ps-neg", "dialect": "powershell", "cmd": "git fetch --all", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c749", "cat": "ps-neg", "dialect": "powershell", "cmd": "git fetch origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c750", "cat": "ps-neg", "dialect": "powershell", "cmd": "git tag t1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c751", "cat": "ps-neg", "dialect": "powershell", "cmd": "git update-ref refs/tags/t2 HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c752", "cat": "ps-neg", "dialect": "powershell", "cmd": "git symbolic-ref HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c753", "cat": "ps-neg", "dialect": "powershell", "cmd": "Write-Output 'git branch x' | Out-String", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c754", "cat": "ps-neg", "dialect": "powershell", "cmd": "$s = 'git branch x'; Write-Host $s", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c755", "cat": "ps-neg", "dialect": "powershell", "cmd": "$cmd = 'git status'; Invoke-Expression $cmd", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c756", "cat": "ps-neg", "dialect": "powershell", "cmd": "[string]::Join(',', 'git', 'branch')", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c757", "cat": "ps-neg", "dialect": "powershell", "cmd": "Get-Command git | Select-Object -ExpandProperty Source", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c758", "cat": "ps-neg", "dialect": "powershell", "cmd": "echo $PSVersionTable.PSVersion", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c759", "cat": "ps-neg", "dialect": "powershell", "cmd": "git log --format='%H' -3 | ForEach-Object { Write-Host $_ }", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c760", "cat": "ps-neg", "dialect": "powershell", "cmd": "git worktree prune", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c761", "cat": "ps-neg", "dialect": "powershell", "cmd": "git worktree remove ..\\nope", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c762", "cat": "ps-neg", "dialect": "powershell", "cmd": "$cmd = Read-Host; Invoke-Expression $cmd", "adv": false, "scope": "in", "branch": false, "note": "dynamic eval, no git token"}
+{"id": "c763", "cat": "ps-neg", "dialect": "powershell", "cmd": "iwr -useb https://get.example.invalid/x.ps1 | iex", "adv": false, "scope": "in", "branch": false, "note": "installer, no git token"}
+{"id": "c764", "cat": "ps-neg", "dialect": "cmd", "cmd": "git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c765", "cat": "ps-neg", "dialect": "cmd", "cmd": "dir && echo hi", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c766", "cat": "ps-neg", "dialect": "cmd", "cmd": "echo git branch x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c767", "cat": "ps-neg", "dialect": "cmd", "cmd": "git branch --list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c768", "cat": "out", "dialect": "bash", "cmd": "git clone ../origin.git ../c1", "adv": false, "scope": "out", "branch": false, "note": ""}
+{"id": "c769", "cat": "out", "dialect": "bash", "cmd": "git clone -b feature-r ../origin.git ../c2", "adv": false, "scope": "out", "branch": false, "note": ""}
+{"id": "c770", "cat": "out", "dialect": "bash", "cmd": "git init ../i1", "adv": false, "scope": "out", "branch": false, "note": ""}
+{"id": "c771", "cat": "out", "dialect": "bash", "cmd": "git init -b i2 ../i2", "adv": false, "scope": "out", "branch": false, "note": ""}
+{"id": "c772", "cat": "out", "dialect": "bash", "cmd": "git clone --local . ../c3", "adv": false, "scope": "out", "branch": false, "note": ""}
+{"id": "h000", "cat": "h-pos", "dialect": "bash", "cmd": "git worktree add ../h1 -b h1 origin/main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h001", "cat": "h-pos", "dialect": "bash", "cmd": "git worktree add --lock ../h2 -b h2", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h002", "cat": "h-pos", "dialect": "bash", "cmd": "git worktree add -B h3 ../h3 main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h003", "cat": "h-pos", "dialect": "bash", "cmd": "git checkout --orphan h4", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h004", "cat": "h-pos", "dialect": "bash", "cmd": "git switch --discard-changes -c h5", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h005", "cat": "h-pos", "dialect": "bash", "cmd": "git checkout -b h6 --track origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h006", "cat": "h-pos", "dialect": "bash", "cmd": "git branch --track h7 origin/feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h007", "cat": "h-pos", "dialect": "bash", "cmd": "git branch -c existing h8", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h008", "cat": "h-pos", "dialect": "bash", "cmd": "git branch -M wt3 h9", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h009", "cat": "h-pos", "dialect": "bash", "cmd": "git update-ref refs/heads/h10 HEAD~0", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h010", "cat": "h-pos", "dialect": "bash", "cmd": "git update-ref --create-reflog refs/heads/h11 main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h011", "cat": "h-pos", "dialect": "bash", "cmd": "git symbolic-ref HEAD refs/heads/h12", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h012", "cat": "h-pos", "dialect": "bash", "cmd": "git push . HEAD:refs/heads/h13", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h013", "cat": "h-pos", "dialect": "bash", "cmd": "git fetch . main:h14", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h014", "cat": "h-pos", "dialect": "bash", "cmd": "git fetch origin feature-r:refs/heads/h15", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h015", "cat": "h-pos", "dialect": "bash", "cmd": "echo x >> a.txt && git stash && git stash branch h17", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h016", "cat": "h-pos", "dialect": "bash", "cmd": "git checkout -b h18 && git commit --allow-empty -m x", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h017", "cat": "h-pos", "dialect": "bash", "cmd": "git -C . switch -c h19", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h018", "cat": "h-pos", "dialect": "bash", "cmd": "git --no-pager -c user.name=x branch h20", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h019", "cat": "h-pos", "dialect": "bash", "cmd": "git --git-dir=.git --work-tree=. branch h21", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h020", "cat": "h-pos", "dialect": "bash", "cmd": "GIT_DIR=.git git branch h22", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h021", "cat": "h-pos", "dialect": "bash", "cmd": "(cd . && git branch h23)", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h022", "cat": "h-pos", "dialect": "bash", "cmd": "{ git branch h24; }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h023", "cat": "h-pos", "dialect": "bash", "cmd": "git branch h25 2>&1 | tail -1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h024", "cat": "h-pos", "dialect": "bash", "cmd": "if git rev-parse HEAD; then git branch h26; fi", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h025", "cat": "h-pos", "dialect": "bash", "cmd": "for n in h27 h28; do git branch $n; done", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h026", "cat": "h-pos", "dialect": "bash", "cmd": "git branch $(date +h29%s)", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h027", "cat": "h-pos", "dialect": "bash", "cmd": "BR=h30; git switch -c \"$BR\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h028", "cat": "h-pos", "dialect": "bash", "cmd": "git branch h31 && git branch h32", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h029", "cat": "h-pos", "dialect": "bash", "cmd": "git worktree add \"../h 33\" -b h33", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h030", "cat": "h-pos", "dialect": "bash", "cmd": "git worktree add ../héllo -b h34", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h031", "cat": "h-pos", "dialect": "bash", "cmd": "git branch 'h35'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h032", "cat": "h-pos", "dialect": "bash", "cmd": "git branch \"h36\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h033", "cat": "h-pos", "dialect": "bash", "cmd": "git checkout -b h37 main --", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h034", "cat": "h-pos", "dialect": "bash", "cmd": "\\git branch h39", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h035", "cat": "h-pos", "dialect": "bash", "cmd": "command git branch h40", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h036", "cat": "h-pos", "dialect": "bash", "cmd": "exec git branch h41", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h037", "cat": "h-pos", "dialect": "bash", "cmd": "time git branch h42", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h038", "cat": "h-pos", "dialect": "bash", "cmd": "env -i PATH=\"$PATH\" git branch h43", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h039", "cat": "h-pos", "dialect": "bash", "cmd": "nice git branch h44", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h040", "cat": "h-pos", "dialect": "bash", "cmd": "g=git; $g branch h47", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h041", "cat": "h-pos", "dialect": "bash", "cmd": "git \"branch\" h48", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h042", "cat": "h-pos", "dialect": "bash", "cmd": "git 'switch' -c h49", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h043", "cat": "h-pos", "dialect": "bash", "cmd": "git bran\\ch h51", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h044", "cat": "h-pos", "dialect": "bash", "cmd": "git bra\"\"nch h52", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h045", "cat": "h-pos", "dialect": "bash", "cmd": "git $'branch' h53", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h046", "cat": "h-pos", "dialect": "bash", "cmd": "git {branch,h54}", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h047", "cat": "h-pos", "dialect": "bash", "cmd": "git branch h55 # comment", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h048", "cat": "h-pos", "dialect": "bash", "cmd": "git \\\n  branch h56", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h049", "cat": "h-pos", "dialect": "bash", "cmd": "printf 'git branch h57\\n' | bash", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h050", "cat": "h-pos", "dialect": "bash", "cmd": "bash <<< 'git branch h58'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h051", "cat": "h-pos", "dialect": "bash", "cmd": "bash <<'EOF'\ngit branch h59\nEOF", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h052", "cat": "h-pos", "dialect": "bash", "cmd": "echo 'git branch h60' | sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h053", "cat": "h-pos", "dialect": "bash", "cmd": "source <(echo 'git branch h61')", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h054", "cat": "h-pos", "dialect": "bash", "cmd": "eval 'git branch h62'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h055", "cat": "h-pos", "dialect": "bash", "cmd": "eval \"git branch $(echo h63)\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h056", "cat": "h-pos", "dialect": "bash", "cmd": "xargs -n1 git branch <<< h64", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h057", "cat": "h-pos", "dialect": "bash", "cmd": "find . -maxdepth 0 -exec git branch h65 \\;", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h058", "cat": "h-pos", "dialect": "bash", "cmd": "timeout 10 git branch h66", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h059", "cat": "h-pos", "dialect": "bash", "cmd": "git branch h67; true", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h060", "cat": "h-pos", "dialect": "bash", "cmd": "git worktree add -- ../h69 -b h69", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h061", "cat": "h-pos", "dialect": "bash", "cmd": "git checkout -b h70 HEAD~0", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h062", "cat": "h-pos", "dialect": "bash", "cmd": "git switch -c h71 existing", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h063", "cat": "h-pos", "dialect": "bash", "cmd": "git branch --create-reflog h72", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h064", "cat": "h-pos", "dialect": "bash", "cmd": "git branch -f h73 main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h065", "cat": "h-pos", "dialect": "bash", "cmd": "git checkout -B h74", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h066", "cat": "h-pos", "dialect": "bash", "cmd": "git switch -C h75", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h067", "cat": "h-pos", "dialect": "bash", "cmd": "git worktree add ../h76 existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h068", "cat": "h-pos", "dialect": "bash", "cmd": "git worktree add -b h77 ../h77 && cd ../h77 && git status", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h069", "cat": "h-pos", "dialect": "bash", "cmd": "git checkout -b h78 origin/feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h070", "cat": "h-pos", "dialect": "bash", "cmd": "git checkout --track origin/feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h071", "cat": "h-pos", "dialect": "bash", "cmd": "git switch --track origin/feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h072", "cat": "h-pos", "dialect": "bash", "cmd": "git switch -c h79 --track origin/main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h073", "cat": "h-pos", "dialect": "bash", "cmd": "git branch h80 origin/main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h074", "cat": "h-pos", "dialect": "bash", "cmd": "git worktree add --detach ../h81 && git -C ../h81 switch -c h81b", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h075", "cat": "h-pos", "dialect": "bash", "cmd": "git status && git checkout -b h82 && git status", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h076", "cat": "h-pos", "dialect": "bash", "cmd": "git diff --stat; git switch -c h83; git log -1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h077", "cat": "h-pos", "dialect": "bash", "cmd": "git fetch origin && git checkout -b h84 origin/main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h078", "cat": "h-pos", "dialect": "bash", "cmd": "git stash -u && git switch -c h85 && git stash pop", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h079", "cat": "h-pos-alias", "dialect": "bash", "cmd": "git b h86", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h080", "cat": "h-pos-alias", "dialect": "bash", "cmd": "git cob h87", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h081", "cat": "h-pos-alias", "dialect": "bash", "cmd": "git nw ../h88 h88", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h082", "cat": "h-pos-alias", "dialect": "bash", "cmd": "git mkbr h89", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h083", "cat": "h-pos-dwim", "dialect": "bash", "cmd": "git checkout feature-r", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h084", "cat": "h-pos-dwim", "dialect": "bash", "cmd": "git switch feature-s", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h085", "cat": "h-pos-dwim", "dialect": "bash", "cmd": "git checkout feature-s --", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h086", "cat": "h-pos-script", "dialect": "bash", "cmd": "bash lane.sh h90", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h087", "cat": "h-pos-script", "dialect": "bash", "cmd": "./mk.sh", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h088", "cat": "h-pos-script", "dialect": "bash", "cmd": "sh -c \"./mk.sh\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h089", "cat": "h-pos-script", "dialect": "bash", "cmd": "cd ../other && git worktree add ../h93w -b h93", "adv": false, "scope": "in", "branch": true, "note": "lane in the sibling repository"}
+{"id": "h090", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git branch h100", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h091", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "& git switch -c h101", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h092", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "& \"C:\\Program Files\\Git\\bin\\git.exe\" branch h102", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h093", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "$b='h103'; git branch $b", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h094", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git branch \"h$(104)\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h095", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "Invoke-Expression 'git branch h106'", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h096", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "powershell -NoProfile -Command \"git branch h107\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h097", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "Start-Process -FilePath git -ArgumentList 'branch','h109' -Wait -NoNewWindow", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h098", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "$env:GIT_DIR='.git'; git branch h110", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h099", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git worktree add ..\\h111 -b h111", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h100", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git branch h112 *>&1 | Out-Null", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h101", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "[void](git branch h113)", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h102", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git branch h114; if ($LASTEXITCODE) { exit 1 }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h103", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "try { git branch h115 } catch { Write-Error $_ }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h104", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "& git -C . branch h116", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h105", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "Set-Alias gg git; gg branch h118", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h106", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git branch ([string]'h119')", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h107", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "@\"\ngit branch h120\n\"@ | iex", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h108", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git checkout -b h121 2>$null", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h109", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "$n = 'h122'; git switch -c $n main", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h110", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git -c core.autocrlf=false branch h123", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h111", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "& 'git' branch h124", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h112", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "&git branch h125", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h113", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git worktree add (Join-Path .. 'h126') -b h126", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h114", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "$p = '..\\h127'; git worktree add $p -b h127", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h115", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git stash; git switch -c h128", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h116", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git.exe switch --create h129", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h117", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "Get-Location | Out-Null; git branch h130", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h118", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "\"git branch h131\" | Invoke-Expression", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h119", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "git branch h132 | Out-Host", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h120", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "foreach ($x in 'h133') { git branch $x }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h121", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "'h134' | ForEach-Object { git branch $_ }", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h122", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "$ErrorActionPreference = \"Stop\"; git branch h135", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h123", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "cmd /c git branch h136", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h124", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "cmd /c \"git branch h137\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h125", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "powershell -NoProfile -EncodedCommand ZwBpAHQAIABiAHIAYQBuAGMAaAAgAGgAMQAzADgA", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h126", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "powershell -c \"& { git branch h139 }\"", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h127", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "$cmd = 'git'; & $cmd branch h140", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h128", "cat": "h-ps-pos", "dialect": "powershell", "cmd": "iex ('git ' + 'branch h141')", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h129", "cat": "h-ps-pos", "dialect": "powershell", "cmd": ".\\hmk.ps1", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h130", "cat": "h-ps-pos", "dialect": "cmd", "cmd": "git branch h143", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h131", "cat": "h-ps-pos", "dialect": "cmd", "cmd": "cd ..\\other && git branch h144", "adv": false, "scope": "in", "branch": true, "note": ""}
+{"id": "h132", "cat": "h-adv", "dialect": "bash", "cmd": "bash -c 'git branch h200'", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h133", "cat": "h-adv", "dialect": "bash", "cmd": "sh -c 'sh -c \"git branch h201\"'", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h134", "cat": "h-adv", "dialect": "bash", "cmd": "echo Z2l0IGJyYW5jaCBoMjAy | base64 -d | sh", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h135", "cat": "h-adv", "dialect": "bash", "cmd": "printf 'git bra' > h.sh; printf 'nch h203' >> h.sh; sh h.sh", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h136", "cat": "h-adv", "dialect": "bash", "cmd": "a=gi; b=t; $a$b branch h204", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h137", "cat": "h-adv", "dialect": "bash", "cmd": "x=branch; git $x h205", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h138", "cat": "h-adv", "dialect": "bash", "cmd": "c=\"git branch\"; $c h206", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h139", "cat": "h-adv", "dialect": "bash", "cmd": "git branch h207 $(true)", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h140", "cat": "h-adv", "dialect": "bash", "cmd": "git b\"\"ranch h208", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h141", "cat": "h-adv", "dialect": "bash", "cmd": "git \"br\"\"anch\" h209", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h142", "cat": "h-adv", "dialect": "bash", "cmd": "git `echo branch` h210", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h143", "cat": "h-adv", "dialect": "bash", "cmd": "git $(echo branch) h211", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h144", "cat": "h-adv", "dialect": "bash", "cmd": "git branch \"$(echo h212)\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h145", "cat": "h-adv", "dialect": "bash", "cmd": "cmd=branch; git \"$cmd\" h213", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h146", "cat": "h-adv", "dialect": "bash", "cmd": "git ${x:-branch} h214", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h147", "cat": "h-adv", "dialect": "bash", "cmd": "GIT=$(which git); \"$GIT\" branch h215", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h148", "cat": "h-adv", "dialect": "bash", "cmd": "git branch h216 || true", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h149", "cat": "h-adv", "dialect": "bash", "cmd": "true && git branch h217", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h150", "cat": "h-adv", "dialect": "bash", "cmd": "! git branch h218", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h151", "cat": "h-adv", "dialect": "bash", "cmd": "git branch h219 &", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h152", "cat": "h-adv", "dialect": "bash", "cmd": "git branch h220 & wait", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h153", "cat": "h-adv", "dialect": "bash", "cmd": "echo start; (git branch h221)", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h154", "cat": "h-adv", "dialect": "bash", "cmd": "( ( git branch h222 ) )", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h155", "cat": "h-adv", "dialect": "bash", "cmd": "case x in x) git branch h223;; esac", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h156", "cat": "h-adv", "dialect": "bash", "cmd": "while true; do git branch h224; break; done", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h157", "cat": "h-adv", "dialect": "bash", "cmd": "f() { git branch \"$1\"; }; f h225", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h158", "cat": "h-adv", "dialect": "bash", "cmd": "function g2 { git branch h226; }; g2", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h159", "cat": "h-adv", "dialect": "bash", "cmd": "git branch h227 <<< \"\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h160", "cat": "h-adv", "dialect": "bash", "cmd": "rev <<< 'h228 hcnarb tig' | sh", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "h161", "cat": "h-adv", "dialect": "bash", "cmd": "echo 'git branch h229' | tr a-z a-z | sh", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h162", "cat": "h-adv", "dialect": "bash", "cmd": "sh -c 'echo git branch h230 | sh'", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h163", "cat": "h-adv", "dialect": "bash", "cmd": "bash -lc \"git branch h231\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h164", "cat": "h-adv", "dialect": "bash", "cmd": "bash -x -c \"git branch h232\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h165", "cat": "h-adv", "dialect": "bash", "cmd": "zsh -c \"git branch h233\"", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "h166", "cat": "h-adv", "dialect": "bash", "cmd": "sh <<EOF\ngit branch h234\nEOF", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h167", "cat": "h-adv", "dialect": "bash", "cmd": "cat <<EOF | sh\ngit branch h235\nEOF", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h168", "cat": "h-adv", "dialect": "bash", "cmd": "python3 -c \"import subprocess as s; s.call(['git','branch','h236'])\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h169", "cat": "h-adv", "dialect": "bash", "cmd": "node -e \"require('child_process').spawnSync('git', ['branch', 'h237'])\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h170", "cat": "h-adv", "dialect": "bash", "cmd": "ruby -e \"system('git branch h238')\"", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "h171", "cat": "h-adv", "dialect": "bash", "cmd": "perl -e 'exec \"git\", \"branch\", \"h239\"'", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h172", "cat": "h-adv", "dialect": "bash", "cmd": "git -c alias.zz=\"!git branch h240\" zz", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h173", "cat": "h-adv", "dialect": "bash", "cmd": "git -c alias.zz=\"branch\" zz h241", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h174", "cat": "h-adv", "dialect": "bash", "cmd": "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.zz GIT_CONFIG_VALUE_0=branch git zz h242", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h175", "cat": "h-adv", "dialect": "bash", "cmd": "git config alias.zq branch && git zq h243", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h176", "cat": "h-adv", "dialect": "bash", "cmd": "git config --local alias.zq2 branch; git -c alias.zq3=branch zq3 h244", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h177", "cat": "h-adv", "dialect": "bash", "cmd": "echo \"ref: refs/heads/h245\" > .git/HEAD", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h178", "cat": "h-adv", "dialect": "bash", "cmd": "cp .git/refs/heads/main .git/refs/heads/h246", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h179", "cat": "h-adv", "dialect": "bash", "cmd": "git update-ref refs/heads/h247 $(git rev-parse HEAD)", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h180", "cat": "h-adv", "dialect": "bash", "cmd": "git update-ref refs/heads/\"h248\" HEAD", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h181", "cat": "h-adv", "dialect": "bash", "cmd": "git update-ref $(echo refs/heads/h249) HEAD", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h182", "cat": "h-adv", "dialect": "bash", "cmd": "r=refs/heads/h250; git update-ref $r HEAD", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h183", "cat": "h-adv", "dialect": "bash", "cmd": "git branch  h251", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h184", "cat": "h-adv", "dialect": "bash", "cmd": "git\tbranch\th252", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h185", "cat": "h-adv", "dialect": "bash", "cmd": "git branch -- h253", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h186", "cat": "h-adv", "dialect": "bash", "cmd": "git branch h254 --", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h187", "cat": "h-adv", "dialect": "bash", "cmd": "git branch --no-track h255 main", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h188", "cat": "h-adv", "dialect": "bash", "cmd": "git branch -t h256 origin/main", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h189", "cat": "h-adv", "dialect": "bash", "cmd": "git checkout -b h257 main && echo done", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h190", "cat": "h-adv", "dialect": "bash", "cmd": "git switch -c h258 -q", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h191", "cat": "h-adv", "dialect": "bash", "cmd": "git switch -qc h259", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h192", "cat": "h-adv", "dialect": "bash", "cmd": "git checkout -qb h260", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h193", "cat": "h-adv", "dialect": "bash", "cmd": "git switch --create h261", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h194", "cat": "h-adv", "dialect": "bash", "cmd": "git switch --force-create h262", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h195", "cat": "h-adv", "dialect": "bash", "cmd": "git switch -c=h263 2>/dev/null; git switch -ch264", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h196", "cat": "h-adv", "dialect": "bash", "cmd": "git checkout -bh265", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h197", "cat": "h-adv", "dialect": "bash", "cmd": "git branch -m h266", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h198", "cat": "h-adv", "dialect": "bash", "cmd": "git branch -M h267", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h199", "cat": "h-adv", "dialect": "bash", "cmd": "git branch --move existing h268", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h200", "cat": "h-adv", "dialect": "bash", "cmd": "git branch --copy existing h269", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h201", "cat": "h-adv", "dialect": "bash", "cmd": "git worktree add -b h270 ../h270 2>/dev/null", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h202", "cat": "h-adv", "dialect": "bash", "cmd": "git worktree add ../h271 -b h271 --quiet", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h203", "cat": "h-adv", "dialect": "bash", "cmd": "git worktree add --quiet -b h272 ../h272", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h204", "cat": "h-adv", "dialect": "bash", "cmd": "git worktree add -f ../h273 existing", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "h205", "cat": "h-adv", "dialect": "bash", "cmd": "git worktree add --force ../h274 -b h274", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h206", "cat": "h-adv", "dialect": "bash", "cmd": "git worktree add --no-checkout ../h275 -b h275", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h207", "cat": "h-adv", "dialect": "bash", "cmd": "git worktree add --guess-remote ../h276 feature-r", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h208", "cat": "h-adv", "dialect": "bash", "cmd": "git worktree add ../h277 feature-s", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h209", "cat": "h-adv", "dialect": "bash", "cmd": "git worktree add ../h278 origin/feature-r", "adv": true, "scope": "in", "branch": false, "note": ""}
+{"id": "h210", "cat": "h-adv", "dialect": "bash", "cmd": "x=$(printf \"%s\" \"Z2l0IGJyYW5jaCBoMjc5\" | base64 -d); eval \"$x\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h211", "cat": "h-adv", "dialect": "bash", "cmd": "bash -c \"$(printf 'git branch h280')\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h212", "cat": "h-adv", "dialect": "bash", "cmd": "bash -c \"$(cat <<EOF\ngit branch h281\nEOF\n)\"", "adv": true, "scope": "in", "branch": true, "note": ""}
+{"id": "h213", "cat": "h-adv", "dialect": "bash", "cmd": "curl -s http://127.0.0.1:9/x | sh", "adv": true, "scope": "in", "branch": false, "note": "network: nothing to fetch; fail-closed policy decides"}
+{"id": "h214", "cat": "h-adv", "dialect": "bash", "cmd": "git clone . ../h282clone && git -C ../h282clone branch h282", "adv": true, "scope": "in", "branch": false, "note": "lane in a clone outside the oracle view"}
+{"id": "h215", "cat": "h-adv", "dialect": "bash", "cmd": "git branch h283 && git branch -d h283", "adv": true, "scope": "in", "branch": false, "note": "created then deleted in the same string: net no lane, intent create"}
+{"id": "h216", "cat": "h-adv", "dialect": "bash", "cmd": "git init ../h284repo && cd ../h284repo && git checkout -b h284", "adv": true, "scope": "in", "branch": false, "note": "new repository, outside oracle view"}
+{"id": "h217", "cat": "h-neg", "dialect": "bash", "cmd": "git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h218", "cat": "h-neg", "dialect": "bash", "cmd": "git diff --stat main...HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h219", "cat": "h-neg", "dialect": "bash", "cmd": "git log --oneline --all --graph | head -20", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h220", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --show-current", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h221", "cat": "h-neg", "dialect": "bash", "cmd": "git branch -a", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h222", "cat": "h-neg", "dialect": "bash", "cmd": "git branch -vv", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h223", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --contains HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h224", "cat": "h-neg", "dialect": "bash", "cmd": "git branch -d existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h225", "cat": "h-neg", "dialect": "bash", "cmd": "git branch -D wt3", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h226", "cat": "h-neg", "dialect": "bash", "cmd": "git worktree list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h227", "cat": "h-neg", "dialect": "bash", "cmd": "git worktree prune", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h228", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout main -- a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h229", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout -- .", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h230", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout HEAD -- src", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h231", "cat": "h-neg", "dialect": "bash", "cmd": "git switch main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h232", "cat": "h-neg", "dialect": "bash", "cmd": "git switch -", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h233", "cat": "h-neg", "dialect": "bash", "cmd": "git switch --detach HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h234", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h235", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h236", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout -f main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h237", "cat": "h-neg", "dialect": "bash", "cmd": "git merge main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h238", "cat": "h-neg", "dialect": "bash", "cmd": "git cherry-pick HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h239", "cat": "h-neg", "dialect": "bash", "cmd": "git stash list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h240", "cat": "h-neg", "dialect": "bash", "cmd": "git stash push -m x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h241", "cat": "h-neg", "dialect": "bash", "cmd": "git tag v1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h242", "cat": "h-neg", "dialect": "bash", "cmd": "git tag -l", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h243", "cat": "h-neg", "dialect": "bash", "cmd": "git remote -v", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h244", "cat": "h-neg", "dialect": "bash", "cmd": "git fetch --all", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h245", "cat": "h-neg", "dialect": "bash", "cmd": "git fetch origin", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h246", "cat": "h-neg", "dialect": "bash", "cmd": "git fetch --prune", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h247", "cat": "h-neg", "dialect": "bash", "cmd": "git push origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h248", "cat": "h-neg", "dialect": "bash", "cmd": "git push -u origin HEAD:main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h249", "cat": "h-neg", "dialect": "bash", "cmd": "git push origin --delete feature-r", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h250", "cat": "h-neg", "dialect": "bash", "cmd": "git config user.name", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h251", "cat": "h-neg", "dialect": "bash", "cmd": "git rev-parse --abbrev-ref HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h252", "cat": "h-neg", "dialect": "bash", "cmd": "git show-ref", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h253", "cat": "h-neg", "dialect": "bash", "cmd": "git for-each-ref refs/heads", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h254", "cat": "h-neg", "dialect": "bash", "cmd": "git ls-remote origin", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h255", "cat": "h-neg", "dialect": "bash", "cmd": "git update-ref -d refs/heads/existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h256", "cat": "h-neg", "dialect": "bash", "cmd": "git update-ref refs/tags/t1 HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h257", "cat": "h-neg", "dialect": "bash", "cmd": "git update-ref refs/notes/x HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h258", "cat": "h-neg", "dialect": "bash", "cmd": "git symbolic-ref HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h259", "cat": "h-neg", "dialect": "bash", "cmd": "git symbolic-ref --short HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h260", "cat": "h-neg", "dialect": "bash", "cmd": "git symbolic-ref HEAD refs/heads/main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h261", "cat": "h-neg", "dialect": "bash", "cmd": "echo \"git branch x\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h262", "cat": "h-neg", "dialect": "bash", "cmd": "echo git switch -c foo >> notes.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h263", "cat": "h-neg", "dialect": "bash", "cmd": "# git branch x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h264", "cat": "h-neg", "dialect": "bash", "cmd": "printf '%s\\n' 'git worktree add x'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h265", "cat": "h-neg", "dialect": "bash", "cmd": "grep -rn \"git branch\" .", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h266", "cat": "h-neg", "dialect": "bash", "cmd": "cat <<'EOF' > notes.md\n git branch foo\n git worktree add ../x\nEOF", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h267", "cat": "h-neg", "dialect": "bash", "cmd": "rg 'worktree add' -g '*.md'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h268", "cat": "h-neg", "dialect": "bash", "cmd": "echo $(git branch --show-current)", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h269", "cat": "h-neg", "dialect": "bash", "cmd": "git log --branches --oneline", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h270", "cat": "h-neg", "dialect": "bash", "cmd": "git log -S\"git branch\" --oneline", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h271", "cat": "h-neg", "dialect": "bash", "cmd": "git commit --allow-empty -m \"git branch foo\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h272", "cat": "h-neg", "dialect": "bash", "cmd": "git commit --allow-empty -m \"fix: switch -c handling\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h273", "cat": "h-neg", "dialect": "bash", "cmd": "git grep -n \"checkout -b\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h274", "cat": "h-neg", "dialect": "bash", "cmd": "ls .git/refs/heads", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h275", "cat": "h-neg", "dialect": "bash", "cmd": "cat .git/HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h276", "cat": "h-neg", "dialect": "bash", "cmd": "cat .git/refs/heads/main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h277", "cat": "h-neg", "dialect": "bash", "cmd": "python -c \"print(1)\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h278", "cat": "h-neg", "dialect": "bash", "cmd": "node -e \"console.log(1)\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h279", "cat": "h-neg", "dialect": "bash", "cmd": "ls -la", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h280", "cat": "h-neg", "dialect": "bash", "cmd": "sed -n 1,5p a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h281", "cat": "h-neg", "dialect": "bash", "cmd": "git config alias.co checkout", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h282", "cat": "h-neg", "dialect": "bash", "cmd": "git config --get-regexp '^alias\\.'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h283", "cat": "h-neg", "dialect": "bash", "cmd": "cd . && git status && git diff | head -50", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h284", "cat": "h-neg", "dialect": "bash", "cmd": "git diff main...feature-r --stat", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h285", "cat": "h-neg", "dialect": "bash", "cmd": "git -C ../other status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h286", "cat": "h-neg", "dialect": "bash", "cmd": "git --no-pager log -3", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h287", "cat": "h-neg", "dialect": "bash", "cmd": "GIT_PAGER=cat git log -1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h288", "cat": "h-neg", "dialect": "bash", "cmd": "for f in a.txt; do git log --oneline -1 -- $f; done", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h289", "cat": "h-neg", "dialect": "bash", "cmd": "git ls-files | xargs wc -l", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h290", "cat": "h-neg", "dialect": "bash", "cmd": "git log --format=%H -n1", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h291", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout -p", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h292", "cat": "h-neg", "dialect": "bash", "cmd": "git restore a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h293", "cat": "h-neg", "dialect": "bash", "cmd": "git restore --staged a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h294", "cat": "h-neg", "dialect": "bash", "cmd": "git reset --hard HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h295", "cat": "h-neg", "dialect": "bash", "cmd": "git reset --soft HEAD~0", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h296", "cat": "h-neg", "dialect": "bash", "cmd": "git clean -n", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h297", "cat": "h-neg", "dialect": "bash", "cmd": "git add -A && git commit -m wip --allow-empty", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h298", "cat": "h-neg", "dialect": "bash", "cmd": "git commit --amend --no-edit", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h299", "cat": "h-neg", "dialect": "bash", "cmd": "git rebase --abort 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h300", "cat": "h-neg", "dialect": "bash", "cmd": "git bisect log 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h301", "cat": "h-neg", "dialect": "bash", "cmd": "git blame a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h302", "cat": "h-neg", "dialect": "bash", "cmd": "git show HEAD:a.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h303", "cat": "h-neg", "dialect": "bash", "cmd": "git describe --always", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h304", "cat": "h-neg", "dialect": "bash", "cmd": "git shortlog -sn | head", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h305", "cat": "h-neg", "dialect": "bash", "cmd": "git worktree list --porcelain", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h306", "cat": "h-neg", "dialect": "bash", "cmd": "git worktree remove --force ../nothing 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h307", "cat": "h-neg", "dialect": "bash", "cmd": "git worktree move ../a ../b 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h308", "cat": "h-neg", "dialect": "bash", "cmd": "git worktree lock ../a 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h309", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --list \"feat*\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h310", "cat": "h-neg", "dialect": "bash", "cmd": "git branch -r", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h311", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --merged main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h312", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --no-merged main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h313", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --sort=-committerdate", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h314", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --format='%(refname:short)'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h315", "cat": "h-neg", "dialect": "bash", "cmd": "git branch -u origin/main 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h316", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --set-upstream-to=origin/main 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h317", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --unset-upstream 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h318", "cat": "h-neg", "dialect": "bash", "cmd": "git branch --edit-description 2>/dev/null </dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h319", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout --detach", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h320", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout HEAD~0", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h321", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout feature-r~0", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h322", "cat": "h-neg", "dialect": "bash", "cmd": "git checkout -", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h323", "cat": "h-neg", "dialect": "bash", "cmd": "git switch existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h324", "cat": "h-neg", "dialect": "bash", "cmd": "git switch -d main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h325", "cat": "h-neg", "dialect": "bash", "cmd": "git pull --ff-only 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h326", "cat": "h-neg", "dialect": "bash", "cmd": "git pull origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h327", "cat": "h-neg", "dialect": "bash", "cmd": "git fetch origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h328", "cat": "h-neg", "dialect": "bash", "cmd": "git fetch origin feature-r", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h329", "cat": "h-neg", "dialect": "bash", "cmd": "git push origin existing:existing", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h330", "cat": "h-neg", "dialect": "bash", "cmd": "git push origin :nonexistent 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h331", "cat": "h-neg", "dialect": "bash", "cmd": "git push . main:main 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h332", "cat": "h-neg", "dialect": "bash", "cmd": "git fetch origin +main:refs/remotes/origin/main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h333", "cat": "h-neg", "dialect": "bash", "cmd": "git fetch origin refs/tags/*:refs/tags/*", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h334", "cat": "h-neg", "dialect": "bash", "cmd": "git fetch origin main:refs/remotes/o/x", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h335", "cat": "h-neg", "dialect": "bash", "cmd": "git stash apply 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h336", "cat": "h-neg", "dialect": "bash", "cmd": "git submodule status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h337", "cat": "h-neg", "dialect": "bash", "cmd": "git cat-file -p HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h338", "cat": "h-neg", "dialect": "bash", "cmd": "git count-objects -v", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h339", "cat": "h-neg", "dialect": "bash", "cmd": "git gc --quiet", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h340", "cat": "h-neg", "dialect": "bash", "cmd": "git fsck 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h341", "cat": "h-neg", "dialect": "bash", "cmd": "git archive HEAD | tar -t | head -3", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h342", "cat": "h-neg", "dialect": "bash", "cmd": "git rev-list --count HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h343", "cat": "h-neg", "dialect": "bash", "cmd": "git var GIT_AUTHOR_IDENT", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h344", "cat": "h-neg", "dialect": "bash", "cmd": "git --version", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h345", "cat": "h-neg", "dialect": "bash", "cmd": "git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h346", "cat": "h-neg", "dialect": "bash", "cmd": "which git", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h347", "cat": "h-neg", "dialect": "bash", "cmd": "git ls-tree -r HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h348", "cat": "h-neg", "dialect": "bash", "cmd": "make -n 2>/dev/null; true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h349", "cat": "h-neg", "dialect": "bash", "cmd": "echo $?", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h350", "cat": "h-neg", "dialect": "bash", "cmd": "true", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h351", "cat": "h-neg", "dialect": "bash", "cmd": "pwd", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h352", "cat": "h-neg", "dialect": "bash", "cmd": "cd .. && ls", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h353", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "Get-ChildItem", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h354", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git branch --list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h355", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "Write-Host \"git branch x\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h356", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "Get-Content .git\\HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h357", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git log --oneline | Select-Object -First 5", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h358", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "Select-String -Path *.txt -Pattern 'git branch'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h359", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git status --short", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h360", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git diff --stat", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h361", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git switch main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h362", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git checkout main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h363", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git worktree list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h364", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git branch --show-current", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h365", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "$b = git branch --show-current; Write-Output $b", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h366", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "if (Test-Path .git) { Write-Host ok }", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h367", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git fetch origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h368", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git push origin main", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h369", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "Get-Content a.txt | Select-Object -First 3", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h370", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "Write-Output \"git switch -c x\"", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h371", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "\"git branch x\" | Out-File notes.txt", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h372", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "echo 'git worktree add'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h373", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git log -1 --format=%H", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h374", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git rev-parse HEAD", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h375", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "Get-Process | Select-Object -First 1 | Out-Null", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h376", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git config user.email", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h377", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git stash list", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h378", "cat": "h-neg-ps", "dialect": "powershell", "cmd": "git tag -l", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h379", "cat": "h-neg-ps", "dialect": "cmd", "cmd": "git status", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h380", "cat": "h-neg-ps", "dialect": "cmd", "cmd": "git branch --show-current", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "h381", "cat": "h-neg-ps", "dialect": "cmd", "cmd": "dir", "adv": false, "scope": "in", "branch": false, "note": ""}
