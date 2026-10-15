@@ -26,9 +26,10 @@ The file holds six cooperating parts.
    Entry-versus-path and entry-versus-entry use the same function, so declared manifests of lanes that do not exist yet
    collide with each other.
 2. **Evidence gatherer.** A Git runner (argv lists, scrubbed environment, `-z` machine formats, per-call timeout and a
-   total deadline) enumerates claimants: every non-bare worktree, every local branch not merged into the target, every
+   total deadline that every Git call of one hook invocation shares) enumerates claimants: every non-bare worktree, every local branch not merged into the target, every
    unmerged remote-tracking branch, and every open claim. Committed evidence is the three-dot diff against each merge
-   base minus content the target already holds; a detached worktree contributes the commits of its own HEAD. Uncommitted
+   base minus content the target already holds; a detached worktree contributes the commits of its own HEAD, and a
+   detached worktree at the lane's own registered path is the lane itself and is not compared. Uncommitted
    evidence is `status --porcelain=v2 -z --untracked-files=all` (a rename claims both names). A merge, rebase,
    cherry-pick or revert in progress is a warning; `git am`, unreadable operation metadata or a locked worktree that is
    missing on disk is unknown; a branch with no history in common with the target is ignored with a warning because a
@@ -39,7 +40,10 @@ The file holds six cooperating parts.
 4. **Command detector.** A lexer for bash, PowerShell and cmd that unwraps `bash -c`, `pwsh -Command`,
    `-EncodedCommand`, `cmd /c`, `env`, `sudo`, `xargs` and similar wrappers (depth 3), tracks `cd` and `git -C`, and
    recognises lane-creating git commands and harness tools. Dynamic words (`$x`, backticks, `%x%`) in a lane-creating
-   position are treated as unparseable.
+   position are treated as unparseable. The script a shell runs is the `-File` value or the first readable file among
+   the first four candidates after option values. Every `git` word's subcommand is checked against the git aliases.
+   Command text longer than 200,000 characters is not inspected: it counts as an unparseable creation and, once claims
+   or the git layer exist, as a protected command. Every pattern runs in time linear in the command length.
 5. **Host hook entry.** `hook <claude|codex|hermes> pre-tool` reads one PreToolUse payload from stdin and prints either
    `{}` (allow) or one deny object that carries the full conflict message.
 6. **Git layer.** A pure POSIX `sh` `reference-transaction` hook, embedded as a constant and written by `arm`. It needs
@@ -73,7 +77,8 @@ Commands an agent may run: `check`, `plan`, `list`, `release`, `doctor`. Command
 `disarm`, `install`.
 
 - `check --branch B (--paths P... | --manifest FILE|-) [--target T]`: read-only verdict, no lock, writes nothing.
-- `plan --branch B (--paths P... | --manifest FILE|-) [--worktree PATH] [--amend] [--target T]`: gathers evidence
+- `plan --branch B (--paths P... | --manifest FILE|-) [--worktree PATH] [--amend]`: judges against the resolved
+  integration target (the one creation is checked against) and gathers evidence
   outside the lock, takes the lock, re-reads the claims, judges, writes `claims/B.claim` atomically and appends an audit
   line. Identical entries are a no-op (exit 0). Different entries need `--amend` (exit 14 otherwise); an amend is judged
   with the lane's own claim excluded, and a removal-only amend skips the overlap check. A branch that already exists with
@@ -86,7 +91,8 @@ Commands an agent may run: `check`, `plan`, `list`, `release`, `doctor`. Command
 - `release --branch B [--reason R]`: deletes the claim and audits it. Refused with exit 16 while the branch has
   unmerged work or its worktree has uncommitted changes; a merged lane whose clean worktree is still there can be
   released. A claim file that cannot be parsed is removed by `release` as well.
-- `override --fingerprint FP --reason R`: refuses (exit 17) unless stdin and stdout are a real console; the user retypes
+- `override --fingerprint FP --reason R`: exits 2 unless FP is the 12 lowercase hex digits a denial prints; refuses
+  (exit 17) unless stdin and stdout are a real console; the user retypes
   the fingerprint; writes a one-shot record valid for one hour that the next `plan` with the same denial fingerprint
   consumes.
 - `hook <host> pre-tool`: the PreToolUse entry; it also guards `git worktree add --detach` and `<path> <commit>`, whose lane
@@ -112,7 +118,8 @@ closed); 12 INVALID_MANIFEST; 13 LOCK_TIMEOUT (30 s); 14 LANE_EXISTS; 15 BRANCH_
 17 CONSOLE_REQUIRED.
 
 Claim file (LF, the git layer reads only line 1): `state=active`, `v=1`, `branch`, `worktree`, `target`, `base`,
-`created`, `by`, `override`, then one `entry=<raw entry>` line per manifest entry. Store layout:
+`created`, `by`, `override`, then one `entry=<raw entry>` line per manifest entry; a missing optional field reads as
+empty. A worktree path is compared case- and separator-insensitively where the platform is. Store layout:
 `<git-common-dir>/magos/{ARMED,lang,guard,claims/,override/,audit.log,lock}`.
 
 Verdict (`--json`): `{decision, code, conflicts:[{key, branch, worktrees, planned, evidence:[{kind committed|uncommitted|declared,
@@ -125,8 +132,9 @@ Invariants:
 1. Creation is denied before it happens; a denial leaves no branch, worktree directory or administrative directory.
 2. Existing lanes are never stopped, modified, stashed, merged or moved; the guard only reads them.
 3. Unknown is not safe: an ambiguous target (or a `--target` that does not resolve), `git am`, unreadable operation metadata, a locked worktree missing on disk, more than 120
-   unmerged claimants, a Git failure or an exhausted budget (18 s total, 30 s per Git call) deny creation in `plan`,
-   `check` and in an armed repository; in auto mode the host hook allows an unanalysable branch-only creation.
+   unmerged claimants, a Git failure or an exhausted budget (18 s per command or hook call, 30 s per Git call) deny
+   creation in `plan`, `check`, an armed repository and for a named worktree; in auto mode the host hook allows an
+   unanalysable branch-only creation.
 4. Hard overlap is a direct path, directory prefix, glob, rename side, case or Unicode collision, or a declared manifest
    against a manifest. Warnings never deny: inferred target, remote freshness, operation in progress, repository not armed.
 5. The only writes are claim and audit files (under the lock), override records, and the files `arm`, `disarm` and

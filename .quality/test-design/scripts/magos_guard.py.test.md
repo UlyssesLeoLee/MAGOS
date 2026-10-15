@@ -77,6 +77,15 @@ measured with coverage.py (line coverage) for `scripts/magos_guard.py` and for e
 | TC-044 | Integrated lane without a workspace, fresh branch without a worktree, case-variant branch spelling | Idle claims stop blocking; fresh lanes keep blocking; spelling does not change the state | tests/codex/guard/test_review_fixes.py::test_fresh_branch_without_a_worktree_is_still_a_lane |
 | TC-045 | Bare repository with linked worktrees; submodule layout; locked worktree missing on disk | Guarded; the work tree is the repository top; UNKNOWN WORKTREE_UNREADABLE | tests/codex/guard/test_review_fixes.py::test_bare_repository_layout_is_guarded |
 | TC-046 | UTF-16 and ANSI manifest files; no username; a `--target` that does not resolve; an exhausted comparison budget | Read or rejected with a clear exit 12; plan still works; exit 11; BUDGET_EXCEEDED | tests/codex/guard/test_review_fixes.py::test_manifest_encodings |
+| TC-047 | `plan --worktree` naming another branch's dirty worktree; a detached lane's own dirty worktree; a re-plan spelling the worktree path in another case | The other branch is still a conflict; the detached lane does not conflict with itself; the re-plan is a no-op | tests/codex/guard/test_second_review.py::test_a_worktree_of_another_branch_at_the_planned_path_is_still_compared |
+| TC-048 | 190,000 spaces after `echo`, 18,000 `update-ref` words, 190,000 closing parentheses, 45,000 `-git` options | Detector, tamper filter and alias scan each finish within 5 s | tests/codex/guard/test_second_review.py::test_worst_case_command_lines_parse_in_linear_time |
+| TC-049 | `update-ref --stdin` with a here-string; `echo` text piped into `sh`;`git status && git mkwt ...` where `mkwt` is a worktree alias | Names read; the aliased worktree creation is denied for want of a manifest | tests/codex/guard/test_second_review.py::test_every_git_call_is_checked_for_an_alias |
+| TC-050 | A command longer than 200,000 characters with a parallel lane, then with a claim | Denied as unparseable naming the length; denied as protected (too long to inspect) | tests/codex/guard/test_second_review.py::test_an_over_long_command_is_denied_with_its_real_reason |
+| TC-051 | A planned claimant with declared entries only and an expired deadline; 300 paths with a live deadline | BUDGET_EXCEEDED; all 300 paths compared | tests/codex/guard/test_second_review.py::test_declared_only_claimants_watch_the_clock |
+| TC-052 | A hook call whose shared budget is spent; a named-worktree creation whose check fails in auto mode; a vanished working directory | Deny naming the exhausted budget and no budget left behind; deny for the worktree, allow for branch-only; GIT_FAILED, not GIT_MISSING | tests/codex/guard/test_second_review.py::test_one_hook_call_shares_one_git_budget |
+| TC-053 | `powershell -ExecutionPolicy Bypass -File x.ps1`, `bash -o pipefail x.sh`, `pwsh -NoProfile -File x.ps1` | The script file is read and its creation found | tests/codex/guard/test_second_review.py::test_the_script_after_option_values_is_read |
+| TC-054 | `override --fingerprint ../../x`; `plan --target`; malformed UTF-16 manifests | Exit 2 and no override record; usage error exit 2 (`check --target` works); ENCODING | tests/codex/guard/test_second_review.py::test_override_wants_the_printed_fingerprint |
+| TC-055 | A claim file with only `state`, `branch` and `entry`; a claim with an invalid entry under `list --drift` | Listed as planned and usable by the hook; drift is empty and other lanes get UNKNOWN CLAIM_UNPARSEABLE | tests/codex/guard/test_second_review.py::test_a_claim_without_optional_fields_is_read |
 
 ## Boundary & Failure Cases
 
@@ -85,14 +94,16 @@ measured with coverage.py (line coverage) for `scripts/magos_guard.py` and for e
 - Repositories with no commits, detached HEAD, bare repository, submodule, no merge base (unrelated history gives the
   warning UNRELATED_HISTORY and the branch is ignored), more than 120 unmerged local branches (UNKNOWN TOO_MANY_CLAIMANTS),
   more than 300 remote-tracking branches (warning REMOTE_TRUNCATED), more than 5,000 paths in one claimant.
-- Git failures: missing `git` (an error, never "not a repository"), non-zero exit, timeout, `WinError 1455` retried
-  twice; each ends as UNKNOWN GIT_FAILED or GIT_MISSING and a denied `plan` or `check`.
+- Git failures: missing `git` or an exhausted budget (an error, never "not a repository"), a vanished working directory,
+  non-zero exit, timeout, `WinError 1455` retried twice; each ends as UNKNOWN GIT_FAILED, GIT_MISSING or BUDGET_EXCEEDED
+  and a denied `plan` or `check`.
 - Locale and encoding: non-ASCII branch and path names with `core.quotepath` forced off, case-insensitive collisions,
   Unicode normalisation forms, trailing dots and spaces, Windows reserved names, Git Bash path spellings (`/c/Users/x`).
 - Concurrency: a claim written while a reader lists, two lock holders, a claim file removed between the existence test
   and the read in the git layer (treated as absent, transient deny).
 - Hostile input: huge stdin, invalid UTF-8, JSON that is not an object, unknown tool names, nested wrappers deeper than 3,
-  base64 that is not UTF-16LE, a 100,000 character command (bounded filter).
+  base64 that is not UTF-16LE, command lines built to trigger regex backtracking (linear time), a command longer than
+  200,000 characters (not inspected, denied once lanes exist).
 - Regression: a lane that merely checks out files without modifying them never claims them; a denial never creates a
   branch, directory or administrative directory; an override never survives a changed target sha; no hook denies a
   commit, merge, edit or read inside an existing lane.
