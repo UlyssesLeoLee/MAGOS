@@ -32,11 +32,12 @@ except ImportError:  # POSIX
     import fcntl
 
 GS = "**"
-BUDGET_S, MAX_CLAIMANTS, MAX_REMOTES, MAX_ENTRIES, LOCK_S = 18.0, 120, 300, 200, 30.0
+BUDGET_S, MAX_CLAIMANTS, MAX_REMOTES, MAX_ENTRIES, LOCK_S, MAX_TEXT = 18.0, 120, 300, 200, 30.0, 200000
 SHELL_TOOLS = ("Bash", "PowerShell", "terminal", "shell", "local_shell")
 EXIT = {"OK": 0, "OVERRIDDEN": 0, "CONFLICT": 10, "NO_MANIFEST": 10, "UNPLANNABLE": 10, "UNPARSEABLE": 10, "PROTECTED": 10, "UNKNOWN": 11,
         "INVALID_MANIFEST": 12, "LOCK_TIMEOUT": 13, "LANE_EXISTS": 14, "BRANCH_EXISTS": 15, "BLOCKED": 16, "CONSOLE_REQUIRED": 17, "ARM_REFUSED": 3}
 MARK = "MAGOS lane guard"  # identifies the reference-transaction hook this file wrote
+HOOK_DEADLINE = None  # set for the duration of a hook call: every git call of that call shares one budget
 
 # ---------------------------------------------------------------- messages (zh default, en)
 M = {
@@ -223,17 +224,26 @@ def lane_key(branch):
 
 
 def evaluate(entries, claimants, deadline=None):
-    out = []
-    for c in claimants:
+    def tick():
         if deadline and time.monotonic() > deadline:
             raise GitFail("BUDGET_EXCEEDED", "the comparison ran out of time")
+    out = []
+    for c in claimants:
+        tick()
         ev = []
         for kind in ("committed", "uncommitted"):
-            hits = {p: [e.raw for e in entries if path_hit(e, fpath(p))] for p in sorted(c["paths"][kind])}
+            hits = {}
+            for n, p in enumerate(sorted(c["paths"][kind]), 1):
+                if not n % 256:
+                    tick()
+                hits[p] = [e.raw for e in entries if path_hit(e, fpath(p))]
             files = [p for p, m in hits.items() if m]
             if files:
                 ev.append({"kind": kind, "files": files, "matched": sorted({r for p in files for r in hits[p]}), "theirs": []})
-        pairs = [(e.raw, t.raw) for t in c["declared"] for e in entries if entries_overlap(e, t)]
+        pairs = []
+        for t in c["declared"]:
+            tick()
+            pairs += [(e.raw, t.raw) for e in entries if entries_overlap(e, t)]
         if pairs:
             ev.append({"kind": "declared", "files": [], "matched": sorted({a for a, _ in pairs}), "theirs": sorted({b for _, b in pairs})})
         if ev:
@@ -283,12 +293,12 @@ _BAD_NAME = re.compile(r"[\s~^:?*\[\\\x00-\x1f]|\.\.|^-|^/|/$|\.lock$")
 def split_command(cmd):
     """Split a shell / PowerShell command line into segments of (word, dynamic); quotes honoured, backslashes kept.
     Parentheses and braces separate segments only where a command may start; elsewhere they belong to a (dynamic) word."""
-    segs, cur, st = [], [], {"w": [], "dyn": False, "has": False}
+    segs, cur, st = [], [], {"w": [], "dyn": False, "has": False, "open": False}
 
     def word_end():
         if st["has"]:
             cur.append(("".join(st["w"]), st["dyn"]))
-        st.update(w=[], dyn=False, has=False)
+        st.update(w=[], dyn=False, has=False, open=False)
 
     def seg_end():
         word_end()
@@ -301,7 +311,7 @@ def split_command(cmd):
         c = cmd[i]
         if c in " \t\r":
             word_end()
-        elif c in ";\n&|" or (c in "(){}" and not st["has"] and (c in "{}" or not cur)) or (c == ")" and "(" not in "".join(st["w"])):
+        elif c in ";\n&|" or (c in "(){}" and not st["has"] and (c in "{}" or not cur)) or (c == ")" and not st["open"]):
             seg_end()
         elif c in "'\"":
             j = i + 1
@@ -309,11 +319,11 @@ def split_command(cmd):
                 j += 2 if (c == '"' and cmd[j] in "\\`" and j + 1 < n and cmd[j + 1] == '"') else 1
             body = cmd[i + 1:j]
             st["w"].append(body.replace('`"', '"').replace('\\"', '"') if c == '"' else body)
-            st["has"], st["dyn"] = True, st["dyn"] or (c == '"' and bool(re.search(r"[$`]", body)))
+            st["has"], st["dyn"], st["open"] = True, st["dyn"] or (c == '"' and bool(re.search(r"[$`]", body))), st["open"] or "(" in body
             i = j
         else:
             st["w"].append(c)
-            st["has"], st["dyn"] = True, st["dyn"] or c in "$`%()"
+            st["has"], st["dyn"], st["open"] = True, st["dyn"] or c in "$`%()", st["open"] or c == "("
         i += 1
     seg_end()
     return segs
@@ -496,9 +506,23 @@ def _heredocs(cmd):
     return "\n".join(out), bodies
 
 
+def _git_subcommands(text):
+    """The subcommand after every `git` word (its first non-option word): one right-to-left pass, linear in the text."""
+    toks, nxt, subs = text.split(), None, []
+    for k in range(len(toks) - 1, -1, -1):
+        if nxt is not None and re.search(r"(?:^|\W)git$", toks[k]):
+            m = re.match(r"[A-Za-z][\w-]*", toks[nxt])
+            subs += [m.group(0)] if m else []
+        if not toks[k].startswith("-"):
+            nxt = k
+    return subs
+
+
 def interpret(cmd, cwd, depth=0, aliases=None):
     """Every lane-creating invocation inside a command line: recurses into bash -c / powershell -Command / cmd /c / -EncodedCommand / eval / $(..) /
     here-documents fed to a shell / quoted text fed to a shell, follows literal variables and aliases, and reads small script files."""
+    if len(cmd) > MAX_TEXT:  # too long to inspect: whatever follows the padding must not pass unseen
+        return [dict(_cr("long command", [], cwd, True), why="the command is longer than %d characters and is not inspected" % MAX_TEXT)]
     out, here, env, galias, whole = [], cwd, {}, {}, cmd
     cmd, bodies = _heredocs(cmd)
     for body in bodies:
@@ -506,11 +530,11 @@ def interpret(cmd, cwd, depth=0, aliases=None):
     if depth < 3:
         for m in _SUBST.finditer(cmd):
             out += interpret(m.group(1) or m.group(2), cwd, depth + 1, aliases)
-        if re.search(r"update-ref\b[^\n|;&]*--stdin", whole):  # the ref names arrive on stdin: read them from the command text
+        if any("--stdin" in s.partition("update-ref")[2] for s in re.split(r"[\n|;&]", whole) if "update-ref" in s):  # the ref names arrive on stdin: read them from the command text
             names = re.findall(r"(?:create|update)\s+refs/heads/([^\s\"']+)", whole)
             out += [_cr("update-ref", names, cwd, False)] if names else []
-        pipe = re.match(r"\s*(?:echo|printf)\s+(.*?)\s*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b", cmd, re.I | re.S)
-        out += interpret(pipe.group(1), cwd, depth + 1, aliases) if pipe else []
+        pipe = re.match(r"\s*(?:echo|printf)\s(.*?)\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b", cmd, re.I | re.S)
+        out += interpret(pipe.group(1).strip(), cwd, depth + 1, aliases) if pipe else []
         if _SINK.search(cmd):
             for m in _QUOTED.finditer(cmd):
                 body = (m.group(1) or m.group(2) or "").replace("\\n", "\n")  # printf 'git branch x\n' | sh
@@ -571,8 +595,8 @@ def interpret(cmd, cwd, depth=0, aliases=None):
                     out += interpret(rest[k + 1] if exe in _SHELLS else " ".join(rest[k + 1:]), here, depth + 1, aliases)
                     handled = True
                     break
-            file = next((w for k, w in enumerate(rest) if not w.startswith("-") and (k == 0 or rest[k - 1].lower() != "-command")), None)
-            text = None if handled or not file else _script(file, here)
+            cands = [w for k, w in enumerate(rest) if not w.startswith("-") and (k == 0 or rest[k - 1].lower() != "-command")]  # option values come first
+            text = None if handled else next((s for s in (_script(w, here) for w in cands[:4]) if s), None)
             out += interpret(text, here, depth + 1, aliases) if text else []
         elif exe in ("eval", "iex", "invoke-expression") and depth < 3:
             out += interpret(" ".join(rest), here, depth + 1, aliases)
@@ -603,7 +627,9 @@ _USER_MSG = "override / arm / disarm / install are user-only"
 def protected(text, depth=0):
     """-> (scope, reason) or None.  scope 'always': user-only subcommands and magos.* config; 'guarded': edits of the guard's own state that
     matter once claims or the hook exist.  Words are inspected, never the whole text, so a commit message or a grep for these names passes."""
-    segs = split_command(_heredocs(text[:20000])[0])
+    if len(text) > MAX_TEXT:
+        return "guarded", "the command is too long to inspect"
+    segs = split_command(_heredocs(text)[0])
     for seg in segs:
         words = [w for w, _ in seg]
         low = [w.lower() for w in words]
@@ -652,7 +678,7 @@ def extract(payload, aliases=None):
     crs, why, c = [], None, shell_text(payload)
     if c is not None:
         why = protected(c)
-        crs = interpret(c[:200000], cwd, 0, aliases) if re.search(r"git|gh|gt|claude|eval|iex|invoke-expression|\.sh|\.ps1|source|-enc|base64", c, re.I) else []
+        crs = interpret(c, cwd, 0, aliases) if re.search(r"git|gh|gt|claude|eval|iex|invoke-expression|\.sh|\.ps1|source|-enc|base64", c, re.I) else []
     elif tool == "EnterWorktree" and not ti.get("path"):
         crs.append(_cr("EnterWorktree", ["worktree-%s" % ti["name"]] if ti.get("name") else [], cwd, not ti.get("name"), "worktree" if ti.get("name") else "auto", tool=True))
     elif tool in ("Agent", "Task", "Workflow") and re.search(r"isolation\W+worktree", json.dumps(ti)):
@@ -685,7 +711,8 @@ class Uncertain(Exception):
 
 class Git:
     def __init__(self, start, budget=BUDGET_S):
-        self.start, self.deadline, self.common, self.top = start, time.monotonic() + budget, None, None
+        end = time.monotonic() + budget
+        self.start, self.deadline, self.common, self.top = start, min(end, HOOK_DEADLINE) if HOOK_DEADLINE else end, None, None
 
     def run(self, *args, cwd=None, inp=None, ok=(0,)):
         e = {k: v for k, v in os.environ.items() if k not in _SCRUB and not k.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
@@ -702,6 +729,8 @@ class Git:
             except subprocess.TimeoutExpired:
                 raise GitFail("BUDGET_EXCEEDED", "git timed out: %s" % " ".join(args[:3]))
             except FileNotFoundError:
+                if not os.path.isdir(self.start):
+                    raise GitFail("GIT_FAILED", "the working directory %s no longer exists" % self.start)
                 raise GitFail("GIT_MISSING", "git is not installed or not on PATH")
             except OSError as err:  # e.g. WinError 1455 under memory pressure: retry, then fail closed
                 if attempt == 2:
@@ -724,7 +753,7 @@ def open_repo(path):
         rc, out = g.run("rev-parse", "--path-format=absolute", "--git-common-dir", ok=(0, 128))
         top = g.run("rev-parse", "--show-toplevel", ok=(0, 128)) if rc == 0 else (128, b"")
     except GitFail as err:
-        if err.code == "GIT_MISSING":
+        if err.code in ("GIT_MISSING", "BUDGET_EXCEEDED"):  # neither means "not a repository"
             raise
         return None
     lines = out.decode("utf-8", "replace").splitlines()
@@ -861,7 +890,7 @@ def _claimant(table, key, branch):
     return table.setdefault(key, {"key": key, "branch": branch, "worktrees": [], "declared": [], "paths": {"committed": set(), "uncommitted": set()}})
 
 
-def gather(g, planned=None, target_arg=None):
+def gather(g, planned=None, target_arg=None, own_wt=""):
     """Snapshot of every claimant's committed / uncommitted evidence (git only; the planned branch's own lane is left out).  Raises Uncertain / GitFail."""
     wts, (heads, remotes, syms) = worktrees(g), list_refs(g)
     target, warns = resolve_target(g, heads, remotes, syms, target_arg)
@@ -888,7 +917,7 @@ def gather(g, planned=None, target_arg=None):
     if remotes:
         warns.append({"code": "REMOTE_AS_OF_LAST_FETCH", "text": "remote-tracking branches are only as fresh as the last fetch (the guard never fetches)"})
     for w in wts:
-        if w["bare"] or (w["branch"] and lane_key(w["branch"]) == own):
+        if w["bare"] or (w["branch"] and lane_key(w["branch"]) == own) or (own_wt and not w["branch"] and pkey(w["path"]) == pkey(own_wt)):
             continue
         if w["prunable"]:
             if w["locked"]:  # a locked worktree is kept for a reason (an offline drive): its work cannot be seen
@@ -1005,6 +1034,8 @@ def parse_claim(text):
             doc[k] = v
     if doc.get("state") != "active" or not doc.get("branch") or not doc["entries"]:
         raise ValueError("not a claim")
+    for k in ("worktree", "target", "base", "created", "by", "override"):
+        doc.setdefault(k, "")
     return doc
 
 
@@ -1127,8 +1158,9 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
     reason = check_name(g, name, {k: d for k, d in claims.items() if k != fold(name)})
     if reason:
         return deny("INVALID_MANIFEST", message=T(lang, "invalid", errors="  [BRANCH_NAME] %s: %s" % (name, reason)))
+    own_wt = os.path.abspath(worktree) if worktree else (claims.get(fold(name)) or {}).get("worktree", "")
     try:
-        snap = gather(g, name, target_arg)
+        snap = gather(g, name, target_arg, own_wt)
     except (Uncertain, GitFail) as err:
         return deny("UNKNOWN", unknowns=[{"code": getattr(err, "code", "TARGET_UNCERTAIN"), "text": str(err)}])
     if not os.path.exists(os.path.join(store(g), "ARMED")) and (claims or any(c["paths"]["committed"] or c["paths"]["uncommitted"] for c in snap["claimants"])):
@@ -1140,7 +1172,7 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
         old = claims.get(fold(name))
         if not old and name in snap["heads"]:
             return deny("BRANCH_EXISTS", message=T(lang, "branch_exists", b=name), target=snap["target"])
-        same = bool(old) and {e.raw for e in entries} == set(old["entries"]) and (not worktree or old["worktree"] == os.path.abspath(worktree).replace("\\", "/"))
+        same = bool(old) and {e.raw for e in entries} == set(old["entries"]) and (not worktree or pkey(old["worktree"] or ".") == pkey(os.path.abspath(worktree)))
         if old and not same and not amend:
             return deny("LANE_EXISTS", message=T(lang, "lane_exists", b=name), target=snap["target"])
         shrink = bool(old) and amend and {e.raw for e in entries} <= set(old["entries"])
@@ -1188,9 +1220,9 @@ def out_text(s):
 
 
 def decode_manifest(raw):
-    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):  # PowerShell 5.1 `>` and Out-File write UTF-16
-        return raw.decode("utf-16")
     try:
+        if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):  # PowerShell 5.1 `>` and Out-File write UTF-16
+            return raw.decode("utf-16")
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         raise ManifestError("ENCODING", "the manifest is not UTF-8 (ANSI file?): use --paths, stdin, or Out-File -Encoding utf8")
@@ -1229,7 +1261,7 @@ def cmd_plan(args, write):
         entries, errors = [], [(err.code, str(err))]
     if errors:
         return finish(args, deny("INVALID_MANIFEST", message=T(args.lang, "invalid", errors="\n".join("  [%s] %s" % e for e in errors))), args.branch)
-    v = plan_core(g, args.branch, entries, write, getattr(args, "amend", False), args.lang, args.target, getattr(args, "worktree", ""))
+    v = plan_core(g, args.branch, entries, write, getattr(args, "amend", False), args.lang, getattr(args, "target", None), getattr(args, "worktree", ""))
     if v["decision"] == "allow" and "message" not in v:
         path = getattr(args, "worktree", "") or "<path>"
         v["message"] = "\n".join([T(args.lang, "ok_plan", b=args.branch, n=len(entries), example='git worktree add "%s" -b %s %s' % (path, args.branch, v["target"]["name"]))
@@ -1274,8 +1306,11 @@ def cmd_list(args):
         st, in_wt = lane_state(doc, heads, merged, wts)
         row = {"branch": doc["branch"], "state": st, "entries": doc["entries"], "created": doc["created"], "by": doc["by"], "override": doc["override"] or None, "worktrees": in_wt}
         if args.drift:
-            ents = [parse_entry(r) for r in doc["entries"]]
-            row["drift"] = [p for p in drift.get(lane_key(doc["branch"]), []) if not any(path_hit(e, fpath(p)) for e in ents)]
+            try:
+                ents = [parse_entry(r) for r in doc["entries"]]
+            except ManifestError:
+                ents = None  # an unparseable claim is reported by doctor; its drift cannot be computed
+            row["drift"] = [] if ents is None else [p for p in drift.get(lane_key(doc["branch"]), []) if not any(path_hit(e, fpath(p)) for e in ents)]
         rows.append(row)
     out_text(json.dumps(rows, ensure_ascii=False, indent=2) if args.json else "\n".join(
         "%-8s %s  [%s]%s" % (r["state"], r["branch"], ", ".join(r["entries"]), "  drift: " + _few(r["drift"]) if r.get("drift") else "") for r in rows) or "(no claims)")
@@ -1348,6 +1383,9 @@ def cmd_release(args):
 def cmd_override(args):
     g = open_repo(args.repo)
     if g is None:
+        return 2
+    if not re.fullmatch(r"[0-9a-f]{12}", args.fingerprint):
+        sys.stderr.write("the fingerprint is the 12 hex digits printed with a denial\n")
         return 2
     if not challenge(args.fingerprint, args.lang):
         return EXIT["CONSOLE_REQUIRED"]
@@ -1427,7 +1465,7 @@ def enforce(crs, default_cwd, lang):
         if cr["dynamic"] or unresolved or (cr["cwd"] is None and not cr["tool"]):
             if cr["kind"] == "auto":
                 return "UNPLANNABLE", T(lang, "unplannable", why=cr["verb"])
-            return "UNPARSEABLE", T(lang, "unparse_git", why="the cd / -C target or the branch name is dynamic")
+            return "UNPARSEABLE", T(lang, "unparse_git", why=cr.get("why") or "the cd / -C target or the branch name is dynamic")
         heads = list_refs(g)[0]
         for n in cr["names"]:
             if n in heads:  # an existing branch is switched to or reset, not created
@@ -1435,7 +1473,7 @@ def enforce(crs, default_cwd, lang):
             try:
                 v = check_creation(g, n, cr, lang, mode)
             except GitFail as err:
-                v = deny("UNKNOWN", unknowns=[{"code": err.code, "text": str(err)}]) if mode == "armed" else None
+                v = deny("UNKNOWN", unknowns=[{"code": err.code, "text": str(err)}]) if mode == "armed" or cr["kind"] == "worktree" else None
             if v:
                 return v["code"], v.get("message") or render(lang, v, n)
         if cr["kind"] == "auto" and not cr["names"]:
@@ -1450,9 +1488,7 @@ def load_aliases(g):
 def decide(payload, lang):
     """-> None (allow) or (code, message)."""
     crs, prot, cwd = extract(payload)
-    text = shell_text(payload)
-    sub = re.search(r"\bgit\s+(?:-\S+\s+)*([A-Za-z][\w-]*)", text or "")
-    if not crs and sub and sub.group(1) not in _BUILTINS:  # a git alias may hide a creation
+    if not crs and any(s not in _BUILTINS for s in _git_subcommands(shell_text(payload) or "")):  # a git alias may hide a creation
         g = open_repo(cwd)
         aliases = load_aliases(g) if g else {}
         crs = extract(payload, aliases)[0] if aliases else crs
@@ -1476,6 +1512,15 @@ _PREFILTER = re.compile(rb"git|worktree|isolation|start_session|EnterWorktree|ma
 
 
 def cmd_hook(args):
+    global HOOK_DEADLINE
+    HOOK_DEADLINE = time.monotonic() + BUDGET_S
+    try:
+        return _hook(args)
+    finally:
+        HOOK_DEADLINE = None
+
+
+def _hook(args):
     raw = sys.stdin.buffer.read()
     try:
         payload = json.loads(raw.decode("utf-8-sig"))
@@ -1532,6 +1577,11 @@ chain "$@"
 '''
 
 
+def read_text(path):
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
 def hooks_dir(g, wt=None):
     return os.path.normpath(g.text("rev-parse", "--path-format=absolute", "--git-path", "hooks", cwd=wt).strip())
 
@@ -1549,7 +1599,7 @@ def cmd_arm(args):
     wts = [w for w in worktrees(g) if not w["bare"] and not w["prunable"]]
     dirs = {pkey(hooks_dir(g, w["path"])) for w in wts}
     hook = os.path.join(hooks_dir(g), "reference-transaction")
-    mine_hook = os.path.exists(hook) and MARK in open(hook, encoding="utf-8", errors="replace").read()
+    mine_hook = os.path.exists(hook) and MARK in read_text(hook)
     why = ("core.hooksPath is set" if g.run("config", "--get", "core.hooksPath", ok=(0, 1))[0] == 0 else
            "the worktrees resolve to different hook directories (%d)" % len(dirs) if len(dirs) > 1 else
            "%s.magos-prev already exists" % hook if os.path.exists(hook + ".magos-prev") and not mine_hook else None)
@@ -1588,7 +1638,7 @@ def cmd_disarm(args):
     if not args.dry_run and not user_console():
         sys.stderr.write(T(args.lang, "need_tty") + "\n")
         return EXIT["CONSOLE_REQUIRED"]
-    mine = os.path.exists(hook) and MARK in open(hook, encoding="utf-8", errors="replace").read()
+    mine = os.path.exists(hook) and MARK in read_text(hook)
     for target in [os.path.join(s, "ARMED")] + ([hook] if mine else []):
         out_text("%s remove %s" % ("would" if args.dry_run else "did", target))
         if not args.dry_run and os.path.exists(target):
@@ -1656,8 +1706,8 @@ def cmd_doctor(args):
     wts = [w for w in worktrees(g) if not w["bare"] and not w["prunable"]]
     dirs = {pkey(hooks_dir(g, w["path"])) for w in wts}
     hook = os.path.join(hooks_dir(g), "reference-transaction")
-    mine = os.path.exists(hook) and MARK in open(hook, encoding="utf-8", errors="replace").read()
-    same = mine and open(hook, encoding="utf-8", errors="replace").read().replace("\r\n", "\n") == HOOK_SH
+    mine = os.path.exists(hook) and MARK in read_text(hook)
+    same = mine and read_text(hook).replace("\r\n", "\n") == HOOK_SH
     out_text("git layer: %s; hook directories: %d" % ("installed" if same else "installed but different from this version" if mine else "not installed", len(dirs)))
     bypassed = mode == "armed" and g.run("config", "--get", "core.hooksPath", ok=(0, 1))[0] == 0
     if bypassed:
@@ -1693,10 +1743,11 @@ def main(argv=None):
         p.add_argument("--branch", required=True)
         p.add_argument("--paths", nargs="*")
         p.add_argument("--manifest")
-        p.add_argument("--target")
         if name == "plan":
             p.add_argument("--worktree", default="")
             p.add_argument("--amend", action="store_true")
+        else:
+            p.add_argument("--target")
     sub.add_parser("list", parents=[common]).add_argument("--drift", action="store_true")
     p = sub.add_parser("release", parents=[common])
     p.add_argument("--branch", required=True)

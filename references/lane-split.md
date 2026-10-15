@@ -108,7 +108,7 @@ An open claim (`planned` or `active`) is active-owner evidence. `/GitCleanup`, `
 ## 12. Honest Limits
 
 - Plugin hooks apply to every repository opened in Claude Code, not only MAGOS repositories; `git config --local magos.guard off` or `claude plugin disable magos` opts out.
-- The hooks read command text. A script, an interpreter, an alias, or an obfuscated command can create a branch without being recognized; in an armed repository the Git backstop still vetoes it.
+- The hooks read command text. A script, an interpreter, an alias, or an obfuscated command can create a branch without being recognized; in an armed repository the Git backstop still vetoes it. A command longer than 200,000 characters is not inspected and is denied once other lanes exist.
 - The Git backstop is bypassed by `git -c core.hooksPath=...`, `GIT_CONFIG_*` hook overrides, a `core.hooksPath` set after arming (`plan` and `doctor` warn `HOOK_BYPASSED`), a per-worktree `core.hooksPath`, direct writes under `.git/refs`, libgit2 or JGit tools, and clones. It vetoes when git creates the ref, which for `switch -c <name> <start>`, `checkout -b <start>` and `--orphan` is after the checkout step: the host hooks stop those forms before they run, and if the backstop ever stops one the working tree may need `git status` and a manual `git switch` back.
 - Hosts create some worktrees without a tool call (`claude --worktree`, Codex app worktrees, Hermes subagent isolation); only the Git backstop can cover them, and only if the host runs the repository's hooks (unverified).
 - Between `plan` and the creation the world can change: the host hook re-runs the comparison, the Git backstop only checks that a claim exists.
