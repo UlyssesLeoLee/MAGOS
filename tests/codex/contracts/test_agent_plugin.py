@@ -166,6 +166,7 @@ skips it (the skip count is part of unittest's last line). Run: python -X utf8 t
 import errno
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -186,6 +187,11 @@ PLUGIN_ONLY_SKILLS = {"git-orchestrator"}  # scripts/sync_hosts.py leaves these 
 REPO = HERE.parents[2]
 PACKAGE = ["plugin.json", ".claude-plugin", "plugin.yaml", "__init__.py", "SKILL.md", "LICENSE", "references",
            "skills", "scripts"]
+# Mutations that edit a shipped version line replace the current one, so they follow the shipped version instead of
+# pinning one: a hardcoded literal turns into a no-op edit the moment the package is renumbered, and a no-op mutation
+# passes its row without ever proving the check can fail. plugin.yaml is the source; plugin.json, SKILL.md
+# metadata.version and references/commands.md are checked against it by check_version.
+PACKAGE_VERSION = re.search(r"^version: (\S+)$", (REPO / "plugin.yaml").read_text(encoding="utf-8"), re.M).group(1)
 
 MANIFEST = "plugin.json is a valid"
 VERSION = "manifest version matches"
@@ -313,7 +319,8 @@ MUTATIONS = [
     ("manifest version drifts from SKILL.md", manifest(lambda data: data.update(version="1.1.0")), [VERSION]),
     ("manifest version is a number", manifest(lambda data: data.update(version=3)), [MANIFEST, VERSION]),
     ("commands.md states another version",
-     edit("references/commands.md", "`multi-agent-git-orchestrator` v1.0.1.", "`multi-agent-git-orchestrator` v0.9."),
+     edit("references/commands.md", "`multi-agent-git-orchestrator` v%s." % PACKAGE_VERSION,
+          "`multi-agent-git-orchestrator` v0.9."),
      [VERSION]),
     ("adapter flow-style list", edit(RECON, SHORT, SHORT + "\n  tags: [git, worktree]"), [SKILLS, CLONE]),
     ("adapter nested metadata.hermes", edit(RECON, SHORT, SHORT + '\n  hermes:\n    tags: "git"'), [SKILLS, CLONE]),
@@ -364,9 +371,12 @@ MUTATIONS = [
     ("the marketplace entry declares a component path",
      marketplace(lambda data: data["plugins"][0].update(commands="./commands/")),
      [MARKETPLACE]),
-    ("plugin.yaml drifts from the plugin.json version", edit("plugin.yaml", "version: 1.0.0", "version: 9.9.9"),
+    ("plugin.yaml drifts from the plugin.json version",
+     edit("plugin.yaml", "version: " + PACKAGE_VERSION, "version: 9.9.9"),
      [HERMES_NATIVE]),
-    ("plugin.yaml declares a hook", lambda root: edit("plugin.yaml", "version: 1.0.0", "version: 1.0.0\nprovides_hooks:\n  - pre_tool_call")(root),
+    ("plugin.yaml declares a hook",
+     lambda root: edit("plugin.yaml", "version: " + PACKAGE_VERSION,
+                       "version: %s\nprovides_hooks:\n  - pre_tool_call" % PACKAGE_VERSION)(root),
      [HERMES_NATIVE]),
     ("__init__.py registers a tool", edit("__init__.py", "            ctx.register_skill(",
                                           "            ctx.register_tool(None)\n            ctx.register_skill("),
