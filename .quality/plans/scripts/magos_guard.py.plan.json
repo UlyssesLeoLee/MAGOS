@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "source": "scripts/magos_guard.py",
+  "baseline_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "prepared_branch": "agent/lane-guard",
+  "technical_design": ".quality/docs/scripts/magos_guard.py.md",
+  "test_design": ".quality/test-design/scripts/magos_guard.py.test.md",
+  "prepared_technical_design_sha256": "3283ba8d45524a5d5eb33fcaa31b23a127ff9c9781a93299e8d5c417e4321405",
+  "prepared_test_design_sha256": "d1a8f916cc56f0add6223570e5f1c6e03a6734bf747b01a9796f203ff0d524c5",
+  "prepared_related_design_sha256": {}
+}
