@@ -360,6 +360,8 @@ def _join(base, p):
     if base is None:
         return None
     p = _norm_path(p)
+    if os.name == "nt" and p.startswith("/") and not re.match(r"[A-Za-z]:", p):
+        return None  # a POSIX-rooted spelling _norm_path could not map to a drive: no directory we may judge
     return p if (os.path.isabs(p) or re.match(r"[A-Za-z]:", p)) else os.path.normpath(os.path.join(base, p))
 
 

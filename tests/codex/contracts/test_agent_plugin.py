@@ -313,7 +313,7 @@ MUTATIONS = [
     ("manifest version drifts from SKILL.md", manifest(lambda data: data.update(version="1.1.0")), [VERSION]),
     ("manifest version is a number", manifest(lambda data: data.update(version=3)), [MANIFEST, VERSION]),
     ("commands.md states another version",
-     edit("references/commands.md", "`multi-agent-git-orchestrator` v1.0.", "`multi-agent-git-orchestrator` v0.9."),
+     edit("references/commands.md", "`multi-agent-git-orchestrator` v1.0.1.", "`multi-agent-git-orchestrator` v0.9."),
      [VERSION]),
     ("adapter flow-style list", edit(RECON, SHORT, SHORT + "\n  tags: [git, worktree]"), [SKILLS, CLONE]),
     ("adapter nested metadata.hermes", edit(RECON, SHORT, SHORT + '\n  hermes:\n    tags: "git"'), [SKILLS, CLONE]),
