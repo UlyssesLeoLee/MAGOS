@@ -1,9 +1,0 @@
-{
-  "case": "git-recon/snapshot-output",
-  "host": "codex",
-  "status": "UNVERIFIED",
-  "scope": "host runtime",
-  "reason": "Codex CLI returned helper_unknown_error: setup refresh had errors before completing the snapshot interaction.",
-  "runner_command": "python -X utf8 -u tests/codex/run_host_cases.py --host codex --timeout 180",
-  "follow_up": "Disabled the unrelated serena MCP for test invocations, ignored .serena metadata in repository snapshots, and expanded helper-error classification."
-}

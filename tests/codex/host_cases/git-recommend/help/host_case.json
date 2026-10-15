@@ -1,6 +1,0 @@
-{
-  "id": "git-recommend/help",
-  "fixture": "empty",
-  "args": "--help",
-  "assertion": "help"
-}

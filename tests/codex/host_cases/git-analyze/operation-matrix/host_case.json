@@ -1,6 +1,0 @@
-{
-  "id": "git-analyze/operation-matrix",
-  "fixture": "branch",
-  "args": "agent/auth",
-  "assertion": "operation-matrix"
-}

@@ -1,1 +1,0 @@
-/GitAnalyze agent/a --lang English

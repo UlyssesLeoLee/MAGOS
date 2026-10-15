@@ -1,7 +1,0 @@
-{
-  "id": "git-cleanup/apply-safe-only",
-  "fixture": "cleanup",
-  "args": "--apply",
-  "assertion": "cleanup-apply",
-  "context": "I authorize removing only local candidates that pass every safety recheck. Do not delete remote branches."
-}

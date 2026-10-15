@@ -1,5 +1,0 @@
-{
-  "id": "ignored-overwrite-merge",
-  "mode": "apply",
-  "title": "A merge that would overwrite an ignored local file stops before merging"
-}

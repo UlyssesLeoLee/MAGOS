@@ -1,7 +1,0 @@
-{
-  "id": "git-integrate/merge-success",
-  "fixture": "integrate",
-  "args": "agent/auth --strategy merge",
-  "assertion": "integration-merge",
-  "context": "I reviewed and accepted agent/auth at {lane_head}. Its dependency and repository-policy gates passed. Integrate it into main, then validate the result."
-}

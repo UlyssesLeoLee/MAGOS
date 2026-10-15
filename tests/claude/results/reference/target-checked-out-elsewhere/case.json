@@ -1,5 +1,0 @@
-{
-  "id": "target-checked-out-elsewhere",
-  "mode": "apply",
-  "title": "A target held by another worktree is a gate: run from that worktree"
-}

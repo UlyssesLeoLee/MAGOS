@@ -1,9 +1,0 @@
-{
-  "case": "git-recon/help",
-  "host": "codex",
-  "status": "UNVERIFIED",
-  "scope": "fixture setup; Codex was not invoked",
-  "runner_command": "python -X utf8 -u tests/codex/run_host_cases.py --host codex --case git-recon/help --timeout 180",
-  "error": "subprocess.TimeoutExpired after 30 seconds while running git init -b main in the disposable empty-repository fixture",
-  "follow_up": "Raised the Git fixture command timeout to 120 seconds and made fixture setup exceptions produce case evidence instead of terminating the runner."
-}

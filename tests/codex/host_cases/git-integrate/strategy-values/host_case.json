@@ -1,6 +1,0 @@
-{
-  "id": "git-integrate/strategy-values",
-  "fixture": "integrate",
-  "args": "agent/auth --strategy unsupported",
-  "assertion": "invalid-strategy"
-}

@@ -1,5 +1,0 @@
-{
-  "id": "skip-worktree-edits",
-  "mode": "apply",
-  "title": "Edits hidden by skip-worktree keep the worktree and branch"
-}

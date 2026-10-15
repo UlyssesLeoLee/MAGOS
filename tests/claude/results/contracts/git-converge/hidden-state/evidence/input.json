@@ -1,6 +1,0 @@
-{
-  "hazards": [
-    "paused cherry-pick/revert sequence (sequencer/)",
-    "skip-worktree / assume-unchanged edits"
-  ]
-}

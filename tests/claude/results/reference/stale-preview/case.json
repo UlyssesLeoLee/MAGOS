@@ -1,5 +1,0 @@
-{
-  "id": "stale-preview",
-  "mode": "apply",
-  "title": "A source that moves after the preview stops the apply"
-}

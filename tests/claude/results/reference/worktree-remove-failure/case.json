@@ -1,5 +1,0 @@
-{
-  "id": "worktree-remove-failure",
-  "mode": "apply",
-  "title": "A worktree another process is using is not half-deleted, and its branch is kept"
-}

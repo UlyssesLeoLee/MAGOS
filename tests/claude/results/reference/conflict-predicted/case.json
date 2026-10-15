@@ -1,5 +1,0 @@
-{
-  "id": "conflict-predicted",
-  "mode": "apply",
-  "title": "A source that clashes with the target tip itself is predicted and then stops the apply"
-}

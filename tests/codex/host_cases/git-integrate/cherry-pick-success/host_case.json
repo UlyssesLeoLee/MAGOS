@@ -1,7 +1,0 @@
-{
-  "id": "git-integrate/cherry-pick-success",
-  "fixture": "integrate",
-  "args": "agent/auth --strategy cherry-pick",
-  "assertion": "integration-cherry-pick",
-  "context": "I reviewed and accepted agent/auth at {lane_head}. Its dependency and repository-policy gates passed. Integrate it into main, then validate the result."
-}

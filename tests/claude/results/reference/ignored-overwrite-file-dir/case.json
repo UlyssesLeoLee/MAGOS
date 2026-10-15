@@ -1,5 +1,0 @@
-{
-  "id": "ignored-overwrite-file-dir",
-  "mode": "apply",
-  "title": "A source directory named like an ignored local file stops the merge"
-}

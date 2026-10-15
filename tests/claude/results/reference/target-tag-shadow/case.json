@@ -1,5 +1,0 @@
-{
-  "id": "target-tag-shadow",
-  "mode": "apply",
-  "title": "A tag named like the target never stands in for the target branch"
-}

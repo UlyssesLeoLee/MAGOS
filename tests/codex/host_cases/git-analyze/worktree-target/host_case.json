@@ -1,6 +1,0 @@
-{
-  "id": "git-analyze/worktree-target",
-  "fixture": "branch",
-  "args": "{worktree}",
-  "assertion": "analyze-worktree"
-}

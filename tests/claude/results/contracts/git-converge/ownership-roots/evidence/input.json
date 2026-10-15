@@ -1,6 +1,0 @@
-{
-  "roots": [
-    "<main worktree>/.claude/worktrees/",
-    "~/.codex/worktrees/"
-  ]
-}

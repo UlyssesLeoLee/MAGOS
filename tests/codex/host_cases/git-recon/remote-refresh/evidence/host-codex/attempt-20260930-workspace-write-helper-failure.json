@@ -1,9 +1,0 @@
-{
-  "case": "git-recon/remote-refresh",
-  "host": "codex",
-  "status": "UNVERIFIED",
-  "scope": "host runtime",
-  "reason": "Codex CLI reported orchestrator_helper_exit_nonzero: setup helper exited with status Some(-1073741502); the test runner was interrupted before writing result.json.",
-  "runner_command": "python -X utf8 -u tests/codex/run_host_cases.py --host codex --timeout 180",
-  "follow_up": "Expanded runtime-error classification for this helper exit and isolated the failing serena MCP from subsequent runs."
-}

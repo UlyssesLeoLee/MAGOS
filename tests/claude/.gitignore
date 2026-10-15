@@ -1,6 +1,0 @@
-__pycache__/
-*.pyc
-.fixtures/
-results/claude/*.log
-results/claude/**/transcript.jsonl
-results/claude/**/stderr.txt

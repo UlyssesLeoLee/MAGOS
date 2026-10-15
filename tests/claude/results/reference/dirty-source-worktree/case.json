@@ -1,5 +1,0 @@
-{
-  "id": "dirty-source-worktree",
-  "mode": "apply",
-  "title": "A dirty worktree keeps its branch; committed content is merged; edits survive"
-}

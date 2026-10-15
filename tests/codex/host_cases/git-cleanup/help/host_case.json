@@ -1,6 +1,0 @@
-{
-  "id": "git-cleanup/help",
-  "fixture": "empty",
-  "args": "--help",
-  "assertion": "help"
-}

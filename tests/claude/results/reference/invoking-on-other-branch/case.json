@@ -1,5 +1,0 @@
-{
-  "id": "invoking-on-other-branch",
-  "mode": "apply",
-  "title": "The invoking worktree moves to the target and its old branch is merged and deleted"
-}

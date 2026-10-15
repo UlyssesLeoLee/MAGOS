@@ -1,7 +1,0 @@
-{
-  "id": "git-integrate/gates",
-  "fixture": "integrate",
-  "args": "agent/auth",
-  "assertion": "integration-gate",
-  "context": "Review and acceptance have NOT been completed. Identify the gate and stop."
-}

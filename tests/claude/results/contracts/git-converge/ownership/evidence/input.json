@@ -1,9 +1,0 @@
-{
-  "blocked": [
-    "locked",
-    "dirty",
-    "in progress",
-    "under an agent-harness root",
-    "main worktree that is not the invoking one"
-  ]
-}

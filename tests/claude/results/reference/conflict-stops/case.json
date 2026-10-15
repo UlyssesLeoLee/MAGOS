@@ -1,5 +1,0 @@
-{
-  "id": "conflict-stops",
-  "mode": "apply",
-  "title": "A conflicting source aborts its merge, stops the command, and deletes nothing"
-}

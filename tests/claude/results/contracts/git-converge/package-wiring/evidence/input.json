@@ -1,9 +1,0 @@
-{
-  "files": [
-    "scripts/sync_hosts.py",
-    "README.md",
-    "references/installation.md",
-    "references/pressure-tests.md",
-    "SKILL.md"
-  ]
-}

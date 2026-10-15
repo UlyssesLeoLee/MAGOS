@@ -1,4 +1,0 @@
-{
-  "order": "main first, then descending unique commits, ties by refname",
-  "conflict": "abort and stop"
-}

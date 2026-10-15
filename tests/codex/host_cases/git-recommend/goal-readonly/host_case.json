@@ -1,6 +1,0 @@
-{
-  "id": "git-recommend/goal-readonly",
-  "fixture": "branch",
-  "args": "优先考虑 agent/auth 的安全集成",
-  "assertion": "recommend"
-}

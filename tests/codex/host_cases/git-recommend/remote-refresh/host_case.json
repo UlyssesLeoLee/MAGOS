@@ -1,6 +1,0 @@
-{
-  "id": "git-recommend/remote-refresh",
-  "fixture": "remote",
-  "args": "--remote 优先考虑 agent/auth 的安全集成",
-  "assertion": "remote-recommend"
-}

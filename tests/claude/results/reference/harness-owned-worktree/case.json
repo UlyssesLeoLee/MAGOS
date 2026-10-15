@@ -1,5 +1,0 @@
-{
-  "id": "harness-owned-worktree",
-  "mode": "apply",
-  "title": "A worktree under an agent-harness root is never removed"
-}

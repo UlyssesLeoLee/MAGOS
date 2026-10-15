@@ -1,5 +1,0 @@
-{
-  "id": "detached-and-prunable",
-  "mode": "apply",
-  "title": "A detached worktree is left alone and a missing branch worktree is removed by path only"
-}

@@ -1,5 +1,0 @@
-{
-  "id": "ignored-overwrite-case",
-  "mode": "apply",
-  "title": "A source path that differs from an ignored local file only in case stops the merge"
-}

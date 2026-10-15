@@ -1,5 +1,0 @@
-{
-  "id": "case-variant-target",
-  "mode": "apply",
-  "title": "A differently-cased target is rejected, even with --apply"
-}

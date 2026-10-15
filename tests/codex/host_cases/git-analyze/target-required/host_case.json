@@ -1,6 +1,0 @@
-{
-  "id": "git-analyze/target-required",
-  "fixture": "branch",
-  "args": "agent/auth",
-  "assertion": "analyze"
-}

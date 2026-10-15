@@ -1,7 +1,0 @@
-{
-  "rechecks": [
-    "tip unchanged",
-    "ancestor of target",
-    "worktree still clean/unlocked/not in progress/no ignored files"
-  ]
-}

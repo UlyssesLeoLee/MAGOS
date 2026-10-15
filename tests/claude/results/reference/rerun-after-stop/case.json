@@ -1,5 +1,0 @@
-{
-  "id": "rerun-after-stop",
-  "mode": "apply",
-  "title": "After the conflict is resolved by discarding the loser, a rerun finishes the job"
-}

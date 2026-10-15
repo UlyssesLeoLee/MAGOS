@@ -1,5 +1,0 @@
-{
-  "id": "ignored-files-discard",
-  "mode": "apply",
-  "title": "--discard-ignored removes the worktree and its ignored files"
-}

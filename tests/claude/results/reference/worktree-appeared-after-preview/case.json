@@ -1,5 +1,0 @@
-{
-  "id": "worktree-appeared-after-preview",
-  "mode": "apply",
-  "title": "A worktree added after the preview keeps its branch"
-}

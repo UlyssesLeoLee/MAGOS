@@ -1,9 +1,0 @@
-{
-  "precedence": [
-    "BLOCKED_UNRELATED_HISTORY",
-    "BLOCKED_IN_PROGRESS",
-    "CONTAINED",
-    "MERGE",
-    "UNKNOWN"
-  ]
-}

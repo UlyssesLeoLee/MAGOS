@@ -1,5 +1,0 @@
-{
-  "id": "run-from-target-worktree",
-  "mode": "apply",
-  "title": "Running from the worktree that holds the target works and leaves main's worktree alone"
-}

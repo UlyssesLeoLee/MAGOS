@@ -1,5 +1,0 @@
-{
-  "id": "dependency-of-remaining-lane",
-  "mode": "apply",
-  "title": "A branch that a kept lane tracks is merged but kept"
-}

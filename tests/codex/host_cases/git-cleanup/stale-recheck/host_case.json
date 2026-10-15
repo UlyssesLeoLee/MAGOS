@@ -1,8 +1,0 @@
-{
-  "id": "git-cleanup/stale-recheck",
-  "fixture": "cleanup",
-  "args": "",
-  "followup_args": "--apply",
-  "assertion": "cleanup-stale",
-  "context": "First preview cleanup candidates. After the preview, I will change a candidate. Then recheck before any apply."
-}

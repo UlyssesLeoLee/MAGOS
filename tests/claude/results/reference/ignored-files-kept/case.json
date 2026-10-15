@@ -1,5 +1,0 @@
-{
-  "id": "ignored-files-kept",
-  "mode": "apply",
-  "title": "A worktree holding ignored files is kept unless --discard-ignored is given"
-}

@@ -1,6 +1,0 @@
-{
-  "source": "agent/auth",
-  "review": "missing",
-  "target_freshness": "stale",
-  "expected": "blocked"
-}

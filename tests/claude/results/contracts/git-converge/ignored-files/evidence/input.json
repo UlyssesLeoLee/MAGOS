@@ -1,6 +1,0 @@
-{
-  "hazards": [
-    "merge overwrites an ignored file",
-    "worktree remove deletes ignored files"
-  ]
-}

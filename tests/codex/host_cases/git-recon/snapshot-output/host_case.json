@@ -1,6 +1,0 @@
-{
-  "id": "git-recon/snapshot-output",
-  "fixture": "branch",
-  "args": "",
-  "assertion": "recon"
-}

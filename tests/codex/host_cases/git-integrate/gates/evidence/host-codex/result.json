@@ -1,7 +1,0 @@
-{
-  "case": "git-integrate/gates",
-  "status": "UNVERIFIED",
-  "scope": "host runtime",
-  "reason": "host runtime/auth/model/sandbox error",
-  "returncode": 0
-}

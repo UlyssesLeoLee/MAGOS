@@ -1,5 +1,0 @@
-{
-  "id": "validation-fails",
-  "mode": "apply",
-  "title": "A failing post-merge check keeps the merges and deletes nothing"
-}

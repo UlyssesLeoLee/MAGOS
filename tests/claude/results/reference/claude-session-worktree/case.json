@@ -1,5 +1,0 @@
-{
-  "id": "claude-session-worktree",
-  "mode": "apply",
-  "title": "A Claude Code session worktree under <repo>/.claude/worktrees is never removed"
-}

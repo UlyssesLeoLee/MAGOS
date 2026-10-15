@@ -1,7 +1,0 @@
-{
-  "case": "git-integrate/merge-success",
-  "status": "UNVERIFIED",
-  "scope": "host runtime",
-  "reason": "host runtime/auth/model/sandbox error",
-  "returncode": 0
-}

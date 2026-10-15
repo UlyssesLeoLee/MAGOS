@@ -1,3 +1,0 @@
-{
-  "chain": "c -> b -> a with c dirty keeps b and a"
-}

@@ -1,5 +1,0 @@
-{
-  "id": "main-prunable-entry",
-  "mode": "apply",
-  "title": "A main held only by a missing-directory worktree entry is a gate"
-}

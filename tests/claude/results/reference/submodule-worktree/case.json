@@ -1,5 +1,0 @@
-{
-  "id": "submodule-worktree",
-  "mode": "apply",
-  "title": "A worktree with an initialized submodule is kept because git refuses to remove it"
-}

@@ -1,5 +1,0 @@
-{
-  "id": "target-prunable-entry",
-  "mode": "apply",
-  "title": "A target held only by a missing-directory worktree entry is a gate"
-}

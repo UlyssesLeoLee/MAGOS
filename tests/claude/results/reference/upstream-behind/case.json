@@ -1,5 +1,0 @@
-{
-  "id": "upstream-behind",
-  "mode": "apply",
-  "title": "A branch whose upstream lags is merged and deleted without -D; the remote keeps its copy"
-}
