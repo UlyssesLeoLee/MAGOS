@@ -6,6 +6,7 @@
 #   (v_DOUBLE_QUOTED:Variable {name: "DOUBLE_QUOTED", type: "variable"}),
 #   (v_PLAIN_FIRST:Variable {name: "PLAIN_FIRST", type: "variable"}),
 #   (v_YAML11_WORDS:Variable {name: "YAML11_WORDS", type: "variable"}),
+#   (v_BOOLEAN_KEYS:Variable {name: "BOOLEAN_KEYS", type: "variable"}),
 #   (f_split:Function {name: "split", type: "function", signature: "split(text: str) -> str"}),
 #   (f_scalar:Function {name: "scalar", type: "function", signature: "scalar(raw: str, line: int) -> tuple[str, str]"}),
 #   (f_parse:Function {name: "parse", type: "function", signature: "parse(text: str) -> tuple[dict, dict]"}),
@@ -15,6 +16,7 @@
 #   (file)-[:CONTAINS]->(v_DOUBLE_QUOTED),
 #   (file)-[:CONTAINS]->(v_PLAIN_FIRST),
 #   (file)-[:CONTAINS]->(v_YAML11_WORDS),
+#   (file)-[:CONTAINS]->(v_BOOLEAN_KEYS),
 #   (file)-[:CONTAINS]->(f_split),
 #   (file)-[:CONTAINS]->(f_scalar),
 #   (file)-[:CONTAINS]->(f_parse),
@@ -22,6 +24,7 @@
 #   (f_cross_check)-[:CALLS]->(f_split),
 #   (f_parse)-[:CALLS]->(f_scalar),
 #   (f_parse)-[:CALLS]->(f_split),
+#   (f_parse)-[:USES]->(v_BOOLEAN_KEYS),
 #   (f_parse)-[:USES]->(v_KEY),
 #   (f_parse)-[:USES]->(v_YAML11_WORDS),
 #   (f_scalar)-[:USES]->(v_DOUBLE_QUOTED),
@@ -35,12 +38,15 @@ Accepted: column-0 `key: value` lines, and one nested map (`key:` followed by ` 
 double-quoted string (JSON escapes, only \\" and \\\\), a single-quoted string ('' escapes a quote), or a plain scalar
 that every YAML parser reads as the same string. Everything else is rejected instead of guessed: flow collections,
 sequences, block scalars, anchors, aliases, tags, comments, tabs, duplicate keys, deeper nesting, and plain scalars
-that YAML reads differently (": ", " #", a leading indicator, or a bool/null/number-like word).
+that YAML reads differently (": ", " #", a leading indicator, or a bool/null/number-like word). The one exception is
+a column-0 key in BOOLEAN_KEYS, a host key whose only accepted value is the plain YAML boolean `true` (read as True).
 
-Anything this reader accepts therefore parses to the same strings under PyYAML and under strictyaml, which the
+Anything else this reader accepts therefore parses to the same strings under PyYAML and under strictyaml, which the
 Agent Skills reference validator (skills-ref) uses and which rejects flow style outright. When PyYAML is installed,
-cross_check() confirms that. The regex reader it replaces could not see either defect.
+cross_check() confirms that, the BOOLEAN_KEYS value included. The regex reader it replaces could not see either defect.
 """
+
+from __future__ import annotations
 
 import json
 import re
@@ -52,6 +58,9 @@ UNSAFE = re.compile("[^\\n\\x20-\\x7e\\xa0-\\u2027\\u202a-\\ud7ff\\ue000-\\ufffd
 DOUBLE_QUOTED = re.compile(r'"(?:[^"\\]|\\["\\])*"')
 PLAIN_FIRST = set("-?:,[]{}#&*!|>'\"%@`~")
 YAML11_WORDS = {"y", "n", "yes", "no", "true", "false", "on", "off", "null"}
+# Claude Code reads `disable-model-invocation: true` as a boolean that keeps the model from invoking a skill through the
+# Skill tool. It is the only non-string value the package uses, so it is the only key whose value may be `true`.
+BOOLEAN_KEYS = {"disable-model-invocation"}
 
 
 class FrontmatterError(ValueError):
@@ -128,7 +137,12 @@ def parse(text: str) -> tuple[dict, dict]:
         if indent == 0:
             if key in fields:
                 raise FrontmatterError(f"line {number}: duplicate key {key!r}")
-            if raw:
+            if raw and key in BOOLEAN_KEYS:
+                if raw != "true":
+                    raise FrontmatterError(f"line {number}: {key} takes only the plain boolean true")
+                fields[key], styles[key] = True, "plain"
+                parent = None
+            elif raw:
                 fields[key], styles[key] = scalar(raw, number)
                 parent = None
             else:

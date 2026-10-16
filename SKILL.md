@@ -4,7 +4,7 @@ description: "Automatically use for multi-agent or multi-worktree Git coordinati
 license: Apache-2.0
 compatibility: "Requires Git 2.30+ or harness-native workspace isolation; intended for Agent Skills-compatible coding agents."
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
   domain: "engineering-process"
   scope: "multi-agent-git"
 ---
@@ -103,7 +103,7 @@ Load `references/commands.md` when command-specific arguments, output contracts,
 7. **Integration is serialized.** Only one actor writes the protected integration branch at a time.
 8. **Reconnaissance is non-destructive by default.** Investigate before mutating.
 9. **Unknown is not safe.** Do not infer ownership, remote freshness, semantic dependencies, or merge safety without evidence.
-10. **A lane's files are planned before the lane exists.** Where the lane guard is installed, creating a branch or worktree needs a registered file manifest; overlap with another branch or worktree is denied at creation and every conflicting branch is named (`references/lane-split.md`). Existing lanes are never stopped.
+10. **A lane's files are planned before the lane exists.** Where the lane guard is installed, creating a branch or worktree needs a registered file manifest; overlap with another branch or worktree is denied at creation and every conflicting branch is named (`references/lane-split.md`). Existing lanes are never stopped. The guard needs Git 2.36+ (the commands need 2.30+).
 
 ## Branch Strategy
 

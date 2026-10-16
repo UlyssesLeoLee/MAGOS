@@ -2,7 +2,7 @@
 
 Source: `scripts/sync_hosts.py`
 
-Source-SHA256: `bdb089f7a8c4eafd9ac400e87d200edef6f73e7af1a1f3116dcf269319b9df8d`
+Source-SHA256: `f5b65edb9e55248dfa2601c6bee3b201f0f12d6443b52f8e8e4c47f4f5906701`
 
 ## Responsibility
 

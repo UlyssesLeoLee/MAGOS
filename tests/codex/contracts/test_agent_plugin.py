@@ -163,6 +163,8 @@ turns red while the unmodified copy stays green. A setup error fails the case; o
 skips it (the skip count is part of unittest's last line). Run: python -X utf8 tests/codex/contracts/test_agent_plugin.py
 """
 
+from __future__ import annotations
+
 import errno
 import json
 import os
@@ -195,6 +197,8 @@ PACKAGE_VERSION = re.search(r"^version: (\S+)$", (REPO / "plugin.yaml").read_tex
 
 MANIFEST = "plugin.json is a valid"
 VERSION = "manifest version matches"
+SHIPPED_VERSION = "GUARD_VERSION equal the manifest version"
+INVOCATION = "set disable-model-invocation: true"
 DISCOVERY = "skills/ discovery"
 SKILLS = "every discovered skill meets"
 ROOT = "root SKILL.md"
@@ -208,6 +212,8 @@ HERMES_NATIVE = "plugin.yaml is the Hermes native manifest"
 INSTALL_YAML = "every installed SKILL.md is strict YAML"
 
 RECON = "skills/git-recon/SKILL.md"
+SWEEP = "skills/git-sweep/SKILL.md"
+ENTRY = "skills/git-orchestrator/SKILL.md"
 RECON_DESCRIPTION = 'description: "查看仓库状态（只读）；/git-recon [--remote] [--help]."'
 SHORT = 'short-description: "查看仓库状态；$git-recon [--remote] [--help]."'
 ROOT_DESCRIPTION = 'description: "Automatically use for'
@@ -322,6 +328,16 @@ MUTATIONS = [
      edit("references/commands.md", "`multi-agent-git-orchestrator` v%s." % PACKAGE_VERSION,
           "`multi-agent-git-orchestrator` v0.9."),
      [VERSION]),
+    ("the entry skill states another version", edit(ENTRY, 'version: "%s"' % PACKAGE_VERSION, 'version: "1.0"'), [SHIPPED_VERSION]),
+    ("the guard states another version",
+     edit("scripts/magos_guard.py", 'GUARD_VERSION = "%s"' % PACKAGE_VERSION, 'GUARD_VERSION = "9.9.9"'), [SHIPPED_VERSION]),
+    ("a write adapter lets the model invoke it", edit(SWEEP, "disable-model-invocation: true\n", ""), [INVOCATION]),
+    ("a write adapter quotes the boolean", edit(SWEEP, "disable-model-invocation: true", 'disable-model-invocation: "true"'),
+     [SKILLS, INVOCATION, CLONE]),
+    ("a read-only adapter disables model invocation",
+     edit(RECON, "license: Apache-2.0", "license: Apache-2.0\ndisable-model-invocation: true"), [INVOCATION]),
+    ("the entry skill disables model invocation",
+     edit(ENTRY, "license: Apache-2.0", "license: Apache-2.0\ndisable-model-invocation: true"), [INVOCATION]),
     ("adapter flow-style list", edit(RECON, SHORT, SHORT + "\n  tags: [git, worktree]"), [SKILLS, CLONE]),
     ("adapter nested metadata.hermes", edit(RECON, SHORT, SHORT + '\n  hermes:\n    tags: "git"'), [SKILLS, CLONE]),
     ("adapter metadata.hermes as a string", edit(RECON, SHORT, SHORT + '\n  hermes: "git, worktree"'), [SKILLS]),
@@ -523,12 +539,12 @@ class GitCheckout(PackageCopy):
     def git(self, root: Path, *arguments: str, text: str | None = None) -> str:
         """Run git on bytes: text-mode stdin would turn the newlines of --index-info input into CRLF on Windows."""
         completed = subprocess.run(["git", "-C", str(root), *arguments], check=True, capture_output=True,
-                                   input=None if text is None else text.encode("utf-8"))
+                                   input=b"" if text is None else text.encode("utf-8"))
         return completed.stdout.decode("utf-8")
 
     def staged_copy(self) -> Path:
         root = self.copy()
-        subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
+        subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True, stdin=subprocess.DEVNULL)
         self.git(root, "add", "-A")
         return root
 
@@ -656,7 +672,7 @@ class StrictFrontmatter(unittest.TestCase):
             import yaml
         except ImportError:
             self.skipTest("PyYAML is not installed, so there is nothing to compare with")
-        accepted = ['description: "a b"', "description: plain text", "description: 'it''s'",
+        accepted = ['description: "a b"', "description: plain text", "description: 'it''s'", "disable-model-invocation: true",
                     'license: Apache-2.0\nmetadata:\n  version: "1.0"\n  short-description: "x; $y [z]"',
                     'description: "查看仓库状态（只读）；/git-recon [--remote] [--help]."',
                     f"description: x{chr(0xA0)}"]
@@ -679,6 +695,15 @@ class StrictFrontmatter(unittest.TestCase):
     def test_a_closing_fence_at_the_end_of_the_file_is_accepted(self):
         fields, _ = skill_frontmatter.parse('---\nname: x\ndescription: "y"\n---')
         self.assertEqual(fields, {"name": "x", "description": "y"})
+
+    def test_the_boolean_host_key_takes_only_plain_true(self):
+        fields, _ = skill_frontmatter.parse(self.page("disable-model-invocation: true"))
+        self.assertIs(fields["disable-model-invocation"], True)
+        for line in ['disable-model-invocation: "true"', "disable-model-invocation: false", "disable-model-invocation: yes",
+                     "disable-model-invocation: True", "disable-model-invocation: 'true'", "description: true",
+                     "metadata:\n  disable-model-invocation: true"]:
+            with self.subTest(line), self.assertRaises(skill_frontmatter.FrontmatterError):
+                skill_frontmatter.parse(self.page(line))
 
     def test_chinese_text_is_accepted(self):
         fields, _ = skill_frontmatter.parse(self.page('description: "查看仓库状态（只读）；/git-recon [--remote] [--help]."'))

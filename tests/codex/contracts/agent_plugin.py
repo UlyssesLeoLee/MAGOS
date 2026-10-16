@@ -12,6 +12,8 @@
 #   (v_SKILL_NAME:Variable {name: "SKILL_NAME", type: "variable"}),
 #   (v_QUOTED_FIELDS:Variable {name: "QUOTED_FIELDS", type: "variable"}),
 #   (v_ADAPTER_REFERENCE:Variable {name: "ADAPTER_REFERENCE", type: "variable"}),
+#   (v_WRITE_ADAPTERS:Variable {name: "WRITE_ADAPTERS", type: "variable"}),
+#   (v_MODEL_INVOCATION_KEY:Variable {name: "MODEL_INVOCATION_KEY", type: "variable"}),
 #   (f_validate:Function {name: "validate", type: "function", signature: "validate(instance, schema: dict, where: str='$') -> list[str]"}),
 #   (f_reject_constant:Function {name: "reject_constant", type: "function", signature: "reject_constant(token: str)"}),
 #   (f_load_json:Function {name: "load_json", type: "function", signature: "load_json(path: Path)"}),
@@ -27,6 +29,8 @@
 #   (f_skill_problems:Function {name: "skill_problems", type: "function", signature: "skill_problems(skill_md: Path, directory_name: str) -> list[str]"}),
 #   (f_check_manifest:Function {name: "check_manifest", type: "function", signature: "check_manifest(root: Path) -> list[str]"}),
 #   (f_check_version:Function {name: "check_version", type: "function", signature: "check_version(root: Path) -> list[str]"}),
+#   (f_check_shipped_versions:Function {name: "check_shipped_versions", type: "function", signature: "check_shipped_versions(root: Path) -> list[str]"}),
+#   (f_check_model_invocation:Function {name: "check_model_invocation", type: "function", signature: "check_model_invocation(root: Path) -> list[str]"}),
 #   (f_discovered_skills:Function {name: "discovered_skills", type: "function", signature: "discovered_skills(root: Path) -> tuple[list[Path], list[str]]"}),
 #   (f_check_containment:Function {name: "check_containment", type: "function", signature: "check_containment(root: Path) -> list[str]"}),
 #   (f_check_mcp:Function {name: "check_mcp", type: "function", signature: "check_mcp(root: Path) -> list[str]"}),
@@ -50,6 +54,8 @@
 #   (file)-[:CONTAINS]->(v_SKILL_NAME),
 #   (file)-[:CONTAINS]->(v_QUOTED_FIELDS),
 #   (file)-[:CONTAINS]->(v_ADAPTER_REFERENCE),
+#   (file)-[:CONTAINS]->(v_WRITE_ADAPTERS),
+#   (file)-[:CONTAINS]->(v_MODEL_INVOCATION_KEY),
 #   (file)-[:CONTAINS]->(f_validate),
 #   (file)-[:CONTAINS]->(f_reject_constant),
 #   (file)-[:CONTAINS]->(f_load_json),
@@ -65,6 +71,8 @@
 #   (file)-[:CONTAINS]->(f_skill_problems),
 #   (file)-[:CONTAINS]->(f_check_manifest),
 #   (file)-[:CONTAINS]->(f_check_version),
+#   (file)-[:CONTAINS]->(f_check_shipped_versions),
+#   (file)-[:CONTAINS]->(f_check_model_invocation),
 #   (file)-[:CONTAINS]->(f_discovered_skills),
 #   (file)-[:CONTAINS]->(f_check_containment),
 #   (file)-[:CONTAINS]->(f_check_mcp),
@@ -98,6 +106,10 @@
 #   (f_check_mcp)-[:USES]->(v_MCP_SCHEMA_URL),
 #   (f_check_version)-[:CALLS]->(f_load_json),
 #   (f_check_version)-[:USES]->(v_ROOT_SKILL_NAME),
+#   (f_check_shipped_versions)-[:CALLS]->(f_load_json),
+#   (f_check_model_invocation)-[:CALLS]->(f_adapter_skill_files),
+#   (f_check_model_invocation)-[:USES]->(v_WRITE_ADAPTERS),
+#   (f_check_model_invocation)-[:USES]->(v_MODEL_INVOCATION_KEY),
 #   (f_discovered_skills)-[:CALLS]->(f_adapter_skill_files),
 #   (f_discovered_skills)-[:USES]->(v_EXPECTED_PLUGIN_SKILLS),
 #   (f_skill_problems)-[:USES]->(v_ALLOWED_FIELDS),
@@ -121,9 +133,12 @@ git-orchestrator entry skill; the orchestrator SKILL.md at the package root is n
 and the adapters reach it through their ../../ paths.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
+import stat
 import subprocess
 import unicodedata
 from pathlib import Path
@@ -161,7 +176,12 @@ TYPES = {"object": dict, "string": str, "array": list}
 EXPECTED_PLUGIN_SKILLS = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-orchestrator",
                          "git-recommend", "git-recon", "git-sweep"]
 ROOT_SKILL_NAME = "multi-agent-git-orchestrator"
-ALLOWED_FIELDS = {"name", "description", "license", "allowed-tools", "metadata", "compatibility"}
+# The Agent Skills fields, plus one documented Claude Code host key: `disable-model-invocation: true` keeps the model
+# from invoking a skill through the Skill tool (only the user's slash command runs it). Hermes passes unknown keys
+# through; Codex reads only the fields it knows.
+MODEL_INVOCATION_KEY = "disable-model-invocation"
+ALLOWED_FIELDS = {"name", "description", "license", "allowed-tools", "metadata", "compatibility", MODEL_INVOCATION_KEY}
+WRITE_ADAPTERS = ("git-cleanup", "git-converge", "git-integrate", "git-sweep")  # the adapters that write; only the user runs them
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 QUOTED_FIELDS = ("description", "compatibility")
 ADAPTER_REFERENCE = re.compile(r"`((?:\.\./)+[A-Za-z0-9_./-]+\.(?:md|yaml))`")
@@ -219,22 +239,36 @@ def load_json(path: Path):
 
 
 def is_link(path: Path) -> bool:
-    return path.is_symlink() or getattr(path, "is_junction", lambda: False)()
+    """A symbolic link, or a Windows directory junction (mount-point reparse point), on every Python from 3.9.
+
+    Path.is_junction exists only from Python 3.12; os.lstat reports the reparse tag on Windows from 3.8. A path that
+    cannot be read is not a link.
+    """
+    try:
+        status = os.lstat(path)
+    except OSError:
+        return False
+    junction = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", None)
+    return stat.S_ISLNK(status.st_mode) or (junction is not None and getattr(status, "st_reparse_tag", 0) == junction)
 
 
 def git_lines(root: Path, *arguments: str) -> list[str]:
     """NUL-separated output of a git command run in root; failures and timeouts propagate."""
     output = subprocess.run(["git", "-C", str(root), *arguments], capture_output=True, text=True, encoding="utf-8",
-                            timeout=300, check=True).stdout
+                            stdin=subprocess.DEVNULL, timeout=300, check=True).stdout
     return [item for item in output.split("\0") if item]
 
 
 def is_work_tree_root(root: Path) -> bool:
-    """True when root is the top of a git work tree; False when git is missing or root is not one."""
+    """True when root is the top of a git work tree; False when git is missing or root is not one.
+
+    Any other failure to start git propagates, so the containment check never silently switches from the tracked
+    files to the directory walk.
+    """
     try:
         top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True, text=True,
-                             encoding="utf-8", timeout=300, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
+                             encoding="utf-8", stdin=subprocess.DEVNULL, timeout=300, check=True).stdout.strip()
+    except (FileNotFoundError, subprocess.CalledProcessError):
         return False
     return Path(top).resolve() == root.resolve()
 
@@ -382,6 +416,45 @@ def check_version(root: Path) -> list[str]:
     return problems
 
 
+def check_shipped_versions(root: Path) -> list[str]:
+    """The entry skill's metadata.version (when it states one) and the guard's GUARD_VERSION equal the plugin.json version."""
+    version = load_json(root / "plugin.json").get("version")
+    problems = []
+    entry = root / "skills" / "git-orchestrator" / "SKILL.md"
+    if entry.is_file():
+        fields, _ = skill_frontmatter.parse(entry.read_text(encoding="utf-8"))
+        stated = fields.get("metadata", {}).get("version") if isinstance(fields.get("metadata"), dict) else None
+        if stated is not None and stated != version:
+            problems.append(f"skills/git-orchestrator/SKILL.md metadata.version {stated!r} != plugin.json version {version!r}")
+    guard = root / "scripts" / "magos_guard.py"
+    if guard.is_file():
+        found = re.search(r'^GUARD_VERSION = "([^"]*)"', guard.read_text(encoding="utf-8"), re.M)
+        if not found or found.group(1) != version:
+            problems.append(f"scripts/magos_guard.py GUARD_VERSION {found.group(1) if found else None!r} != plugin.json version {version!r}")
+    return problems
+
+
+def check_model_invocation(root: Path) -> list[str]:
+    """Claude Code offers every skills/ adapter to the model unless its frontmatter sets disable-model-invocation: true.
+
+    The write adapters set it (they act only on the user's explicit invocation); the read-only adapters, the entry skill
+    and the root SKILL.md do not, so the model can still load them.
+    """
+    problems = []
+    pages = [(f"skills/{path.parent.name}/SKILL.md", path, path.parent.name in WRITE_ADAPTERS) for path in adapter_skill_files(root)]
+    for label, path, writes in pages + [("SKILL.md", root / "SKILL.md", False)]:
+        try:
+            fields, _ = skill_frontmatter.parse(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, skill_frontmatter.FrontmatterError) as error:
+            problems.append(f"{label}: {error}")
+            continue
+        if writes and fields.get(MODEL_INVOCATION_KEY) is not True:
+            problems.append(f"{label} must set {MODEL_INVOCATION_KEY}: true (a write adapter runs only on the user's invocation)")
+        elif not writes and MODEL_INVOCATION_KEY in fields:
+            problems.append(f"{label} must not set {MODEL_INVOCATION_KEY} (only the write adapters do)")
+    return problems
+
+
 def discovered_skills(root: Path) -> tuple[list[Path], list[str]]:
     """§7.1: each immediate child of skills/ holding a regular SKILL.md inside the root is one skill; no recursion."""
     skills = root / "skills"
@@ -450,11 +523,15 @@ def check(root: Path) -> list[dict]:
         ("plugin: plugin.json is a valid Agent Plugins 1.0.0 manifest", lambda: check_manifest(root)),
         ("plugin: manifest version matches SKILL.md metadata.version and references/commands.md",
          lambda: check_version(root)),
+        ("plugin: the entry skill's metadata.version and the guard's GUARD_VERSION equal the manifest version",
+         lambda: check_shipped_versions(root)),
         ("plugin: skills/ discovery (§7.1) finds exactly the seven command adapters and git-orchestrator", discovery),
         ("plugin: every discovered skill meets Agent Skills (strict YAML, allowed fields, name = directory, "
          "string-only metadata)", lambda: [problem for path in found for problem in skill_problems(path, path.parent.name)]),
         ("plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules",
          lambda: skill_problems(root / "SKILL.md", ROOT_SKILL_NAME)),
+        ("plugin: only the write adapters (git-integrate, git-cleanup, git-converge, git-sweep) set "
+         "disable-model-invocation: true (Claude Code host key)", lambda: check_model_invocation(root)),
         ("plugin: package paths stay inside the plugin root and include no links (§4.1)", lambda: check_containment(root)),
         ("plugin: mcp.json is absent or valid (§7.2)", lambda: check_mcp(root)),
     ]

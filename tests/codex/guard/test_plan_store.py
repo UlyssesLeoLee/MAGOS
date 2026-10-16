@@ -377,9 +377,10 @@ def test_override_expires_and_a_changed_repository_voids_it(repo, guard, monkeyp
     d = Path(G.store(g)) / "override"
     d.mkdir(parents=True)
     (d / (fp + ".json")).write_text(json.dumps({"fp": fp, "reason": "r", "at": "2020-01-01T00:00:00Z", "expires": "2020-01-01T01:00:00Z"}), encoding="utf-8")
-    assert guard(repo, "check", "--branch", "n", "--paths", "src/a.py").rc == 10  # expired
+    assert guard(repo, "plan", "--branch", "n", "--paths", "src/a.py").rc == 10  # expired: plan does not honour it
     (d / (fp + ".json")).write_text(json.dumps({"fp": fp, "reason": "r", "at": "2020", "expires": "2999-01-01T00:00:00Z"}), encoding="utf-8")
-    assert guard(repo, "check", "--branch", "n", "--paths", "src/a.py").rc == 0  # a valid record is honoured by check too
+    assert guard(repo, "check", "--branch", "n", "--paths", "src/a.py").rc == 10  # only plan reads override records
+    assert (d / (fp + ".json")).exists()
     repo.commit("docs/d.md", "moved target\n")  # the target sha changes, so the denial fingerprint changes
     repo.git("branch", "-f", "agent/x", "agent/x")
     rc, v = verdict(guard, repo, "check", "--branch", "n", "--paths", "src/a.py")
@@ -452,7 +453,7 @@ def test_lock_timeout_and_release(repo, guard, monkeypatch):
 def test_concurrent_planners_one_winner(repo):
     def planner(branch, paths):
         return subprocess.Popen([sys.executable, str(SCRIPT), "--repo", str(repo.path), "--lang", "en", "--json", "plan", "--branch", branch, "--paths", *paths],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=os.environ.copy())
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=os.environ.copy())
     for attempt in range(3):
         a, b = "race-a%d" % attempt, "race-b%d" % attempt
         procs = [planner(a, ["web/%d/" % attempt]), planner(b, ["web/%d/x.js" % attempt])]

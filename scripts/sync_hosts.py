@@ -8,6 +8,8 @@
 #   (package:Function {name: 'package_files', type: 'function'}),
 #   (codex_root:Function {name: 'codex_install_root', type: 'function'}),
 #   (claude_notes:Function {name: 'claude_plugin_notes', type: 'function'}),
+#   (manifest_name:Function {name: 'manifest_name', type: 'function'}),
+#   (marketplace_notes:Function {name: 'marketplace_plugin_notes', type: 'function'}),
 #   (build:Function {name: 'build_targets', type: 'function'}),
 #   (hash:Function {name: 'file_sha256', type: 'function'}),
 #   (inspect:Function {name: 'inspect', type: 'function'}),
@@ -22,6 +24,11 @@
 #   (module)-[:CONTAINS]->(package),
 #   (module)-[:CONTAINS]->(codex_root),
 #   (module)-[:CONTAINS]->(claude_notes),
+#   (module)-[:CONTAINS]->(manifest_name),
+#   (module)-[:CONTAINS]->(marketplace_notes),
+#   (claude_notes)-[:CALLS]->(manifest_name),
+#   (claude_notes)-[:CALLS]->(marketplace_notes),
+#   (marketplace_notes)-[:CALLS]->(manifest_name),
 #   (module)-[:CONTAINS]->(build),
 #   (module)-[:CONTAINS]->(hash),
 #   (module)-[:CONTAINS]->(inspect),
@@ -148,22 +155,51 @@ def hermes_install_root(home: Path, explicit_home: bool) -> tuple[Path, list[str
     return preferred, notes
 
 
-def claude_plugin_notes(claude: Path) -> list[str]:
-    """Point out a MAGOS clone that Claude Code already loads as a plugin from ~/.claude/skills/.
+def manifest_name(manifest: Path) -> object:
+    """The name field of a plugin manifest, or None when the file is unreadable or not a JSON object."""
+    try:
+        return json.loads(manifest.read_text(encoding="utf-8")).get("name")
+    except (OSError, ValueError, AttributeError):
+        return None
 
-    Such a clone gives /magos:GitXxx and updates with git pull, so the copied ~/.claude/commands/Git*.md would
-    only add a second, older set of /GitXxx commands.
+
+def marketplace_plugin_notes(plugins: Path) -> list[str]:
+    """Point out a MAGOS plugin that Claude Code installed from a marketplace (~/.claude/plugins).
+
+    The plugin index installed_plugins.json decides when it parses to {"plugins": {key: [entry, ...]}}: a key whose
+    plugin part (the text before the first @) is magos counts, from any marketplace, when one of its entries has
+    scope "user"; a project or local install covers only its own project. When the index is absent or has another
+    shape, a magos manifest in the plugins cache (cache/<marketplace>/<plugin>/<version>) counts instead.
+    """
+    tail = ("already loads MAGOS as a Claude Code plugin (/magos:GitXxx); update it through the Claude Code plugin "
+            "manager. Copies in ~/.claude/commands would add a second /GitXxx set.")
+    index = plugins / "installed_plugins.json"
+    try:
+        document = json.loads(index.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        document = None
+    installed = document.get("plugins") if isinstance(document, dict) else None
+    if isinstance(installed, dict):
+        return [f"Marketplace plugin {key} (user scope, {index}) {tail}" for key, entries in sorted(installed.items())
+                if key.split("@", 1)[0] == "magos" and isinstance(entries, list)
+                and any(isinstance(entry, dict) and entry.get("scope") == "user" for entry in entries)]
+    return [f"Marketplace plugin {manifest} {tail}"
+            for manifest in sorted(plugins.glob("cache/*/*/*/.claude-plugin/plugin.json")) if manifest_name(manifest) == "magos"]
+
+
+def claude_plugin_notes(claude: Path) -> list[str]:
+    """Point out a MAGOS plugin that Claude Code already loads: a clone in ~/.claude/skills/ or a marketplace install.
+
+    Either gives /magos:GitXxx and is updated on its own (git pull, or the plugin manager), so the copied
+    ~/.claude/commands/Git*.md would only add a second, older set of /GitXxx commands. One note per detected install;
+    unreadable or malformed manifests and index files are ignored.
     """
     notes = []
     for manifest in sorted((claude / "skills").glob("*/.claude-plugin/plugin.json")):
-        try:
-            name = json.loads(manifest.read_text(encoding="utf-8")).get("name")
-        except (OSError, ValueError, AttributeError):
-            continue
-        if name == "magos":
+        if manifest_name(manifest) == "magos":
             notes.append(f"{manifest.parent.parent} already loads MAGOS as a Claude Code plugin (/magos:GitXxx); "
                          "update it with git pull. Copies in ~/.claude/commands would add a second /GitXxx set.")
-    return notes
+    return notes + marketplace_plugin_notes(claude / "plugins")
 
 
 def build_targets(home: Path, selected_hosts: tuple[str, ...], repo: Path, explicit_home: bool = True,
@@ -340,8 +376,9 @@ def main() -> int:
     repo = Path(__file__).resolve().parents[1]
     explicit_home = args.home is not None
     home = (args.home or Path.home()).expanduser().resolve()
-    # Without --host, a MAGOS plugin clone in ~/.claude/skills replaces the command copies, so leave them out rather
-    # than recreate the second /GitXxx set; an explicit --host claude still copies them (with the same note).
+    # Without --host, a MAGOS plugin (a clone in ~/.claude/skills or a user-scope marketplace install) replaces the
+    # command copies, so leave them out rather than recreate the second /GitXxx set; an explicit --host claude still
+    # copies them (with the same note).
     plugin_notes = [] if args.host else claude_plugin_notes(home / ".claude")
     selected_hosts = tuple(args.host or (("codex", "hermes") if plugin_notes else ("claude", "codex", "hermes")))
     targets, notes = build_targets(home, selected_hosts, repo, explicit_home,

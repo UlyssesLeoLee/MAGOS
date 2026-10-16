@@ -3,3 +3,7 @@ __pycache__/
 .quality/coverage/
 .coverage
 .coverage.*
+
+# Host-case fixture repositories and a copy of the user's Hermes configuration never belong in a commit.
+tests/codex/.magos-accept-*/
+tests/codex/.hermes-config-backup.yaml

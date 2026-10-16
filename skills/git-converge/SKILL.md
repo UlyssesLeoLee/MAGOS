@@ -2,6 +2,7 @@
 name: git-converge
 description: "收敛分支（仅显式调用，写操作）；/git-converge BRANCH [--apply] [--discard-ignored] [--help]."
 license: Apache-2.0
+disable-model-invocation: true
 metadata:
   short-description: "收敛分支；$git-converge BRANCH [--apply] [--discard-ignored] [--help]."
 ---
@@ -33,7 +34,7 @@ If `--help` is present, even with other arguments, answer from the inline Usage 
 
 ## Explicit invocation only
 
-A semantic match or automatic skill selection is not authorization to write. Codex disables implicit selection for this adapter through `agents/openai.yaml`; Hermes has no per-skill switch, so this rule applies there by instruction. An explicit invocation is the user's `/git-converge` command (Hermes renders it as "The user has invoked the "git-converge" skill" followed by the arguments) or `$git-converge` in Codex. With a plugin install, the user's `/magos:git-converge` (Claude Code, Hermes) or `$magos:git-converge` (Codex) is the same explicit invocation; in Claude Code, the `/magos:Git*` command of the same name is the preferred form. If this adapter was selected without such an invocation, preview at most and merge and delete nothing.
+A semantic match or automatic skill selection is not authorization to write. Claude Code keeps the model from invoking this adapter through `disable-model-invocation: true` in its frontmatter, and Codex disables implicit selection for it through `agents/openai.yaml`; Hermes has no per-skill switch, so this rule applies there by instruction. An explicit invocation is the user's `/git-converge` command (Hermes renders it as "The user has invoked the "git-converge" skill" followed by the arguments) or `$git-converge` in Codex. With a plugin install, the user's `/magos:git-converge` (Claude Code, Hermes) or `$magos:git-converge` (Codex) is the same explicit invocation; in Claude Code, the `/magos:Git*` command of the same name is the preferred form. If this adapter was selected without such an invocation, preview at most and merge and delete nothing.
 
 ## Shared files
 

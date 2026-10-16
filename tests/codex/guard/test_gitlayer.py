@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import G, run
+from conftest import ROOT, G, run
 
 
 def common(repo):
@@ -28,7 +28,7 @@ def vetoed(repo, *args, cwd=None):
 
 def repo_git_raw(repo, *args, cwd=None):
     import subprocess
-    return subprocess.run(["git", *args], cwd=str(cwd or repo.path), capture_output=True, env=os.environ.copy())
+    return subprocess.run(["git", *args], cwd=str(cwd or repo.path), capture_output=True, stdin=subprocess.DEVNULL, env=os.environ.copy())
 
 
 @pytest.fixture
@@ -172,7 +172,10 @@ def test_existing_lanes_are_never_stopped_by_the_backstop(repo, guard):
     repo.write("docs/x.md", "x\n", base=wt)
     repo_git_raw(repo, "add", "-A", cwd=wt)
     assert repo_git_raw(repo, "commit", "-q", "-m", "advance", cwd=wt).returncode == 0
-    assert repo_git_raw(repo, "branch", "-m", "agent/old", "agent/renamed").returncode != 0 or True  # a rename creates a name: tolerated either way
+    # A rename writes the new name outside any reference transaction, so the backstop never sees it (lane-split §12):
+    # the lane keeps working under its new name, and only the host hook judges a typed `git branch -m`.
+    assert repo_git_raw(repo, "branch", "-m", "agent/old", "agent/renamed").returncode == 0
+    assert repo.git("branch", "--list", "agent/renamed") and not repo.git("branch", "--list", "agent/old")
 
 
 def test_hook_messages_follow_the_armed_language(repo, guard, monkeypatch):
@@ -204,7 +207,7 @@ def test_doctor_reports_a_broken_backstop(repo, guard):
     assert guard(repo, "arm").rc == 0
     # a hook that vetoes nothing leaves the self-test branch behind: doctor must notice and clean it up
     text = G.HOOK_SH.replace("exit 1; }", "exit 0; }", 1)
-    hook_path(repo).write_text(text, encoding="utf-8", newline="\n")
+    hook_path(repo).write_bytes(text.encode("utf-8"))  # LF as is (Path.write_text takes newline= only from 3.10)
     monkey = G.HOOK_SH
     G.HOOK_SH = text
     try:
@@ -231,8 +234,8 @@ def test_install_copies_the_guard_and_prints_the_snippet(repo, guard, tmp_path, 
     home = tmp_path / "magos-home"
     r = guard(repo, "install", "--host", host, "--home", str(home))
     assert r.rc == 0 and needle in r.out and "never edits it" in r.out
-    assert (home / "guard" / "scripts" / "magos_guard.py").read_bytes() == G.SCRIPT_BYTES if hasattr(G, "SCRIPT_BYTES") else True
-    assert (home / "guard" / "scripts" / "magos_guard.py").is_file() and (home / "guard" / "hooks" / "run-guard.cmd").is_file()
+    for rel in ("scripts/magos_guard.py", "hooks/run-guard.cmd"):  # the canonical copy keeps the layout and the exact bytes
+        assert (home / "guard" / rel).read_bytes() == (ROOT / rel).read_bytes(), rel
     saved = (home / "guard" / "generated" / ("%s.%s" % (host, suffix))).read_text(encoding="utf-8")
     assert needle in saved and str(home).replace("\\", "/") in saved
     if suffix == "json":

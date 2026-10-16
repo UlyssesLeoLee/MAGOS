@@ -6,6 +6,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -95,14 +96,24 @@ def test_install_roots(tmp_path, monkeypatch, pkg):
     assert mod.hermes_home(home, False) == tmp_path / "hh"
     monkeypatch.delenv("HERMES_HOME")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "lad"))
+    # LOCALAPPDATA names the Hermes home only on Windows; elsewhere it is ~/.hermes.  An explicit home ignores the variable.
+    for platform, expected, explicit in (("win32", tmp_path / "lad" / "hermes", home / "AppData" / "Local" / "hermes"),
+                                         ("linux", home / ".hermes", home / ".hermes")):
+        monkeypatch.setattr(mod, "sys", SimpleNamespace(platform=platform))
+        assert mod.hermes_home(home, False) == expected and mod.hermes_home(home, True) == explicit, platform
+    monkeypatch.setattr(mod, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setenv("LOCALAPPDATA", "  ")  # empty on Windows: the home's own AppData\Local
+    assert mod.hermes_home(home, False) == home / "AppData" / "Local" / "hermes"
+    monkeypatch.setattr(mod, "sys", sys)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "lad"))
     base = mod.hermes_home(home, False)
-    assert base.name == "hermes"
+    assert base == (tmp_path / "lad" / "hermes" if sys.platform == "win32" else home / ".hermes")
     (base / "profiles" / "work").mkdir(parents=True)
     (base / "active_profile").write_text("work\n", encoding="utf-8")
     assert mod.hermes_home(home, False) == base / "profiles" / "work"
     (base / "active_profile").write_text("default\n", encoding="utf-8")
     assert mod.hermes_home(home, False) == base
-    assert mod.hermes_home(home, True).parts[-3:] == ("AppData", "Local", "hermes") or mod.hermes_home(home, True).name == ".hermes"
+    assert mod.hermes_home(home, True) == (home / "AppData" / "Local" / "hermes" if sys.platform == "win32" else home / ".hermes")
 
     skills = base / "skills"
     (skills / "multi-agent-git-orchestrator").mkdir(parents=True)
@@ -227,3 +238,117 @@ def test_missing_source_is_a_preflight_error(pkg, tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(mod, "package_files", lambda r: ("SKILL.md", "nope.md"))
     code, out = main_of(mod, monkeypatch, capsys, "--home", str(home), "--host", "codex")
     assert code == 2 and "SOURCE ERROR" in out and "nope.md" in out
+
+
+# ---- Claude Code marketplace installs (supply-05) ---------------------------------------------------------------------
+def plugin_index(home, plugins):
+    """~/.claude/plugins/installed_plugins.json in the version 2 shape, holding the given plugins map."""
+    path = home / ".claude" / "plugins" / "installed_plugins.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"version": 2, "plugins": plugins}), encoding="utf-8")
+    return path
+
+
+def install_entry(scope):
+    return {"scope": scope, "installPath": "/x/.claude/plugins/cache/magos/magos/1.0.2", "version": "1.0.2"}
+
+
+def cache_manifest(home, name, marketplace="magos", plugin="magos", version="1.0.1"):
+    """A plugins-cache manifest, cache/<marketplace>/<plugin>/<version>/.claude-plugin/plugin.json, named name."""
+    path = home / ".claude" / "plugins" / "cache" / marketplace / plugin / version / ".claude-plugin" / "plugin.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"name": name, "version": version}), encoding="utf-8")
+    return path
+
+
+def roots(tmp_path):
+    """Existing Codex and Hermes roots, passed explicitly so a default run selects hosts without root notes."""
+    codex, hermes = tmp_path / "cr", tmp_path / "hr"
+    codex.mkdir(exist_ok=True)
+    hermes.mkdir(exist_ok=True)
+    return "--codex-root", str(codex), "--hermes-root", str(hermes)
+
+
+def test_marketplace_user_scope_install_skips_claude(pkg, tmp_path, monkeypatch, capsys):
+    repo, mod = pkg
+    home = tmp_path / "home"
+    plugin_index(home, {"magos@magos": [install_entry("user")]})
+    notes = mod.claude_plugin_notes(home / ".claude")
+    assert len(notes) == 1 and "magos@magos" in notes[0] and "/magos:GitXxx" in notes[0] and "plugin manager" in notes[0]
+    code, out = main_of(mod, monkeypatch, capsys, "--home", str(home), *roots(tmp_path), "--json")
+    report = json.loads(out)
+    assert code == 0 and report["selected_hosts"] == ["codex", "hermes"] and {f["host"] for f in report["files"]} == {"codex", "hermes"}
+    assert report["notes"][0] == notes[0] and report["notes"][1].startswith("Skipping the claude host")
+    code, out = main_of(mod, monkeypatch, capsys, "--home", str(home), *roots(tmp_path))
+    assert code == 0 and "Skipping the claude host" in out and "magos@magos" in out
+    # a list that mixes scopes counts, a key without @ is all plugin part, and every detected install gets its own note
+    plugin_index(home, {"magos@a": [install_entry("project"), install_entry("user")], "magos": [install_entry("user")]})
+    notes = mod.claude_plugin_notes(home / ".claude")
+    assert len(notes) == 2 and notes[0].startswith("Marketplace plugin magos (") and notes[1].startswith("Marketplace plugin magos@a (")
+
+
+def test_marketplace_project_scope_only_keeps_the_claude_commands(pkg, tmp_path, monkeypatch, capsys):
+    repo, mod = pkg
+    home = tmp_path / "home"
+    plugin_index(home, {"magos@magos": [install_entry("project"), install_entry("local")]})
+    assert mod.claude_plugin_notes(home / ".claude") == []
+    (home / ".claude" / "commands").mkdir(parents=True)
+    code, out = main_of(mod, monkeypatch, capsys, "--home", str(home), *roots(tmp_path), "--json")
+    report = json.loads(out)
+    assert code == 0 and report["selected_hosts"] == ["claude", "codex", "hermes"] and report["notes"] == []
+    assert sorted(f["relative_path"] for f in report["files"] if f["host"] == "claude") == sorted(mod.COMMAND_PATHS)
+
+
+def test_a_magos_plugin_from_any_marketplace_counts(pkg, tmp_path):
+    _, mod = pkg
+    home = tmp_path / "home"
+    plugin_index(home, {"magos@my-fork": [install_entry("user")], "magosx@magos": [install_entry("user")],
+                        "other@magos": [install_entry("user")]})
+    notes = mod.claude_plugin_notes(home / ".claude")
+    assert len(notes) == 1 and "magos@my-fork" in notes[0] and "magosx" not in notes[0] and "other@magos" not in notes[0]
+
+
+def test_a_malformed_plugin_index_is_ignored(pkg, tmp_path, monkeypatch, capsys):
+    repo, mod = pkg
+    home = tmp_path / "home"
+    index = plugin_index(home, {})
+    for body in (b"{not json", b"\xff\xfe{}", b"[]", json.dumps([{"magos@magos": [install_entry("user")]}]).encode(),
+                 json.dumps({"plugins": [["magos@magos", install_entry("user")]]}).encode(),
+                 json.dumps({"plugins": {"magos@magos": install_entry("user")}}).encode(),
+                 json.dumps({"plugins": {"magos@magos": ["user", 1, None, [install_entry("user")]]}}).encode(),
+                 json.dumps({"plugins": {"magos@magos": [{"scope": ["user"]}, {"scope": "User"}]}}).encode()):
+        index.write_bytes(body)
+        assert mod.claude_plugin_notes(home / ".claude") == [], body
+    assert not (home / ".claude" / "plugins" / "cache").exists()
+    (home / ".claude" / "commands").mkdir()
+    code, out = main_of(mod, monkeypatch, capsys, "--home", str(home), *roots(tmp_path), "--json")
+    assert code == 0 and json.loads(out)["selected_hosts"] == ["claude", "codex", "hermes"]
+
+
+def test_the_plugins_cache_counts_only_without_a_plugin_index(pkg, tmp_path):
+    _, mod = pkg
+    home = tmp_path / "home"
+    claude = home / ".claude"
+    manifest = cache_manifest(home, "magos")
+    notes = mod.claude_plugin_notes(claude)
+    assert len(notes) == 1 and str(manifest) in notes[0] and "/magos:GitXxx" in notes[0]
+    manifest.write_text(json.dumps({"name": "other"}), encoding="utf-8")
+    assert mod.claude_plugin_notes(claude) == []
+    manifest.write_text("{unreadable", encoding="utf-8")
+    assert mod.claude_plugin_notes(claude) == []
+    manifest.write_text(json.dumps({"name": "magos"}), encoding="utf-8")
+    index = plugin_index(home, {"other@magos": [install_entry("user")]})
+    assert mod.claude_plugin_notes(claude) == []  # the index parses, so it decides
+    index.write_text(json.dumps({"version": 2}), encoding="utf-8")  # no plugins key: the cache decides again
+    assert len(mod.claude_plugin_notes(claude)) == 1
+
+
+def test_explicit_claude_host_copies_despite_a_marketplace_install(pkg, tmp_path, monkeypatch, capsys):
+    repo, mod = pkg
+    home = tmp_path / "home"
+    plugin_index(home, {"magos@magos": [install_entry("user")]})
+    (home / ".claude" / "commands").mkdir(parents=True)
+    code, out = main_of(mod, monkeypatch, capsys, "--home", str(home), "--host", "claude", "--apply")
+    assert code == 0 and "magos@magos" in out and "/magos:GitXxx" in out and "Written: 7" in out
+    assert "Skipping the claude host" not in out
+    assert sorted(p.name for p in (home / ".claude" / "commands").iterdir()) == sorted(Path(rel).name for rel in mod.COMMAND_PATHS)

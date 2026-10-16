@@ -167,8 +167,10 @@ def test_codex_command_list_and_hermes_workdir(repo, guard):
 
 def test_chinese_is_the_default_language(repo):
     body = payload("Bash", "git worktree add ../w -b agent/zh", repo.path)
-    obj = json.loads(run(["hook", "claude", "pre-tool"], stdin=json.dumps(body).encode()).out)
-    assert "拒绝创建" not in obj["reason"] or True  # ASCII-escaped on the wire, decoded here
+    out = run(["hook", "claude", "pre-tool"], stdin=json.dumps(body).encode()).out
+    obj = json.loads(out)
+    assert out.isascii() and "\\u62d2\\u7edd" in out  # ASCII-escaped on the wire
+    assert "拒绝创建" in obj["reason"]  # and Chinese once decoded
     assert "agent/zh" in obj["reason"] and "MAGOS" in obj["reason"] and "DENIES" not in obj["reason"]
 
 

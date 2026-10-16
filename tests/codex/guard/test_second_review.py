@@ -7,7 +7,8 @@ import time
 
 import pytest
 
-from conftest import G
+from conftest import G, time_budget
+from test_detector import ECHO_PIPE_FORMS
 from test_hook import denied, hook, plan
 from test_plan_store import claims_dir, verdict
 
@@ -51,12 +52,14 @@ def test_worst_case_command_lines_parse_in_linear_time(cmd):
     G.interpret(cmd, ".")
     G.protected(cmd)
     G._git_subcommands(cmd)
-    assert time.monotonic() - start < 5
+    assert time.monotonic() - start < time_budget(5)
 
 
 def test_update_ref_stdin_and_echo_pipes_are_still_read():
     assert [r["names"] for r in G.interpret("git update-ref --stdin <<< 'create refs/heads/agent/u HEAD'", ".")] == [["agent/u"]]
-    assert [r["names"] for r in G.interpret("echo   git branch agent/e   | sh", ".")] == [["agent/e"]]
+    assert len(ECHO_PIPE_FORMS) >= 3
+    for row in ECHO_PIPE_FORMS:  # echoed text piped into a shell, from the data file
+        assert [r["names"] for r in G.interpret(row["cmd"], ".")] == [row["names"]], row
 
 
 def test_every_git_call_is_checked_for_an_alias(repo):

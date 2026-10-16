@@ -13,8 +13,66 @@
 - 市场清单只列一个插件 `magos`，来源是仓库根目录 `./`，Claude Code 与 Codex 都接受这个写法。
 - 插件宿主只加载 `skills/<name>/SKILL.md`，不加载根目录 `SKILL.md`，所以插件里带有入口 Skill `skills/git-orchestrator`（描述与根 Skill 相同，内容是读取 `../../SKILL.md`）。同步脚本的 `PLUGIN_ONLY_SKILLS` 会把它排除在 Codex / Hermes 包之外，因为这两种安装已经有根 Skill。
 - Hermes 的可移植 Agent Plugin 会把命令命名为 `/agent-plugin-magos-<hash>:git-recon`；`plugin.yaml` 与 `__init__.py`（只调用 `ctx.register_skill()`）让 Hermes 改按原生插件加载，命令名才是 `/magos:git-*`。Hermes 会把插件里每个 Skill 列进系统提示的 `<available_skills>`；描述取自 `__init__.py` 的 `INDEX_DESCRIPTIONS`（SKILL.md 里的描述会被 Hermes 截成 60 个字符，不传的话模型只看到名字）。总规则那行写触发场景，会写仓库的命令那几行写“不要自己加载”。
+- Claude Code 里，四个会写仓库的适配层（`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`）设置了 `disable-model-invocation: true`：只有用户输入的斜杠命令能运行它们，模型不能自己调用。
 - Hermes 官方插件目录（`hermes plugins install magos`）需要仓库所有者向 NousResearch/hermes-agent 提交 `plugin-catalog/magos.yaml`，并固定一个 40 位 commit SHA。
-- 以上流程已用本地源实测：Claude Code 2.1.296、Codex CLI 0.162.1、Hermes（2026.9.24）都能安装并启用，命令名与上表一致。
+- 车道守卫：Claude Code 的插件安装同时启用守卫钩子（`hooks/hooks.json`，作用于在 Claude Code 里打开的每个仓库）；Codex 与 Hermes 的插件安装不启用钩子，需要另外运行 `install --host codex|hermes` 并自己合并生成的配置（见“车道守卫”）。
+- 以上安装流程以本机的仓库副本作为插件来源实测过：Claude Code 2.1.296、Codex CLI 0.162.1、Hermes（2026.9.24）都能安装并启用，命令名与上表一致。从 GitHub 来源安装或更新时，Hermes 还会先扫描插件目录（见“升级”）。
+
+## 固定版本
+
+每个版本的发布提交带有标签 `v<版本号>`（例如 `v1.0.2`），各版本的变化、安全说明与升级步骤见仓库根目录的 `CHANGELOG.md`。上面的安装命令跟随默认分支；要停留在某个版本，用下面的写法安装：
+
+| 安装方式 | 固定到 `v1.0.2` |
+| --- | --- |
+| Claude Code 插件市场 | `claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.2`，然后 `claude plugin install magos@magos` |
+| Claude Code clone 到 Skill 目录 | `git clone --branch v1.0.2 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos` |
+| Hermes 插件 | `hermes plugins install UlyssesLeoLee/MAGOS --ref <40 位 commit SHA> --enable` |
+| Codex 与同步脚本 | 在 `git clone --branch v1.0.2 https://github.com/UlyssesLeoLee/MAGOS` 得到的目录里运行同步脚本与 `install --host codex` |
+
+- Hermes 只接受 40 位 commit SHA。`git ls-remote https://github.com/UlyssesLeoLee/MAGOS "refs/tags/v1.0.2*"` 列出标签；有以 `^{}` 结尾的一行时取那一行的 SHA（它是标签指向的提交），否则取唯一那一行的 SHA。
+- 固定版本收不到之后的修复，包括守卫的安全修复。固定后请关注 `CHANGELOG.md`，有新版本时把固定点移到新标签，并按下面的“升级”步骤处理守卫副本。
+- 标签 `v1.0` 是插件化与改号之前的 3.4.0 版 Skill，不是插件版本；1.0.0 没有标签，也不要固定到它（原因见 `CHANGELOG.md`）。
+
+## 升级
+
+### Claude Code
+
+1. 插件市场安装：`claude plugin marketplace update magos`，然后 `claude plugin update magos@magos`（会话里是 `/plugin marketplace update magos` 与 `/plugin update magos@magos`）。清单写有版本号，Claude Code 只在版本号变化时更新已安装的插件。
+2. 重启每一个正在运行的 Claude Code 会话。插件钩子从 `~/.claude/plugins/cache/magos/magos/<版本>/` 运行，更新之前启动的会话继续运行旧版本的钩子与守卫。
+3. 确认：`claude plugin list` 显示新版本；`py -3 "<新版本的插件目录>/scripts/magos_guard.py" version` 输出守卫版本、文件 sha256 与路径。
+
+clone 到 `~/.claude/skills/magos` 的安装在该目录执行 `git pull`（固定在标签上时执行 `git fetch --tags` 与 `git checkout v<新版本>`），然后同样重启所有会话。复制命令文件的旧方式按下面“同步脚本安装”重新同步。用 `install --host claude` 生成过用户级片段的，按下面“守卫副本与生成的配置”处理。
+
+### Codex
+
+1. 插件市场安装：`codex plugin marketplace upgrade magos`，然后 `codex plugin add magos@magos`，再重启 Codex（这组升级命令没有在真实的 Codex 上实测过）。同步脚本安装：在仓库目录 `git pull`，然后 `python -X utf8 scripts/sync_hosts.py --host codex --apply`。
+2. Codex 的钩子运行 `~/.magos/guard` 下的守卫副本，升级插件不会改变它；按下面“守卫副本与生成的配置”刷新。
+
+### Hermes
+
+1. `hermes plugins update magos`。Hermes 在发布新版本之前扫描插件目录；扫描结果需要确认时 `update` 会拒绝，而且它没有 `--force`。这时改用 `hermes plugins install UlyssesLeoLee/MAGOS --force --enable`。仓库的契约测试保证发布的文件里没有 Hermes 扫描器评为高危的“echo 文本交给 shell 执行”写法。
+2. 用 `--force` 重装后，`<Hermes home>/plugins/` 下如果留有 `.previous-*` 目录（上一版本的备份），确认新版本可用后删除它；删除失败时（例如其中的 `__pycache__` 删不掉），先把它移出 `plugins/` 目录，再运行下一个 `hermes` 命令。
+3. Hermes 钩子条目指向 Hermes 插件自己的启动器 `<Hermes home>/plugins/magos/hooks/run-guard.cmd` 时，随插件一起升级；指向 `~/.magos/guard` 下的副本时，按下面“守卫副本与生成的配置”刷新。
+4. 重启 Hermes。
+
+### 守卫副本与生成的配置
+
+`install` 把守卫与启动器复制到 `~/.magos/guard/`，Codex 钩子（以及没有装 Hermes 插件时的 Hermes 钩子）运行这份副本。升级 MAGOS 后：
+
+1. 用新版本运行 `py -3 "<新版本的 MAGOS 目录>/scripts/magos_guard.py" doctor`（macOS / Linux 用 `python3`）。它输出正在运行的守卫版本；副本与它不同时，它以退出码 1 结束并打印刷新命令（每个生成过配置的宿主一条 `install --host <宿主>`，没有生成过配置时三个宿主各一条）。
+2. 在自己的终端里运行这些 `install` 命令（`install` 需要真实控制台）。输出 `guard copy <旧版本> -> <新版本>`（没有版本号的旧副本显示为 `unversioned`）或 `guard copy unchanged (<版本>)`。
+3. 把 `install` 打印的片段（也保存在 `~/.magos/guard/generated/<宿主>.json|yaml`）与宿主配置里已合并的条目对比：不同时替换它（Codex 替换后在 `/hooks` 里重新信任，Hermes 在首次使用时重新批准），相同时不用改配置。
+4. 在已武装（`arm`）的仓库里运行 `doctor`：它报告钩子内容与本版本不同，或记录的守卫命令指向不存在的脚本时，在自己的终端里重新运行它打印的 `arm` 命令。存在 `~/.magos` 副本时，`arm` 记录的是这份副本的路径，插件升级不会让它失效。
+
+### 回滚
+
+回滚到旧版本会带回该版本之后修复的问题，包括守卫的安全问题（每个版本修复了什么见 `CHANGELOG.md`）；只在新版本无法使用时回滚，并尽快重新升级。
+
+- Claude Code：`claude plugin uninstall magos@magos`、`claude plugin marketplace remove magos`，再按“固定版本”从旧标签安装，并重启所有会话；clone 安装在该目录 `git checkout v<旧版本>`。只想停用时运行 `claude plugin disable magos`。
+- Hermes：`hermes plugins install UlyssesLeoLee/MAGOS --ref <旧版本的 40 位 commit SHA> --force --enable`，然后重启 Hermes。
+- Codex 与同步脚本安装：在旧标签的 checkout 里运行同步脚本。
+- 守卫副本：用回滚后的版本运行 `install --host <宿主>`。1.0.2 及之后的守卫不会用旧版本替换更新的副本（退出码 18），需要加 `--allow-downgrade`；更早的守卫直接复制。已武装的仓库用回滚后的版本重新运行 `arm`。
+- 清单（claim）文件从 1.0.0 起都是格式 1，各版本都能读取。
 
 ## 同步脚本安装
 
@@ -39,10 +97,10 @@ python -X utf8 scripts/sync_hosts.py --verify
 | Codex | `~/.agents/skills/MAGOS`。如果已有旧位置 `$CODEX_HOME/skills/MAGOS`（默认 `~/.codex/skills/MAGOS`）且新位置不存在，则继续使用旧位置 | 宿主中立包：`SKILL.md`、`references/*.md` 全部、每个 `skills/git-*/SKILL.md` 与 `agents/openai.yaml` |
 | Hermes | `<Hermes home>/skills/multi-agent-git-orchestrator`。Hermes home 依次取 `HERMES_HOME`、Windows 的 `%LOCALAPPDATA%\hermes`、其他系统的 `~/.hermes`，有非默认的 `active_profile` 时取其 `profiles/<name>`；已有 `<Hermes home>/skills/MAGOS` 时沿用它 | 与 Codex 相同的宿主中立包 |
 
-- **文件清单：**宿主中立包的清单由 `scripts/sync_hosts.py` 的 `package_files()` 根据仓库内容生成，测试工具 `tests/codex/run_host_cases.py` 用同一个函数准备 fixture，因此测试布局与真实安装一致。
+- **文件清单：**宿主中立包的清单由 `scripts/sync_hosts.py` 的 `package_files()` 根据仓库内容生成，测试工具 `tests/codex/run_host_cases.py` 用同一个函数准备 fixture，因此测试布局与真实安装一致。守卫（`scripts/`、`hooks/`）不在包里，由 `install` 另外复制。
 - **`plugin.json`：**Agent Plugins 1.0.0 清单，只在把整个仓库当作插件导入时使用，不在同步范围内。
 - **`.claude-plugin/`、`plugin.yaml`、`__init__.py`：**插件清单（见上一节）。`.claude-plugin/plugin.json` 也让 `git clone` 到 `~/.claude/skills/magos` 的仓库被 Claude Code 加载为插件 `magos@skills-dir`。它们的 `name`、`version` 必须与 `plugin.json` 一致；`.claude-plugin/plugin.json` 不声明组件路径，`plugin.yaml` 不声明 hook、工具或依赖。它们都不在同步范围内：Codex 一看到 `.claude-plugin/` 就会给 Skill 加上 `magos:` 前缀，所以直接 git clone 到 Codex Skill 目录会得到 `$magos:git-recon`；用同步脚本安装的 Codex 与 Hermes 包不含它们，命令名不变。仓库不放 `.codex-plugin/`、`.cursor-plugin/`。
-- **同时装了插件与命令副本：**`--host claude` 发现 `~/.claude/skills/*/.claude-plugin/plugin.json` 的 `name` 为 `magos` 时会输出 `NOTE`，提示命令副本只会多出一套旧的 `/GitXxx`。不带 `--host` 运行时，发现这样的插件就跳过 Claude，只处理 Codex 与 Hermes；仍要复制命令时请显式加 `--host claude`。
+- **同时装了插件与命令副本：**Claude Code 已经加载 MAGOS 插件时，`--host claude` 会输出 `NOTE`，提示命令副本只会多出一套旧的 `/GitXxx`。识别两种插件安装：`~/.claude/skills/*/.claude-plugin/plugin.json` 的 `name` 为 `magos` 的 clone；插件市场安装，即 `~/.claude/plugins/installed_plugins.json` 里 `magos@<市场>` 有 `scope` 为 `user` 的条目（该文件不存在或格式不对时，改看 `~/.claude/plugins/cache/<市场>/<插件>/<版本>/.claude-plugin/plugin.json` 的 `name` 是否为 `magos`）。只装在某个项目里（`project`、`local`）的不算。不带 `--host` 运行时，发现这样的插件就跳过 Claude，只处理 Codex 与 Hermes；仍要复制命令时请显式加 `--host claude`。
 - **`commands/`：**Codex 与 Hermes 包不再需要它。旧版本安装留下的 `commands/` 不会被删除，适配层也不会读取它。
 - **写入规则：**脚本只更新表中的相对路径，并创建这些路径所需的子目录；不会删除任何文件。文件已匹配时不会重写。`--apply` 采用同目录临时文件替换目标文件。
 - **git checkout：**安装根目录本身是 git checkout（含 `.git`，例如直接 clone 到 Skill 目录）时，脚本拒绝写入，并提示改用 git 更新，以免弄脏该 checkout 所在分支。Codex 的 checkout 里有 `.claude-plugin/` 时，提示里还会说明 Skill 已变成 `$magos:git-*`，应把它移出 Skill 目录并改用同步脚本安装。
@@ -66,23 +124,25 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --home C:\temp\m
 - 仓库里的宿主插件清单只有 `.claude-plugin/plugin.json` 与 `.claude-plugin/marketplace.json`（没有 `.codex-plugin/`、`.cursor-plugin/`）；Claude 清单的 `name`、`version` 与 `plugin.json` 一致、只含元数据字段；市场清单只列一个来源为 `./` 的插件 `magos`；`plugin.yaml` 的 `name`、`version` 与 `plugin.json` 一致，`__init__.py` 只注册 Skill；
 - 同步出去的 Codex 与 Hermes 包里没有任何宿主插件清单。
 
-源码契约用例 `package/agent-plugin` 检查 Agent Plugins 1.0.0 格式：`plugin.json` 符合封闭的清单 schema，版本号与 `SKILL.md`、`references/commands.md` 一致，`skills/` 下恰好发现七个适配层且都符合 Agent Skills 规则，路径不越出插件根目录、没有链接。`python -X utf8 tests/codex/contracts/test_agent_plugin.py` 逐一植入各种缺陷（清单字段错误、版本号漂移、多余的链接、frontmatter 写法不合规等），确认每种都会被对应的检查发现；它还单独测试严格 frontmatter 读取器，并在 git 仓库里检查未暂存的新文件。
+源码契约用例 `package/agent-plugin` 检查 Agent Plugins 1.0.0 格式：`plugin.json` 符合封闭的清单 schema；版本号与 `SKILL.md`、`references/commands.md`、入口 Skill `skills/git-orchestrator/SKILL.md`（写有版本号时）和守卫的 `GUARD_VERSION` 一致；`skills/` 下恰好发现七个命令适配层与入口 Skill `git-orchestrator`，且都符合 Agent Skills 规则；只有四个会写仓库的适配层设置 `disable-model-invocation: true`；路径不越出插件根目录、没有链接。`python -X utf8 tests/codex/contracts/test_agent_plugin.py` 逐一植入各种缺陷（清单字段错误、版本号漂移、多余的链接、frontmatter 写法不合规等），确认每种都会被对应的检查发现；它还单独测试严格 frontmatter 读取器，并在 git 仓库里检查未暂存的新文件。
 
 ## 车道守卫（强约束钩子）
 
-创建分支或工作树之前必须先登记计划修改的文件清单；清单与任何已有分支、工作树或已声明车道重叠时，创建动作被拒绝，并列出每一个冲突的分支与工作树。契约见 `references/lane-split.md`，实现是单文件 `scripts/magos_guard.py`（Python 3.9+，只用标准库，Git 2.36+）。守卫不属于 `sync_hosts.py` 的同步范围，也不改任何插件清单；它不会自己写入宿主配置。
+创建分支或工作树之前必须先登记计划修改的文件清单；清单与任何已有分支、工作树或已声明车道重叠时，创建动作被拒绝，并列出每一个冲突的分支与工作树。契约见 `references/lane-split.md`，实现是单文件 `scripts/magos_guard.py`（Python 3.9+，只用标准库）与启动器 `hooks/run-guard.cmd`；守卫需要 Git 2.36+（`doctor` 会报告更旧的 Git）。守卫不属于 `sync_hosts.py` 的同步范围，也不改任何插件清单；它不会自己写入宿主配置。
 
-| 层 | 作用 | 怎么装 |
+| 层 | 作用（检查的工具） | 怎么装 |
 | --- | --- | --- |
-| Claude Code 钩子 | 创建前拒绝（Bash、PowerShell、EnterWorktree、带 worktree 隔离的子代理） | 随插件加载根目录 `hooks/hooks.json`；也可 `py -3 scripts/magos_guard.py install --host claude` 生成用户级片段，自己合并进 `~/.claude/settings.json` |
-| Codex 钩子 | 同上（Bash） | `install --host codex` 生成 `~/.magos/guard/generated/codex.json`，自己合并进 `~/.codex/hooks.json`，并在 Codex 的 `/hooks` 里信任它 |
-| Hermes 钩子 | 同上（terminal） | `install --host hermes` 生成 `hermes.yaml`，自己合并进 `config.yaml`，首次使用时批准 |
-| Git 兜底 | 任何工具用 git 创建没有清单的分支，都被 `reference-transaction` 拒绝；不需要 Python | 在目标仓库里由用户在真实终端里运行 `arm`，`disarm` 撤销（都需要控制台），`doctor` 自检 |
+| Claude Code 钩子 | 创建前拒绝：Bash、PowerShell、Monitor，带 worktree 隔离的 Agent / Task / Workflow，会话类 MCP 工具（名字含 `start_session`、`worktree`、`branch`、`hand_off_to_session`），执行命令的 MCP 工具（短名是 `run_in_terminal`、`terminal`、`shell`、`exec_command`、`execute_command`、`start_process`），以及 EnterWorktree | 随插件加载根目录 `hooks/hooks.json`；也可 `py -3 scripts/magos_guard.py install --host claude` 生成用户级片段，自己合并进 `~/.claude/settings.json` |
+| Codex 钩子 | 同上，检查 Bash 与会话类 MCP 工具 | `install --host codex` 生成 `~/.magos/guard/generated/codex.json`，自己合并进 `~/.codex/hooks.json`，并在 Codex 的 `/hooks` 里信任它 |
+| Hermes 钩子 | 同上，检查 terminal | `install --host hermes` 生成 `~/.magos/guard/generated/hermes.yaml`，自己合并进 `config.yaml`，首次使用时批准。已用 `hermes plugins install` 装了插件时，条目运行 Hermes 插件自己的启动器（`<Hermes home>/plugins/magos/hooks/run-guard.cmd`），否则运行 `~/.magos` 下的副本 |
+| Git 兜底 | 任何工具用 git 创建没有清单的分支，都被 `reference-transaction` 拒绝；分支改名与复制（`git branch -m/-M/-c/-C`）除外；不需要 Python | 在目标仓库里由用户在真实终端里运行 `arm`，`disarm` 撤销（都需要控制台），`doctor` 自检 |
 
-- `install` 把守卫和 `hooks/run-guard.cmd` 复制到 `~/.magos/guard/`（`--home` 或 `MAGOS_HOME` 可改），Codex 与 Hermes 的钩子都指向这份副本；升级 MAGOS 后重新运行 `install`。
-- 默认是 AUTO：命名的工作树创建总是受控，只建分支的创建仅在已有其他车道时受控，单工作树、无未合并分支的仓库不受影响。`arm` 后进入 ARMED：每个新分支都需要清单。
+- `install` 把守卫和 `hooks/run-guard.cmd` 复制到 `~/.magos/guard/`（`--home` 或 `MAGOS_HOME` 可改），写入 `guard/VERSION.json`（版本、sha256、来源、时间）并打印 `guard copy <旧> -> <新>`；副本与源文件相同时打印 `guard copy unchanged (<版本>)`，不复制。副本比运行的守卫新时拒绝（退出码 18），加 `--allow-downgrade` 才替换。每个文件先写临时文件再整体替换。升级 MAGOS 后按上面“守卫副本与生成的配置”刷新。
+- `version` 输出正在运行的守卫的版本、文件 sha256、路径与 Python 版本（`--json` 输出同样的字段），只读。`doctor` 还会比较 `~/.magos` 下的副本与正在运行的守卫，并检查 Python、Git 版本、仓库状态与 Git 兜底。
+- 默认是 AUTO：命名的工作树创建总是受控，只建分支的创建仅在已有其他车道时受控，单工作树、无未合并分支的仓库不受影响。`arm` 后进入 ARMED：每个新分支都需要清单。`arm` 会关闭该仓库的 `gc.packRefs` 与 `maintenance.pack-refs.enabled`，并把原来的值记在 `<git 公共目录>/magos/arm-config.json`，`disarm` 时恢复。
+- 每个创建都在它实际作用的仓库里判断：`--git-dir` / `GIT_DIR` 重定向的目标，否则是 `cd`、`git -C` 之后所在的目录；无法解析的重定向一律拒绝。`cd` 到不存在的目录时，后面的命令按原目录判断。详见 `references/lane-split.md` 第 6 节。
 - 关闭：`git config --local magos.guard off`（只关闭该仓库的宿主钩子），`disarm`（关闭 Git 兜底），`claude plugin disable magos`（关闭 Claude 插件钩子），宿主进程环境变量 `MAGOS_GUARD=off`。
-- 覆盖（`override`）、`arm`、`disarm`、`install` 只能由用户在自己的终端里运行；守卫的清单存放在 `<git 公共目录>/magos/`，不随 fetch、push、clone 传输。
-- 已知限制：钩子读命令文本，脚本或混淆命令可能漏判；Git 兜底看不到 `git -c core.hooksPath`、之后才设置的 `core.hooksPath`、直接改 `.git/refs`、libgit2 与克隆；Codex 钩子在基础设施故障时放行；Git 兜底否决发生在 git 创建引用时，带起点的 `switch -c` 与 `--orphan` 的检出步骤可能已经执行。详见 `references/lane-split.md` 第 12 节。
+- 覆盖（`override`）、`arm`、`disarm`、`install` 只能由用户在自己的终端里运行（没有真实控制台时退出码 17；`arm`、`disarm`、`install` 的 `--dry-run` 除外），无论前面的全局选项怎么写，钩子都拒绝代理运行它们；覆盖记录只由 `plan` 读取，用户覆盖之后要重新 `plan`。守卫的清单存放在 `<git 公共目录>/magos/`，不随 fetch、push、clone 传输。
+- 已知限制：钩子读命令文本，脚本或混淆命令可能漏判；Git 兜底看不到分支改名与复制（`git branch -m/-M/-c/-C`）、`git -c core.hooksPath`、之后才设置的 `core.hooksPath`、直接改 `.git/refs`、libgit2 与克隆；Codex 钩子、Hermes 钩子与 Claude 的非 strict 组在基础设施故障（找不到 Python、守卫脚本缺失或出错）时放行，只在 stderr 写一行警告，Hermes 的 `fail_closed: true` 只在启动器无法启动或超时时拒绝（在条目的 `hook` 前加 `--strict` 可改为故障时拒绝，代价是 Python 或守卫出问题时该工具的每次调用都被拒绝）；文件工具（Write、Edit 等）、Hermes 的 `process_manage` 向运行中进程写入的文本不经过钩子；防篡改只匹配常见的写入命令，而且对守卫状态（包括 `~/.magos`）的保护只在已武装或有登记的仓库里生效；Git 兜底否决发生在 git 创建引用时，带起点的 `switch -c` 与 `--orphan` 的检出步骤可能已经执行。详见 `references/lane-split.md` 第 12 节。
 
 `--verify` 只校验磁盘上的安装内容。参数灰字提示由各宿主的命令或 Skill 选择界面决定；更新安装文件后，可能需要重新载入宿主会话才能看到新的说明，界面效果仍需在对应宿主中单独检查。

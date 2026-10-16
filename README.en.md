@@ -767,6 +767,20 @@ Denied by default:
 
 ---
 
+## Lane guard
+
+MAGOS ships a lane guard (`scripts/magos_guard.py`). Before a branch or worktree is created, the files the new lane will change must be registered as a manifest (`plan`); a creation whose planned files overlap another branch, worktree or registered lane is denied, and every conflicting lane is named. Existing lanes are only read: no hook stops a write, commit or merge inside one. The contract agents follow is `references/lane-split.md`; installing, upgrading and the known limits are in `references/installation.md`.
+
+- **Where it runs.** The Claude Code plugin turns on PreToolUse hooks (`hooks/hooks.json`, which runs `hooks/run-guard.cmd`, which runs `scripts/magos_guard.py`) in every repository you open in Claude Code. The Codex and Hermes plugin installs do not: in your own terminal, run `py -3 scripts/magos_guard.py install --host codex` (or `--host hermes`; `python3` on macOS and Linux) and merge the entry it prints into the host's configuration. In one repository, `arm` adds a Git `reference-transaction` backstop that vetoes an unclaimed new branch whatever tool runs git.
+- **Modes.** AUTO (the default): a named worktree creation always needs a manifest, a branch-only creation only when another lane exists, so a repository with one worktree and nothing unmerged is unaffected. ARMED (after `arm`): every new branch needs one, in the hooks and in Git. OFF: `git config --local magos.guard off`.
+- **Opting out.** `git config --local magos.guard off` (one repository), `claude plugin disable magos` (the whole Claude Code plugin), or `MAGOS_GUARD=off` in the environment of the host process.
+- **Requirements.** Python 3.9+ (`py -3`, `python3` or `python`) and Git 2.36+; `magos_guard.py doctor` checks both, and `magos_guard.py version` prints the running guard's version.
+- **Only you** run `override`, `arm`, `disarm` and `install`, from a real terminal; the hooks deny an agent that tries.
+- **After every upgrade.** Restart the running Claude Code sessions, and re-run `install` for Codex and Hermes (`doctor` prints the exact command).
+- **Limits.** The hooks read command text, and they let a call through when Python or the guard script is missing; the Git backstop does not see a branch rename or copy (`git branch -m/-c`). `references/lane-split.md` section 12 lists every limit.
+
+---
+
 ## Install
 
 Copy the directory into your agent's skills path:
@@ -779,8 +793,15 @@ multi-agent-git-orchestrator/
 │   ├── plugin.json       # Claude Code plugin manifest
 │   └── marketplace.json  # plugin marketplace for Claude Code and Codex
 ├── plugin.yaml + __init__.py  # Hermes native plugin manifest: registers /magos:git-*
+├── CHANGELOG.md          # every version, with security notes and upgrade steps
 ├── commands/             # Claude Code slash commands
 ├── skills/               # Codex / Hermes command adapters, plus the plugin entry git-orchestrator
+├── hooks/
+│   ├── hooks.json        # Claude Code plugin hooks: the lane guard
+│   └── run-guard.cmd     # launcher (cmd and sh) that runs the guard with Python
+├── scripts/
+│   ├── magos_guard.py    # the lane guard
+│   └── sync_hosts.py     # copies the skill package to Codex and Hermes, or the commands to Claude Code
 └── references/
     ├── commands.md
     ├── reconnaissance.md
@@ -788,7 +809,9 @@ multi-agent-git-orchestrator/
     ├── decision-matrix.md
     ├── handoff-and-state.md
     ├── design-rationale.md
-    └── pressure-tests.md
+    ├── pressure-tests.md
+    ├── lane-split.md     # the lane guard contract
+    └── installation.md   # install, pin, upgrade and roll back per host; the lane guard
 ```
 
 The root skill triggers on its own through semantic matching. The seven commands are optional explicit entry points. Besides multi-agent coordination and symptoms such as agents overwriting each other or branch sprawl, it also triggers when you choose, audit, or change the branch strategy (分支策略, ブランチ戦略) of a specific repository, above all one that agents, worktrees, or several developers share. A pure concept question such as "gitflow vs trunk-based" does not trigger it. It only advises: execution still goes through the matching `/Git...` command with its gates, and **Strategy Changes** in `references/branch-strategy.md` says which command does what. No command renames a branch, so a rename stays a manual step after dependents are coordinated. Note that with the sync-script install Hermes shows only about the first 57 characters of a skill description in its index, so there load the skill by name (or use `/git-recommend`) for branch-strategy advice; the Hermes plugin install passes its own index line, which names branch strategy.
@@ -808,9 +831,9 @@ All three hosts install the plugin `magos` straight from this repository, with n
 
 | Host | Install | Update |
 |---|---|---|
-| Claude Code | in a session: `/plugin marketplace add UlyssesLeoLee/MAGOS`, then `/plugin install magos@magos` | `/plugin marketplace update magos`, then `/plugin update magos@magos` |
-| Codex | `codex plugin marketplace add UlyssesLeoLee/MAGOS`, then `codex plugin add magos@magos` | `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos` again |
-| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `hermes plugins update magos` |
+| Claude Code | in a session: `/plugin marketplace add UlyssesLeoLee/MAGOS`, then `/plugin install magos@magos` | `/plugin marketplace update magos`, then `/plugin update magos@magos`, then restart every running Claude Code session |
+| Codex | `codex plugin marketplace add UlyssesLeoLee/MAGOS`, then `codex plugin add magos@magos` | `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos` again, then restart Codex and refresh the guard copy (`install --host codex`) |
+| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `hermes plugins update magos` (when its security scan asks for confirmation: `hermes plugins install UlyssesLeoLee/MAGOS --force --enable`), then restart Hermes |
 
 Claude Code also works from a shell: `claude plugin marketplace add UlyssesLeoLee/MAGOS && claude plugin install magos@magos`.
 
@@ -823,9 +846,22 @@ After a new session the names line up across hosts:
 
 - Claude Code also lists the seven lowercase `/magos:git-recon` and so on. They are the cross-host adapters and do the same as `/magos:GitXxx`; use the latter.
 - Plugin hosts load only the skills under `skills/`, never the root `SKILL.md`, so the plugin carries an entry skill, `git-orchestrator`, that reads the root `SKILL.md`. Skills-directory installs (the sync script, or a clone into a skills folder) do not need it, and the sync script does not copy it.
-- The manifests pin a version, so Claude Code updates an installed plugin only when the version changes.
+- The manifests pin a version, so Claude Code updates an installed plugin only when the version changes. A running session keeps the hooks of the version it started with, so restart every session after an update.
+- The Claude Code install also turns on the lane guard hooks; the Codex and Hermes installs do not (see Lane guard). Upgrade details per host, including the guard copy and rollback, are in `references/installation.md`; what changed in each version is in `CHANGELOG.md`.
 - Hermes warns "custom (unreviewed) source": MAGOS is not in the official Hermes plugin catalog yet. Listing it takes a pull request to NousResearch/hermes-agent by the repository owner, pinned to a commit SHA; after that, `hermes plugins install magos` works.
 - If you installed an older way, remove it first so each command exists once: `~/.claude/commands/Git*.md`, `~/.claude/skills/magos`, Codex `~/.agents/skills/MAGOS`, Hermes `skills/multi-agent-git-orchestrator`.
+
+### Pin a version
+
+Every release is tagged `v<version>` (`CHANGELOG.md`). The commands above follow the default branch; to stay on one release:
+
+```bash
+claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.2    # then: claude plugin install magos@magos
+git clone --branch v1.0.2 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character commit SHA of v1.0.2> --enable
+```
+
+A pinned install receives no later fixes, guard security fixes included: follow `CHANGELOG.md` and move the pin. `references/installation.md` shows how to look up the commit SHA and how to pin Codex and the sync-script installs.
 
 ### Claude Code (clone into the skills folder)
 
@@ -845,7 +881,7 @@ The repository root carries `.claude-plugin/plugin.json`, so Claude Code loads t
 - the orchestrator entry `magos:git-orchestrator`, which triggers on its own;
 - the seven cross-host adapters from `skills/`, listed as `/magos:git-recon` and so on. They do the same as the commands above; in Claude Code use `/magos:GitXxx`.
 
-To update, run `git pull` in that folder; commands and rules update together. `claude plugin list` should show `magos@skills-dir` as loaded.
+To update, run `git pull` in that folder, then start new sessions; commands, rules and the lane guard update together. `claude plugin list` should show `magos@skills-dir` as loaded.
 
 If you copied `~/.claude/commands/Git*.md` the old way, delete those seven files, or you keep a second, older set of `/GitXxx` commands.
 
@@ -924,12 +960,16 @@ The repository root carries `.claude-plugin/` (the Claude Code `plugin.json` and
 
 One known deviation: section 8 of the specification asks for files meant for a single tool to live in a reverse-domain folder (such as `com.example.client/`). `commands/` serves only Claude Code, and `plugin.yaml` and `__init__.py` only Hermes, but they sit at the top level. Plugin tools ignore it, so importing is unaffected; moving it would change the install script and many tests, so it stays for now.
 
-When you change the version, update `version` in `plugin.json`, `.claude-plugin/plugin.json`, and `plugin.yaml`, `metadata.version` in `SKILL.md`, and line 3 of `references/commands.md` together (the source contracts check that they agree). The first command below checks the plugin format (source contract `package/agent-plugin`); the second plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one:
+When you change the version, update together `version` in `plugin.json`, `.claude-plugin/plugin.json` and `plugin.yaml`, `metadata.version` in `SKILL.md` and `skills/git-orchestrator/SKILL.md`, `GUARD_VERSION` in `scripts/magos_guard.py`, and line 3 of `references/commands.md` (the source contracts and the guard suite check that they agree), and add the version's section to `CHANGELOG.md`. The release gate:
 
 ```bash
-python -X utf8 tests/codex/contracts/run_contract_cases.py
+python -X utf8 tests/codex/contracts/run_contract_cases.py --check
+python -X utf8 tests/claude/scripts/run_claude_contracts.py --check
 python -X utf8 tests/codex/contracts/test_agent_plugin.py
+python -m pytest tests/codex/guard -q -p no:cacheprovider
 ```
+
+The first two run every source-contract case (including `package/agent-plugin`, the plugin format) and write nothing; they exit 1 on any failure. The third plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one. The fourth runs the lane guard suite. `.github/workflows/test.yml` runs all four on Windows and Linux with Python 3.9, 3.12 and 3.14, and checks that a release tag `v<version>` names the package version.
 
 ---
 
@@ -949,7 +989,7 @@ python -X utf8 tests/codex/contracts/test_agent_plugin.py
 python -X utf8 tests/codex/contracts/run_contract_cases.py
 ```
 
-Runs the source contract checks. Inputs and expected results live in `tests/codex/contracts/cases/<group>/<case>/evidence/`. No AI host is started. The `package/install-layout` case installs the Codex and Hermes packages into a temporary home and confirms every file the adapters reference exists, and that each skill is discovered exactly once under each host's discovery rules, also for a `git clone` straight into a skills directory. The `package/agent-plugin` case checks the Agent Plugins 1.0.0 package format (see Import as an Agent Plugin).
+Runs the source contract checks and records each case's inputs and results in `tests/codex/contracts/cases/<group>/<case>/evidence/`; with `--check` it runs them without writing anything. No AI host is started. The `package/install-layout` case installs the Codex and Hermes packages into a temporary home and confirms every file the adapters reference exists, and that each skill is discovered exactly once under each host's discovery rules, also for a `git clone` straight into a skills directory. The `package/agent-plugin` case checks the Agent Plugins 1.0.0 package format (see Import as an Agent Plugin).
 
 ---
 

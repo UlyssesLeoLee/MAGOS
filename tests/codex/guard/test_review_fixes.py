@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import G, Repo, payload, run
+from conftest import SH, G, Repo, payload, run
 from test_gitlayer import common, hook_path, repo_git_raw, vetoed
 from test_hook import denied, hook, plan
 from test_plan_store import claims_dir, verdict
@@ -41,10 +41,12 @@ def test_bare_repository_layout_is_guarded(tmp_path, guard):
     seed.git("add", "-A")
     seed.git("commit", "-q", "-m", "init")
     bare = tmp_path / "bare.git"
-    subprocess.run(["git", "clone", "-q", "--bare", str(seed.path), str(bare)], check=True, env=os.environ.copy())
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed.path), str(bare)], check=True, capture_output=True, stdin=subprocess.DEVNULL,
+                   env=os.environ.copy())
     assert guard(bare, "plan", "--branch", "agent/b", "--paths", "docs/").rc == 0
     wt = tmp_path / "wt-b"
-    subprocess.run(["git", "-C", str(bare), "worktree", "add", "-q", "-b", "agent/other", str(wt), "main"], check=True, env=os.environ.copy())
+    subprocess.run(["git", "-C", str(bare), "worktree", "add", "-q", "-b", "agent/other", str(wt), "main"], check=True, capture_output=True,
+                   stdin=subprocess.DEVNULL, env=os.environ.copy())
     Repo(tmp_path).write("src/a.py", "edit\n", base=wt)
     r = guard(bare, "check", "--branch", "agent/c", "--paths", "src/a.py")
     assert r.rc == 10 and "agent/other" in r.out  # a bare repository with linked worktrees: the lanes are the worktrees
@@ -101,7 +103,7 @@ def test_start_process_without_arguments_is_harmless():
 
 def test_arm_can_be_rerun_over_its_own_chained_hook(repo, guard):
     hook_path(repo).parent.mkdir(exist_ok=True)
-    hook_path(repo).write_text("#!/bin/sh\ncat >/dev/null\n", encoding="utf-8", newline="\n")
+    hook_path(repo).write_bytes(b"#!/bin/sh\ncat >/dev/null\n")
     assert guard(repo, "arm").rc == 0 and (hook_path(repo).parent / "reference-transaction.magos-prev").is_file()
     assert guard(repo, "arm").rc == 0  # an upgrade does not trip over the chained hook it created itself
 
@@ -110,11 +112,10 @@ def test_a_big_transaction_is_read_in_linear_time(repo, guard):
     assert guard(repo, "arm").rc == 0
     sha = repo.git("rev-parse", "HEAD")
     lines = "".join("%s %s refs/tags/t%d\n" % ("0" * 40, sha, i) for i in range(5000))
-    sh = shutil.which("sh")
-    if not sh:
+    if not SH:
         pytest.skip("no sh")
     start = time.monotonic()
-    r = subprocess.run([sh, str(hook_path(repo)), "prepared"], input=lines.encode(), capture_output=True, cwd=str(repo.path),
+    r = subprocess.run([SH, str(hook_path(repo)), "prepared"], input=lines.encode(), capture_output=True, cwd=str(repo.path),
                        env=dict(os.environ, GIT_DIR=str(common(repo))))
     assert r.returncode == 0 and time.monotonic() - start < 20
 

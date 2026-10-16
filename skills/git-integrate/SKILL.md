@@ -2,6 +2,7 @@
 name: git-integrate
 description: "集成目标（仅限用户显式调用，写操作）；/git-integrate TARGET [--strategy] [--help]."
 license: Apache-2.0
+disable-model-invocation: true
 metadata:
   short-description: "集成目标；$git-integrate TARGET [--strategy] [--help]."
 ---
@@ -32,7 +33,7 @@ If `--help` is present, even with other arguments, answer from the inline Usage 
 
 ## Explicit invocation only
 
-A semantic match or automatic skill selection is not authorization to write. Codex disables implicit selection for this adapter through `agents/openai.yaml`; Hermes has no per-skill switch, so this rule applies there by instruction. An explicit invocation is the user's `/git-integrate` command (Hermes renders it as "The user has invoked the "git-integrate" skill" followed by the arguments) or `$git-integrate` in Codex. With a plugin install, the user's `/magos:git-integrate` (Claude Code, Hermes) or `$magos:git-integrate` (Codex) is the same explicit invocation; in Claude Code, the `/magos:Git*` command of the same name is the preferred form. If this adapter was selected without such an invocation, do not integrate; offer the command instead.
+A semantic match or automatic skill selection is not authorization to write. Claude Code keeps the model from invoking this adapter through `disable-model-invocation: true` in its frontmatter, and Codex disables implicit selection for it through `agents/openai.yaml`; Hermes has no per-skill switch, so this rule applies there by instruction. An explicit invocation is the user's `/git-integrate` command (Hermes renders it as "The user has invoked the "git-integrate" skill" followed by the arguments) or `$git-integrate` in Codex. With a plugin install, the user's `/magos:git-integrate` (Claude Code, Hermes) or `$magos:git-integrate` (Codex) is the same explicit invocation; in Claude Code, the `/magos:Git*` command of the same name is the preferred form. If this adapter was selected without such an invocation, do not integrate; offer the command instead.
 
 ## Shared files
 

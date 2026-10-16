@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `2b6f409215efa0d53d4d721d46dee18cb048ddfec17bedc4c6c2c5fdfae2970a`
+Source-SHA256: `e9dee9ebc124edebcc15cea3c98c4bf2f36168e731994e8e59662739ee0058d0`
 
 ## Responsibility
 
@@ -42,28 +42,96 @@ The file holds seven cooperating parts.
    guard reads format `CLAIM_FORMAT = 1` and refuses to act on a claim written in a newer format instead of misreading
    it.
 4. **Command detector.** A lexer for bash, PowerShell and cmd that unwraps `bash -c`, `pwsh -Command`,
-   `-EncodedCommand`, `cmd /c`, `env`, `sudo`, `xargs` and similar wrappers (depth 3), tracks `cd` and `git -C`, and
-   recognises lane-creating git commands and harness tools. Dynamic words (`$x`, backticks, `%x%`) in a lane-creating
-   position are treated as unparseable. The script a shell runs is the `-File` value or the first readable file among
-   the first four candidates after option values. Every `git` word's subcommand is checked against the git aliases.
-   Command text longer than 200,000 characters is not inspected: it counts as an unparseable creation and, once claims
-   or the git layer exist, as a protected command. Every pattern runs in time linear in the command length.
+   `-EncodedCommand`, `cmd /c`, `env` (also `env -S` / `--split-string`, whose value is split into the command it runs),
+   `sudo`, `doas`, `xargs` and similar wrappers (depth 3), tracks `cd`, `git -C`, `env -C` and `sudo -D`, and recognises
+   lane-creating git commands and harness tools. The value of a `sudo` or `doas` option (`-u <user>`, `-g <group>`) and
+   of an `env` option that takes one (`-C`, `-u`, `-S`, `-P`, `-a` and their long forms) is never taken for the wrapped
+   program. In PowerShell the command on the right of `$name =` runs (`$out = git switch -c x` is a creation), and the
+   text of `( .. )` and `@( .. )` inside a command is judged like `$( .. )`; text inside a quoted string is not. Dynamic
+   words (`$x`, backticks, `%x%`) in a lane-creating position are treated as unparseable. The script a shell runs is the
+   `-File` value or the first readable file among the first four candidates after option values. Every `git` word's
+   subcommand is checked against the git aliases. Text echoed or quoted into a shell through a pipe is inspected also
+   when prefix assignments, wrappers (`env`, `command`, `builtin`, `exec`, `nohup`, `nice`, `time`, `setsid`, `stdbuf`,
+   `sudo`, `doas`) and their options stand between the pipe and the shell (`FOO=1 sh`, `env FOO=1 bash`, `sudo -E sh`,
+   `command sh`, `doas -u <user> sh`). Command text longer than 200,000 characters is not inspected: it counts as an
+   unparseable creation and, once claims or the git layer exist, as a protected command. Every pattern runs in time
+   linear in the command length: each word a pattern reads excludes `|`, `;` and `&`, and has one reading; the lexer
+   reads each character once. The walk of one command line, nested text and every further state included, is bounded by
+   a budget of 1,600,000 characters (eight times the inspection limit; walking one command in one further state counts
+   128, and walking one substituted text in one state for the states it leaves counts 1,024); a line that exceeds it is
+   denied under the overflow rule below.
    The detector also records the repository each git invocation acts on:
-   - A repository redirect (`--git-dir` or `GIT_DIR`, spellings under Public Contract) is resolved per git invocation,
-     as Git resolves it: a relative value is joined to the directory that invocation runs in (the shell directory after
-     every earlier `cd` and after every `-C` of the invocation, whatever the option order), not to the directory where
-     an exported variable was assigned. The result is carried as the creation's `gitdir`; relative worktree paths still
-     resolve against the directory the invocation runs in, never against the redirect. A redirect whose value is
-     dynamic or cannot be resolved marks the repository unknown. A removal of the variable ends a redirect recorded
-     earlier in the command line, so later invocations are judged in the directory they run in, as Git then finds its
-     repository there: `unset GIT_DIR`, `export -n GIT_DIR`, `Remove-Item Env:GIT_DIR`, `$env:GIT_DIR = $null` and
-     `$env:GIT_DIR = ''` for every later invocation, and `env -u GIT_DIR` for the invocation it wraps. `--work-tree`
-     and `GIT_WORK_TREE` alone do not change the judged repository, because Git writes the ref into the repository it
-     finds from the working directory.
+   - A repository redirect (`--git-dir`, `GIT_DIR` or `GIT_COMMON_DIR`, spellings under Public Contract) is resolved
+     per git invocation, as Git resolves it: a relative value is joined to the directory that invocation runs in (the
+     shell directory after every earlier `cd` and after every `-C` of the invocation, whatever the option order), not to
+     the directory where an exported variable was assigned. The result is carried as the creation's `gitdir`; relative
+     worktree paths still resolve against the directory the invocation runs in, never against the redirect. A redirect
+     whose value is dynamic or cannot be resolved marks the repository unknown. A removal of the variable ends a
+     redirect recorded earlier in the command line, so later invocations are judged in the directory they run in, as
+     Git then finds its repository there: `unset GIT_DIR`, `export -n GIT_DIR`, `Remove-Item Env:GIT_DIR`,
+     `$env:GIT_DIR = $null` and `$env:GIT_DIR = ''` for every later invocation, `env -u GIT_DIR` for the invocation it
+     wraps, and the same removals of `GIT_COMMON_DIR`. `--git-dir` replaces `GIT_DIR` only. `--work-tree` and
+     `GIT_WORK_TREE` alone do not change the judged repository, because Git writes the ref into the repository it finds
+     from the working directory.
+   - Under `GIT_COMMON_DIR` Git splits the repository: it writes the branch into the repository it finds from its
+     directory or `GIT_DIR`, while it reads the config, runs the hooks and stores the objects of the `GIT_COMMON_DIR`
+     repository, and a value that is not a repository makes it fail. Which of the two holds the lane is therefore not
+     resolved: a creation under `GIT_COMMON_DIR` is judged both in the `GIT_COMMON_DIR` repository and in the
+     repository the invocation would use without it (the `GIT_DIR` target, else the directory it runs in), and the
+     stricter verdict applies.
+   - Assignments and removals of `GIT_DIR` and `GIT_COMMON_DIR` take effect as the shell that runs the line performs
+     them. The `Bash` and `Monitor` tools run bash, the `PowerShell` tool runs PowerShell, `bash -c`, `pwsh -Command`
+     and `cmd /c` name their own shell, and the shell of any other tool is not known. An assignment or removal written
+     for another shell, or in a shell the hook cannot name (cmd's `set` in bash, `export` in PowerShell,
+     `$env:GIT_DIR=` in bash), may not take effect, so the creation is judged both with and without it; `sudo`, `doas`
+     and `wsl` may start git with a clean environment, so a redirect that reaches git through them is judged both ways
+     as well (`sudo -E` and `sudo --preserve-env` keep it). Recognised beside the Public Contract spellings:
+     `declare -x` / `typeset -x`, `Set-Item` and `New-Item` on `Env:GIT_DIR`, and
+     `[Environment]::SetEnvironmentVariable('GIT_DIR', <p>)` for the process. On Windows git reads the environment
+     without regard to case, so every case of `GIT_DIR` and `GIT_COMMON_DIR` is a redirect, while a bash removal ends
+     only the spelling it names. `update-ref --stdin`, `gh pr checkout` and the other auto-named tools are judged in the
+     directory and `GIT_DIR` state of their own invocation, like any git invocation; an `update-ref --stdin` whose
+     input the hook cannot see counts as a dynamic creation. `popd` and `Pop-Location` return to the directory the
+     line's own `pushd` or `Push-Location` left; without one the directory is unknown.
+   - A line is walked in a set of states, each a directory, the `GIT_DIR` and `GIT_COMMON_DIR` values and a `pushd`
+     stack. The line is a list of commands joined by `&&` and `||` and ended by `;`, a newline or `&`; a parenthesised
+     group `( .. )`, a brace block `{ .. }` (a function body, a PowerShell script block) and a compound command (`if`,
+     `while`, `until`, `for`, `select` and `case` up to `fi`, `done` and `esac`; read in every shell but PowerShell and
+     cmd, whose blocks are braces and parentheses) hold lists of their own. A change of the directory (`cd`, `pushd`,
+     `popd`, `chdir`, `Set-Location`, `sl`, `Push-Location`, `Pop-Location`) or of `GIT_DIR` / `GIT_COMMON_DIR` is
+     definite for a later command only when the shell certainly makes it first: it is the first command of its list,
+     which always runs, or `&&` alone joins it to the later command and it is itself the first command of its list or
+     joined by `&&` to the command before it (`cd X && git switch -c y`, `cd X; git switch -c y`,
+     `git fetch && cd X && git switch -c y`). A definite change replaces the states. Every other change is possible: the
+     commands after it are walked in every state before and after it, and the stricter verdict applies. Possible are a
+     change after `&&` or `||` for the commands after the list (`false && cd X; git branch y`) or after a later `||`
+     (`true || cd X && git branch y`), every change inside a compound command (inside it and after it), a change inside
+     a group, a brace block or a list sent to the background by `&` (for the commands after it), a change inside one
+     command of a pipeline (the last one included), a change made by text the current shell runs itself (`eval`, `iex`
+     and `Invoke-Expression`, `source`, `.`, a PowerShell script, called or dot-sourced), and a change in text
+     substituted into a command (`$( .. )`, `<( .. )`, backticks, and in PowerShell `( .. )` and `@( .. )`, which run in
+     the current scope; a command inside such text is no command of the line). Inside a group, a brace block or the
+     evaluated or substituted text, its own definite changes hold. In cmd `&` runs the next command after the first one
+     and ends a list like `;`. A change in a child shell (`bash -c`, `bash x.sh`, `pwsh -Command`, `cmd /c`) never
+     reaches the line. A builtin started through a program wrapper (`env`, `sudo`, `doas`, `nohup`, `nice`, `xargs`,
+     `timeout`, `watch`, `wsl`, `uv`, `npx`, `stdbuf`, `setsid`, `exec`) changes nothing, because the wrapper starts a
+     program and no program can change the shell (`env cd X` fails); `command cd` and `builtin cd` change the directory.
+     Every later command applies to every state, so a later `cd` to an absolute directory leaves one state.
+   - `env -C <dir>`, `env --chdir[=]<dir>`, `sudo -D <dir>` and `sudo --chdir[=]<dir>` run the program they wrap in
+     `<dir>`, resolved against the directory the shell is in, like `git -C` for that invocation; a dynamic value makes
+     the repository unknown.
+   - Text the line runs from inside itself (`$(..)`, backticks, here-documents and quoted text fed to a shell) is
+     judged in every directory and redirect state the line passes through. Overflow rule: a line with more than eight
+     such states or more than 4,096 pairs of such text and state, a line whose walk reaches more than eight states, and
+     a line that exceeds the walking budget are denied `UNPARSEABLE`, unless the session directory's repository is off
+     or `MAGOS_GUARD=off` is set (Invariant 6); outside a repository they are denied.
    - A `cd`, `pushd`, `chdir`, `Set-Location` or `sl` to a directory that does not exist when the hook runs leaves the
      shell where it was, so later commands are judged in that prior directory and the creation is marked unresolved; a
      later relative `cd` keeps the prior directory. This holds on every platform, for absolute, relative, drive and
-     POSIX-rooted targets and for `;`, `&&` and newline separators.
+     POSIX-rooted targets and for `;`, `&&` and newline separators. bash and PowerShell refuse a `cd` with a second
+     directory argument (`cd /d <dir>` in bash, `cd <dir> extra`), which follows the same rule; redirections (`>x`,
+     `2>&1`, `> x`) are no directory arguments. cmd's `cd /d <dir>` changes the drive and the directory, and cmd's `cd`
+     reads the rest of the line as one path.
    - Git Bash spellings (`/c/Users/x`, `//c/x`) map to drive paths on Windows. A POSIX-rooted spelling that cannot be
      mapped to a drive (`/does/not/exist`) resolves to no directory and follows the missing-directory rule; the guard
      never classifies these spellings with `os.path.isabs`, whose Windows result differs from Python 3.13 on.
@@ -72,8 +140,9 @@ The file holds seven cooperating parts.
    the shell tools `Bash`, `PowerShell`, `Monitor`, `terminal`, `shell` and `local_shell`, every MCP tool whose short
    name (the part after the last `__`) is `run_in_terminal`, `terminal`, `shell`, `exec_command`, `execute_command` or
    `start_process`, and the worktree-creating tools (`EnterWorktree`, `Agent`, `Task` and `Workflow` with worktree
-   isolation, and the MCP session tools named `start_session`, `worktree`, `branch` or `hand_off_to_session`). A shell
-   tool is inspected when `tool_input.command` is a string; an argv list from Codex is turned into one command line.
+   isolation, and the MCP session tools whose name contains `start_session`, `worktree`, `branch` or
+   `hand_off_to_session`). A shell tool is inspected when `tool_input.command` is a string; an argv list from Codex is
+   turned into one command line.
    The session directory is `tool_input.workdir`, else `tool_input.cwd`, else the payload's `cwd`, else the process
    directory.
 6. **Git layer.** A pure POSIX `sh` `reference-transaction` hook, embedded as a constant and written by `arm`. It needs
@@ -87,8 +156,9 @@ The file holds seven cooperating parts.
 
 ## Dependencies
 
-Upstream: Python 3.9+ standard library only (`argparse`, `base64`, `getpass`, `hashlib`, `json`, `os`, `re`, `shlex`,
-`shutil`, `subprocess`, `threading`, `unicodedata`, `concurrent.futures`, `msvcrt` or `fcntl`). On Windows the module
+Upstream: Python 3.9+ standard library only (`argparse`, `base64`, `collections`, `functools`, `getpass`, `hashlib`,
+`json`, `os`, `re`, `shlex`, `subprocess`, `sys`, `threading`, `time`, `unicodedata`, `concurrent.futures`, `msvcrt` or
+`fcntl`, and `ctypes` for the Windows console check). On Windows the module
 sets `NoDefaultCurrentDirectoryInExePath=1` in its own environment at import, before any subprocess starts, so `git`
 and every other child program are never resolved from the hook's working directory. Git 2.36+ (`status --porcelain=v2`,
 `worktree list --porcelain -z` (2.36), `rev-parse --path-format=absolute` (2.31), `for-each-ref --merged`,
@@ -146,9 +216,10 @@ its value, and a prefix of `--json`, and tests the first remaining word.
 - `list [--drift] [--json]`: each claim as `planned` (no branch yet), `active` (unmerged work, a workspace, or a fresh
   branch at the target tip or the plan's base) or `idle` (integrated: merged, moved beyond the plan's base and the target
   tip, no worktree). An idle claim stops blocking other lanes. `--drift` reports files in the lane's footprint matched
-  by none of its entries; it never denies. Claims the guard cannot use are listed as well: `unreadable <file>` for a
-  file that does not parse and `newer-format <branch> (v=N): upgrade this guard` for a claim of a newer format;
-  `--json` gives them as rows with state `unreadable` (with `path`) or `newer-format` (with `branch` and `v`).
+  by none of its entries; it never denies. Claims the guard cannot use are listed as well: `unreadable claims/<file>`
+  for a file that does not parse and `newer-format <branch> (v=N): upgrade this guard` for a claim of a newer format
+  (`claims/<file>` in place of the branch when the claim has no `branch` line); `--json` gives them as rows with state
+  `unreadable` (with `path`) or `newer-format` (with `branch`, `v` and `path`).
 - `release --branch B [--reason R]`: finds the claim by the folded name of B among the parsed claims and deletes the
   file of the stored canonical branch name after confirming that its real path lies inside `<store>/claims`; the
   refusal for unmerged work therefore holds for every spelling of B. Refused with exit 16 while the branch has unmerged
@@ -156,7 +227,8 @@ its value, and a prefix of `--json`, and tests the first remaining word.
   worktree has uncommitted changes"; a merged lane whose clean worktree is still there can be released. A claim written
   in a newer format is refused with exit 16. A claim file that cannot be parsed is removed by `release` only when it is
   the claim file of B, appears in the store's list of unreadable files and lies inside `<store>/claims`; otherwise
-  `release` prints `no open claim for B` and exits 0.
+  `release` prints `no open claim for B` and exits 0. A claim whose stored branch name does not lead back to its own
+  file inside `<store>/claims` is not deleted: `release` refuses with exit 16 and names the file for the user to inspect.
 - `override --fingerprint FP --reason R`: exits 2 unless FP is the 12 lowercase hex digits a denial prints; refuses
   (exit 17) unless stdin and stdout are a real console; the user retypes the fingerprint; writes a one-shot record valid
   for one hour. Only `plan` reads override records: the next `plan` whose denial has the same fingerprint consumes the
@@ -181,19 +253,25 @@ its value, and a prefix of `--json`, and tests the first remaining word.
   across worktrees, or `.magos-prev` already exists next to a hook that is not MAGOS's. Idempotent.
 - `disarm [--dry-run]`: needs a real console except with `--dry-run` (exit 17 otherwise); removes `ARMED`, deletes the hook if it is MAGOS's and restores
   `.magos-prev`; restores both settings from `arm-config.json` (unsetting a key that was unset) and deletes the record;
-  without a record both settings stay as they are; keeps claims and audit.
+  without a record both settings stay as they are, and a record that does not parse leaves both settings and the record
+  as they are; keeps claims and audit.
 - `install --host claude|codex|hermes [--dry-run] [--home DIR] [--allow-downgrade]`: needs a real console except with
   `--dry-run` (exit 17 otherwise). It compares `scripts/magos_guard.py` and `hooks/run-guard.cmd` with the copies in
   `<home or ~/.magos>/guard/{scripts,hooks}/`. When both copies are byte-identical to the sources it prints
-  `guard copy unchanged (<version>)` and copies nothing. When the copy's `GUARD_VERSION` (read from the copy's bytes and
+  `guard copy unchanged (<version>)` and copies nothing (it writes `VERSION.json` only when that record is missing). A
+  missing source file is an internal error (exit 11). When the copy's `GUARD_VERSION` (read from the copy's bytes and
   compared as a tuple of integers) is newer than the source's, it refuses with exit 18 unless `--allow-downgrade` is
   given. Otherwise it writes each file to a temporary name in the destination directory and moves it into place with
-  `os.replace`, then writes `guard/VERSION.json` last in the same way, and prints `guard copy <old> -> <new>` (`none`
-  when there was no copy). `VERSION.json` records `{version, sha256, source, installed_at}` of the copied guard. Each
+  `os.replace`, then writes `guard/VERSION.json` last in the same way; it prints `did copy <source> -> <destination>`
+  for each changed file and `guard copy <old> -> <new>` (`none` when there was no copy, `unversioned` for a copy that
+  declares no `GUARD_VERSION`). `VERSION.json` records `{version, sha256, source, installed_at}` of the copied guard. Each
   file is replaced whole or not at all: a failed write removes its temporary file, leaves the previous file and
   `VERSION.json` in place and exits 11. `--dry-run` prints what it would copy and the snippet and writes nothing. It
   writes the exact host snippet to `guard/generated/<host>.json|yaml` and prints it. It never edits
-  `~/.claude/settings.json`, `~/.codex/hooks.json` or Hermes config. The Hermes snippet is valid YAML on every platform
+  `~/.claude/settings.json`, `~/.codex/hooks.json` or Hermes config. The Codex snippet matches
+  `Bash|mcp__.*(start_session|worktree|branch|hand_off_to_session)` and runs `sh '<launcher>' hook codex pre-tool`
+  (`commandWindows`: `& '<launcher>' hook codex pre-tool; exit $LASTEXITCODE`), timeout 25. The Hermes snippet is valid
+  YAML on every platform
   (matcher `terminal`, timeout 25, `fail_closed: true`); its command parses to `"<launcher>" hook hermes pre-tool` on
   Windows and to `sh '<launcher>' hook hermes pre-tool` elsewhere, where the launcher is
   `<hermes home>/plugins/magos/hooks/run-guard.cmd` when that file exists (Hermes home: `HERMES_HOME`, else
@@ -201,9 +279,11 @@ its value, and a prefix of `--json`, and tests the first remaining word.
   carries `--strict`; for the other entries `--strict` is a documented opt-in.
 - `doctor`: prints the running guard's version, the first 12 hex digits of its sha256 and its path; checks Python
   (3.9+) and Git, and reports `git X.Y TOO OLD for the lane guard (need 2.36+)` below 2.36. Before it looks for a
-  repository it compares the copy under the guard home (`~/.magos` or `MAGOS_HOME`), when there is one, with the running guard by the copy's
-  `GUARD_VERSION` and sha256; a difference is reported with the exact refresh command
-  (`<guard command> install --host <host>` for each host that has a generated snippet). Outside a repository it then
+  repository it compares the copy under the guard home (`~/.magos` or `MAGOS_HOME`), when there is one, byte for byte
+  with the running guard and its launcher, and prints the copy's `GUARD_VERSION` (`unversioned` when it declares none)
+  and the first 12 hex digits of its sha256; a difference is a problem, reported with the exact refresh command
+  (`<guard command> install --host <host>` for each host that has a generated snippet under `guard/generated/`, for
+  every host when none has). Outside a repository it then
   reports that the guard is inert there. In a repository it checks mode, hook uniformity, hook content, claim parsing
   (unreadable and newer-format claims), orphan claims, `core.hooksPath` and the backstop command recorded in
   `<store>/guard`: a recorded script that does not exist is reported as missing with the re-arm command, and a hook
@@ -217,23 +297,33 @@ its value, and a prefix of `--json`, and tests the first remaining word.
   running file, its path and the Python version; `--json` prints `{version, sha256, path, python}`. Exit 0.
 
 Repository of a creation. Each creation is judged in its own repository: the redirect target when the invocation has
-one, else the directory the shell is in at that point (after `cd`, `pushd`, `Set-Location` and `git -C`), else the
-session directory. The mode, engagement, claims and evidence are those of that repository, so a claim in the session's
-repository never allows a creation redirected into another repository. Redirect spellings: `git --git-dir <p>`,
-`git --git-dir=<p>`, a `GIT_DIR=<p>` prefix assignment, `env GIT_DIR=<p> git`, a standalone `GIT_DIR=<p>`,
-`export GIT_DIR=<p>` and `export GIT_DIR` after an assignment, PowerShell `$env:GIT_DIR='<p>'` or
-`$env:GIT_DIR = '<p>'`, and cmd `set GIT_DIR=<p>` (also inside `cmd /c`). A prefix or `env` assignment applies to its
-own invocation; an exported, PowerShell or cmd assignment applies to every later git invocation of the command line,
-each resolving a relative value against the directory it runs in, until a removal of the variable (see Command
-detector) ends it. A standalone POSIX-shell `GIT_DIR=<p>` that is not exported reaches git only when the shell already
-exported `GIT_DIR`, which the guard cannot see; a later git invocation is therefore judged in both repositories, the
-redirect target and the directory it runs in, and the stricter verdict applies. A creation whose redirect is dynamic or does not open as a repository is denied
-`UNPARSEABLE` whatever the mode and engagement of the session repository, with the message "the repository is
-redirected by --git-dir/GIT_DIR and cannot be resolved; use git -C <repo>". A `cd` or `-C` whose target is dynamic leaves the repository unknown as well:
-the creation is judged in the session directory's repository. A creation left in a prior directory by a `cd` to a
-missing directory is judged in that prior directory and marked unresolved; when the prior directory is not a
-repository nothing is judged. In both cases an engaged creation is denied `UNPARSEABLE` (`UNPLANNABLE` for an
-auto-named creation).
+one, else the directory the invocation runs in at that point (after `cd`, `pushd`, `Set-Location`, `git -C`, `env -C`
+and `sudo -D`), else the session directory. The mode, engagement, claims and evidence are those of that repository, so a
+claim in the session's repository never allows a creation redirected into another repository. Redirect spellings:
+`git --git-dir <p>`, `git --git-dir=<p>`, a `GIT_DIR=<p>` prefix assignment, `env GIT_DIR=<p> git`, a standalone
+`GIT_DIR=<p>`, `export GIT_DIR=<p>` and `export GIT_DIR` after an assignment, PowerShell `$env:GIT_DIR='<p>'` or
+`$env:GIT_DIR = '<p>'`, and cmd `set GIT_DIR=<p>` (also inside `cmd /c`); `GIT_COMMON_DIR` in each of the variable
+spellings. A prefix or `env` assignment applies to its own invocation; an exported, PowerShell or cmd assignment applies
+to every later git invocation of the command line, each resolving a relative value against the directory it runs in,
+until a removal of the variable ends it, as far as the shell that runs the line performs the assignment and the removal
+(see Command detector). A standalone POSIX-shell `GIT_DIR=<p>` that is not exported reaches git only when the shell
+already exported `GIT_DIR`, which the guard cannot see; a later git invocation is therefore judged in both repositories,
+the redirect target and the directory it runs in, and the stricter verdict applies. A creation under `GIT_COMMON_DIR` is
+judged in the `GIT_COMMON_DIR` repository and in the repository the invocation would use without it, and the stricter
+verdict applies. A definite directory or redirect change (the first command of a list, or a command joined to the
+creation by `&&` alone) replaces the state the creation is judged in; after a possible change (one the shell may not
+make before the creation: after `&&` or `||` across a later list or `||`, inside a compound command, a group, a brace
+block, a background list or a pipeline command, made by `eval`, `iex`, `source`, `.` or a PowerShell script, or in
+substituted text) the creation is judged in every state before and after it, and the stricter verdict applies. A `cd`
+behind a program wrapper (`env cd`) changes nothing. A creation whose redirect is dynamic or does not open as a
+repository is denied `UNPARSEABLE` whatever the mode and engagement of the session repository, with the message "the
+repository is redirected by --git-dir/GIT_DIR and cannot be resolved; use git -C <repo>". A `cd` or `-C` whose target is
+dynamic leaves the repository unknown as well: the creation is judged in the session directory's repository, and so does
+a dynamic `env -C` or `sudo -D` directory. A creation left in a prior directory by a `cd` to a missing directory or by a
+`cd` the shell refuses is judged in that prior directory and marked unresolved; when the prior directory is not a
+repository nothing is judged. In both cases an engaged creation is denied `UNPARSEABLE` (`UNPLANNABLE` for an auto-named
+creation). A line the overflow rule refuses is denied `UNPARSEABLE` unless the session directory's repository is off or
+`MAGOS_GUARD=off` is set; outside a repository it is denied.
 
 Errors. In every command except `hook`, a Git failure writes `MAGOS guard: <code>: <text>` and an internal error
 writes `MAGOS guard internal error: <exception type>: <text>` to stderr; both exit 11 (`doctor` reports a Git that
@@ -289,12 +379,14 @@ Invariants:
    `list`, `hook` and `version` never write.
 6. Engagement: ARMED (marker file) guards every new branch and worktree; AUTO (default) always guards named worktree
    creation and guards branch-only or auto-named creation only when another lane exists; OFF
-   (`git config --local magos.guard off`) silences the host hooks of that repository. Mode and engagement are read from
-   the creation's own repository. `MAGOS_GUARD=off` is read from the host process environment only.
+   (`git config --local magos.guard off`) silences the host hooks of that repository: its own creations, and a line the
+   overflow rule refuses when it is the session directory's repository. Mode and engagement are read from the
+   creation's own repository, so OFF never silences a creation judged in another repository. `MAGOS_GUARD=off` is read
+   from the host process environment only; it silences the creation checks and the overflow rule everywhere.
 7. Tamper protection is best-effort matching of words and common writer commands. User-only subcommands (whatever the
    spelling of the global options before them) and `git config magos.*` writes are denied by the host hook in every
-   repository and outside any repository. Edits of the guard's state are denied once the repository is armed or holds a
-   claim: `core.hooksPath`, `GIT_CONFIG_*`, worktree config, and writers or redirects aimed at `.git/hooks`, `.git/refs`,
+   repository and outside any repository. Edits of the guard's state are denied once the session directory's
+   repository is armed or holds a claim: `core.hooksPath`, `GIT_CONFIG_*`, worktree config, and writers or redirects aimed at `.git/hooks`, `.git/refs`,
    `.git/HEAD`, `.git/config`, `packed-refs`, `.git/magos`, `.magos`, the absolute path of the session repository's
    `<git-common-dir>/magos` (in any separator or case spelling the platform folds) and the absolute path of the guard
    home (`~/.magos` or `MAGOS_HOME`). Other spellings, interpreters and file tools are the limit stated in
@@ -312,7 +404,18 @@ Version 1.0.2 is a security release of the guard. Relative to the 1.0.1 product 
 
 - judges a creation in the repository that a `--git-dir` or `GIT_DIR` redirect names (resolved per invocation, as Git
   resolves it, and ended by a removal of the variable), and denies a redirect it cannot resolve with its own message;
-  `--work-tree` and `GIT_WORK_TREE` alone leave the judged repository unchanged;
+  `--work-tree` and `GIT_WORK_TREE` alone leave the judged repository unchanged; judges a creation under
+  `GIT_COMMON_DIR` in both repositories Git splits it between;
+- treats a directory or redirect change as definite only when the shell certainly makes it before the later command
+  (the first command of a list, or a chain of `&&`) and judges the commands after every other change (after `&&` or
+  `||` across a later list, inside a compound command, a group, a brace block, a background list or a pipeline command,
+  by `eval`, `iex`, `source`, `.` or a PowerShell script, in substituted text) in every state before and after it;
+  bounds the walk of a line by a budget, and lets the overflow denial follow the session repository's OFF switch and
+  `MAGOS_GUARD=off`;
+- ignores a builtin started through a program wrapper (`env cd`), judges git under `env -C` and `sudo -D` in that
+  directory, and follows a `cd` the shell refuses or cmd's `cd /d` as the shell does;
+- reads text piped into a shell behind prefix assignments, wrappers and their options, unwraps `doas` like `sudo`,
+  splits `env -S`, and reads the PowerShell `$name = <command>` and PowerShell `( .. )` and `@( .. )`;
 - judges the commands after a `cd` to a missing directory in the prior directory, on every platform and for every
   target spelling;
 - inspects the `Monitor` tool and shell-capable MCP tools, reads `tool_input.cwd`, and builds the Claude matcher from
@@ -341,7 +444,12 @@ launcher follows `hermes plugins update`. `references/lane-split.md` is a flat r
 the `references/*.md` glob. `hooks/hooks.json` and `hooks/run-guard.cmd` sit at the repository root, outside
 `.claude-plugin/`. The root `description` is 1017 characters. The git layer is opt-in per repository (`arm`) and the
 Codex and Hermes entries are generated, never merged automatically. Known limits are stated in
-`references/lane-split.md` section 12: hooks read command text; the git layer cannot see `-c core.hooksPath`, direct
-`.git/refs` writes, libgit2, clones or a branch rename or copy (`git branch -m/-c`); harness-created worktrees are
-covered only by the git layer; input sent to a running shell through Hermes `process_manage` and edits made with file
-tools are not inspected; the tamper filter is best-effort; claims are per clone; and overrides are not access control.
+`references/lane-split.md` section 12: hooks read the text of one command line and follow the directory and redirect
+changes the Command detector names (state an earlier tool call left in a shell that keeps it, a relative `cd` that a
+loop or a repeated function call applies more than once, a `cd` resolved through `CDPATH`, a computed `cd` target, which
+leaves the session directory's repository to decide, and changes made by a script or an interpreter the hook cannot read
+are not followed); the git layer cannot see `-c core.hooksPath`, a `GIT_COMMON_DIR` that names another repository (Git
+runs that repository's hooks), direct `.git/refs` writes, libgit2, clones or a branch rename or copy
+(`git branch -m/-c`); harness-created worktrees are covered only by the git layer; input sent to a running shell through
+Hermes `process_manage` and edits made with file tools are not inspected; the tamper filter is best-effort; claims are
+per clone; and overrides are not access control.

@@ -8,6 +8,8 @@ because users may git clone the repository straight into a Codex or Hermes skill
 every committed SKILL.md is discovered.
 """
 
+from __future__ import annotations
+
 import ast
 import json
 import re
@@ -330,7 +332,8 @@ def check_installed(repo: Path) -> list[dict]:
         completed = subprocess.run(
             [sys.executable, "-X", "utf8", str(repo / "scripts" / "sync_hosts.py"), "--home", str(home),
              "--host", "codex", "--host", "hermes", "--apply", "--create-roots", "--json"],
-            text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=120, check=False)
+            text=True, encoding="utf-8", errors="replace", capture_output=True, stdin=subprocess.DEVNULL, timeout=120,
+            check=False)
         results = [{"file": "install:sync_hosts.py --apply --create-roots", "passed": completed.returncode == 0,
                     "missing": [] if completed.returncode == 0 else [completed.stdout[-400:] + completed.stderr[-400:]]}]
         if completed.returncode:

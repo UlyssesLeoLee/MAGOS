@@ -4,7 +4,7 @@ description: "Automatically use for multi-agent or multi-worktree Git coordinati
 license: Apache-2.0
 compatibility: "Requires Git 2.30+ or harness-native workspace isolation; intended for Agent Skills-compatible coding agents."
 metadata:
-  version: "1.0"
+  version: "1.0.2"
   short-description: "Multi-Agent Git Orchestrator entry for plugin installs."
 ---
 
