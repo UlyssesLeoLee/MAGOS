@@ -2,6 +2,7 @@
 undecided engagement, override through plan only, JSON errors and silent Git failures."""
 from __future__ import annotations
 
+import base64
 import json
 import ntpath
 import os
@@ -10,10 +11,11 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
-from conftest import G, SCRIPT, Repo, payload, run, time_budget
+from conftest import G, ROOT, SCRIPT, SH, Repo, payload, run, time_budget
 
 NOMAN = "a planned file manifest must be registered"
 UNPARSE = "cannot tell which branch this creates"
@@ -417,6 +419,7 @@ def test_popd_returns_to_the_directory_pushd_left(target, tmp_path):
 
 # ---- changes the guard cannot place in one state, shells behind wrappers, doas, GIT_COMMON_DIR, the overflow rule -------------------
 STATES = "more directory or GIT_DIR states than the hook judges"
+MAX_STATES = 8  # the states a line is walked in (MAX_CONTEXTS)
 
 
 def where(cmd, cwd, tool="Bash", name=None):
@@ -425,35 +428,38 @@ def where(cmd, cwd, tool="Bash", name=None):
 
 
 def test_a_change_inside_a_subshell_or_a_pipeline_is_judged_before_and_after(target, tmp_path):
-    """A cd / pushd / Set-Location or a GIT_DIR change inside ( .. ) or inside one command of a pipeline does not replace the state the
-    line was in: the commands after it are judged in both states, the stricter verdict applies; inside the group the changed state holds."""
+    """bash runs a group ( .. ) and every pipeline command but the last in a subshell: a cd / pushd or a GIT_DIR change there never reaches
+    the commands after it, which keep the state the line was in.  The last pipeline command (zsh, lastpipe), PowerShell and a shell the
+    hook cannot name may change it: the commands after it are judged in both states.  Inside the group its own change holds."""
     clean = make(tmp_path, "clean")
     c, l = P(clean.path), P(target.path)
-    from_lanes = [  # session in the lane-bearing repository: git runs there, so it must be judged there although the line names C
-        ("Bash", "(cd %s); git branch s1" % c),
-        ("Bash", "(cd %s && cd src); git branch s2" % c),
-        ("Bash", "cd %s | cat; git branch s3" % c),
-        ("Bash", "pushd %s | cat; git branch s4" % c),
-        ("Bash", "cat x | cd %s; git branch s5" % c),
-        ("Bash", "(export GIT_DIR=%s/.git); git branch s6" % c),
-        ("Bash", "((cd %s); cd %s/src); git branch s7" % (c, c)),
-        ("PowerShell", "(Set-Location %s); git branch s8" % c),
-        ("PowerShell", "Set-Location %s | Out-Null; git branch s9" % c),
-        ("Bash", '(cd %s; echo "(") ; git branch s16' % c),  # the ')' after a quoted '(' still ends the group
-        ("Bash", "echo $(true; (cd %s); git branch s17)" % c),  # a group inside $( .. ): its ')' is not the one that closes $(
+    subshells = [  # session in the lane-bearing repository: git runs there, never in C
+        "(cd %s); git branch s1" % c,
+        "(cd %s && cd src); git branch s2" % c,
+        "cd %s | cat; git branch s3" % c,
+        "pushd %s | cat; git branch s4" % c,
+        "(export GIT_DIR=%s/.git); git branch s6" % c,
+        "((cd %s); cd %s/src); git branch s7" % (c, c),
+        "(echo $(pwd); cd %s); git branch s14" % c,  # the ')' that closes $( does not end the group
+        '(cd %s; echo "(") ; git branch s16' % c,  # the ')' after a quoted '(' still ends the group
+        "echo $(true; (cd %s); git branch s17)" % c,  # a group inside $( .. ): its ')' is not the one that closes $(
     ]
-    for tool, cmd in from_lanes:
+    for cmd in subshells:
+        assert where(cmd, target.path) == [(False, l.lower())], cmd
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason, (cmd, reason)
+    possible = [("Bash", "cat x | cd %s; git branch s5" % c), ("PowerShell", "(Set-Location %s); git branch s8" % c),
+                ("PowerShell", "Set-Location %s | Out-Null; git branch s9" % c), ("terminal", "(cd %s); git branch s18" % c)]
+    for tool, cmd in possible:
+        assert where(cmd, target.path, tool) == sorted([(False, l.lower()), (False, c.lower())]), (tool, cmd)
         reason = verdict(hook(target.path, cmd, tool=tool))
         assert reason and NOMAN in reason, (tool, cmd, reason)
-    assert where("(cd %s); git branch s1" % c, target.path, name="s1") == sorted([(False, l.lower()), (False, c.lower())])
-    reason = verdict(hook(clean.path, "(cd %s); git branch s10" % l))  # the other way round: judged in both, the lane-bearing one denies
-    assert reason and NOMAN in reason
     for cmd in ("(cd %s; git branch s11)" % c, "(cd %s && git branch s12)" % c, "cd %s && git branch s13 | cat" % c):
         assert verdict(hook(target.path, cmd)) is None, cmd  # inside the group git runs in C, which has a single lane
         assert where(cmd, target.path) == [(False, c.lower())], cmd
-    reason = verdict(hook(target.path, "(echo $(pwd); cd %s); git branch s14" % c))  # the ')' that closes $( does not end the group
-    assert reason and NOMAN in reason
-    assert verdict(hook(clean.path, "(cd %s); cd %s; git branch s15" % (l, c))) is None  # a later plain cd replaces every state
+    for cmd in ("(cd %s); git branch s10" % l, "(cd %s); cd %s; git branch s15" % (l, c)):  # from C: the group's cd never reaches git
+        assert where(cmd, clean.path) == [(False, c.lower())], cmd
+        assert verdict(hook(clean.path, cmd)) is None, cmd
 
 
 def test_eval_and_sourced_changes_are_judged_before_and_after(target, tmp_path):
@@ -490,22 +496,33 @@ def test_eval_and_sourced_changes_are_judged_before_and_after(target, tmp_path):
     assert where('pushd %s; eval "popd"; git branch e16' % c, target.path, name="e16") == sorted([(False, c.lower()), (False, l.lower())])
 
 
+def maybe_cds(dirs):
+    """`[ -d <dir> ] && cd <dir>` lists: each cd may or may not run, so each adds a state for the commands after it."""
+    return "; ".join("[ -d %s ] && cd %s" % (P(d), P(d)) for d in dirs)
+
+
 def test_more_scoped_states_than_the_hook_walks_are_denied(target, tmp_path):
     clean = make(tmp_path, "clean")
     hops = [tmp_path / ("h%d" % k) for k in range(9)]
     for d in hops:
         d.mkdir()
-    cmd = "; ".join("(cd %s)" % P(d) for d in hops) + "; git branch o1"
+    cmd = maybe_cds(hops) + "; git branch o1"
     reason = verdict(hook(clean.path, cmd))
     assert reason and UNPARSE in reason and "a condition or a background job may change the directory or GIT_DIR, which leaves the command in " + STATES in reason
-    assert verdict(hook(clean.path, "; ".join("(cd %s)" % P(d) for d in hops[:7]) + "; git branch o2")) is None  # eight states: walked
+    assert verdict(hook(clean.path, maybe_cds(hops[:7]) + "; git branch o2")) is None  # eight states: walked
     empty, _ = session("empty", tmp_path)
     assert UNPARSE in (verdict(hook(empty, cmd)) or "")
     steps = "git status; " * 2000 + "git branch o3"  # every command walked in seven further states spends the budget
-    many = "; ".join("(cd %s)" % P(d) for d in hops[:7]) + "; " + steps
+    many = maybe_cds(hops[:7]) + "; " + steps
     assert [c["why"] for c in G.interpret(many, str(clean.path), sh="bash") if c.get("anywhere")] == [G._OVER_WORK]
     assert "more walking" in (verdict(hook(clean.path, many)) or "")
     assert not [c for c in G.interpret(steps, str(clean.path), sh="bash") if c.get("anywhere")]  # one state: within the budget
+    groups = "; ".join("(cd %s)" % P(d) for d in hops) + "; git branch o4"
+    assert where(groups, clean.path) == [(False, P(clean.path).lower())]  # bash: every group is a subshell, one state is left
+    assert verdict(hook(clean.path, groups)) is None
+    assert len({P(c["cwd"]).lower() for c in records("terminal", groups, clean.path, "o4")}) == MAX_STATES  # the shell is not known: ten states, eight walked
+    reason = verdict(hook(clean.path, groups, tool="terminal"))
+    assert reason and UNPARSE in reason and STATES in reason
 
 
 def test_a_shell_behind_a_prefix_assignment_or_a_wrapper_reads_piped_text(target, tmp_path):
@@ -611,11 +628,10 @@ def test_the_overflow_rule_respects_a_guard_that_is_off(target, tmp_path, monkey
     for d in hops:
         d.mkdir()
     cds = "; ".join("cd %s" % P(d) for d in hops)
-    subs = "; ".join("(cd %s)" % P(d) for d in hops)
     nest = "git branch q " + "y " * 5000
     for level in range(3):
         nest = "; ".join("cd %s" % P(d) for d in hops[:7]) + "; bash <<E%d\n%s\nE%d" % (level, nest, level)
-    lines = ["%s; echo $(git branch o1)" % cds, "%s; git branch o2" % subs, nest]
+    lines = ["%s; echo $(git branch o1)" % cds, "%s; git branch o2" % maybe_cds(hops), nest]
     for cmd in lines:
         assert verdict(hook(off.path, cmd)) is None, cmd[:60]  # the session repository is off
         for cwd in (clean.path, empty):
@@ -633,14 +649,15 @@ def test_the_overflow_rule_respects_a_guard_that_is_off(target, tmp_path, monkey
 def test_monitor_and_shell_mcp_tools_are_inspected(target, tmp_path):
     empty, _ = session("empty", tmp_path)
     assert NOMAN in (verdict(hook(empty, "git -C %s branch m1" % P(target.path), tool="Monitor")) or "")
-    for tool in ("mcp__terminal__run_in_terminal", "mcp__desktop-commander__start_process", "mcp__shell__execute_command", "mcp__x__exec_command",
-                 "mcp__x__terminal", "mcp__x__shell"):
+    tools = ("mcp__terminal__run_in_terminal", "mcp__desktop-commander__start_process", "mcp__shell__execute_command", "mcp__x__exec_command",
+             "mcp__x__terminal", "mcp__x__shell", "mcp__gbrain__run_doctor", "mcp__terminal__read_terminal", "mcp__scheduled-tasks__run_scheduled_task")
+    for tool in tools:  # every MCP tool with a string command is inspected, whatever its name
         assert NOMAN in (verdict(hook(target.path, "git branch m2", tool=tool)) or ""), tool
-    for tool in ("mcp__gbrain__run_doctor", "mcp__terminal__read_terminal", "mcp__scheduled-tasks__run_scheduled_task"):
-        assert verdict(hook(target.path, "git branch m2", tool=tool)) is None, tool
     assert verdict(hook(target.path, ["git", "branch", "m3"], tool="Monitor")) is None  # Monitor takes a string command only
     assert verdict(hook(target.path, None, tool="Monitor", description="x")) is None
-    assert G.is_shell_tool("Monitor") and not G.is_shell_tool("mcp__terminal__read_terminal") and not G.is_shell_tool("BashOutput")
+    for tool in tools:
+        assert verdict(hook(target.path, None, tool=tool, description="x")) is None, tool
+    assert G.is_shell_tool("Monitor") and G.is_shell_tool("mcp__terminal__read_terminal") and not G.is_shell_tool("BashOutput")
 
 
 def test_tool_input_cwd_is_the_session_directory(target, tmp_path):
@@ -937,7 +954,8 @@ def test_a_change_inside_a_compound_command_is_possible(target, tmp_path):
              ("Bash", "case a in (b|a) cd %s;; *) :;; esac; git branch b9" % c), ("Bash", "if x; then y=$(if a; then b; fi); cd %s; fi; git branch b10" % c),
              ("PowerShell", "if ($false) { Set-Location %s }; git branch b11" % c), ("PowerShell", "if($x){Set-Location %s}; git branch b12" % c)]
     for tool, cmd in cases:
-        assert where(cmd, target.path, tool) == both, (tool, cmd)
+        want = [(False, l.lower())] if cmd.startswith("(case") else both  # bash runs the group, and the case inside it, in a subshell
+        assert where(cmd, target.path, tool) == want, (tool, cmd)
     for tool, cmd in cases[:1] + cases[6:8] + cases[10:11]:
         reason = verdict(hook(target.path, cmd, tool=tool))
         assert reason and NOMAN in reason, (tool, cmd, reason)
@@ -950,8 +968,9 @@ def test_a_function_body_or_a_brace_block_keeps_the_state_it_was_opened_in(targe
     l, c, clean, both = lanes_and_clean(target, tmp_path)
     for tool, cmd in (("Bash", "f() { cd %s; }; git branch f1" % c), ("Bash", "function f { cd %s; }; git branch f2" % c),
                       ("Bash", "function f() { cd %s; }; f; git branch f3" % c), ("PowerShell", "function f { Set-Location %s }; git branch f4" % c),
-                      ("PowerShell", "Invoke-Command { Set-Location %s }; git branch f5" % c), ("Bash", "{ cd %s; } & git branch f6" % c)):
+                      ("PowerShell", "Invoke-Command { Set-Location %s }; git branch f5" % c)):
         assert where(cmd, target.path, tool) == both, (tool, cmd)
+    assert where("{ cd %s; } & git branch f6" % c, target.path) == [(False, l.lower())]  # bash runs a background list in a subshell
     reason = verdict(hook(target.path, "f() { cd %s; }; git branch f7" % c))
     assert reason and NOMAN in reason
     assert where("cd %s && { git switch -c ok1; }" % c, target.path) == [(False, c.lower())]
@@ -960,11 +979,13 @@ def test_a_function_body_or_a_brace_block_keeps_the_state_it_was_opened_in(targe
 
 
 def test_a_list_sent_to_the_background_keeps_the_state_it_started_in(target, tmp_path):
-    """A list ended by '&' runs in a background job: its cd may never reach the shell, so later commands are judged before and after it.
-    In cmd '&' runs the next command after the first one, and cmd's `cd /d` switches the drive and directory together."""
+    """A list ended by '&' runs in a background job, which bash runs in a subshell: its cd never reaches the shell, so later commands
+    keep the state the list started in.  In cmd '&' runs the next command after the first one, and cmd's `cd /d` switches the drive and
+    directory together."""
     l, c, clean, both = lanes_and_clean(target, tmp_path)
     for cmd in ("cd %s & git branch g1" % c, "x && cd %s & git branch g2" % c, "cd %s &\ngit branch g3" % c):
-        assert where(cmd, target.path) == both, cmd
+        assert where(cmd, target.path) == [(False, l.lower())], cmd
+        assert where(cmd, target.path, "terminal") == both, cmd  # a shell the hook cannot name: the change is possible
     reason = verdict(hook(target.path, "cd %s & git branch g4" % c))
     assert reason and NOMAN in reason
     for cmd in ('cmd /c "cd /d %s & git switch -c ok1"' % c, 'cmd /c "cd /d %s && git switch -c ok2"' % c):
@@ -977,20 +998,20 @@ def test_a_list_sent_to_the_background_keeps_the_state_it_started_in(target, tmp
 
 
 def test_text_substituted_into_a_command_may_change_the_state(target, tmp_path):
-    """PowerShell runs $(..), (..) and @(..) in the current scope, so a Set-Location there moves the commands after it; a substitution is
-    judged as a possible change in every shell (bash runs it in a subshell, which only adds a state)."""
+    """PowerShell runs $(..), (..) and @(..) in the current scope, so a Set-Location there moves the commands after it: a possible change.
+    bash runs $(..), <(..) and backticks in a subshell, so a cd there never reaches the commands after it."""
     l, c, clean, both = lanes_and_clean(target, tmp_path)
     for tool, cmd in (("PowerShell", "echo $(Set-Location %s); git branch s1" % l), ("PowerShell", "Write-Output $(Set-Location %s); git branch s2" % l),
                       ("PowerShell", "echo (Set-Location %s); git branch s3" % l), ("PowerShell", "$out = (Set-Location %s); git branch s4" % l),
-                      ("Bash", "echo `cd %s`; git branch s5" % l), ("Bash", "echo $(cd %s); git branch s6" % l),
-                      ("Bash", "echo $(true; cd %s); git branch s8" % l), ("Bash", "echo $(true\ncd %s); git branch s9" % l),
-                      ("Bash", "cat <(true; cd %s); git branch s10" % l), ("PowerShell", "echo (Get-Date; Set-Location %s); git branch s11" % l)):
+                      ("PowerShell", "echo (Get-Date; Set-Location %s); git branch s11" % l)):
         assert where(cmd, clean.path, tool) == both, (tool, cmd)  # a command inside substituted text is no command of the line
+    for cmd in ("echo `cd %s`; git branch s5" % l, "echo $(cd %s); git branch s6" % l, "echo $(true; cd %s); git branch s8" % l,
+                "echo $(true\ncd %s); git branch s9" % l, "cat <(true; cd %s); git branch s10" % l):
+        assert where(cmd, clean.path) == [(False, c.lower())], cmd  # bash: a subshell
     assert where("echo $(true ) cd %s; git branch s12" % l, clean.path) == [(False, c.lower())]  # words after the ')' belong to echo
     reason = verdict(hook(clean.path, "echo $(Set-Location %s); git branch s7" % l, tool="PowerShell"))
     assert reason and NOMAN in reason
-    reason = verdict(hook(clean.path, "echo $(true; cd %s); git branch s13" % l))
-    assert reason and NOMAN in reason
+    assert verdict(hook(clean.path, "echo $(true; cd %s); git branch s13" % l)) is None  # judged in C only, which has a single lane
     assert where("git switch -c ok1; echo $(Set-Location %s)" % l, clean.path, "PowerShell") == [(False, c.lower())]  # only the commands after it
     assert where("Write-Host '(Set-Location %s)'; git switch -c ok2" % l, clean.path, "PowerShell") == [(False, c.lower())]  # a string runs nothing
 
@@ -1088,3 +1109,674 @@ def test_the_definite_and_possible_walk_stays_linear(cmd):
         G._unquoted(cmd)
         G._CHANGES.search(cmd)
         assert time.monotonic() - start < time_budget(5), (sh, cmd[:30])
+
+
+# ---- state caps, bash subshells, && chains, one judgement per repository ---------------------------------------------------------------
+PROTECTED = "would change the guard's own"
+
+
+def hook_input(where_from, tool, **ti):
+    """A hook call from the session directory `where_from` whose tool_input is exactly `ti` (it may carry a cwd of its own)."""
+    return hook_body(json.dumps({"tool_name": tool, "tool_input": ti, "cwd": str(where_from)}).encode())
+
+
+def nine_dirs(base, names=()):
+    """Nine existing directories under `base` (the given names first)."""
+    out = []
+    for name in list(names) + ["n%d" % k for k in range(9 - len(names))]:
+        (base / name).mkdir(parents=True, exist_ok=True)
+        out.append(base / name)
+    return out
+
+
+def test_state_caps_deny_only_a_line_that_creates_something_or_reads_a_relative_script(tmp_path):
+    single = make(tmp_path, "single")
+    multi = tmp_path / "multi"  # a directory outside any repository that holds repositories
+    multi.mkdir()
+    for name in ("api", "web", "docs", "infra"):
+        make(multi, name)
+    q = '"'
+    for cwd, dirs in ((single.path, nine_dirs(tmp_path / "hops")), (multi, nine_dirs(multi, ("api", "web", "docs", "infra")))):
+        (dirs[-1] / "mk.sh").write_bytes(b"git branch z9\n")  # only the ninth directory's script creates a branch
+        allowed = [maybe_cds(dirs) + "; git status", maybe_cds(dirs) + "; npm test | grep -i high", maybe_cds(dirs) + "; echo %sdone at $(date +%%T)%s" % (q, q),
+                   "; ".join("cd %s && git status -s" % P(d) for d in dirs) + "; echo %sdone at $(date +%%T)%s" % (q, q)]
+        for cmd in allowed:  # nothing is created and no relative script is read: the states beyond the cap lose nothing
+            assert verdict(hook(cwd, cmd)) is None, (cwd, cmd[-60:])
+        groups = "; ".join("(cd %s && git pull)" % P(d) for d in dirs)
+        assert len(records("terminal", groups, cwd)) == 0 and verdict(hook(cwd, groups, tool="terminal")) is None, cwd
+        reason = verdict(hook(cwd, maybe_cds(dirs) + "; git switch -c x9"))
+        assert reason and UNPARSE in reason and STATES in reason, (cwd, reason)
+        reason = verdict(hook(cwd, maybe_cds(dirs) + "; bash ./mk.sh"))  # a relative script keeps the cap: the ninth state is not walked
+        assert reason and UNPARSE in reason and STATES in reason, (cwd, reason)
+        reason = verdict(hook(cwd, maybe_cds(dirs[:7]) + "; " + "git status; " * 2000))  # an incomplete walk is denied in every case
+        assert reason and "more walking" in reason, cwd
+
+
+def test_bash_subshells_background_lists_and_substitutions_keep_the_state_they_started_in(target, guard, tmp_path):
+    l, c, clean, both = lanes_and_clean(target, tmp_path)
+    for cmd in ("(cd %s); git branch b1" % l, "cd %s & git branch b2" % l, "cd %s | cat; git branch b3" % l, "echo $(cd %s); git branch b4" % l,
+                "cat <(cd %s); git branch b5" % l, "echo `cd %s`; git branch b6" % l):
+        assert where(cmd, clean.path) == [(False, c.lower())], cmd  # bash runs each in a subshell: git stays in C
+        assert verdict(hook(clean.path, cmd)) is None, cmd
+    for tool, cmd in (("Bash", "cat x | cd %s; git branch b7" % l), ("terminal", "(cd %s); git branch b8" % l), ("PowerShell", "(Set-Location %s); git branch b9" % l)):
+        assert where(cmd, clean.path, tool) == both, (tool, cmd)  # the last pipeline command, a shell the hook cannot name, PowerShell
+        reason = verdict(hook(clean.path, cmd, tool=tool))
+        assert reason and NOMAN in reason, (tool, cmd, reason)
+    multi = tmp_path / "multi"
+    multi.mkdir()
+    for name in ("api", "web", "docs", "infra"):
+        make(multi, name)
+    assert verdict(hook(multi, "(cd api && git pull); (cd web && git pull); (cd docs && git pull); (cd infra && git pull)")) is None
+    p = make(tmp_path, "planned")
+    for sub in ("pkg/a", "pkg/b"):
+        (p.path / sub).mkdir(parents=True)
+    plan(guard, p, "agent/planned", "docs/planned.md")
+    cmd = "(cd pkg/a && git status -s); (cd pkg/b && git status -s); git switch -c agent/planned"
+    assert where(cmd, p.path, name="agent/planned") == [(False, P(p.path).lower())]  # no state names pkg/a/pkg/b
+    assert verdict(hook(p.path, cmd)) is None
+
+
+def test_a_cd_into_a_directory_the_same_and_chain_creates_is_followed(target, guard, tmp_path):
+    l = target
+    plan(guard, l, "agent/planned", "docs/planned.md")
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(l.path), str(origin)], check=True, capture_output=True, stdin=subprocess.DEVNULL)
+    wt = P(tmp_path / "wt-planned")
+    allowed = ["mkdir -p tmpdemo && cd tmpdemo && git init && git checkout -b main", "git init demo2 && cd demo2 && git switch -c main",
+               "git clone %s vendor-copy && cd vendor-copy && git checkout -b fix-123" % P(origin),
+               "mkdir -p out/site && cd out/site && git init -q && git checkout -q -b gh-pages"]
+    allowed += ["git clone %s && cd origin && git switch -c fix-2" % P(origin), "mkdir -p q/r && git -C q/r init && cd q/r && git switch -c fix-3",
+                "git init -b main -- s && cd s && git switch -c fix-4", "mkdir -p deep/er && cd deep && git init && git switch -c fix-5"]
+    for cmd in allowed:  # the chain made a new repository: it holds no lane, so nothing is judged there
+        assert verdict(hook(l.path, cmd)) is None, cmd
+    reason = verdict(hook(l.path, "mkdir -p build2 && cd build2 && git checkout -b unplanned-q"))  # git finds L from the new directory
+    assert reason and NOMAN in reason and "'unplanned-q'" in reason, reason
+    cr = records("Bash", "mkdir -p build2 && cd build2 && git checkout -b unplanned-q", l.path, "unplanned-q")[0]
+    assert cr["cwd"].follow[0] == "dir" and same_dir(cr["cwd"].prior, l.path)
+    reason = verdict(hook(l.path, "git worktree add %s -b agent/planned main && cd %s && git switch -c agent/sub" % (wt, wt)))
+    assert reason and NOMAN in reason and "'agent/sub'" in reason, reason  # judged in the repository the worktree belongs to
+    for cmd in ("cd nothere && git switch -c x1", "mkdir newpkg; cd newpkg; git init; git checkout -b main2"):
+        reason = verdict(hook(l.path, cmd))  # nothing earlier in the same && chain makes the target: the missing-directory rule
+        assert reason and UNPARSE in reason and "does not exist" in reason, (cmd, reason)
+    cmd = "mkdir -p d3 && cd d3 && git init; git switch -c y3"  # after the chain ends the commands are judged in L, and unresolved
+    crs = records("Bash", cmd, l.path, "y3")
+    assert len(crs) == 2 and sorted(isinstance(c["cwd"], G._Missing) for c in crs) == [False, True]
+    assert all(same_dir(getattr(c["cwd"], "prior", c["cwd"]), l.path) and not getattr(c["cwd"], "follow", None) for c in crs)
+    assert verdict(hook(l.path, cmd)) is not None
+
+
+def fast_branches(repo, names):
+    """One branch per name, each with a commit of its own on top of main (git fast-import: quick for many branches)."""
+    base = repo.git("rev-parse", "main")
+    stream = []
+    for n in names:
+        body = ("%s\n" % n).encode()
+        stream += [b"commit refs/heads/" + n.encode(), b"committer t <t@example.invalid> 1700000000 +0000", b"data 1", b"c", b"from " + base.encode(),
+                   b"M 100644 inline f/" + n.encode() + b".txt", b"data %d" % len(body), body]
+    repo.git("fast-import", "--quiet", inp=b"\n".join(stream) + b"\n")
+
+
+def test_a_creation_seen_in_several_states_is_judged_once_per_repository(guard, tmp_path, monkeypatch):
+    b = make(tmp_path, "big")
+    fast_branches(b, ["lane%02d" % k for k in range(40)])
+    for sub in ("pkg/a", "pkg/b", "pkg/c", "pkg/d"):
+        (b.path / sub).mkdir(parents=True)
+    plan(guard, b, "agent/big-planned", "docs/big.md")
+    c = make(tmp_path, "other")
+    gathered, judged = [], []
+    real_gather, real_parallel = G.gather, G.parallel
+    monkeypatch.setattr(G, "gather", lambda g, *a, **k: (gathered.append(P(g.common).lower()), real_gather(g, *a, **k))[1])
+    monkeypatch.setattr(G, "parallel", lambda g, *a, **k: (judged.append(P(g.common).lower()), real_parallel(g, *a, **k))[1])
+    creation = "git switch -c agent/big-planned"
+    ifs = "".join('if [ -n "$X" ]; then cd %s/pkg/%s; fi; ' % (P(b.path), x) for x in "abcd")
+    lines = {"one": creation, "five": ifs + creation, "two": "[ -d src ] && cd src; " + creation,
+             "six": ifs + 'if [ -n "$X" ]; then cd %s; fi; ' % P(c.path) + creation}
+    counts = {}
+    for key, cmd in lines.items():
+        del gathered[:], judged[:]
+        start = time.monotonic()
+        assert verdict(hook(b.path, cmd)) is None, key
+        counts[key] = (sorted(gathered), sorted(judged), time.monotonic() - start)
+    assert len(where(lines["five"], b.path)) == 5  # five records in one worktree
+    bkey = counts["one"][1][0]  # B's common directory as git names it
+    assert counts["one"][1] == [bkey] and counts["one"][0] and set(counts["one"][0]) == {bkey}
+    assert counts["five"][0] == counts["one"][0] == counts["two"][0]  # the same gathers as the one-state line
+    assert counts["five"][1] == counts["two"][1] == [bkey]  # judged once
+    others = [x for x in counts["six"][1] if x != bkey]
+    assert len(counts["six"][1]) == 2 and len(others) == 1 and [x for x in counts["six"][0] if x == bkey] == counts["one"][0]  # B once, C once
+    assert counts["five"][2] < time_budget(G.BUDGET_S), counts["five"][2]
+
+
+def diverged_clone(tmp_path, name="diverged"):
+    """A clone whose main is ahead 1 and behind 1 of origin/main (the integration target is uncertain), with no other branch, worktree or claim."""
+    origin = make(tmp_path, name + "-origin")
+    d = Repo(tmp_path / name)
+    subprocess.run(["git", "clone", "-q", str(origin.path), str(d.path)], check=True, capture_output=True, stdin=subprocess.DEVNULL)
+    d.commit("local.txt", "mine\n", msg="local")
+    origin.commit("remote.txt", "theirs\n", msg="remote")
+    d.git("fetch", "-q")
+    return d
+
+
+AUTO_PAYLOADS = [("Agent", None, {"prompt": "x", "isolation": "worktree"}), ("Task", None, {"prompt": "x", "isolation": "worktree"}),
+                 ("EnterWorktree", None, {}), ("mcp__ccd_session__start_session", None, {"use_worktree": True}),
+                 ("Bash", "gh pr checkout 12", {}), ("Bash", "claude --worktree", {})]
+
+
+def test_auto_named_creations_fall_back_to_a_cheap_lane_signal(target, tmp_path, monkeypatch):
+    d = diverged_clone(tmp_path)
+
+    def calls():
+        return [(tool, hook(d.path, cmd, tool=tool, **ti)) for tool, cmd, ti in AUTO_PAYLOADS]
+    for tool, r in calls():  # no claim, no other branch, no second worktree: allowed with the undecided warning
+        assert verdict(r, quiet=False) is None, (tool, r)
+        assert "TARGET_UNCERTAIN" in r.err and "auto-named creation is allowed" in r.err, (tool, r.err)
+    claim = d.path / ".git" / "magos" / "claims" / "agent" / "x.claim"
+    second = tmp_path / "second-wt"
+    signals = [(lambda: d.git("branch", "other"), lambda: d.git("branch", "-D", "other")),
+               (lambda: (claim.parent.mkdir(parents=True), claim.write_bytes(b"state=active\nv=1\nbranch=agent/x\nentry=docs/\n")), lambda: claim.unlink()),
+               (lambda: d.git("worktree", "add", "-q", "--detach", str(second)), lambda: d.git("worktree", "remove", "--force", str(second)))]
+    for make_signal, remove in signals:
+        make_signal()
+        for tool, r in calls():
+            reason = verdict(r, quiet=False)
+            assert reason and UNPLAN in reason and "TARGET_UNCERTAIN" in reason, (tool, reason)
+        remove()
+    monkeypatch.setattr(G, "gather", lambda *a, **k: (_ for _ in ()).throw(G.GitFail("BUDGET_EXCEEDED", "the comparison ran out of time")))
+    r = hook(target.path, None, tool="Agent", prompt="x", isolation="worktree")  # another branch exists: still denied
+    reason = verdict(r, quiet=False)
+    assert reason and UNPLAN in reason and "BUDGET_EXCEEDED" in reason
+
+
+# ---- escapes, the session directory, unmodelled GIT_DIR, routed tools ------------------------------------------------------------------
+def test_bash_backslash_escapes_are_removed_before_matching(target, guard, tmp_path):
+    a = target
+    b = make(tmp_path, "b")
+    b.branch_with("agent/b", "src/a.py")
+    cases = [(r"git switch -c feat\ure", "feature"), (r"git branch my\branch", "mybranch"), (r"git checkout -b hot\fix", "hotfix"),
+             (r"git worktree add ../wtz -b my\lane", "mylane"), (r"git swi\tch -c newx", "newx"), (r"g\it switch -c newy", "newy"),
+             (r"git --git-dir=%s/.git swi\tch -c newz" % P(b.path), "newz"), (r"bash -\c 'git branch e1'", "e1"),
+             (r"find . -exec git branch viafind \;", "viafind")]
+    for cmd, name in cases:
+        reason = verdict(hook(a.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    newz = records("Bash", cases[6][0], a.path, "newz")
+    assert [(c["redirect"], same_dir(c["gitdir"], b.path / ".git")) for c in newz] == [(True, True)]  # judged in B
+    for cmd in (r"git switch -c 'feat\ure'", r'git switch -c "feat\ure"'):
+        assert records("Bash", cmd, a.path) == [], cmd  # a quoted backslash survives: git refuses the name
+    q = make(tmp_path, "q")
+    plan(guard, q, "q", "docs/q.md")
+    reason = verdict(hook(q.path, r"git worktree add ../wt\q"))
+    assert reason and NOMAN in reason and "'wtq'" in reason, reason
+    r = make(tmp_path, "armed")
+    assert guard(r, "arm").rc == 0
+    for tool, cmd in (("Bash", r"git config --local ma\gos.guard off"), ("Bash", r"git conf\ig --local magos.guard off"),
+                      ("Bash", r"py -3 scripts/magos_guard.py ar\m"), ("Bash", r"rm .git\magos\ARMED"), ("PowerShell", r"Remove-Item .git\magos\ARMED")):
+        reason = verdict(hook(r.path, cmd, tool=tool))
+        assert reason and PROTECTED in reason, (tool, cmd, reason)
+    assert verdict(hook(r.path, r"git log --grep ma\gos.guard")) is None
+
+
+def test_a_tilde_session_directory_is_expanded(isolated_env, tmp_path):
+    home = isolated_env
+    t = make(home, "T")
+    t.branch_with("agent/t", "src/a.py")
+    empty, _ = session("empty", tmp_path)
+    tool = "mcp__terminal__run_in_terminal"
+    bodies = [{"tool_name": tool, "tool_input": {"command": "git branch rit3", "cwd": "~/T"}, "cwd": str(empty)},
+              {"tool_name": tool, "tool_input": {"command": "git worktree add ../wtT -b rit10", "cwd": "~/T"}, "cwd": str(empty)},
+              {"tool_name": tool, "tool_input": {"command": "git branch rit4", "workdir": "~/T"}, "cwd": str(empty)},
+              {"tool_name": "Bash", "tool_input": {"command": "git branch rit5"}, "cwd": "~/T"}]
+    if sys.platform == "win32":  # ~\ is a home spelling on Windows only
+        bodies.append({"tool_name": tool, "tool_input": {"command": "git branch rit7", "cwd": "~\\T"}, "cwd": str(empty)})
+    for body in bodies:
+        reason = verdict(hook_body(json.dumps(body).encode()))
+        assert reason and NOMAN in reason, body
+    body = {"tool_name": tool, "tool_input": {"command": "git branch rit6", "cwd": "T"}, "cwd": str(home)}
+    r = run(["--lang", "en", "hook", "claude", "pre-tool"], stdin=json.dumps(body).encode(), cwd=empty)  # the hook process runs elsewhere
+    assert NOMAN in (verdict(r) or "")  # the relative value is joined to the payload's cwd
+
+
+def test_unmodelled_git_dir_spellings_make_the_repository_unknown(target, guard, tmp_path):
+    a = P(target.path)
+    b = make(tmp_path, "clean")
+    c = make(tmp_path, "claimed")
+    plan(guard, c, "wrc12", "docs/w.md")
+    off = make(tmp_path, "off")
+    off.git("config", "--local", "magos.guard", "off")
+    lines = [("Bash", "read GIT_DIR <<< '%s/.git'; export GIT_DIR; git branch n11" % a), ("Bash", "IFS= read -r GIT_DIR <<< '%s/.git'; export GIT_DIR; git branch n25" % a),
+             ("Bash", "printf -v GIT_DIR '%%s' '%s/.git'; export GIT_DIR; git branch n12" % a), ("Bash", "export GIT_DIR+=%s/.git; git branch n15" % a),
+             ("Bash", "GIT_DIR+=%s/.git; export GIT_DIR; git branch n26" % a), ("Bash", "GIT_DIR+=%s/.git git branch n27" % a),
+             ("Bash", "builtin export GIT_DIR=%s/.git; git branch n29" % a), ("Bash", "command export GIT_DIR=%s/.git; git branch n30" % a),
+             ("Bash", "mapfile -t GIT_COMMON_DIR < f; git branch n31"), ("PowerShell", "Set-Content env:GIT_DIR '%s/.git'; git branch p2" % a),
+             ("PowerShell", "sc env:GIT_DIR '%s/.git'; git branch p19" % a), ("PowerShell", "Set-Content -Path Env:/GIT_DIR -Value '%s/.git'; git branch p20" % a)]
+    for cwd in (b.path, c.path, off.path):
+        for tool, cmd in lines:
+            reason = verdict(hook(cwd, cmd, tool=tool))
+            assert reason and REDIRECT in reason, (cwd, tool, cmd, reason)
+    for cmd in ("for GIT_DIR in '%s/.git'; do export GIT_DIR; git branch n40; done" % a, "export GIT_DIR; git branch n41",  # a value the walk never saw
+                "declare -n ref=GIT_DIR; ref=%s/.git; export GIT_DIR; git branch n42" % a):
+        assert [c for c in records("Bash", cmd, b.path) if c["redirect"] and c["gitdir"] is None], cmd
+        assert verdict(hook(b.path, cmd)) is not None, cmd
+    reason = verdict(hook(c.path, "printf -v GIT_DIR '%%s' '%s/.git'; export GIT_DIR; git worktree add %s -b wrc12" % (a, P(tmp_path / "wt-wrc12"))))
+    assert reason and REDIRECT in reason  # the claim in C does not cover a creation whose repository is unknown
+    assert verdict(hook(b.path, "read GIT_DIR <<< '%s/.git'; export GIT_DIR; git status" % a)) is None  # nothing is created
+    assert verdict(hook(b.path, "read X <<< y; git branch ok1")) is None
+    assert where("read X <<< y; git branch ok1", b.path) == [(False, P(b.path).lower())]
+
+
+def test_every_routed_tool_with_a_string_command_is_inspected(target, tmp_path):
+    empty, _ = session("empty", tmp_path)
+    a = str(target.path)
+    tools = ("mcp__serena__execute_shell_command", "mcp__iterm__write_to_terminal", "mcp__windows-mcp__Powershell-Tool", "mcp__terminal__open_terminal_tab",
+             "mcp__x__run_command", "mcp__gbrain__run_doctor")
+    for tool in tools:
+        reason = verdict(hook_input(empty, tool, command="git branch se1", cwd=a))
+        assert reason and NOMAN in reason and "'se1'" in reason, tool
+        for bad in (["git", "branch", "se1"], 7):
+            assert verdict(hook_input(empty, tool, command=bad, cwd=a)) is None, (tool, bad)
+    reason = verdict(hook(empty, "git -C %s branch se2" % P(target.path), tool="Agent", prompt="x"))
+    assert reason and NOMAN in reason and "'se2'" in reason
+    for tool, cmd, ti in (("Agent", "echo hi", {"isolation": "worktree", "prompt": "x"}), ("mcp__ccd_session__start_session", "x", {"use_worktree": True})):
+        reason = verdict(hook_input(empty, tool, command=cmd, cwd=a, **ti))  # the string command never replaces the tool's own judgement
+        assert reason and UNPLAN in reason, tool
+
+
+# ---- failures, snapshots that hide lanes, option spellings, pushes, refspecs, aliases, git's own commands --------------------------------
+def nested(command, depth=100000, **top):
+    """The raw bytes of a Bash payload with an extra key that holds arrays nested `depth` levels deep."""
+    head = json.dumps(dict({"tool_name": "Bash", "tool_input": {"command": command}}, **top))[:-1]
+    return (head + ', "x": ' + "[" * depth + "]" * depth + "}").encode()
+
+
+def guard_child(body, cwd):
+    """The guard's hook entry as a process of the running interpreter."""
+    return subprocess.run([sys.executable, "-X", "utf8", "-B", str(SCRIPT), "--lang", "en", "hook", "claude", "pre-tool"], input=body, capture_output=True,
+                          cwd=str(cwd), creationflags=NO_WINDOW, timeout=120)
+
+
+def run_launcher(half, launcher, words, env=None, inp=b"{}"):
+    """The launcher through cmd.exe (the Codex and Hermes entries on Windows) or through sh (Claude Code and the POSIX entries)."""
+    e = dict(os.environ, **(env or {}))
+    if half == "cmd":
+        return subprocess.run('cmd.exe /d /s /c ""%s" %s"' % (launcher, " ".join(words)), input=inp, capture_output=True, env=e, creationflags=NO_WINDOW,
+                              timeout=180)
+    return subprocess.run([SH, str(launcher)] + list(words), input=inp, capture_output=True, env=e, creationflags=NO_WINDOW, timeout=180)
+
+
+def launcher_halves():
+    return (["cmd"] if sys.platform == "win32" else []) + (["sh"] if SH else [])
+
+
+def is_deny(stdout):
+    return json.loads(stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_any_exception_on_a_lane_looking_payload_denies(target, tmp_path, monkeypatch):
+    lane = nested("git worktree add ../wt1 -b feat1", cwd=str(target.path))
+    p = guard_child(lane, tmp_path)  # the payload cannot be decoded (RecursionError); its bytes name git
+    assert p.returncode == 0 and is_deny(p.stdout), p
+    for half in launcher_halves():  # soft mode passes the deny through
+        r = run_launcher(half, ROOT / "hooks" / "run-guard.cmd", ["hook", "claude", "pre-tool"], inp=lane)
+        assert r.returncode == 0 and is_deny(r.stdout), (half, r.returncode, r.stdout[:200], r.stderr[-400:])
+    body = json.dumps(payload("Bash", "git worktree add ../w -b agent/crash", target.path)).encode()
+    for exc in (RecursionError("deep"), MemoryError(), KeyboardInterrupt()):
+        monkeypatch.setattr(G, "decide", lambda *a, _e=exc, **k: (_ for _ in ()).throw(_e))
+        reason = verdict(hook_body(body), quiet=False)
+        assert reason and "guard error" in reason and type(exc).__name__ in reason, exc
+    monkeypatch.setattr(G, "decide", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("kaput")))
+    monkeypatch.setattr(G, "extract", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("broken")))
+    assert "guard error" in (verdict(hook_body(body), quiet=False) or "")  # recognising fails too: the command text names git
+    paths = {"tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": "C:/x/.claude/git-work", "transcript_path": "C:/x/.claude/projects/git/t.jsonl"}
+    r = hook_body(json.dumps(paths).encode())
+    assert verdict(r, quiet=False) is None and "kaput" in r.err  # path fields never decide
+    r = run(["--lang", "en", "hook", "claude", "pre-tool"], stdin=b"{not json")  # nothing lane-like: allowed with a warning
+    assert r.rc == 0 and r.out.strip() == "{}" and "unparseable hook payload" in r.err, r
+    r = run(["--lang", "en", "hook", "claude", "pre-tool"], stdin=b"{not json: git branch x")
+    assert "unparseable hook payload" in (verdict(r) or "")
+    plain = nested("ls")  # no path, no prefilter word
+    p = guard_child(plain, tmp_path)
+    assert p.returncode == 0 and json.loads(p.stdout) == {} and b"warning" in p.stderr, p
+
+
+def test_too_many_claimants_and_truncated_remotes_engage_auto_mode(tmp_path, monkeypatch):
+    many = make(tmp_path, "many")
+    fast_branches(many, ["s%03d" % k for k in range(119)])
+    for count in (119, 121):  # 119: the unmerged branches are other lanes; 121: more than the snapshot analyses, which hides lanes
+        reason = verdict(hook(many.path, "git branch newlane"))  # quiet: engagement was decided, no undecided warning
+        assert reason and NOMAN in reason, count
+        reason = verdict(hook(many.path, None, tool="Agent", prompt="x", isolation="worktree"))
+        assert reason and UNPLAN in reason, count
+        if count == 119:
+            fast_branches(many, ["t0", "t1"])
+    g = G.open_repo(str(many.path))
+    assert [u["code"] for u in G.gather(g)["unknowns"]] == ["TOO_MANY_CLAIMANTS"] and G.parallel(g, g.top) == (True, None)
+    single = make(tmp_path, "single")
+    real = G.gather
+    monkeypatch.setattr(G, "gather", lambda g, *a, **k: (lambda s: dict(s, warnings=s["warnings"] + [{"code": "REMOTE_TRUNCATED", "text": "400 remotes"}]))(
+        real(g, *a, **k)))
+    reason = verdict(hook(single.path, "git branch newlane"))
+    assert reason and NOMAN in reason
+
+
+def test_bundled_and_abbreviated_branch_rename_options_are_creations(repo, guard, tmp_path):
+    for k in range(1, 7):
+        repo.git("branch", "f%d" % k)
+    assert guard(repo, "arm").rc == 0
+    before = branches(repo)
+    cases = [("git branch -mf f1 n1", "n1"), ("git branch -fm f2 n2", "n2"), ("git branch -cf main n3", "n3"), ("git branch -Mf f3 n4", "n4"),
+             ("git branch -Cf main n5", "n5"), ("git branch -qm f4 n6", "n6"), ("git branch --mov f5 n7", "n7"), ("git branch --cop main n8", "n8"),
+             ("git branch --force -m f6 n9", "n9"), ("git branch -mf x2", "x2"), ("git branch -cf x3", "x3"), ("git branch --mov x4", "x4")]
+    for cmd, name in cases:
+        reason = verdict(hook(repo.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    assert records("Bash", "git branch -uorigin/main", repo.path) == []  # -u takes the rest of the word as its value
+    assert [c["names"] for c in records("Bash", "git branch --co main x5", repo.path)] == [["main"]]  # --co is ambiguous: no new name
+    assert verdict(hook(repo.path, "git branch --co main x5")) is None
+    assert branches(repo) == before
+    auto = make(tmp_path, "auto")
+    plan(guard, auto, "lane1", "docs/l.md")
+    auto.git("worktree", "add", "-q", "-b", "lane1", str(tmp_path / "lane1-wt"), "main")
+    reason = verdict(hook(auto.path, "git branch -mf lane1 stolen"))
+    assert reason and NOMAN in reason and "'stolen'" in reason
+
+
+def test_short_option_values_written_together_are_names(target, guard, tmp_path):
+    for tool, cmd, name in (("Bash", "git switch -cstk1 main", "stk1"), ("Bash", "git checkout -bstk2 main", "stk2"), ("Bash", "git checkout -Bstk3 main", "stk3"),
+                            ("Bash", "git switch -Cstk4 main", "stk4"), ("Bash", "git checkout -qbstk10 main", "stk10"),
+                            ("Bash", "git checkout --orphan=orph1", "orph1"), ("PowerShell", "git switch -cstk7 main", "stk7"),
+                            ("Monitor", "git switch -cmon2 main", "mon2")):
+        reason = verdict(hook(target.path, cmd, tool=tool))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (tool, cmd, reason)
+    c = make(tmp_path, "claims")
+    plan(guard, c, "wt-stk5b", "docs/w.md")  # a claim for the directory name covers nothing: the branch is stk5b
+    reason = verdict(hook(c.path, "git worktree add -bstk5b %s" % P(tmp_path / "wt-stk5b")))
+    assert reason and NOMAN in reason and "'stk5b'" in reason, reason
+    for cmd in ("claude -wstk8", "claude --worktree=stk9"):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and UNPLAN in reason, cmd
+
+
+def test_a_push_into_a_local_repository_is_judged_there(target, tmp_path):
+    a = P(target.path)
+    b = make(tmp_path, "B")
+    off = make(tmp_path, "O")
+    off.git("config", "--local", "magos.guard", "off")
+    for cmd in ("git push ./ HEAD:refs/heads/psh1", "git push '%s' HEAD:psh2" % a, "git push file://%s HEAD:psh6" % a):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason, (cmd, reason)
+    reason = verdict(hook(target.path, 'git push "$PWD" HEAD:psh5'))
+    assert reason and UNPARSE in reason
+    assert where("git push ../B HEAD:pshb", target.path) == [(False, P(b.path).lower())]
+    assert verdict(hook(target.path, "git push ../B HEAD:pshb")) is None  # judged in B, which has a single lane
+    assert records("Bash", "git push origin HEAD:psh7", target.path) == []  # a remote: its repository is not resolved
+    assert where("git push B HEAD:pshw", tmp_path, name="pshw") == [(False, P(b.path).lower())]  # an existing directory names a repository
+    assert where("git push 'refs/heads/*:refs/heads/g-*'", target.path) == []  # no repository argument: no refspec to judge
+    globbed = records("Bash", "git push ../B 'refs/heads/*:refs/heads/g-*'", target.path)
+    assert [(c["dynamic"], P(c["cwd"]).lower()) for c in globbed] == [(True, P(b.path).lower())]
+    for cwd, name in ((b.path, "psh3"), (off.path, "psh8")):  # from another repository, also one that is off
+        reason = verdict(hook(cwd, "git push '%s' HEAD:%s" % (a, name)))
+        assert reason and NOMAN in reason and "'%s'" % name in reason and "--repo" in reason, (cwd, reason)
+
+
+def test_glob_refspecs_are_dynamic_creations(target, tmp_path):
+    target.git("branch", "feat-x")
+    target.git("branch", "feat-y")
+    single = make(tmp_path, "single")
+    for cmd in ("git fetch . 'refs/heads/feat-*:refs/heads/cp-*'", "git push . 'refs/heads/*:refs/heads/x-*'", "git fetch origin '+refs/heads/*:refs/heads/*'"):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and UNPARSE in reason and "glob refspec" in reason, (cmd, reason)
+        assert verdict(hook(single.path, cmd)) is None, cmd  # not engaged
+    reason = verdict(hook(target.path, "git fetch . feat-x:cpx2"))
+    assert reason and NOMAN in reason and "'cpx2'" in reason
+
+
+def test_git_global_options_with_separate_values_are_skipped(target, tmp_path):
+    b = make(tmp_path, "b")
+    b.branch_with("agent/b", "src/a.py")
+    cases = [("git --attr-source HEAD branch atr1", "atr1"), ("git --attr-source HEAD worktree add %s -b atr2" % P(tmp_path / "wt-atr2"), "atr2"),
+             ("git --namespace ns branch atr3", "atr3"), ("git --config-env core.x=ENV branch atr4", "atr4"), ("git --super-prefix sub/ branch atr5", "atr5"),
+             ("git -c a.b=c branch atr6", "atr6"), ("git --attr-source HEAD --git-dir=%s/.git branch atr7" % P(b.path), "atr7")]
+    for cmd, name in cases:
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    assert [(c["redirect"], same_dir(c["gitdir"], b.path / ".git")) for c in records("Bash", cases[-1][0], target.path, "atr7")] == [(True, True)]
+
+
+def test_aliases_are_expanded_in_every_git_invocation(target):
+    target.git("config", "--local", "alias.co", "checkout")
+    for cmd, name in (("git switch main && git co -b al1", "al1"), ("git checkout main; git co -b al3 main", "al3"), ("git branch main; git co -b al9", "al9"),
+                      ("git co -b al2", "al2")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    assert verdict(hook(target.path, "git status && git co main")) is None
+
+
+def test_text_git_runs_for_rebase_exec_and_bisect_run_is_inspected(target, tmp_path):
+    target.commit("docs/two.md", "two\n", msg="second")
+    clean = make(tmp_path, "clean")
+    for cmd, name in (("git rebase -q -x 'git branch rbx1' HEAD~1", "rbx1"), ("git rebase --exec 'git branch rbx2' HEAD~1", "rbx2"),
+                      ("git rebase --exec='git branch rbx3' HEAD~1", "rbx3"), ("git bisect run git branch rbx4", "rbx4"),
+                      ("git bisect run sh -c 'git branch rbx5'", "rbx5")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    assert verdict(hook(target.path, "git rebase -x 'make test' HEAD~1")) is None
+    for cmd, name in (("git rebase -s ours -x 'git branch rbx7' HEAD~1", "rbx7"), ("git rebase -qx'git branch rbx8' HEAD~1", "rbx8"),
+                      ("git rebase -Xours -S -x 'git branch rbx9' HEAD~1", "rbx9")):
+        assert [n for c in records("Bash", cmd, target.path) for n in c["names"]] == [name], cmd
+    cmd = "git -C %s rebase -x 'git branch rbx6' HEAD~1" % P(clean.path)
+    assert where(cmd, target.path) == [(False, P(clean.path).lower())]  # the directory of the invocation
+    assert verdict(hook(target.path, cmd)) is None
+
+
+# ---- the launcher, user-only commands, audit records, the tamper filter ---------------------------------------------------------------
+def test_launcher_words_start_wrappers_and_double_dash_hide_no_user_only_command(guard, tmp_path):
+    armed = make(tmp_path, "armed")
+    assert guard(armed, "arm").rc == 0
+    plain = make(tmp_path, "plain")
+    launcher = ROOT / "hooks" / "run-guard.cmd"
+    q = '"'
+    denied_lines = []
+    for lw in (P(launcher), P(launcher).upper(), P(launcher).replace("/", "\\")):
+        denied_lines += [("Bash", "cmd /c start %s%s /min /wait cmd /c call %s disarm --repo %s" % (q, q, lw, P(armed.path))), ("Bash", "%s%s%s disarm" % (q, lw, q)),
+                         ("Bash", "%s%s%s --strict arm" % (q, lw, q)), ("Bash", "sh '%s' install --host codex --allow-downgrade" % lw),
+                         ("PowerShell", "& %s%s%s install --host codex" % (q, lw, q))]
+    denied_lines += [("PowerShell", "Start-Process py -ArgumentList '-3 %s disarm'" % P(SCRIPT)), ("Bash", "py -3 scripts/magos_guard.py -- install --host codex"),
+                     ("Bash", "py -3 scripts/magos_guard.py --repo=. -- arm"),
+                     ("Bash", "py -3 scripts/magos_guard.py --json -- override --fingerprint abcdefabcdef --reason x")]
+    for cwd in (armed.path, plain.path):
+        for tool, cmd in denied_lines:
+            reason = verdict(hook(cwd, cmd, tool=tool))
+            assert reason and "user-only" in reason, (cwd, tool, cmd, reason)
+        for cmd in ("%s%s%s hook claude pre-tool" % (q, P(launcher), q), "py -3 scripts/magos_guard.py -- list", "py -3 scripts/magos_guard.py -- version"):
+            assert verdict(hook(cwd, cmd)) is None, (cwd, cmd)
+
+
+LAUNCH_STUB = '''import os, sys
+with open(os.environ["STUB_LOG"], "a") as log:
+    log.write(" ".join(sys.argv[1:]) + "\\n")
+sys.stdin.buffer.read()
+sys.stdout.write("ok|" + " ".join(sys.argv[1:]))
+'''
+ONLY_HOOK = "MAGOS guard: the launcher runs only the hook subcommand; run other commands with the guard script itself in your own terminal"
+
+
+def launcher_layout(tmp_path, stub):
+    """A copy of the launcher whose guard script is `stub`."""
+    base = tmp_path / "pkg"
+    (base / "hooks").mkdir(parents=True)
+    (base / "scripts").mkdir()
+    shutil.copy(str(ROOT / "hooks" / "run-guard.cmd"), str(base / "hooks" / "run-guard.cmd"))
+    (base / "scripts" / "magos_guard.py").write_bytes(stub.encode("utf-8"))
+    return base / "hooks" / "run-guard.cmd"
+
+
+def test_launcher_runs_only_the_hook_subcommand(tmp_path):
+    halves = launcher_halves()
+    if not halves:
+        pytest.skip("neither cmd.exe nor sh is available")
+    launcher = launcher_layout(tmp_path, LAUNCH_STUB)
+    log = tmp_path / "starts.log"
+    for half in halves:
+        for words in (["disarm"], ["install", "--host", "codex"], ["--strict", "arm"], ["version"], ["doctor"], ["--lang", "en", "hook", "claude", "pre-tool"]):
+            r = run_launcher(half, launcher, words, env={"STUB_LOG": str(log)})
+            assert r.returncode == 2 and ONLY_HOOK in r.stderr.decode("utf-8", "replace"), (half, words, r)
+            assert not log.exists(), (half, words)  # the guard never started
+        for words in (["hook", "claude", "pre-tool"], ["--strict", "hook", "claude", "pre-tool"]):
+            r = run_launcher(half, launcher, words, env={"STUB_LOG": str(log)})
+            assert r.returncode == 0 and r.stdout.strip() == b"ok|hook claude pre-tool", (half, words, r)
+        assert log.read_text(encoding="utf-8").splitlines() == ["hook claude pre-tool"] * 2, half
+        log.unlink()
+
+
+def test_arm_disarm_and_install_append_audit_records(repo, guard, tmp_path):
+    home = tmp_path / "home"
+    log = os.path.join(G.store(G.open_repo(str(repo.path))), "audit.log")
+
+    def store_records():
+        with open(log, encoding="utf-8") as fh:
+            return [json.loads(x) for x in fh.read().splitlines()]
+    for args in (["arm", "--dry-run"], ["disarm", "--dry-run"], ["install", "--host", "codex", "--home", str(home), "--dry-run"]):
+        assert guard(repo, *args).rc == 0, args
+    assert not os.path.exists(log) and not (home / "audit.log").exists()  # a dry run appends nothing
+    assert guard(repo, "arm").rc == 0 and guard(repo, "disarm").rc == 0
+    recs = store_records()
+    assert [r["op"] for r in recs] == ["arm", "disarm"] and all(r.get("ts") and r.get("by") for r in recs), recs
+    first = guard(repo, "install", "--host", "codex", "--home", str(home))
+    second = guard(repo, "install", "--host", "codex", "--home", str(home))
+    assert first.rc == 0 and second.rc == 0 and "unchanged" in second.out
+    recs = [json.loads(x) for x in (home / "audit.log").read_text(encoding="utf-8").splitlines()]
+    assert len(recs) == 2 and all(r["op"] == "install" and r["host"] == "codex" and r["to"] == G.GUARD_VERSION and r.get("ts") and r.get("source")
+                                  for r in recs), recs
+    assert recs[0]["from"] == "none" and recs[1]["from"] == G.GUARD_VERSION  # the unchanged install is recorded as well
+
+
+def test_tamper_filter_covers_rename_cmdlets_child_shells_and_the_hermes_plugin(guard, tmp_path):
+    armed = make(tmp_path, "armed")
+    assert guard(armed, "arm").rc == 0
+    plain = make(tmp_path, "plain")
+    q = '"'
+    lines = [("PowerShell", "Rename-Item -Path .git/magos/ARMED -NewName ARMED.off"), ("PowerShell", "Rename-Item .git/magos/ARMED x"),
+             ("PowerShell", "ri .git/magos/ARMED"), ("PowerShell", "rni .git/magos/ARMED gone"), ("PowerShell", "mi .git/magos/ARMED gone"),
+             ("PowerShell", "powershell -Command %sRemove-Item .git/magos/ARMED%s" % (q, q)), ("PowerShell", r"cmd /c del .git\magos\ARMED"),
+             ("PowerShell", r"cmd /c rmdir /s /q .git\magos"), ("Bash", "bash -c 'rm .git/magos/ARMED'"), ("Bash", "sh -c %sunlink .git/magos/ARMED%s" % (q, q)),
+             ("Bash", "bash -c 'git config --local magos.guard off'")]
+    for tool, cmd in lines:
+        reason = verdict(hook(armed.path, cmd, tool=tool))
+        assert reason and PROTECTED in reason, (tool, cmd, reason)
+    assert PROTECTED in (verdict(hook(plain.path, "bash -c 'git config --local magos.guard off'")) or "")  # magos.* is denied everywhere
+    encoded = base64.b64encode("Remove-Item .git/magos/ARMED".encode("utf-16-le")).decode("ascii")
+    assert PROTECTED in (verdict(hook(armed.path, "powershell -NoProfile -EncodedCommand %s" % encoded, tool="PowerShell")) or "")
+    assert PROTECTED not in (verdict(hook(armed.path, "powershell -EncodedCommand !!!not-base64", tool="PowerShell")) or "")  # nothing decodes
+    plugin = Path(os.environ["HERMES_HOME"]) / "plugins" / "magos"
+    for rel in ("hooks/run-guard.cmd", "scripts/magos_guard.py"):
+        (plugin / rel).parent.mkdir(parents=True, exist_ok=True)
+        (plugin / rel).write_bytes(b"x\n")
+    claimed = make(tmp_path, "claimed")
+    plan(guard, claimed, "agent/c", "docs/c.md")
+    launcher, script = P(plugin / "hooks" / "run-guard.cmd"), P(plugin / "scripts" / "magos_guard.py")
+    for cmd in ("rm -f %s%s%s" % (q, launcher, q), "echo x > %s%s%s" % (q, script, q)):
+        reason = verdict(hook(claimed.path, cmd))
+        assert reason and PROTECTED in reason, (cmd, reason)
+    for cmd in ("cat %s%s%s" % (q, launcher, q), "cat %s%s%s" % (q, script, q)):
+        assert verdict(hook(claimed.path, cmd)) is None, cmd
+
+
+def test_mcp_tools_without_a_command_are_answered_without_parsing(target, monkeypatch):
+    opened, ran = [], []
+    real_open, real_run = G.open_repo, G.Git.run
+    monkeypatch.setattr(G, "open_repo", lambda p: (opened.append(p), real_open(p))[1])
+    monkeypatch.setattr(G.Git, "run", lambda self, *a, **k: (ran.append(a), real_run(self, *a, **k))[1])
+    for tool, ti in (("mcp__gbrain__get_page", {"slug": "x"}), ("mcp__x__shell", {}), ("mcp__terminal__read_terminal", {"lines": 50})):
+        assert verdict(hook(target.path, None, tool=tool, **ti)) is None, tool
+    assert opened == [] and ran == []  # no repository opened, no git run
+    reason = verdict(hook(target.path, None, tool="mcp__ccd_session__start_session", use_worktree=True))
+    assert reason and UNPLAN in reason
+    reason = verdict(hook(target.path, None, tool="mcp__github__create_branch", branch="feat-q"))
+    assert reason and NOMAN in reason and "'feat-q'" in reason
+
+
+def test_read_only_uses_of_guard_paths_open_no_repository(repo, guard, tmp_path, monkeypatch):
+    plan(guard, repo, "agent/c", "docs/c.md")
+    home = Path(os.environ["MAGOS_HOME"])
+    (home / "guard" / "scripts").mkdir(parents=True)
+    (home / "guard" / "VERSION.json").write_bytes(b"{}\n")
+    (home / "guard" / "scripts" / "magos_guard.py").write_bytes(b"x\n")
+    h, out = P(home), P(tmp_path / "out")
+    listed = tmp_path / "MAGOS-checkout" / "docs"
+    listed.mkdir(parents=True)
+    store = P(G.store(G.open_repo(str(repo.path))))
+    opened = []
+    real_open = G.open_repo
+    monkeypatch.setattr(G, "open_repo", lambda p: (opened.append(p), real_open(p))[1])
+    for tool, cmd in (("Bash", "cp %s/guard/VERSION.json %s/v.json" % (h, out)), ("Bash", "cp %s/guard/scripts/magos_guard.py ./g.py" % h),
+                      ("PowerShell", "Copy-Item -Path %s/guard/VERSION.json -Destination ./v.json" % h), ("Bash", "ls %s > %s/ls.txt" % (P(listed), out))):
+        del opened[:]
+        assert verdict(hook(repo.path, cmd, tool=tool)) is None, cmd
+        assert opened == [], (cmd, opened)  # a read of the guard's paths opens no repository
+    for tool, cmd in (("Bash", "cp %s/v.json %s/guard/VERSION.json" % (out, h)), ("Bash", "cp -t %s/guard x" % h),
+                      ("PowerShell", "Copy-Item x -Destination %s/guard/x" % h), ("Bash", "ln %s/guard/scripts/magos_guard.py %s/g.py" % (h, out)),
+                      ("Bash", "ln -s %s/guard/scripts/magos_guard.py %s/g.py" % (h, out)), ("Bash", "cp -l %s/guard/scripts/magos_guard.py %s/g.py" % (h, out)),
+                      ("Bash", "cp --link %s/guard/scripts/magos_guard.py %s/g.py" % (h, out)), ("Bash", "cp --target-directory=%s/guard x" % h),
+                      ("Bash", "cp -t%s/guard x" % h), ("Bash", "cp --target-directory %s/guard x" % h), ("Bash", "cp -rt %s/guard x" % h),
+                      ("Bash", "cp --target %s/guard x" % h)):
+        reason = verdict(hook(repo.path, cmd, tool=tool))
+        assert reason and PROTECTED in reason, (cmd, reason)  # a write into the guard home, or a link that a later write could follow
+    del opened[:]
+    reason = verdict(hook(repo.path, "cp x %s/claims/l.claim" % store))
+    assert reason and PROTECTED in reason and len(opened) == 1, (reason, opened)
+
+
+def git_bash():
+    """Git for Windows' bash (not the WSL launcher), or None."""
+    for cand in (r"C:\Program Files\Git\bin\bash.exe", shutil.which("bash")):
+        if cand and os.path.isfile(cand):
+            p = subprocess.run([cand, "-c", "uname -s"], capture_output=True, stdin=subprocess.DEVNULL, creationflags=NO_WINDOW, timeout=60)
+            if p.stdout.startswith((b"MINGW", b"MSYS")):
+                return cand
+    return None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the cmd half of the launcher")
+def test_cmd_half_passes_the_guard_stderr_through(tmp_path):
+    bash = git_bash()
+    if not bash:
+        pytest.skip("no Git Bash to run the launcher as hooks.json does")
+    stub = 'import sys\nsys.stdin.buffer.read()\nsys.stderr.write("MAGOS guard warning: could not decide whether another lane exists (stub)\\n")\nsys.stdout.write("{}")\n'
+    launcher = launcher_layout(tmp_path, stub)
+    r = subprocess.run([bash, "-c", '"%s" hook claude pre-tool' % P(launcher)], input=b"{}", capture_output=True, creationflags=NO_WINDOW, timeout=180)
+    assert r.returncode == 0 and r.stdout.strip() == b"{}" and b"could not decide whether another lane exists (stub)" in r.stderr, r
+    d = diverged_clone(tmp_path)
+    body = json.dumps(payload("Bash", "git switch -c feature/x", d.path)).encode()
+    r = subprocess.run([bash, "-c", '"%s" hook claude pre-tool' % P(ROOT / "hooks" / "run-guard.cmd")], input=body, capture_output=True,
+                       env=dict(os.environ, MAGOS_LANG="en"), creationflags=NO_WINDOW, timeout=180)
+    assert r.returncode == 0 and json.loads(r.stdout) == {}, r
+    assert b"could not decide whether another lane exists" in r.stderr and b"TARGET_UNCERTAIN" in r.stderr, r.stderr
+
+
+def test_escapes_of_every_shell_and_git_aliases_hide_no_creation_or_tamper_word(target, guard, tmp_path):
+    a = target
+    reason = verdict(hook(a.path, "cmd /c git switch -c feat^ure", tool="PowerShell"))  # cmd removes the caret
+    assert reason and NOMAN in reason and "'feature'" in reason, reason
+    for cmd in (r"git switch -c feat\ure", r"git sw\itch -c newq"):  # a shell the hook cannot name may remove the backslash: dynamic
+        reason = verdict(hook(a.path, cmd, tool="terminal"))
+        assert reason and UNPARSE in reason, (cmd, reason)
+    if sys.platform == "win32":  # there the backslashes of a path are separators: the path stays a path
+        cmd = r"git -C %s worktree add ..\wtn -b agent/wtn" % str(a.path)
+        reason = verdict(hook(a.path, cmd, tool="terminal"))
+        assert reason and NOMAN in reason and UNPARSE not in reason, reason
+        plan(guard, a, "agent/wtn", "docs/wtn.md")
+        assert verdict(hook(a.path, cmd, tool="terminal")) is None
+    armed, plain = make(tmp_path, "armed"), make(tmp_path, "plain")
+    assert guard(armed, "arm").rc == 0
+    for r in (armed, plain):
+        r.git("config", "--local", "alias.cfg", "config")
+        for tool, cmd in (("PowerShell", "git config --local ma`gos.guard off"), ("PowerShell", "cmd /c git config --local ma^gos.guard off"),
+                          ("Bash", "git -c alias.x=config x --local magos.guard off"), ("Bash", "git cfg --local magos.guard off")):
+            reason = verdict(hook(r.path, cmd, tool=tool))
+            assert reason and PROTECTED in reason, (r.path, tool, cmd, reason)
+    for tool, cmd in (("Bash", r"rm .git/ma\gos/ARMED"), ("PowerShell", "Remove-Item .git/ma`gos/ARMED")):
+        reason = verdict(hook(armed.path, cmd, tool=tool))
+        assert reason and PROTECTED in reason, (tool, cmd, reason)
+    for cmd in ("git commit -m 'git config --local magos.guard off'", "git log --grep ma^gos.guard", "git config --get magos.guard"):
+        assert verdict(hook(armed.path, cmd)) is None, cmd

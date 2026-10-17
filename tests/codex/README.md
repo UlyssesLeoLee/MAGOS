@@ -19,6 +19,15 @@ These checks verify that Codex skill metadata, inline help, command contracts, a
 python -X utf8 tests/codex/contracts/test_agent_plugin.py
 ```
 
+Run the lane guard suite, and the coverage gate of the CI coverage job:
+
+```powershell
+python -m pytest tests/codex/guard -q -p no:cacheprovider
+python -X utf8 tests/codex/coverage_gate.py
+```
+
+`coverage_gate.py` runs the `coverage_commands` of `.quality/qguard.json` exactly as written and exits 1 unless every source file the quality hook counts (tracked code outside `tests/` and the tool directories) and the project as a whole have line coverage strictly above `min_coverage_exclusive` (90); `--report-only` judges the report that is already there. Guard tests that need a POSIX `sh` skip where none is on PATH, and no test depends on the name of the temporary directory.
+
 Validate that the temporary Git fixtures are constructed correctly without using Codex:
 
 ```powershell
@@ -42,6 +51,6 @@ python -X utf8 tests/codex/run_host_cases.py --host hermes --case 'git-integrate
 
 The runner installs the package as project-local skills (`.agents/skills/MAGOS/`), runs `hermes skills trust` for the fixture, and removes the trust afterwards with `hermes skills untrust`. It then restores the original `config.yaml` bytes if the parsed config is otherwise unchanged; `hermes_trust.json` records the result. Until then the original bytes are kept in `config.yaml.magos-backup` beside `config.yaml` in the Hermes home, never in this repository, and the next run restores them after an interrupted one. `--fixture-check` runs `hermes_probe.py` with Hermes's own Python and never calls a model. The probe verifies three things: every slash command resolves to the fixture copy, `skills_guard` does not report "dangerous", and the rendered slash message carries the skill directory and the arguments. The runner finds Hermes's Python read-only: it asks Hermes for its launcher interpreter with `hermes --print-runtime-command`, then has that interpreter print `pm.environments.project_python` for the install directory reported by `hermes --version` (this covers installs whose dependency environment lives under `<hermes home>/installs/<id>/environments/`). If Hermes cannot answer, it falls back to `<install directory>/venv/Scripts/python.exe` or `venv/bin/python`; with neither, every case is `UNVERIFIED`. Runtime cases send that rendered message through `hermes -z`, because one-shot mode does not expand slash commands. Help cases stay `UNVERIFIED`: one-shot output has no tool trace, so "no repository inspection" cannot be checked. Evidence goes to `evidence/fixture-check-hermes/` and `evidence/host-hermes/`.
 
-Note: the committed `host-codex` evidence predates the installed-layout fix (the runner then copied only `skills/<x>` and `references/`, so `../../SKILL.md` was missing in every fixture). Treat those results as stale until the Codex cases are rerun.
+Note: the committed `host-codex` evidence comes from fixtures that held only `skills/<x>` and `references/`, without `../../SKILL.md`; it does not count as a runtime pass, and a new run of the Codex cases replaces it.
 
 The case manifest covers every command (GitConverge only through `git-converge/help`, GitSweep only through `git-sweep/help`; their source-contract cases are in `tests/claude/contracts/cases.json`, and neither has runtime behavior cases), required and optional arguments, branch and worktree targets, all integration strategies, acceptance gates, cleanup preview/apply, and stale-state rechecks. Codex CLI tests verify skill selection and behavior; they do not measure the gray hint rendering in the desktop composer.

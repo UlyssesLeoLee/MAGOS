@@ -80,7 +80,7 @@ def test_arm_refusals(repo, guard):
 def test_disarm_restores_a_foreign_hook(repo, guard):
     hook_path(repo).parent.mkdir(exist_ok=True)
     marker = repo.path.parent / "foreign.log"
-    hook_path(repo).write_text('#!/bin/sh\necho "$1" >> "%s"\ncat >/dev/null\n' % str(marker).replace("\\", "/"), encoding="utf-8", newline="\n")
+    hook_path(repo).write_bytes(('#!/bin/sh\necho "$1" >> "%s"\ncat >/dev/null\n' % str(marker).replace("\\", "/")).encode("utf-8"))
     assert guard(repo, "arm").rc == 0
     assert (hook_path(repo).parent / "reference-transaction.magos-prev").is_file()
     repo.git("tag", "t1")  # a non-creation transaction: the foreign hook still runs (prepared, committed)
@@ -194,7 +194,7 @@ def test_doctor(repo, guard):
     assert guard(repo, "arm").rc == 0
     r = guard(repo, "doctor")
     assert r.rc == 0 and "mode armed" in r.out and "self-test ok" in r.out and "branch __magos_selftest" not in repo.git("branch", "--list")
-    hook_path(repo).write_text(hook_path(repo).read_text(encoding="utf-8") + "\n# edited\n", encoding="utf-8", newline="\n")
+    hook_path(repo).write_bytes((hook_path(repo).read_text(encoding="utf-8") + "\n# edited\n").encode("utf-8"))
     r = guard(repo, "doctor")
     assert r.rc == 1 and "different from this version" in r.out
     hook_path(repo).unlink()
@@ -207,7 +207,7 @@ def test_doctor_reports_a_broken_backstop(repo, guard):
     assert guard(repo, "arm").rc == 0
     # a hook that vetoes nothing leaves the self-test branch behind: doctor must notice and clean it up
     text = G.HOOK_SH.replace("exit 1; }", "exit 0; }", 1)
-    hook_path(repo).write_bytes(text.encode("utf-8"))  # LF as is (Path.write_text takes newline= only from 3.10)
+    hook_path(repo).write_bytes(text.encode("utf-8"))  # LF as is
     monkey = G.HOOK_SH
     G.HOOK_SH = text
     try:

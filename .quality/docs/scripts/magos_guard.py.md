@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `e9dee9ebc124edebcc15cea3c98c4bf2f36168e731994e8e59662739ee0058d0`
+Source-SHA256: `6ac912ff7227221000978f04d459e6233a5e2bee86e730160ffe993332c721a7`
 
 ## Responsibility
 
@@ -383,8 +383,8 @@ read as well.
   `GUARD_VERSION`). Every install that is not a dry run then rewrites `guard/VERSION.json` (also when the copy was
   unchanged) with `{version, sha256, source, installed_at}` of the copied guard and appends one JSON line (`ts`, `op`
   `install`, `host`, `from`, `to`, `source`) to `<home>/audit.log`. `--dry-run` prints what it would copy and the snippet
-  and writes nothing. It writes the exact host snippet to `guard/generated/<host>.json|yaml` and prints it. It never
-  edits `~/.claude/settings.json`, `~/.codex/hooks.json` or Hermes config. The Codex snippet matches
+  and writes nothing. It writes the exact host snippet to `guard/generated/<host>.json|yaml` and prints it.
+  It never edits `~/.claude/settings.json`, `~/.codex/hooks.json` or Hermes config. The Codex snippet matches
   `Bash|mcp__.*(start_session|worktree|branch|hand_off_to_session)` and runs `sh '<launcher>' hook codex pre-tool`
   (`commandWindows`: `& '<launcher>' hook codex pre-tool; exit $LASTEXITCODE`), timeout 25; the launcher path is quoted
   for each shell, every `'` written `'\''` in the sh form and `''` in the PowerShell form. The Claude snippet, whose

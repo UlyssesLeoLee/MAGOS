@@ -28,16 +28,15 @@ G = _load()
 Result = namedtuple("Result", "rc out err")
 
 
-def _find_sh():
-    """The POSIX sh the launcher and git-layer tests run: sh on PATH, else Git for Windows' own sh.  Git's bin/sh.exe is a wrapper
-    that puts /usr/bin on PATH, so the real usr/bin/sh.exe beside it is preferred: a test that empties PATH must get a shell
-    without coreutils."""
-    found = shutil.which("sh")
-    for c in ([found] if found else []) + [r"C:\Program Files\Git\usr\bin\sh.exe", r"C:\Program Files\Git\bin\sh.exe"]:
-        if c and os.path.isfile(c):
-            real = os.path.join(os.path.dirname(os.path.dirname(c)), "usr", "bin", "sh.exe")
-            return real if os.path.basename(os.path.dirname(c)).lower() == "bin" and os.path.isfile(real) else c
-    return None
+def _find_sh(path=None):
+    """The POSIX sh the launcher and git-layer tests run: the sh on PATH (`path`, default the process PATH), else None, and the sh tests
+    then skip.  Git for Windows' bin/sh.exe is a wrapper that puts /usr/bin on PATH, so the real usr/bin/sh.exe beside it is preferred:
+    a test that empties PATH must get a shell without coreutils."""
+    found = shutil.which("sh", path=path)
+    if not found:
+        return None
+    real = os.path.join(os.path.dirname(os.path.dirname(found)), "usr", "bin", "sh.exe")
+    return real if os.path.basename(os.path.dirname(found)).lower() == "bin" and os.path.isfile(real) else found
 
 
 SH = _find_sh()  # None when no POSIX sh exists: the sh tests skip

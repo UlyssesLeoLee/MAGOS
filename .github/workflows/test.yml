@@ -1,8 +1,9 @@
 name: tests
 
 # The guard suite, the package contract suite and both source-contract runners on the minimum Python (3.9), on 3.12 and
-# on 3.14 (the python3 the hooks run under), on Windows and on Linux; plus the version agreement of every version
-# statement and of a release tag. Actions are pinned by full commit SHA (the tag is in the comment).
+# on 3.14 (the python3 the hooks run under), on Windows and on Linux; the coverage gate of .quality/qguard.json on
+# Windows with Python 3.12; and the version agreement of every version statement and of a release tag. Every job has
+# read-only permissions and reads no secret. Actions are pinned by full commit SHA (the tag is in the comment).
 
 on:
   push:
@@ -93,3 +94,22 @@ jobs:
             printf '%s\n' "$changes"
             exit 1
           fi
+
+  coverage:
+    name: coverage (windows-latest, Python 3.12)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install the test runner and coverage
+        run: python -m pip install "pytest==9.1.1" "PyYAML==6.0.3" "coverage==7.16.2"
+      - name: The coverage commands of .quality/qguard.json; every source file and the project above 90 percent
+        run: python -X utf8 tests/codex/coverage_gate.py

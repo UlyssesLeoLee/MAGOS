@@ -217,7 +217,7 @@ ENTRY = "skills/git-orchestrator/SKILL.md"
 RECON_DESCRIPTION = 'description: "查看仓库状态（只读）；/git-recon [--remote] [--help]."'
 SHORT = 'short-description: "查看仓库状态；$git-recon [--remote] [--help]."'
 ROOT_DESCRIPTION = 'description: "Automatically use for'
-ROOT_COMPATIBILITY = ("Requires Git 2.30+ or harness-native workspace isolation; "
+ROOT_COMPATIBILITY = ("Requires Git 2.30+ (Git 2.36+ for the lane guard) or harness-native workspace isolation; "
                       "intended for Agent Skills-compatible coding agents.")
 # Characters that bring the root description to exactly 1024, computed so that rewording SKILL.md keeps the
 # boundary cases on the boundary.
@@ -229,7 +229,7 @@ def edit(relative: str, old: str, new: str):
         path = root / relative
         text = path.read_text(encoding="utf-8")
         assert old in text, (relative, old)
-        path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="")
+        path.write_bytes(text.replace(old, new, 1).encode("utf-8"))  # LF as read_text left it
     return apply
 
 

@@ -792,10 +792,10 @@ MAGOS 带有车道守卫（`scripts/magos_guard.py`）：创建分支或工作�
 - **在哪里生效。**Claude Code 插件会启用 PreToolUse 钩子（`hooks/hooks.json` 调用 `hooks/run-guard.cmd`，再由它运行 `scripts/magos_guard.py`），作用于在 Claude Code 里打开的每个仓库。Codex 与 Hermes 的插件安装不会启用钩子：请在自己的终端里运行 `py -3 scripts/magos_guard.py install --host codex`（或 `--host hermes`；macOS / Linux 用 `python3`），再把它打印的条目合并进宿主配置。在某个仓库里运行 `arm` 后，Git 的 `reference-transaction` 兜底会否决任何工具用 git 创建的、没有清单的新分支。
 - **模式。**AUTO（默认）：命名的工作树创建总是需要清单，只建分支的创建仅在已有其他车道时需要，所以只有一个工作树、没有未合并分支的仓库不受影响。ARMED（`arm` 之后）：每个新分支都需要清单，钩子与 Git 都检查。OFF：`git config --local magos.guard off`。
 - **关闭。**`git config --local magos.guard off`（单个仓库），`claude plugin disable magos`（整个 Claude Code 插件），或在宿主进程的环境里设置 `MAGOS_GUARD=off`。
-- **要求。**Python 3.9+（`py -3`、`python3` 或 `python`）与 Git 2.36+；`magos_guard.py doctor` 会检查两者，`magos_guard.py version` 输出正在运行的守卫版本。
-- **只有你**能在真实终端里运行 `override`、`arm`、`disarm`、`install`；代理尝试运行时会被钩子拒绝。
-- **每次升级之后。**重启正在运行的 Claude Code 会话；为 Codex 与 Hermes 重新运行 `install`（`doctor` 会打印确切的命令）。
-- **限制。**钩子读的是命令文本；找不到 Python 或守卫脚本时放行调用；Git 兜底看不到分支改名与复制（`git branch -m/-c`）。全部限制见 `references/lane-split.md` 第 12 节。
+- **要求。**Python 3.9+（`py -3`、`python3` 或 `python`）与 Git 2.36+（其他 MAGOS 命令需要 Git 2.30+）；`magos_guard.py doctor` 会检查两者，`magos_guard.py version` 输出正在运行的守卫版本。
+- **只有你**能在真实终端里运行 `override`、`arm`、`disarm`、`install`；代理尝试运行时会被钩子拒绝，钩子启动器也只运行钩子。在新控制台窗口里启动的命令也能通过控制台检查，所以控制台检查与覆盖都不是访问控制。
+- **每次升级之后。**重启正在运行的 Claude Code 会话；为 Codex 与 Hermes 重新运行 `install`（`doctor` 会打印确切的命令；用 `install --home <目录>` 装的副本，运行 `doctor --home <目录>`）。
+- **限制。**钩子读的是命令文本；找不到 Python 或守卫脚本时放行调用；Git 兜底看不到分支改名与复制（`git branch -m/-c`），钩子则在任何选项写法下都拒绝它们。全部限制见 `references/lane-split.md` 第 12 节。
 
 ---
 
@@ -842,7 +842,7 @@ Skill 可以通过语义自动触发。除多 Agent 协作和各种“互相覆�
 |---|---|---|
 | Claude Code | 在会话里输入 `/plugin marketplace add UlyssesLeoLee/MAGOS`，再输入 `/plugin install magos@magos` | `/plugin marketplace update magos`，然后 `/plugin update magos@magos`，再重启每一个正在运行的 Claude Code 会话 |
 | Codex | `codex plugin marketplace add UlyssesLeoLee/MAGOS`，再 `codex plugin add magos@magos` | `codex plugin marketplace upgrade magos`，然后再执行一次 `codex plugin add magos@magos`，再重启 Codex 并刷新守卫副本（`install --host codex`） |
-| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `hermes plugins update magos`（安全扫描要求确认时改用 `hermes plugins install UlyssesLeoLee/MAGOS --force --enable`），再重启 Hermes |
+| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `hermes plugins update magos`（安全扫描要求确认时改用 `hermes plugins install UlyssesLeoLee/MAGOS --force --enable`；固定版本的安装改为移动固定点，见“固定版本”），再重启 Hermes |
 
 Claude Code 也可以在终端里执行：`claude plugin marketplace add UlyssesLeoLee/MAGOS && claude plugin install magos@magos`。
 
@@ -857,7 +857,7 @@ Claude Code 也可以在终端里执行：`claude plugin marketplace add Ulysses
 - 插件宿主只加载 `skills/` 下的 Skill，不加载根目录的 `SKILL.md`，所以插件里多了一个入口 Skill `git-orchestrator`，它会去读根目录的 `SKILL.md`。用同步脚本或 clone 到 Skill 目录的安装方式不需要它，同步脚本也不会复制它。
 - 版本号写在清单里，Claude Code 只有在版本号变化时才会更新已安装的插件。正在运行的会话继续使用它启动时那个版本的钩子，所以更新后要重启每一个会话。
 - Claude Code 的插件安装会同时启用车道守卫钩子，Codex 与 Hermes 的插件安装不会（见“车道守卫”）。各平台的升级细节（包括守卫副本与回滚）见 `references/installation.md`，每个版本的变化见 `CHANGELOG.md`。
-- Hermes 显示“custom (unreviewed) source”是正常的：本仓库还没有进入 Hermes 官方插件目录。进入官方目录需要仓库所有者向 NousResearch/hermes-agent 提交 PR（固定到某个 commit SHA），之后就能用 `hermes plugins install magos` 安装。
+- Hermes 显示“custom (unreviewed) source”是正常的：MAGOS 不在 Hermes 官方插件目录里。列入官方目录需要仓库所有者向 NousResearch/hermes-agent 提交 PR（固定到某个 commit SHA）；列入官方目录的插件可以用 `hermes plugins install magos` 安装。
 - 已经用旧方式装过的，请先删掉旧安装，避免同一套命令出现两次：`~/.claude/commands/Git*.md`、`~/.claude/skills/magos`、Codex 的 `~/.agents/skills/MAGOS`、Hermes 的 `skills/multi-agent-git-orchestrator`。
 
 ### 固定版本
@@ -867,10 +867,10 @@ Claude Code 也可以在终端里执行：`claude plugin marketplace add Ulysses
 ```bash
 claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.2    # 然后：claude plugin install magos@magos
 git clone --branch v1.0.2 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.2 的 40 位 commit SHA> --enable
+hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.2 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
 ```
 
-固定版本收不到之后的修复，包括守卫的安全修复：请关注 `CHANGELOG.md` 并移动固定点。如何查到 commit SHA、如何固定 Codex 与同步脚本安装，见 `references/installation.md`。
+固定版本收不到之后的修复，包括守卫的安全修复：请关注 `CHANGELOG.md` 并移动固定点。标签的 commit SHA 是 `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.2 "refs/tags/v1.0.2^{}"` 输出里 `refs/tags/v1.0.2^{}` 那一行的 SHA（没有这一行时取 `refs/tags/v1.0.2` 那一行）。Hermes 把带 `--ref` 的安装记为固定：`hermes plugins update magos` 会拒绝它，不带 `--ref` 的 `hermes plugins install UlyssesLeoLee/MAGOS --force` 会重装原来固定的提交。移动固定点用 `--ref <新的 SHA> --force --enable`；要重新跟随默认分支，先 `hermes plugins remove magos`，再 `hermes plugins install UlyssesLeoLee/MAGOS --enable`。细节以及如何固定 Codex 与同步脚本安装，见 `references/installation.md`。
 
 ### Claude Code：clone 到 Skill 目录
 
@@ -1063,7 +1063,7 @@ GitRecommend
 
 仓库根目录有 `.claude-plugin/`（Claude Code 的 `plugin.json` 和 Claude Code、Codex 共用的 `marketplace.json`）和 Hermes 的 `plugin.yaml`、`__init__.py`，故意没有 `.codex-plugin/` 或 `.cursor-plugin/`。Codex 一看到这类文件夹就会给 Skill 加上插件名前缀，所以**把仓库直接 `git clone` 到 Codex 的 Skill 目录时，命令会变成 `$magos:git-recon` 这样的名字**。Codex 和 Hermes 请用同步脚本安装：它只复制 `SKILL.md`、`references/` 和 `skills/`，不会带上 `.claude-plugin/`，命令名仍是 `$git-recon`、`/git-recon`。只有根目录的 `plugin.json` 不会触发改名。
 
-一处已知的偏差：规范第 8 节要求“只给某一个工具用的文件”放进以反向域名命名的文件夹（例如 `com.example.client/`）。`commands/` 只给 Claude Code 用，`plugin.yaml` 和 `__init__.py` 只给 Hermes 用，却都放在顶层。插件工具会直接忽略它，不影响导入；要挪动它，安装脚本和大量测试都得跟着改，所以暂时留在原处。
+一处已知的偏差：规范第 8 节要求“只给某一个工具用的文件”放进以反向域名命名的文件夹（例如 `com.example.client/`）。`commands/` 只给 Claude Code 用，`plugin.yaml` 和 `__init__.py` 只给 Hermes 用，却都放在顶层。插件工具会直接忽略它们，不影响导入；安装脚本和测试都按顶层路径使用它们。
 
 改版本号时，`plugin.json`、`.claude-plugin/plugin.json` 和 `plugin.yaml` 的 `version`，`SKILL.md` 与 `skills/git-orchestrator/SKILL.md` 的 `metadata.version`，`scripts/magos_guard.py` 的 `GUARD_VERSION`，以及 `references/commands.md` 第 3 行要一起改（源码契约与守卫测试会检查它们是否一致），并在 `CHANGELOG.md` 里写上这个版本的一节。发布前的检查：
 
@@ -1074,7 +1074,7 @@ python -X utf8 tests/codex/contracts/test_agent_plugin.py
 python -m pytest tests/codex/guard -q -p no:cacheprovider
 ```
 
-前两条运行全部源码契约用例（包括检查插件格式的 `package/agent-plugin`），不写任何文件，有失败时以退出码 1 结束；第三条故意制造各种错误（清单写错、版本号对不上、文件夹里多出链接等），确认检查真的能把它们找出来；第四条运行车道守卫的测试。`.github/workflows/test.yml` 在 Windows 与 Linux、Python 3.9 / 3.12 / 3.14 上运行这四项，并检查发布标签 `v<版本号>` 与包的版本号一致。
+前两条运行全部源码契约用例（包括检查插件格式的 `package/agent-plugin`），不写任何文件，有失败时以退出码 1 结束；第三条故意制造各种错误（清单写错、版本号对不上、文件夹里多出链接等），确认检查真的能把它们找出来；第四条运行车道守卫的测试。`.github/workflows/test.yml` 在 Windows 与 Linux、Python 3.9 / 3.12 / 3.14 上运行这四项；在 Windows 与 Python 3.12 上运行 `.quality/qguard.json` 的覆盖率命令，任何源文件或整个项目的行覆盖率不高于 90% 时失败；并检查发布标签 `v<版本号>` 与包的版本号一致。
 
 ---
 

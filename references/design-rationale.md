@@ -40,7 +40,7 @@ The orchestrator decides whether to accept a whole lane, a subset, or nothing. I
 
 ## Version numbering
 
-The package was versioned 3.x internally before its first public release. That release is **1.0** (`plugin.json` 1.0.0, `SKILL.md` `metadata.version` "1.0"), so the numbers restart. Section labels such as "(v3.2)", "(v3.3)" and "(v3.4)" in this file, `pressure-tests.md`, and the tests name the pre-release design iterations in which a feature was added; they are history, not the current version.
+The package carries one version number, the plugin version (`plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` `metadata.version` and the lane guard's `GUARD_VERSION`); `CHANGELOG.md` lists every version and its tag. The skill releases before the plugin were numbered 3.x, and the tag `v1.0` marks the skill release 3.4.0, not a plugin version; plugin versions start at 1.0.0, which has no tag. Section labels such as "(v3.2)", "(v3.3)" and "(v3.4)" in this file, `pressure-tests.md`, and the tests name the 3.x skill version that introduced a feature; they are not the current version.
 
 ## Proactive repository reconnaissance (v3.2)
 
@@ -52,7 +52,7 @@ The advice model distinguishes **observed**, **recorded**, **inferred**, and **u
 
 ## Branch strategy guidance
 
-The skill used to handle branches only after work had started: lane planning, sync, integration, cleanup. It had no layer for the branching model itself, and a question such as "what branch strategy should we use?" matched neither the activation text nor any reference.
+Lane planning, sync, integration and cleanup act on branches once work has started. The branch-strategy layer covers the branching model itself: choosing, auditing or changing a repository's model, and questions such as "what branch strategy should we use?", which the activation text names explicitly.
 
 **Why the skill does not prescribe a model.** Gitflow, trunk-based, release-line, and per-owner staging layouts all work when the parallel-writer invariants hold. A skill that pushed one of them would override repository policy, the same overreach the merge-strategy rule avoids. `references/branch-strategy.md` therefore classifies what the repository actually does, tests it against a fit checklist, and keeps the smallest-change principle. It gives a default model only when none exists, and states that the default is the smallest model satisfying the invariants, not a preference.
 

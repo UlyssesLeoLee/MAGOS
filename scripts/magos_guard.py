@@ -44,7 +44,9 @@ HOOKED_TOOLS = {
     "isolation": ("Agent", "Task", "Workflow"),  # create a worktree when called with isolation: worktree
     "strict": ("EnterWorktree",),  # creates a worktree itself (the strict hook group)
     "mcp_session": ("start_session", "worktree", "branch", "hand_off_to_session"),  # MCP tools (name contains) that start work in a worktree
-    "mcp_shell": ("run_in_terminal", "terminal", "shell", "exec_command", "execute_command", "start_process"),  # MCP tools (short name) that run a command
+    # MCP tools (name contains) that may run a command: the matcher routes them; the guard inspects every MCP tool whose command is a string
+    "mcp_shell": ("run_in_terminal", "terminal", "shell", "exec_command", "execute_command", "start_process", "command", "run_command", "exec", "execute",
+                  "process", "bash", "powershell", "cmd"),
 }
 SHELL_TOOLS = HOOKED_TOOLS["shell"] + HOOKED_TOOLS["host_shell"]
 EXIT = {"OK": 0, "OVERRIDDEN": 0, "CONFLICT": 10, "NO_MANIFEST": 10, "UNPLANNABLE": 10, "UNPARSEABLE": 10, "PROTECTED": 10, "UNKNOWN": 11,
@@ -72,6 +74,8 @@ M = {
     "undecided_auto": ("由工具自己命名的创建被拒绝。", "the auto-named creation is denied."),
     "undecided_claims": ("仓库有有效登记，按登记核对这次创建。", "the repository holds an open claim, so the creation is judged."),
     "undecided_allow": ("AUTO 模式放行这个只建分支的创建。", "auto mode allows this branch-only creation."),
+    "undecided_auto_allow": ("没有其他 lane 的迹象（有效登记、其他本地分支或其他工作树），放行这个由工具自己命名的创建。",
+                             "no claim, other local branch or other worktree exists, so the auto-named creation is allowed."),
     "unplannable": ("MAGOS 拒绝：{why} 由工具自己命名分支或工作树，无法事先登记。请先登记分支 worktree-<名称>（plan --branch worktree-<名称>），再调用 EnterWorktree name=<名称>；"
                     "或自己 git worktree add 后在其中工作；必须用这个工具时，请用户执行 git config --local magos.guard off。没有创建任何东西。",
                     "MAGOS DENIES: {why} names the branch or worktree itself, so it cannot be planned. Plan the branch worktree-<name> first (plan --branch worktree-<name>), "
@@ -94,6 +98,9 @@ M = {
                 "{cmd} release --branch <their branch> (unmerged work is never released); (4) only with the user's explicit consent, "
                 "the USER runs in their own terminal: {cmd} override --fingerprint {fp} --reason \"<user's words>\"; the override takes effect only through plan, "
                 "so a re-plan is required."),
+    "newer_only": ("只有能读取该格式的 MAGOS 才能处理这份登记：请升级本守卫（doctor 显示版本，install 刷新副本），或用写入它的那个 MAGOS 执行这条命令。",
+                   "Only a MAGOS that reads that format can act on this claim: upgrade this guard (doctor shows its version, install refreshes the copy), "
+                   "or run this command with the MAGOS that wrote it."),
     "ok_plan": ("MAGOS：已登记「{b}」的 manifest（{n} 条）。现在可以创建，例如：{example}",
                 "MAGOS: registered the manifest of '{b}' ({n} entries). You may now create it, e.g.: {example}"),
     "ok_check": ("MAGOS：预览通过，没有发现重叠（未登记）。", "MAGOS: preview passed, no overlap found (nothing registered)."),
@@ -103,6 +110,9 @@ M = {
     "invalid": ("MAGOS：manifest 无效，未登记：\n{errors}", "MAGOS: the manifest is invalid, nothing registered:\n{errors}"),
     "blocked": ("MAGOS：拒绝 release：分支仍有未合并的工作，或其工作树有未提交的修改。", "MAGOS: release refused: the branch has unmerged work or its worktree has uncommitted changes."),
     "blocked_newer": ("MAGOS：拒绝 release：{why}", "MAGOS: release refused: {why}"),
+    "blocked_format": ("MAGOS：拒绝 release：登记文件 {f} 的格式行无法识别（可能由更新版本的 MAGOS 写入）；请升级本守卫，或由用户检查该文件。",
+                       "MAGOS: release refused: the claim file {f} has a format line this guard cannot read (a newer MAGOS may have written it); "
+                       "upgrade this guard, or let the user inspect the file."),
     "blocked_alias": ("MAGOS：拒绝 release：「{b}」的登记存放在 {f}，不在它自己的路径上；请用户手工检查后删除。",
                       "MAGOS: release refused: the claim of '{b}' is stored in {f}, not at its own path; the user must inspect and remove it by hand."),
     "released": ("MAGOS：已释放「{b}」的登记。", "MAGOS: released the claim of '{b}'."),
@@ -308,7 +318,9 @@ def render(lang, v, name):
             L.append(T(lang, "ev_decl", k=k, t=_few(e["theirs"]), m=_few(e["matched"])) if e["kind"] == "declared"
                      else T(lang, "ev", k=k, n=len(e["files"]), f=_few(e["files"]), m=_few(e["matched"])))
     L += ["[%s] %s" % (u["code"], u["text"]) for u in v.get("unknowns", [])]
-    if v["decision"] == "deny" and v.get("fingerprint"):
+    if v["decision"] == "deny" and v.get("unknowns") and all(u["code"] == "CLAIM_NEWER_FORMAT" for u in v["unknowns"]):
+        L.append(T(lang, "newer_only"))  # no shrink, wait, release or override: only a guard that reads that format can act on the claim
+    elif v["decision"] == "deny" and v.get("fingerprint"):
         L.append(T(lang, "options", target=v.get("target", {}).get("name", "?"), cmd=guard_cmd(), fp=v["fingerprint"]))
     return "\n".join(L + ["(%s) %s" % (w["code"], w["text"]) for w in v.get("warnings", [])])
 
@@ -340,10 +352,14 @@ def _lex(cmd, sh=None):
     PowerShell (..)) is no scope mark, also where it stands after a separator, and the command that word belongs to goes on after it; a
     segment that starts inside such a parenthesis is marked `sub`.  A ')' read into a word while a group is the innermost open parenthesis
     closes that group after the segment.  Inside `case`, a pattern ends at its ')' and an arm at ';;', ';&' or ';;&'; pattern words are
-    dropped."""
+    dropped.  Escapes follow the shell that runs the text: in bash (POSIX quoting) a backslash outside quotes removes itself and makes the
+    next character a literal part of the word (`feat\\ure` is `feature`, `\\;` stays in the word), and inside double quotes it is removed
+    only before $, a backtick, '"', a backslash and a newline; in cmd a caret outside double quotes does the same; PowerShell and a shell
+    the hook cannot name keep their backslashes (path separators there)."""
     segs, cur, parens, close, cases, at = [], [], [], [False], [], [0, False]  # at: offset of the segment's first word, and whether it is substituted
     st = {"w": [], "dyn": False, "has": False, "open": False, "q": False, "b": 0, "kw": True, "inword": 0}  # kw: cur holds reserved words only
-    kw, ps = sh not in ("ps", "cmd"), sh == "ps"
+    kw, ps, posix = sh not in ("ps", "cmd"), sh == "ps", sh == "bash"
+    escape = "\\" if posix else "^" if sh == "cmd" else None  # the character that quotes the next one outside quotes
 
     def flush():
         if cur:
@@ -396,6 +412,13 @@ def _lex(cmd, sh=None):
     while i < n:
         c, mode = cmd[i], cases[-1] if cases else None
         nxt, prev = cmd[i + 1:i + 2], cmd[i - 1:i]
+        if c == escape and nxt:  # an escaped character: literal, part of the word, never special (an escaped word is no reserved word)
+            if not st["has"] and not cur:
+                at[:] = [i, st["inword"] > 0]
+            st["w"].append(nxt)
+            st["has"], st["q"] = True, True
+            i += 2
+            continue
         if mode == "pat" and c in ")|" and st["w"] == list("esac") and not st["q"]:  # `esac)` / `esac|`: the case ends before the ')' or '|'
             word_end()
             mode = cases[-1] if cases else None
@@ -417,7 +440,7 @@ def _lex(cmd, sh=None):
             elif c == "&":
                 if nxt == "&":
                     mark, i = "&&", i + 1
-                elif prev not in "<>|" and nxt != ">" and (cur or st["has"]):
+                elif prev not in "<>|" and nxt != ">" and (cur or st["has"] or (segs and segs[-1] in (")", "}", "K)"))):  # also `{ .. } &`, `( .. ) &`
                     mark = "&"
             elif c in ";\n":
                 mark, arm = ";", c == ";" and mode == "body" and nxt in (";", "&")  # the end of a case arm: ;; ;& ;;&
@@ -439,12 +462,19 @@ def _lex(cmd, sh=None):
         elif c in "'\"":
             j = i + 1
             while j < n and cmd[j] != c:
-                j += 2 if (c == '"' and cmd[j] in "\\`" and j + 1 < n and cmd[j + 1] == '"') else 1
+                if posix and c == '"' and cmd[j] == "\\" and j + 1 < n:
+                    j += 2
+                else:
+                    j += 2 if (c == '"' and cmd[j] in "\\`" and j + 1 < n and cmd[j + 1] == '"') else 1
             body = cmd[i + 1:j]
             if not st["has"] and not cur:
                 at[:] = [i, st["inword"] > 0]
-            st["w"].append(body.replace('`"', '"').replace('\\"', '"') if c == '"' else body)
-            st["has"], st["dyn"], st["open"], st["q"] = True, st["dyn"] or (c == '"' and bool(re.search(r"[$`]", body))), st["open"] or "(" in body, True
+            if c == '"' and posix:
+                text, dyn = _dq_posix(body)
+            else:
+                text, dyn = (body.replace('`"', '"').replace('\\"', '"'), bool(re.search(r"[$`]", body))) if c == '"' else (body, False)
+            st["w"].append(text)
+            st["has"], st["dyn"], st["open"], st["q"] = True, st["dyn"] or dyn, st["open"] or "(" in body, True
             i = j
         else:
             if not st["has"] and not cur:
@@ -465,6 +495,22 @@ def _lex(cmd, sh=None):
     return segs
 
 
+def _dq_posix(body):
+    """The text of a double-quoted POSIX-shell string and whether it is dynamic: a backslash is removed only before $, a backtick, '"', a
+    backslash and a newline; an unescaped $ or backtick expands."""
+    out, dyn, k = [], False, 0
+    while k < len(body):
+        ch = body[k]
+        if ch == "\\" and k + 1 < len(body) and body[k + 1] in '$`"\\\n':
+            out.append(body[k + 1])
+            k += 2
+            continue
+        dyn = dyn or ch in "$`"
+        out.append(ch)
+        k += 1
+    return "".join(out), dyn
+
+
 def split_command(cmd):
     """Split a shell / PowerShell command line into segments of (word, dynamic); quotes honoured, backslashes kept."""
     return [e for e in _lex(cmd) if isinstance(e, list)]
@@ -478,8 +524,17 @@ _KEYWORDS = ("if", "then", "else", "elif", "do", "while", "until", "!", "time", 
 _SHELLS = ("bash", "sh", "zsh", "dash", "ksh")
 _KNOWN = ("git", "gh", "gt", "claude", "cd", "pushd", "chdir", "set-location", "sl", "powershell", "pwsh", "cmd", "eval", "iex", "invoke-expression",
           "start-process", "set-alias", "sal", "find") + _SHELLS
-_ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
-_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"}
+_ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")  # NAME=value, and NAME+=value (appends to a value the hook may not know)
+# The global options of git that take the next word as their value: the word after the value is the subcommand.
+_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env", "--attr-source", "--super-prefix", "--list-cmds"}
+# The words that decide whether a command line is walked at all, read on the text with every escape character removed (g\it is git).
+_GATE = re.compile(r"git|gh|gt|claude|eval|iex|invoke-expression|\.sh|\.ps1|source|-enc|base64", re.I)
+
+
+def _gated(text):
+    return _GATE.search(re.sub(r"[\\`^]", "", text)) is not None
+
+
 # What may stand between a pipe and the shell that reads it: prefix assignments, wrappers and their options (an option may take one value).
 # Every word excludes the separators | ; &, so one attempt never runs past the next pipe; an option's value is never a wrapper or an
 # assignment, so each word has one reading and the patterns stay linear in the command length.
@@ -509,12 +564,17 @@ def _norm_path(p):
 
 class _Missing(str):
     """A directory a cd / pushd / chdir / Set-Location / sl named that does not exist when the hook runs.  The shell stays where it was:
-    `.prior` is that directory, where the following commands run (the creation is then judged there, unresolved)."""
+    `.prior` is that directory, where the following commands run (the creation is then judged there, unresolved).  `.follow` is set
+    while an earlier element of the same && chain creates the directory, so the later elements of that chain run inside it: (kind, data,
+    token of the frame whose chain made it) with kind "new" after git init / git clone (a new repository holds no lane), "wt" after git
+    worktree add (data: the directory it ran in) and "dir" after mkdir (data: the path; git finds the repository of its nearest existing
+    ancestor)."""
+    follow = None
 
 
-def _missing(target, prior):
+def _missing(target, prior, follow=None):
     m = _Missing(target)
-    m.prior = prior
+    m.prior, m.follow = prior, follow
     return m
 
 
@@ -560,7 +620,13 @@ def _gd_name(word):
     """The spelling of GIT_DIR or GIT_COMMON_DIR that `word` (NAME or NAME=value) names, or None.  POSIX: exactly that name.  Windows:
     any case, because git reads the process environment without regard to case (Git Bash still keeps each spelling as its own variable)."""
     name = word.split("=", 1)[0]
+    name = name[:-1] if "=" in word and name.endswith("+") else name  # NAME+=value
     return name if name in _REDIRECTS or (os.name == "nt" and name.upper() in _REDIRECTS) else None
+
+
+def _appends(word):
+    """NAME+=value: the result depends on a value the hook cannot see."""
+    return word.split("=", 1)[0].endswith("+") and "=" in word
 
 
 def _gd_kind(name):
@@ -606,14 +672,24 @@ class _GitDirs(dict):
         self[name] = (value, dyn, prev[2] if exported is None else exported)
 
     def export(self, dialect, name, flag):
-        """bash export NAME (flag True) or export -n NAME (flag False)."""
+        """bash export NAME (flag True) or export -n NAME (flag False).  Exporting a name whose value the walk never saw exports a value set
+        where the walker does not look (a for loop, an unmodelled assignment): the repository is unknown from here on."""
         cur = self.get(name)
         if cur is None:
+            if flag and dialect == (self.sh or dialect):
+                self.unknown(name)
             return
         if dialect == self.sh:
             self[name] = (cur[0], cur[1], flag)
         elif not flag and cur[2] is True:
             self[name] = (cur[0], cur[1], None)
+
+    def unknown(self, name):
+        """A change written in a spelling the walker does not model (read, printf -v, +=, builtin export, Set-Content Env: ...): from here
+        on git's repository is unknown, so a creation is denied with the redirect message."""
+        for k in self._same(name, True):
+            del self[k]
+        self[name] = ("$" + name, True, True)
 
     def remove(self, dialect, name):
         """unset NAME, Remove-Item Env:NAME, $env:NAME = $null, set NAME= ..."""
@@ -644,31 +720,111 @@ def _expand(cr):
 
 def _cr(verb, names, cwd, dynamic, kind="branch", path=None, tool=False, commit=None):
     """A creation record.  kind: worktree (named worktree), branch (branch only) or auto (the tool names the worktree itself).
-    A name is dropped when git would refuse it anyway (spaces, '..', a leading dash ...).
+    A name is dropped when git would refuse it anyway (spaces, '..', a leading dash, a backslash that quoting kept ...).
     redirect: True when the record is judged in the git directory `gitdir` (--git-dir / GIT_DIR; None: it cannot be resolved)."""
     names = [n for n in names if _BAD_NAME.search(n) is None or re.search(r"[$`%()]", n)]
     return {"verb": verb, "names": names, "cwd": cwd, "dynamic": dynamic or any(re.search(r"[$`%()]", n) for n in names), "kind": kind, "path": path, "tool": tool,
             "commit": commit, "redirect": False, "gitdir": None}
 
 
-def _wt_branch_flag(tok):
-    return tok in ("-b", "-B") or re.fullmatch(r"-[a-zA-Z]*[bB]", tok) is not None
+def _short_value(tok, letters):
+    """git's reading of a short-option word: the letters of `-xyz` from left to right, and at the first letter that takes a value (one of
+    `letters`) the rest of the word is the value ('' when the value is the next word).  None: the word holds no such letter."""
+    if len(tok) < 2 or tok[0] != "-" or tok[1] == "-":
+        return None
+    for k in range(1, len(tok)):
+        if tok[k] in letters:
+            return tok[k + 1:]
+    return None
 
 
-def _create_flag(tok, sub):
-    """Is `tok` an option of `git switch|checkout` that creates a branch?  Long options match by unique prefix (--crea), short ones may be bundled (-fc)."""
+def _create_opt(tok, sub):
+    """The branch name an option of `git switch|checkout` that creates a branch carries: '' when the name is the next word, None when `tok`
+    is no such option.  Long options match by unique prefix (--crea) and carry `=<name>`; short ones may be bundled (-fc) and carry the
+    name written after the creating letter (-cNAME, -qbNAME)."""
     longs, shorts = (("create", "force-create", "orphan"), "cC") if sub == "switch" else (("orphan",), "bB")
     if tok.startswith("--"):
         key = tok[2:].split("=", 1)[0]
-        return len(key) >= 3 and any(name.startswith(key) for name in longs)
-    return tok.startswith("-") and any(ch in tok[1:] for ch in shorts)
+        if len(key) >= 3 and any(name.startswith(key) for name in longs):
+            return tok.split("=", 1)[1] if "=" in tok else ""
+        return None
+    return _short_value(tok, shorts)
 
 
-def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None):
+def _branch_moves(args):
+    """Does `git branch` rename or copy?  A short-option word holding m, M, c or C before a letter that takes a value (-u), or a long option
+    of at least three letters that is a prefix of exactly one of --move and --copy."""
+    for t in args:
+        if t.startswith("--"):
+            key = t[2:].split("=", 1)[0]
+            if len(key) >= 3 and sum(full.startswith(key) for full in ("move", "copy")) == 1:
+                return True
+        elif t.startswith("-"):
+            for ch in t[1:]:
+                if ch in "mMcC":
+                    return True
+                if ch == "u":
+                    break
+    return False
+
+
+def _push_target(word, here):
+    """The directory a `git push` repository argument names when it is a local repository (`./x`, `../x`, an absolute or drive path, a
+    file:// URL, a word that names an existing directory); None for a remote name or another URL (the branch is created in the remote's
+    repository, which the hook does not resolve); '' when the directory cannot be resolved."""
+    w = word
+    if w.lower().startswith("file://"):
+        w = w[7:]
+        if re.match(r"/[A-Za-z]:", w):
+            w = w[1:]
+    elif not (w in (".", "..") or w.startswith(("./", "../", ".\\", "..\\", "/", "\\", "~")) or re.match(r"[A-Za-z]:[\\/]", w)):
+        t = _join(here, w) if here is not None and not re.search(r"[:@]", w) else None
+        return t if t and os.path.isdir(t) else None
+    return _join(here, w) or ""
+
+
+_GLOB_WHY = "a glob refspec creates branches whose names the hook cannot list"
+_PUSH_WHY = "the repository a push writes to is dynamic"
+
+
+def _requote(words, dyn):
+    """Words back into a command line: a literal word that holds a space or a shell character is quoted; a dynamic word stays as written."""
+    return " ".join(shlex.quote(w) if not d and re.search(r"[\s'\"$`;&|<>()\\]", w) else w for w, d in zip(words, dyn))
+
+
+def _rebase_exec(args):
+    """The command texts `git rebase` runs: the value of -x / --exec / --exec= (also bundled, -qx <cmd>, and attached, -x<cmd>)."""
+    out, k = [], 0
+    while k < len(args):
+        t = args[k]
+        if t == "--exec" and k + 1 < len(args):
+            out.append(args[k + 1])
+            k += 1
+        elif t.startswith("--exec="):
+            out.append(t[7:])
+        elif t.startswith("-") and not t.startswith("--"):
+            for j in range(1, len(t)):
+                if t[j] == "x":
+                    if t[j + 1:]:
+                        out.append(t[j + 1:])
+                    elif k + 1 < len(args):
+                        out.append(args[k + 1])
+                        k += 1
+                    break
+                if t[j] in "sXCS":  # an option that takes a value: the rest of the word (or the next word) is its value
+                    k += 1 if not t[j + 1:] and t[j] != "S" else 0
+                    break
+        k += 1
+    return out
+
+
+def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=None):
     """One `git ...` invocation -> list of creation records.  `gitdir` holds the GIT_DIR and GIT_COMMON_DIR values the environment may give
     this invocation (_GitDirs.cands()); a --git-dir option replaces the GIT_DIR values.  Each is resolved against the directory the
     invocation runs in after every -C (git applies -C first, whatever the option order).  --work-tree / GIT_WORK_TREE alone do not move the
-    ref.  `work` is the walking budget interpret() shares with an alias that runs a shell command."""
+    ref.  `work` is the walking budget interpret() shares with the text git runs itself (a `!` alias, rebase --exec, bisect run).  `sh`
+    names the shell that wrote the words: where it is not known (None) a subcommand or a branch name that holds a backslash is dynamic,
+    because that shell may remove the backslash."""
     i, here, defs, rd = 1, cwd, dict(aliases or {}), tuple(gitdir or ())
     while i < len(words) and words[i].startswith("-"):
         w = words[i]
@@ -684,42 +840,52 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None):
     if i >= len(words):
         return []
 
-    def C(*args, **kw):
-        return _with_rds(_cr(*args, **kw), here, rd)
+    def C(verb, names, at, dynamic, **kw):
+        if sh is None and any("\\" in n for n in names):  # the unknown shell may remove the backslash: the name git gets is not known
+            dynamic = True
+        return _with_rds(_cr(verb, names, at, dynamic, **kw), here, rd)
     sub, a, ad = words[i], words[i + 1:], dyn[i + 1:]
-    if dyn[i]:  # git $CMD ...: the subcommand itself is dynamic, so nothing can be matched
+    if dyn[i] or (sh is None and "\\" in sub):  # git $CMD ...: the subcommand itself is dynamic, so nothing can be matched
         return [C("dynamic subcommand", [], here, True)]
     if sub in defs and depth < 3:  # an alias: expand it (a leading ! is a shell command, run with git's environment)
         val = defs[sub]
         if val.startswith("!"):
             return interpret(val[1:] + " " + " ".join(a), here, depth + 1, gitdir=rd, sh="bash", work=work)
         vw = [w for seg in split_command(val) for w in seg]
-        return parse_git(["git"] + [w for w, _ in vw] + a, [False] * (len(vw) + 1) + list(ad), here, defs, depth + 1, rd, work)
+        return parse_git(["git"] + [w for w, _ in vw] + a, [False] * (len(vw) + 1) + list(ad), here, defs, depth + 1, rd, work, sh)
 
     def take(**kw):
         for k, t in enumerate(a):
-            if _create_flag(t, sub):
-                if "=" in t:
-                    return C(sub, [t.split("=", 1)[1]], here, False, **kw)
-                return C(sub, [a[k + 1]] if k + 1 < len(a) else [], here, k + 1 >= len(a) or ad[k + 1], **kw)
+            v = _create_opt(t, sub)
+            if v is None:
+                continue
+            if v:  # -cNAME, -qbNAME, --orphan=NAME: the name is written with the option
+                return C(sub, [v], here, ad[k], **kw)
+            return C(sub, [a[k + 1]] if k + 1 < len(a) else [], here, k + 1 >= len(a) or ad[k + 1], **kw)
         return None
     if sub == "worktree" and a[:1] == ["add"]:
-        pos, k = [], 1
+        pos, k, branch = [], 1, None
         while k < len(a):
-            if _wt_branch_flag(a[k]) or a[k] == "--reason":
+            v = _short_value(a[k], "bB")  # -b NAME, -bNAME, -fb NAME
+            if v is not None:
+                if branch is None:
+                    branch = (v, ad[k]) if v else (a[k + 1], ad[k + 1]) if k + 1 < len(a) else ("", True)
+                k += 1 if v else 2
+                continue
+            if a[k] == "--reason":
                 k += 2
                 continue
             if a[k] != "--" and not a[k].startswith("-"):
                 pos.append((a[k], ad[k]))
             k += 1
         path = _join(here, pos[0][0]) if pos and not pos[0][1] else None
-        flag = next((k for k, t in enumerate(a) if _wt_branch_flag(t)), None)
-        if flag is not None:
-            return [C("worktree add", [a[flag + 1]] if flag + 1 < len(a) else [], here, flag + 1 >= len(a) or ad[flag + 1] or any(d for _, d in pos), kind="worktree", path=path)]
+        if branch is not None:
+            return [C("worktree add", [branch[0]] if branch[0] else [], here, not branch[0] or branch[1] or any(d for _, d in pos), kind="worktree",
+                      path=path)]
         if len(pos) == 1 and "--detach" not in a:  # git names the branch after the directory (and creates it only when it is new)
             return [C("worktree add", [re.split(r"[\\/]", pos[0][0].rstrip("/\\"))[-1]], here, pos[0][1], kind="worktree", path=path)]
         detached = C("wt-detached", ["detached/" + re.split(r"[\\/]", pos[0][0].rstrip("/\\"))[-1]], here, bool(pos) and pos[0][1], kind="worktree", path=path,
-                       commit=pos[1][0] if len(pos) > 1 else None) if pos else None
+                     commit=pos[1][0] if len(pos) > 1 else None) if pos else None
         if len(pos) == 2 and "--detach" not in a and "/" not in pos[1][0] and pos[1][0] not in ("HEAD", "@"):  # a remote-only branch name creates a branch
             return [C("dwim", [pos[1][0]], here, pos[1][1], kind="worktree", path=path), detached]
         return [detached] if detached else []
@@ -728,7 +894,7 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None):
                      "--points-at", "--sort", "--format", "--edit-description") or t.startswith(("--set-upstream-to", "--list")) for t in a):
             return []
         pos = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-")]
-        move = any(t in ("-m", "-M", "-c", "-C", "--move", "--copy") for t in a)
+        move = _branch_moves(a)  # rename / copy: the last name is the new branch
         return [C(sub, [pos[-1 if move else 0][0]], here, pos[-1 if move else 0][1])] if pos else []
     if sub in ("switch", "checkout"):
         cr = take()
@@ -755,11 +921,27 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None):
         names = [t[11:] for t in a if t.startswith("refs/heads/")]
         return [C(sub, names, here, False)] if names else []
     if sub in ("fetch", "pull", "push"):
-        pos = [t for t in a if not t.startswith("-")]
-        if sub == "push" and pos[:1] != ["."]:
-            return []  # a push creates a remote branch, not a local one
-        names = [m.group(1) for t in pos[1:] for m in [re.fullmatch(r"\+?[^:]*:(?:refs/heads/)?([^:]+)", t)] if m and not m.group(1).startswith("refs/")]
-        return [C(sub, names, here, False)] if names else []
+        pk = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-")]
+        names, glob = [], False
+        for t, _d in pk[1:]:  # the destinations of the refspecs, under refs/heads/ or bare
+            m = re.fullmatch(r"\+?[^:]*:(?:refs/heads/)?([^:]+)", t)
+            if m and not m.group(1).startswith("refs/"):
+                glob = glob or "*" in m.group(1)
+                names += [] if "*" in m.group(1) else [m.group(1)]
+        if not names and not glob:
+            return []
+        if sub == "push" and pk[0][0] != ".":  # a push creates the branch in the repository it pushes to
+            target = "" if pk[0][1] else _push_target(pk[0][0], here)
+            if target is None:
+                return []  # a remote: its repository is not resolved
+            if not target:
+                return [dict(_cr("push", names, here, True), redirect=True, gitdir=None, why=_PUSH_WHY)]
+            return ([_cr("push", names, target, False)] if names else []) + ([dict(_cr("push", [], target, True), why=_GLOB_WHY)] if glob else [])
+        return ([C(sub, names, here, False)] if names else []) + ([dict(C(sub, [], here, True), why=_GLOB_WHY)] if glob else [])
+    if sub == "rebase" and depth < 3:  # git runs the --exec text with a shell, in the directory and GIT_DIR state of this invocation
+        return [c for text in _rebase_exec(a) for c in interpret(text, here, depth + 1, defs, rd, "bash", work=work)]
+    if sub == "bisect" and a[:1] == ["run"] and len(a) > 1 and depth < 3:
+        return interpret(_requote(a[1:], ad[1:]), here, depth + 1, defs, rd, "bash", work=work)
     if sub == "flow":
         return [C("git flow", [], here, True, kind="auto", tool=True)]
     return []
@@ -844,14 +1026,34 @@ def _git_dir_ops(gds, exe, rest, rdyn):
     -> True when `exe` is one of them."""
     if exe in ("export", "declare", "typeset", "readonly", "local"):
         flags = [w for w in rest if w[:1] in "-+" and len(w) > 1]
+        if exe != "export" and any(f.startswith("-") and "n" in f for f in flags):  # declare -n: a name reference the walker does not follow
+            for w in rest:
+                for part in w.split("=", 1):
+                    if not part.startswith(("-", "+")) and _gd_name(part):
+                        gds.unknown(_gd_name(part))
+            return True
         unexport = any(f.startswith("+") and "x" in f for f in flags) or (exe == "export" and any(f.startswith("-") and "n" in f for f in flags))
         export = not unexport and (exe == "export" or any(f.startswith("-") and "x" in f for f in flags))
         for w, d in zip(rest, rdyn):
             name = None if w[:1] in "-+" else _gd_name(w)
             if name and "=" in w:
-                gds.assign("bash", name, w.split("=", 1)[1], d, True if export else None)
+                gds.assign("bash", name, w.split("=", 1)[1], d or _appends(w), True if export else None)
             if name and (unexport or export and "=" not in w):
                 gds.export("bash", name, export)
+    elif exe in ("read", "readarray", "mapfile", "getopts", "let"):  # they assign the variables they name, from text the hook cannot see
+        for w in rest:
+            name = None if w.startswith("-") else _gd_name(w)
+            if name:
+                gds.unknown(name)
+    elif exe == "printf":  # printf -v NAME ...
+        for k, w in enumerate(rest):
+            target = rest[k + 1] if w == "-v" and k + 1 < len(rest) else w[2:] if w.startswith("-v") and len(w) > 2 else None
+            if target and _gd_name(target):
+                gds.unknown(_gd_name(target))
+    elif exe in ("set-content", "sc", "add-content", "ac"):  # Set-Content Env:GIT_DIR <value>: not modelled
+        item = _ps_env_item(rest, rdyn)
+        if item:
+            gds.unknown(item[0])
     elif exe == "unset":
         for w in ([] if "-f" in rest else rest):
             name = None if w.startswith("-") else _gd_name(w)
@@ -890,7 +1092,8 @@ TEXT_COST = 8 * STEP_COST  # walking one substituted text in one state for the s
 _STATEFUL = frozenset(("cd", "pushd", "chdir", "set-location", "sl", "push-location", "popd", "pop-location", "export", "declare", "typeset", "readonly",
                        "local", "unset", "set", "remove-item", "ri", "rm", "del", "erase", "rd", "rmdir", "clear-item", "cli", "set-item", "si", "new-item",
                        "ni", "set-alias", "sal", "start-process", "find", "eval", "iex", "invoke-expression", "git", "gh", "gt", "claude", "source", ".",
-                       "powershell", "pwsh", "cmd") + _SHELLS)  # the commands whose effect depends on, or changes, the directory and GIT_DIR state
+                       "powershell", "pwsh", "cmd", "read", "readarray", "mapfile", "getopts", "let", "printf", "set-content", "sc", "add-content", "ac",
+                       "mkdir", "md") + _SHELLS)  # the commands whose effect depends on, or changes, the directory and GIT_DIR state
 _OVER_WORK = "the command takes more walking through nested text and directory or GIT_DIR states than the hook does"
 _IN_PLACE = ("eval", "iex", "invoke-expression", "source", ".")  # text the current shell runs itself: its changes reach the commands after it
 _DIR_CMDS = ("cd", "pushd", "chdir", "set-location", "sl", "push-location")
@@ -899,8 +1102,9 @@ _ALONE = frozenset(("env", "sudo", "doas", "nohup", "nice", "xargs", "timeout", 
 _ENV_VALUE = ("-C", "--chdir", "-u", "--unset", "-S", "--split-string", "-P", "-a", "--argv0")  # options of env that take the next word as their value
 # Text that may change the directory or GIT_DIR of the shell that runs it (checked before such text is walked for its end states).
 _CHANGES = re.compile(r"(?:^|[\s;&|({])(?:cd|pushd|popd|chdir|set-location|sl|push-location|pop-location|export|declare|typeset|readonly|local|unset|"
-                      r"set|remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli|set-item|si|new-item|ni|eval|iex|invoke-expression|source|\.)"
-                      r"(?=[\s;&|)}]|$)|\$\{?env:|setenvironmentvariable|\.ps1\b|git_(?:common_)?dir\s*=", re.I)
+                      r"set|remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli|set-item|si|new-item|ni|eval|iex|invoke-expression|source|\.|read|"
+                      r"readarray|mapfile|getopts|let|printf|set-content|sc|add-content|ac|builtin|command)"
+                      r"(?=[\s;&|)}]|$)|\$\{?env:|setenvironmentvariable|\.ps1\b|git_(?:common_)?dir\s*\+?=", re.I)
 _PS_PAREN = re.compile(r"(?<!\$)\(([^()]*)\)")  # a PowerShell (..) or @(..) inside a command: it runs its pipeline in the current scope
 
 
@@ -982,7 +1186,7 @@ def _anywhere(verb, why):
 
 def _state_key(st):
     here, gds, dirs = st
-    return isinstance(here, _Missing), here, getattr(here, "prior", None), tuple(sorted(gds.items())), tuple(dirs)
+    return isinstance(here, _Missing), here, getattr(here, "prior", None), getattr(here, "follow", None), tuple(sorted(gds.items())), tuple(dirs)
 
 
 def _snap(states):
@@ -1001,6 +1205,16 @@ def _merge(*groups):
     return out
 
 
+def _unfollow(states, token):
+    """The && chain of the frame `token` names ended: a directory an element of it created is again a missing directory for the commands
+    after it (the missing-directory rule: they run in the prior directory, unresolved)."""
+    def ours(h):
+        return getattr(h, "follow", None) is not None and h.follow[2] is token
+    if not any(ours(h) for h, _g, _d in states):
+        return states
+    return _merge([[_missing(str(h), h.prior) if ours(h) else h, g, d] for h, g, d in states])
+
+
 # Definite and possible changes.  A line is a list of commands joined by '&&' and '||' and ended by ';', a newline or '&'; groups, brace
 # blocks and compound commands hold lists of their own (a frame each).  A change of the directory or of GIT_DIR / GIT_COMMON_DIR is
 # definite for a later command only when the shell certainly makes it first: the first command of a list (it always runs), or a command
@@ -1008,16 +1222,20 @@ def _merge(*groups):
 # the commands after it are walked in the states before and after it.  So a list that ends hands on every state its commands reached, a
 # command after '||' runs in any of them, a list sent to the background keeps the state it started in as well, and a group, a brace block
 # (a function body, a PowerShell script block) or a compound command keeps the state it was opened in; inside a compound command
-# (if / while / until / for / select / case) every change is possible.
+# (if / while / until / for / select / case) every change is possible.  In bash a group, a background list, every pipeline command but the
+# last and substituted text run in a subshell: the commands after them keep the states before them.  `made` holds the directories the
+# current && chain created (mkdir, git init, git clone, git worktree add): a cd into one of them is followed by the later elements of the
+# chain.
 def _frame(kind, states):
     snap = _snap(states)  # read only while the frame is open: "open" when it closes, "start" through a copy
-    return {"kind": kind, "open": snap, "start": snap, "entry": None, "reached": [], "conn": None, "inside": False, "cond": kind == "K("}
+    return {"kind": kind, "open": snap, "start": snap, "entry": None, "reached": [], "conn": None, "inside": False, "cond": kind == "K(", "made": {},
+            "token": object()}
 
 
 def _enter(fr, states):
     """A command of the frame's current list starts: after '||' it runs when an earlier command failed, in any state the list reached."""
     if fr["conn"] == "||":
-        states = _merge(_snap(fr["reached"]), states)
+        states = _unfollow(_merge(_snap(fr["reached"]), states), fr["token"])
     fr["entry"], fr["inside"] = _snap(states), True
     return states
 
@@ -1032,16 +1250,53 @@ def _leave(fr, states):
     return states
 
 
-def _end_list(fr, states, background=False, last=False):
+def _end_list(fr, states, background=False, last=False, subshell=False):
     """The list ends (';', newline, '&', the end of its frame): the commands after it run in every state it reached; a list run in the
-    background keeps the state it started in as well.  `last`: the frame closes, no list follows in it."""
+    background keeps the state it started in as well, and only that one where the background list runs in a subshell (bash).  `last`: the
+    frame closes, no list follows in it."""
     states = _leave(fr, states)
     states = _merge(states, _snap(fr["reached"])) if len(fr["reached"]) > 1 else states
     if background:
-        states = _merge(_snap(fr["start"]), states)
+        states = _snap(fr["start"]) if subshell else _merge(_snap(fr["start"]), states)
+    states = _unfollow(states, fr["token"])
     if not last:
-        fr.update(start=_snap(states), reached=[], conn=None, entry=None)
+        fr.update(start=_snap(states), reached=[], conn=None, entry=None, made={})
     return states
+
+
+_CLONE_VALUE = frozenset(("-o", "-b", "-u", "-c", "-j", "--origin", "--branch", "--upload-pack", "--template", "--reference", "--reference-if-able",
+                          "--separate-git-dir", "--depth", "--shallow-since", "--shallow-exclude", "--jobs", "--filter", "--server-option", "--config",
+                          "--bundle-uri", "--ref-format"))
+_INIT_VALUE = frozenset(("-b", "--initial-branch", "--separate-git-dir", "--template", "--object-format", "--ref-format"))
+
+
+def _git_new_repo(words, dyn, run):
+    """The directory a `git init` / `git clone` invocation makes a new repository in (`run` for a bare `git init`), or None."""
+    i = 1
+    while i < len(words) and words[i].startswith("-"):
+        if words[i] == "-C" and i + 1 < len(words):
+            run = None if dyn[i + 1] else _join(run, words[i + 1])
+        i += 2 if words[i] in _VALUE_OPTS else 1
+    if i >= len(words) or words[i] not in ("init", "clone"):
+        return None
+    sub, args, k, pos = words[i], words[i + 1:], 0, []
+    values = _INIT_VALUE if sub == "init" else _CLONE_VALUE
+    while k < len(args):
+        if args[k] == "--":
+            pos += args[k + 1:]
+            break
+        if args[k].startswith("-"):
+            k += 2 if args[k] in values else 1
+            continue
+        pos.append(args[k])
+        k += 1
+    if sub == "init":
+        return _join(run, pos[0]) if pos else run
+    if len(pos) >= 2:
+        return _join(run, pos[1])
+    name = re.split(r"[\\/:]", pos[0].rstrip("/\\"))[-1] if pos else ""
+    name = name[:-4] if name.endswith(".git") else name
+    return _join(run, name) if name else None
 
 
 def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), final=None, work=None):
@@ -1052,14 +1307,18 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
     PowerShell or cmd assignment to every later git invocation of the line until a removal ends it.  A standalone `GIT_DIR=x` that is not
     exported reaches git only if the shell exported GIT_DIR before, so a later creation is judged both in that repository and where it runs.
     The line is walked in a set of states (directory, GIT_DIR values, pushd stack).  Only a definite change replaces the states (see
-    _frame): a change after '&&' or '||' that a later list does not certainly follow, inside a compound command, a group, a brace block, a
-    background list or one command of a pipeline, made by text the shell runs itself (eval, iex, source, `.`, a PowerShell script) or by
-    text substituted into a command ($(..), backticks, a PowerShell (..)) is possible: the commands after it are walked in the states before
-    and after it.  A cd or export behind a program wrapper (env, sudo, ...) changes nothing; `env -C <dir>` and `sudo -D <dir>` run the
-    program they wrap in <dir>.  Text found inside the line ($(..), here-documents, quoted text fed to a shell, a PowerShell (..)) is judged in
-    every directory and GIT_DIR state the line passes through.  `final` receives the end states (directory, cands, pushd stack); `work` is
-    the walking budget the whole line shares (WORK_LIMIT)."""
-    work = [WORK_LIMIT] if work is None else work
+    _frame): a change after '&&' or '||' that a later list does not certainly follow, inside a compound command, a brace block, or made by
+    text the shell runs itself (eval, iex, source, `.`, a PowerShell script) is possible: the commands after it are walked in the states
+    before and after it.  In bash a group, a background list, a pipeline command other than the last and substituted text ($(..), <(..),
+    backticks) run in a subshell and change nothing after them; in PowerShell, cmd and a shell the hook cannot name they are possible changes
+    as well.  A cd or export behind a program wrapper (env, sudo, ...) changes nothing; `env -C <dir>` and `sudo -D <dir>` run the program they
+    wrap in <dir>.  Text found inside the line ($(..), here-documents, quoted text fed to a shell, a PowerShell (..)) is judged in every
+    directory and GIT_DIR state the line passes through.  `final` receives the end states (directory, cands, pushd stack); `work` is the
+    walking budget the whole line shares ([characters left of WORK_LIMIT, whether a script or source file was named by a relative path]).
+    At the top of a walk the state caps deny only a line that yields a creation or names such a relative script: a line that creates
+    nothing places nothing in a repository, whatever the number of states."""
+    top = depth == 0 and final is None and work is None
+    work = [WORK_LIMIT, False] if work is None else work
     if len(cmd) > MAX_TEXT:  # too long to inspect: whatever follows the padding must not pass unseen
         return [dict(_cr("long command", [], cwd, True), why="the command is longer than %d characters and is not inspected" % MAX_TEXT)]
     work[0] -= len(cmd)
@@ -1067,7 +1326,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         return [_anywhere("nested text", _OVER_WORK)]
     out, early, env, galias, whole, over = [], [], {}, {}, cmd, []
     states = [[cwd, _GitDirs(gitdir, sh), list(dirs)]]
-    contexts = []
+    contexts, bash = [], sh == "bash"
 
     def note(here, cands):
         if len(contexts) <= MAX_CONTEXTS and (here, cands) not in contexts:
@@ -1086,6 +1345,15 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
             for m in _QUOTED.finditer(cmd):
                 body = (m.group(1) or m.group(2) or "").replace("\\n", "\n")  # printf 'git branch x\n' | sh
                 inner += [(body, None)] if re.search(r"\bgit\b", body) else []
+        inner = [(text, ish) for text, ish in inner if _gated(text)]  # text without a gate word creates nothing
+
+    def relative(path):  # a script named by a relative path: its text may differ from one directory to another
+        if path and _join(None, path) is None:
+            work[1] = True
+
+    def made(path, kind):
+        if path is not None:
+            frames[-1]["made"][pkey(str(path))] = kind
 
     def segment(words, dyn):
         """Apply one command to every state.  -> (states changed, end states of text the current shell ran itself)."""
@@ -1126,9 +1394,27 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         if words and all(_ASSIGN.match(w) for w in words):  # NAME=value without a command: shell variables
             for w, d in zip(words, dyn):
                 for st in states if _gd_name(w) else ():
-                    st[1].assign("bash", _gd_name(w), w.split("=", 1)[1], d, None)
-                env[w.split("=", 1)[0]] = w.split("=", 1)[1]
+                    st[1].assign("bash", _gd_name(w), w.split("=", 1)[1], d or _appends(w), None)
+                name = w.split("=", 1)[0]
+                if _appends(w):  # NAME+=value: a value the hook does not know
+                    env.pop(name[:-1], None)
+                else:
+                    env[name] = w.split("=", 1)[1]
             return True, []
+        low = [w.lower() for w in words]
+        if low[:1] in (["for"], ["select"]) and len(words) > 1 and _gd_name(words[1]):  # for GIT_DIR in ...: the loop assigns it
+            for st in states:
+                st[1].unknown(_gd_name(words[1]))
+            return True, []
+        for k in range(len(words) - 1):  # builtin export GIT_DIR=x, command declare -x GIT_DIR=x: not modelled, the repository is unknown
+            if low[k] in ("builtin", "command"):
+                nxt = next((x for x in low[k + 1:] if not x.startswith("-")), "")
+                names = [_gd_name(x) for x in words[k + 2:] if _gd_name(x)] if nxt in ("export", "declare", "typeset", "local", "readonly") else []
+                for st in states:
+                    for name in names:
+                        st[1].unknown(name)
+                if names:
+                    return True, []
         i = 0
         while i < len(words) and (_ASSIGN.match(words[i]) or words[i].lower() in _WRAP + _KEYWORDS or words[i] == "&" or (i == 0 and words[i].endswith(")"))):
             wrapped, vals = words[i].lower() in _WRAP, _SU_VALUE if words[i].lower() in ("sudo", "doas") else _ENV_VALUE if words[i].lower() == "env" else ()
@@ -1137,7 +1423,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                 i = next((k for k in range(i, len(words)) if _exe(words[k]) in _KNOWN and words[k - 1] not in vals), len(words))
         if i >= len(words):
             return False, []
-        exe, rest, low = _exe(galias.get(words[i], words[i])), words[i + 1:], [w.lower() for w in words]
+        exe, rest = _exe(galias.get(words[i], words[i])), words[i + 1:]
         script = re.search(r"\.(sh|ps1|bash)$", words[i], re.I) is not None
         if not i and exe not in _STATEFUL and not script:  # neither depends on nor changes the state
             return False, []
@@ -1158,7 +1444,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                 unset = w[2:] if w.startswith("-u") and len(w) > 2 else w[8:] if w.startswith("--unset=") else \
                     words[k + 1] if w in ("-u", "--unset") and k + 1 < i and after_env else None
                 if _ASSIGN.match(w) and _gd_name(w):
-                    inv[_gd_name(w)] = (w.split("=", 1)[1], dyn[k], True)
+                    inv[_gd_name(w)] = (w.split("=", 1)[1], dyn[k] or _appends(w), True)
                 elif after_env and unset and _gd_name(unset):
                     inv[_gd_name(unset)] = (None, False, False)
                 elif (after_env and w in ("-i", "--ignore-environment", "-")) or (w == "-c" and after_exec):
@@ -1171,7 +1457,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
             note(run, cands)  # text fed to this invocation runs with its own GIT_DIR
             if words[i - 1:i] == ["xargs"] or (i and "xargs" in low[:i]):  # the names arrive on stdin
                 if exe == "git":
-                    out.extend(parse_git(words[i:] + ["$stdin"], dyn[i:] + [True], run, aliases, depth, cands, work))
+                    out.extend(parse_git(words[i:] + ["$stdin"], dyn[i:] + [True], run, aliases, depth, cands, work, sh))
                     continue
             if exe in _DIR_CMDS + ("popd", "pop-location"):
                 if isolated:
@@ -1189,8 +1475,22 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                         st[0] = None if here is None else _missing(tgt[0][0], getattr(here, "prior", here))
                     else:
                         st[0] = _cd(here, tgt[0][0])
+                        for f in reversed(frames) if isinstance(st[0], _Missing) and st[0] is not here else ():  # an earlier element of the && chain made it
+                            kind = f["made"].get(pkey(str(st[0])))
+                            if kind:
+                                st[0] = _missing(str(st[0]), st[0].prior, kind + (f["token"],))
+                                break
             elif _git_dir_ops(gds.copy() if isolated else gds, exe, rest, dyn[i + 1:]):
                 pass
+            elif exe in ("mkdir", "md"):  # a directory a later cd of the same && chain may enter
+                args = [w for w, d in _plain_args(rest, dyn[i + 1:]) if not d and not w.startswith("-")]
+                parents = any(w == "--parents" or (w.startswith("-") and not w.startswith("--") and "p" in w) for w in rest) or exe == "md" or sh == "ps"
+                for w in args:
+                    t = _join(run, w)
+                    while t and not os.path.isdir(t):
+                        made(t, ("dir", t))
+                        up = os.path.dirname(t)
+                        t = up if parents and up != t else None
             elif exe in ("set-alias", "sal"):
                 pos = [w for w in rest if not w.startswith("-")]
                 if len(pos) >= 2:
@@ -1220,15 +1520,29 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                         handled = True
                         break
                 files = [w for k, w in enumerate(rest) if not w.startswith("-") and (k == 0 or rest[k - 1].lower() != "-command")]  # option values come first
+                for w in [] if handled else files[:4]:
+                    relative(w)
                 text = None if handled else next((s for s in (_script(w, run) for w in files[:4]) if s), None)
                 out.extend(interpret(text, run, depth + 1, aliases, cands, _SHELL_OF[exe], work=work) if text else [])
             elif exe in ("eval", "iex", "invoke-expression") and depth < 3:
                 out.extend(interpret(" ".join(rest), run, depth + 1, aliases, cands, sh if exe == "eval" else "ps", dirs, None if isolated else finals, work))
             elif exe == "git":
-                out.extend(parse_git(words[i:], dyn[i:], run, aliases, depth, cands, work))
-            elif (exe == "gh" and rest[:2] == ["pr", "checkout"]) or (exe == "gt" and rest[:1] == ["create"]) or (exe == "claude" and any(w in ("-w", "--worktree") for w in rest)):
+                crs = parse_git(words[i:], dyn[i:], run, aliases, depth, cands, work, sh)
+                out.extend(crs)
+                for cr in crs:  # git worktree add <T>: a later cd of the chain enters a worktree of this repository
+                    if cr["kind"] == "worktree" and isinstance(cr.get("path"), str) and isinstance(cr["cwd"], str) and                             not isinstance(cr["path"], _Missing) and not isinstance(cr["cwd"], _Missing):
+                        made(cr["path"], ("wt", cr["cwd"]))
+                new = _git_new_repo(words[i:], dyn[i:], run)
+                if new is not None and (not isinstance(new, _Missing) or new.follow):  # git init <T> / git clone <src> <T>: a new repository holds no lane
+                    made(new, ("new", None))
+                    if new is here and getattr(here, "follow", None):  # git init inside a directory the chain entered
+                        st[0] = _missing(str(here), here.prior, ("new", None, here.follow[2]))
+            elif (exe == "gh" and rest[:2] == ["pr", "checkout"]) or (exe == "gt" and rest[:1] == ["create"]) or \
+                    (exe == "claude" and any(w in ("-w", "--worktree") or w.startswith("--worktree=") or (w.startswith("-w") and w[2:3] not in ("", "-"))
+                                             for w in rest)):
                 out.append(_with_rds(_cr(exe + " " + " ".join(rest[:2]), [], run, True, kind="auto", tool=True), run, cands))
             elif script and depth < 3 or exe in ("source", "."):
+                relative(rest[0] if exe in ("source", ".") and rest else words[i])
                 text = _script(rest[0] if exe in ("source", ".") and rest else words[i], run)
                 ps1 = words[i].lower().endswith(".ps1") or exe in ("source", ".") and rest[:1] and rest[0].lower().endswith(".ps1")
                 in_place = (exe in _IN_PLACE or ps1) and not isolated  # PowerShell runs a script in the caller's process: its location and environment changes stay
@@ -1238,7 +1552,9 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
 
     def substituted(states, text):
         """Text substituted into a command ($(..), backticks, a PowerShell (..)) may change the state of the shell that runs the command:
-        the states it leaves join the ones before it."""
+        the states it leaves join the ones before it.  bash runs it in a subshell: nothing changes."""
+        if bash:
+            return states
         ends = []
         for h, g, d in states:
             work[0] -= TEXT_COST
@@ -1249,8 +1565,9 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
 
     def capped(states):
         if len(states) > MAX_CONTEXTS:
-            over[:] = over or [_anywhere("scoped change", "a subshell, a pipeline, eval, a condition or a background job may change the directory or "
-                                                          "GIT_DIR, which leaves the command in more directory or GIT_DIR states than the hook judges")]
+            over[:] = over or [dict(_anywhere("scoped change", "a subshell, a pipeline, eval, a condition or a background job may change the directory "
+                                                               "or GIT_DIR, which leaves the command in more directory or GIT_DIR states than the hook judges"),
+                                    cap=True)]
             states = states[:MAX_CONTEXTS]
         for st in states:
             note(st[0], st[1].cands())
@@ -1276,18 +1593,23 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                 continue
             while True:
                 f = frames.pop()
-                states = _merge(f["open"], _end_list(f, states, last=True))
+                ends = _end_list(f, states, last=True)
+                states = _snap(f["open"]) if bash and f["kind"] == "(" else _merge(f["open"], ends)  # bash: a group is a subshell
                 if f["kind"] == closing[ev]:
                     break
         elif ev in ("&&", "||"):
             states = _leave(fr, states)
             fr["conn"] = ev
+            if ev == "||":  # the && chain ends: what it created is not entered by the commands after it
+                fr["made"] = {}
         elif ev in (";", "&"):  # in cmd, '&' runs the next command after the first one
-            states = _end_list(fr, states, background=ev == "&" and sh != "cmd")
+            states = _end_list(fr, states, background=ev == "&" and sh != "cmd", subshell=bash)
         else:
             states = states if fr["inside"] else _enter(fr, states)
-            piped = ev.sub or "|" in (events[k - 1] if k else None, events[k + 1] if k + 1 < len(events) else None)  # in $( .. ) or a pipeline
-            before = _snap(states) if piped else None
+            nxt, prv = events[k + 1] if k + 1 < len(events) else None, events[k - 1] if k else None
+            apart = bash and (ev.sub or nxt == "|")  # bash runs it in a subshell: the commands after it keep the states before it
+            piped = not apart and (ev.sub or "|" in (prv, nxt))  # in $( .. ) or a pipeline: a possible change
+            before = _snap(states) if piped or apart else None
             changed, finals = segment([w for w, _ in ev], [d for _, d in ev])
             nseg, due = nseg + 1, []
             while nsub < len(subs) and subs[nsub][0] < starts[nseg]:  # the texts substituted into this command
@@ -1296,7 +1618,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
             if not changed and not due:
                 continue
             states = _merge(states, [[h, _GitDirs(c, sh), list(d)] for h, c, d in finals]) if finals else states
-            states = _merge(before, states) if piped else states
+            states = before if apart else _merge(before, states) if piped else states
             for _, text in due:
                 states = substituted(states, text)
         states = capped(states)
@@ -1304,7 +1626,8 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         over = [_anywhere("nested text", _OVER_WORK)]
     while len(frames) > 1:  # blocks the line leaves open end with it
         f = frames.pop()
-        states = _merge(f["open"], _end_list(f, states, last=True))
+        ends = _end_list(f, states, last=True)
+        states = _snap(f["open"]) if bash and f["kind"] == "(" else _merge(f["open"], ends)
     states = capped(_end_list(frames[0], states, last=True))
     if final is not None:
         final.extend((h, g.cands(), tuple(d)) for h, g, d in states)
@@ -1318,7 +1641,8 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         early += [_with_rds(_cr("update-ref", names, h, False), h, c) for h, c in contexts[:MAX_CONTEXTS]] if names else []
     places = contexts
     if inner and len(contexts) > 1 and (len(contexts) > MAX_CONTEXTS or len(inner) * len(contexts) > 4096):  # too much to judge everywhere:
-        early.append(_anywhere("command substitution", "the command runs text from inside itself in more directory or GIT_DIR states than the hook judges"))
+        early.append(dict(_anywhere("command substitution", "the command runs text from inside itself in more directory or GIT_DIR states than the hook judges"),
+                          cap=True))
         places = contexts[:1]
     for text, ish in inner:
         for h, c in places:
@@ -1330,72 +1654,200 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
             if key not in seen and (c["names"] or c["dynamic"] or c["kind"] == "auto"):
                 seen.add(key)
                 result.append(c)
+    if top and not work[1] and not any(not c.get("anywhere") for c in result):  # nothing is created and no relative script is read:
+        result = [c for c in result if not c.get("cap")]  # the states beyond the cap lose nothing
     return result
 
 
 _STATE_PATH = re.compile(r"(^|[\\/])\.git[\\/](hooks|refs|HEAD|magos|config)([\\/]|$)|(^|[\\/])packed-refs$|(^|[\\/])\.magos([\\/]|$)", re.I)
 _WRITE_CMDS = frozenset("rm mv cp tee chmod del erase ren rename remove-item move-item copy-item set-content out-file add-content new-item clear-content "
-                        "unlink truncate shred rmdir rd ln mklink".split())
+                        "unlink truncate shred rmdir rd ln mklink rename-item rni ri mi".split())
+_COPIES = ("cp", "copy-item")  # tested on their destination only, unless they copy as a link
 _WRITE_HINT = re.compile(r">|\b(?:%s|sed|find)\b" % "|".join(re.escape(w) for w in sorted(_WRITE_CMDS, key=len, reverse=True)), re.I)
 _USER_ONLY = ("override", "arm", "disarm", "install")
 _READ_FLAGS = ("--get", "--get-all", "--get-regexp", "--list", "-l", "--show-origin", "--show-scope")
 _ENV_WRITE = re.compile(r"^(?:GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)=|\$env:GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)$)", re.I)
 _USER_MSG = "override / arm / disarm / install are user-only"
+_STATE_MSG = "the hooks, refs and claim store under .git and the guard home are the guard's state"
+_CHILD_FLAG = re.compile(r"-[a-z]*c|-command|/c|/k|//c")
 
 
-def _state_word(word, roots):
+def _bare(word):
+    """The reading of a word after the escapes of bash, PowerShell and cmd: every backslash, backtick, caret, ' and " removed."""
+    return re.sub(r"[\\`^'\"]", "", word)
+
+
+def _guard_word(word):
+    """'launcher' for a word whose case-folded base name (after the last / or \\) is run-guard.cmd or run-guard, 'script' for a word ending in
+    magos_guard or magos_guard.py, else None; either reading of the word counts."""
+    for w in (word, _bare(word)):
+        if re.split(r"[\\/]", w)[-1].lower() in ("run-guard.cmd", "run-guard"):
+            return "launcher"
+        if re.search(r"magos_guard(\.py)?$", w, re.I):
+            return "script"
+    return None
+
+
+def _user_only(rest, launcher):
+    """Is the subcommand in `rest` (the words after a guard word) user-only?  The launcher's leading --strict, the global options in any
+    spelling argparse ever took, and a `--` (from Python 3.13 on argparse takes the word after it as the subcommand) are skipped."""
+    k = 1 if launcher and rest[:1] and _bare(rest[0]) == "--strict" else 0
+    while k < len(rest) and _bare(rest[k]).startswith("--"):
+        t = _bare(rest[k])
+        if t == "--":
+            k += 1
+            break
+        if "=" in t:
+            k += 1
+        elif "--repo".startswith(t) or "--lang".startswith(t):
+            k += 2
+        elif "--json".startswith(t):
+            k += 1
+        else:
+            break
+    return k < len(rest) and (rest[k] in _USER_ONLY or _bare(rest[k]) in _USER_ONLY)
+
+
+def _child_text(words):
+    """The text the first child shell among `words` runs: bash / sh / zsh / dash / ksh -c, cmd /c and /k, powershell and pwsh -Command, -c
+    or -EncodedCommand."""
+    for i, w in enumerate(words):
+        exe = _exe(_bare(w))
+        if exe not in _SHELLS + ("powershell", "pwsh", "cmd"):
+            continue
+        rest = words[i + 1:]
+        for k, r in enumerate(rest[:-1]):
+            flag = _bare(r).lower()
+            if re.fullmatch(r"-(enc|encodedcommand)", flag):
+                try:
+                    return base64.b64decode(rest[k + 1]).decode("utf-16-le")
+                except ValueError:
+                    return None
+            if _CHILD_FLAG.fullmatch(flag):
+                return rest[k + 1] if exe in _SHELLS else " ".join(rest[k + 1:])
+        return None
+    return None
+
+
+def _aliased_git(bares):
+    """Does a git invocation among the (bare, lower-case) words define an alias (-c alias.<name>=...) or name a subcommand that is not a
+    built-in git command?  An alias can run `git config`."""
+    for g, x in enumerate(bares):
+        if _exe(x) != "git":
+            continue
+        k, alias = g + 1, False
+        while k < len(bares) and bares[k].startswith("-"):
+            alias = alias or (bares[k] == "-c" and k + 1 < len(bares) and bares[k + 1].startswith("alias."))
+            k += 2 if bares[k] in _VALUE_OPTS else 1
+        if alias or (k < len(bares) and bares[k] not in _BUILTINS):
+            return True
+    return False
+
+
+def _copy_destination(exe, args):
+    """The destination of a plain cp / Copy-Item (-t / --target-directory, -Destination, else the last positional argument), or None when cp
+    copies as a link (-l, --link, -s, --symbolic-link): a link to a guard file lets a later write change the guard."""
+    if exe == "cp":
+        for a in args:
+            key = a[2:].split("=", 1)[0] if a.startswith("--") else None
+            if key is not None and len(key) >= 2 and ("link".startswith(key) or "symbolic-link".startswith(key)):
+                return None
+            letters = re.match(r"-([^tS]*)", a) if key is None else None  # -t and -S take the rest of the word as their value
+            if letters and re.search(r"[ls]", letters.group(1)):
+                return None
+        for k, a in enumerate(args):
+            key = a[2:].split("=", 1)[0] if a.startswith("--") else None
+            if key and "target-directory".startswith(key):  # --target-directory and its unique prefixes, = or the next word
+                return [a.split("=", 1)[1]] if "=" in a else args[k + 1:k + 2]
+            value = _short_value(a, "tS") if key is None else None  # -t DIR, -tDIR, -rt DIR
+            if value is not None and re.match(r"-[^tS]*t", a):
+                return [value] if value else args[k + 1:k + 2]
+        return [a for a in args if not a.startswith("-")][-1:]
+    pos, k = [], 0
+    while k < len(args):
+        a = args[k]
+        name = a[1:].rstrip(":").lower() if a.startswith("-") and len(a) > 1 else None
+        if name and len(name) >= 3 and "destination".startswith(name):
+            return args[k + 1:k + 2]
+        if name and any(full.startswith(name) for full in ("path", "literalpath", "filter", "include", "exclude", "credential", "tosession", "fromsession")):
+            k += 2
+            continue
+        pos += [] if name else [a]
+        k += 1
+    return pos[-1:]
+
+
+def _state_word(word, roots, lazy=None):
     """Does a word name the guard's state: a .git/{hooks,refs,HEAD,magos,config}, packed-refs or .magos spelling, or an absolute path (any
-    separator, Git Bash or case spelling the platform folds) inside one of `roots` (the store's and the guard home's pkey)?"""
-    if _STATE_PATH.search(word):
-        return True
-    p = _join(None, word) if roots and word else None  # absolute spellings only: a relative path is the documented limit
-    if not p:
-        return False
-    k = pkey(p)
-    return any(k == r or k.startswith(r.rstrip(os.sep) + os.sep) for r in roots)
+    separator, Git Bash or case spelling the platform folds) inside one of `roots` (pkey form)?  Both readings of the word count, as written
+    and with the escape characters and quotes removed.  `lazy` gives the store's root on demand: it is asked only for an absolute path with a
+    segment named magos (the store is <git-common-dir>/magos), so a command that names no such path never opens the repository."""
+    for w in dict.fromkeys((word, _bare(word))):
+        if _STATE_PATH.search(w):
+            return True
+        p = _join(None, w) if w and (roots or lazy) else None  # absolute spellings only: a relative path is the documented limit
+        if not p:
+            continue
+        k = pkey(p)
+        rs = list(roots) + (lazy() if lazy and "magos" in re.split(r"[\\/]", k.lower()) else [])
+        if any(k == r or k.startswith(r.rstrip(os.sep) + os.sep) for r in rs):
+            return True
+    return False
 
 
-def protected(text, depth=0, roots=()):
+def protected(text, depth=0, roots=(), lazy=None):
     """-> (scope, reason) or None.  scope 'always': user-only subcommands and magos.* config; 'guarded': edits of the guard's own state that
-    matter once claims or the hook exist.  Words are inspected, never the whole text, so a commit message or a grep for these names passes.
-    `roots`: the absolute store and guard-home directories (pkey form) whose absolute spellings count as the guard's state."""
+    matter once claims or the hook exist.  Words are inspected, never the whole text, so a commit message or a grep for these names passes;
+    every keyword and path test reads each word as written and with its escape characters removed.  The text of a child shell (bash -c,
+    cmd /c, powershell -Command ...) and a quoted word that names the guard script or its launcher are read with every check, to depth 3.
+    `roots`: the absolute guard-home and Hermes-plugin directories (pkey form) whose absolute spellings count as the guard's state; `lazy`
+    gives the store's root (see _state_word)."""
     if len(text) > MAX_TEXT:
         return "guarded", "the command is too long to inspect"
-    segs = split_command(_heredocs(text)[0])
-    for seg in segs:
-        words = [w for w, _ in seg]
-        low = [w.lower() for w in words]
-        for i, w in enumerate(words):
-            if re.search(r"magos_guard(\.py)?$", w, re.I):
-                rest, k = words[i + 1:], 0
-                while k < len(rest) and rest[k].startswith("--") and len(rest[k]) > 2:  # the global options, in any spelling argparse ever took
-                    t = rest[k]
-                    if "=" in t:
-                        k += 1
-                    elif "--repo".startswith(t) or "--lang".startswith(t):
-                        k += 2
-                    elif "--json".startswith(t):
-                        k += 1
-                    else:
-                        break
-                if rest[k:k + 1] and rest[k] in _USER_ONLY:
-                    return "always", _USER_MSG
-            elif depth < 3 and " " in w and "magos_guard" in w.lower() and protected(w, depth + 1, roots):  # bash -c '...', powershell -Command "..."
-                return "always", _USER_MSG
-        reads = any(f in low for f in _READ_FLAGS)
-        if "config" in low and any(x.startswith("magos.") for x in low) and not reads:
-            return "always", "magos.* git config switches"
-        if ("config" in low and "core.hookspath" in low and not reads) or any(x.startswith("core.hookspath=") for x in low) or \
-                ("config" in low and "--worktree" in low) or any(_ENV_WRITE.match(w) for w in words):
-            return "guarded", "core.hooksPath / GIT_CONFIG_* / worktree config can switch the git layer off"
-        exe = next((_exe(w) for w in words if not _ASSIGN.match(w) and w.lower() not in _WRAP), "")
-        if exe in _WRITE_CMDS or (exe == "sed" and "-i" in words) or (exe == "find" and "-delete" in low):
-            if any(_state_word(w, roots) for w in words[1:]):
-                return "guarded", "the hooks, refs and claim store under .git and the guard home are the guard's state"
-        for k, w in enumerate(words):  # a redirect into the guard's state
-            target = w.lstrip(">") if w.startswith(">") and w.lstrip(">") else (words[k + 1] if w in (">", ">>") and k + 1 < len(words) else "")
-            if target and _state_word(target, roots):
-                return "guarded", "the hooks, refs and claim store under .git and the guard home are the guard's state"
+    for seg in split_command(_heredocs(text)[0]):
+        found = _protected_words([w for w, _ in seg], depth, roots, lazy)
+        if found:
+            return found
+    return None
+
+
+def _protected_words(words, depth, roots, lazy):
+    lows = [w.lower() for w in words]
+    bares = [_bare(w).lower() for w in words]
+    seen = set(lows) | set(bares)
+
+    def any_word(pred):
+        return any(pred(x) for x in lows) or any(pred(x) for x in bares)
+    for i, w in enumerate(words):
+        kind = _guard_word(w)
+        if kind and _user_only(words[i + 1:], kind == "launcher"):  # also behind start, cmd /c start or Start-Process: the word is found anywhere
+            return "always", _USER_MSG
+        if depth < 3 and re.search(r"\s", w) and re.search(r"magos_guard|run-guard", w, re.I):  # Start-Process ... -ArgumentList '<guard> disarm'
+            found = protected(w, depth + 1, roots, lazy)
+            if found:
+                return found
+    child = _child_text(words) if depth < 3 else None
+    found = protected(child, depth + 1, roots, lazy) if child else None
+    if found:
+        return found
+    reads = any(f in seen for f in _READ_FLAGS)
+    magos = any_word(lambda x: x.startswith("magos."))
+    if magos and not reads and ("config" in seen or _aliased_git(bares)):
+        return "always", "magos.* git config switches"
+    if ("config" in seen and "core.hookspath" in seen and not reads) or any_word(lambda x: x.startswith("core.hookspath=")) or \
+            ("config" in seen and "--worktree" in seen) or any(_ENV_WRITE.match(w) or _ENV_WRITE.match(_bare(w)) for w in words):
+        return "guarded", "core.hooksPath / GIT_CONFIG_* / worktree config can switch the git layer off"
+    e = next((k for k, w in enumerate(words) if not _ASSIGN.match(w) and bares[k] not in _WRAP), None)
+    exe = _exe(bares[e]) if e is not None else ""
+    if exe in _WRITE_CMDS or (exe == "sed" and "-i" in words) or (exe == "find" and "-delete" in seen):
+        targets = _copy_destination(exe, words[e + 1:]) if exe in _COPIES else None
+        if any(_state_word(w, roots, lazy) for w in (words[e + 1:] if targets is None else targets)):
+            return "guarded", _STATE_MSG
+    for k, w in enumerate(words):  # a redirect into the guard's state
+        m = re.match(r"(?:\d|&)?>>?\|?(.*)$", w)
+        target = (m.group(1) or (words[k + 1] if k + 1 < len(words) else "")) if m else ""
+        if target and _state_word(target, roots, lazy):
+            return "guarded", _STATE_MSG
     return None
 
 
@@ -1411,8 +1863,9 @@ _MCP_SESSION = re.compile(r"mcp__.*(%s).*" % "|".join(HOOKED_TOOLS["mcp_session"
 
 
 def is_shell_tool(name):
-    """A hooked tool that runs a shell command: a shell tool of any host, or an MCP tool whose short name (after the last __) runs one."""
-    return name in SHELL_TOOLS or (name.startswith("mcp__") and name.rsplit("__", 1)[-1] in HOOKED_TOOLS["mcp_shell"])
+    """A tool whose string command the guard inspects as a command line: every hooked tool (the shell tools of every host and the
+    worktree-creating tools) and every MCP tool."""
+    return name in SHELL_TOOLS + HOOKED_TOOLS["isolation"] + HOOKED_TOOLS["strict"] or name.startswith("mcp__")
 
 
 def shell_text(payload):
@@ -1427,17 +1880,35 @@ def shell_text(payload):
     return c if is_shell_tool(tool) and isinstance(c, str) else None
 
 
+def _rooted(p):
+    """An absolute spelling on any platform (a drive path counts everywhere, so a payload is read alike on every host)."""
+    return p.startswith(("/", "\\")) or re.match(r"[A-Za-z]:[\\/]", p) is not None
+
+
+def session_dir(payload):
+    """tool_input.workdir, else tool_input.cwd, else the payload's cwd, else the process directory; a leading ~ or ~user is expanded and a
+    Git Bash drive spelling mapped, and a relative tool directory is joined to the payload's cwd (else to the process directory)."""
+    ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
+    base = payload.get("cwd") if isinstance(payload.get("cwd"), str) and payload.get("cwd") else None
+    base = _norm_path(base) if base else None
+    for d in (ti.get("workdir"), ti.get("cwd")):
+        if d and isinstance(d, str):
+            p = _norm_path(d)
+            return p if _rooted(p) else os.path.normpath(os.path.join(base or os.getcwd(), p))
+    return base or os.getcwd()
+
+
 def extract(payload, aliases=None):
-    """-> (creations, protected, default_cwd) for the tool names of all three hosts.  The session directory is tool_input.workdir, else
-    tool_input.cwd, else the payload's cwd, else the process directory."""
+    """-> (creations, protected, default_cwd) for the tool names of all three hosts.  The command line of every hooked tool and every MCP tool
+    whose tool_input.command is a string is judged, in addition to (never instead of) the judgement the tool's own name calls for."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
-    cwd = next((d for d in (ti.get("workdir"), ti.get("cwd"), payload.get("cwd")) if d and isinstance(d, str)), None) or os.getcwd()
+    cwd = session_dir(payload)
     crs, why, c = [], None, shell_text(payload)
     if c is not None:
         why = protected(c)
-        crs = interpret(c, cwd, 0, aliases, sh=_TOOL_SHELL.get(tool)) if re.search(r"git|gh|gt|claude|eval|iex|invoke-expression|\.sh|\.ps1|source|-enc|base64", c, re.I) else []
-    elif tool in HOOKED_TOOLS["strict"] and not ti.get("path"):
+        crs = interpret(c, cwd, 0, aliases, sh=_TOOL_SHELL.get(tool)) if _gated(c) else []
+    if tool in HOOKED_TOOLS["strict"] and not ti.get("path"):
         crs.append(_cr("EnterWorktree", ["worktree-%s" % ti["name"]] if ti.get("name") else [], cwd, not ti.get("name"), "worktree" if ti.get("name") else "auto", tool=True))
     elif tool in HOOKED_TOOLS["isolation"] and re.search(r"isolation\W+worktree", json.dumps(ti)):
         crs.append(_cr("%s isolation=worktree" % tool, [], cwd, True, "auto", tool=True))
@@ -1465,6 +1936,24 @@ class GitFail(Exception):
 
 class Uncertain(Exception):
     pass
+
+
+_MEMO = None  # set for the duration of a hook call: the facts of a repository are collected once, whatever number of states lead to it
+
+
+def _memo(key, fn):
+    """fn() once per hook call and key (a GitFail or Uncertain it raises is kept as well); outside a hook call fn() every time."""
+    if _MEMO is None:
+        return fn()
+    if key not in _MEMO:
+        try:
+            _MEMO[key] = (True, fn())
+        except (GitFail, Uncertain) as err:
+            _MEMO[key] = (False, err)
+    ok, value = _MEMO[key]
+    if not ok:
+        raise value
+    return value
 
 
 class Git:
@@ -1505,7 +1994,11 @@ class Git:
 
 
 def open_repo(path):
-    """-> Git or None (not a git repository)."""
+    """-> Git or None (not a git repository); once per directory within a hook call."""
+    return _memo(("open", pkey(path) if path else ""), lambda: _open_repo(path))
+
+
+def _open_repo(path):
     if not path or not os.path.isdir(path):
         return None
     g = Git(path)
@@ -1546,6 +2039,10 @@ def pkey(p):
 
 
 def worktrees(g):
+    return _memo(("worktrees", g.common), lambda: _worktrees(g))
+
+
+def _worktrees(g):
     recs, cur = [], {}
     for tok in g.run("worktree", "list", "--porcelain", "-z")[1].split(b"\0") + [b""]:
         if tok:
@@ -1565,6 +2062,10 @@ def worktrees(g):
 
 
 def list_refs(g):
+    return _memo(("refs", g.common), lambda: _list_refs(g))
+
+
+def _list_refs(g):
     heads, remotes, syms = {}, {}, {}
     for line in g.run("for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", "refs/heads", "refs/remotes")[1].split(b"\n"):
         if line:
@@ -1662,7 +2163,13 @@ def _claimant(table, key, branch):
 
 
 def gather(g, planned=None, target_arg=None, own_wt=""):
-    """Snapshot of every claimant's committed / uncommitted evidence (git only; the planned branch's own lane is left out).  Raises Uncertain / GitFail."""
+    """Snapshot of every claimant's committed / uncommitted evidence (git only; the planned branch's own lane is left out).  Raises Uncertain / GitFail.
+    Once per repository and planned lane within a hook call (each caller gets its own copy of the top-level dict)."""
+    return dict(_memo(("gather", g.common, fold(planned) if planned else None, target_arg, pkey(own_wt) if own_wt else ""),
+                      lambda: _gather(g, planned, target_arg, own_wt)))
+
+
+def _gather(g, planned=None, target_arg=None, own_wt=""):
     wts, (heads, remotes, syms) = worktrees(g), list_refs(g)
     target, warns = resolve_target(g, heads, remotes, syms, target_arg)
     own = lane_key(planned) if planned else None
@@ -1800,10 +2307,11 @@ _CTL = re.compile(r"[\x00-\x1f\x7f]")
 
 
 class ClaimTooNew(Exception):
-    """A claim written in a format newer than CLAIM_FORMAT: never read as if it were this format, never overwritten, never released."""
+    """A claim written in a format newer than CLAIM_FORMAT: never read as if it were this format, never overwritten, never released.
+    .v is the format number (an int; the digit text for a number too long for int())."""
 
     def __init__(self, v, branch):
-        super().__init__("claim format v=%d is newer than this guard's v=%d" % (v, CLAIM_FORMAT))
+        super().__init__("claim format v=%s is newer than this guard's v=%d" % (v, CLAIM_FORMAT))
         self.v, self.branch = v, branch
 
 
@@ -1828,23 +2336,38 @@ class BadClaim(str):
 
 
 def newer_text(name, v):
-    return "%s was written by a newer MAGOS (v=%d); upgrade this guard" % (name, v)
+    return "%s was written by a newer MAGOS (v=%s); upgrade this guard" % (name, v)
+
+
+_FORMAT_DIGITS = re.compile(r"[0-9]+")  # the value of the format line: ASCII digits only (int() alone would take '1_0', '+1', ' 1', other digits)
+
+
+def format_number(value):
+    """The claim format a line-2 value `v=<value>` names: one or more ASCII digits read as a decimal integer whatever its length and
+    leading zeros.  -> int (the digit text, leading zeros removed, for a number too long for int()), or None when the spelling is not
+    allowed."""
+    if not _FORMAT_DIGITS.fullmatch(value):
+        return None
+    digits = value.lstrip("0") or "0"
+    return int(digits) if len(digits) <= 4000 else digits  # int() refuses more than 4300 digits from Python 3.11 on
 
 
 def parse_claim(text):
-    """A claim file -> dict.  Line 1 is exactly `state=active` (the git layer reads only that line); line 2 `v=<n>` is the format (missing: 1).
-    The scalar keys appear at most once; `entry=` lines make the entry list; a `state=` or `v=` line elsewhere changes nothing; any other key
-    is kept aside in 'extra' and written back unchanged.  Raises ValueError (unreadable) or ClaimTooNew."""
+    """A claim file -> dict.  Line 1 is exactly `state=active` (the git layer reads only that line); line 2 `v=<n>` is the format (missing: 1;
+    any value up to CLAIM_FORMAT, 0 included, is this guard's format).  The scalar keys appear at most once; `entry=` lines make the entry
+    list; a `state=` or `v=` line elsewhere changes nothing; any other key is kept aside in 'extra' and written back unchanged.  Raises
+    ValueError (unreadable) or ClaimTooNew."""
     lines = text.replace("\r", "").split("\n")
     if lines[0] != "state=active":
         raise ValueError("not a claim: line 1 is not state=active")
     v, rest = 1, lines[1:]
     if rest and rest[0].startswith("v="):
-        if not re.fullmatch(r"[1-9][0-9]{0,5}", rest[0][2:]):
-            raise ValueError("the claim format is not a positive integer")
-        v, rest = int(rest[0][2:]), rest[1:]
-    if v > CLAIM_FORMAT:
-        raise ClaimTooNew(v, next((ln[7:] for ln in rest if ln.startswith("branch=") and ln[7:]), None))
+        n = format_number(rest[0][2:])
+        if n is None:
+            raise ValueError("the claim format line is not v=<digits>")
+        if isinstance(n, str) or n > CLAIM_FORMAT:
+            raise ClaimTooNew(n, next((ln[7:] for ln in rest[1:] if ln.startswith("branch=") and ln[7:]), None))
+        v, rest = CLAIM_FORMAT, rest[1:]
     doc, extra = {"entries": [], "v": v}, []
     for line in rest:
         k, sep, val = line.partition("=")
@@ -1867,7 +2390,12 @@ def parse_claim(text):
 
 
 def read_claims(g):
-    """-> ({folded branch: claim}, [BadClaim]): every unusable claim file is listed, a newer-format one with its branch and format."""
+    """-> ({folded branch: claim}, [BadClaim]): every unusable claim file is listed, a newer-format one with its branch and format.  Once per
+    repository within a hook call."""
+    return _memo(("claims", g.common), lambda: _read_claims(g))
+
+
+def _read_claims(g):
     root, claims, bad = os.path.join(store(g), "claims"), {}, []
     for d, dirs, files in os.walk(root):
         dirs.sort()
@@ -1904,14 +2432,16 @@ def _replace(tmp, path, tries=40):
             time.sleep(0.05)
 
 
-def write_atomic(path, data):
-    """Write bytes to a temporary file beside `path`, then move it into place: the file is replaced whole or not at all, and a failure
-    leaves no temporary file behind."""
+def write_atomic(path, data, mode=None):
+    """Write bytes to a temporary file beside `path` (with `mode` on POSIX when given), then move it into place: the file is replaced whole
+    or not at all, and a failure leaves no temporary file behind."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = "%s.%d.tmp" % (path, os.getpid())
     try:
         with open(tmp, "wb") as fh:
             fh.write(data)
+        if mode is not None and os.name != "nt":
+            os.chmod(tmp, mode)
         _replace(tmp, path)
     finally:
         if os.path.lexists(tmp):
@@ -2209,7 +2739,7 @@ def cmd_list(args):
         path = b.replace(os.sep, "/")
         if b.code == "CLAIM_NEWER_FORMAT":
             rows.append({"branch": b.branch, "state": "newer-format", "v": b.v, "path": path})
-            lines.append("newer-format %s (v=%d): upgrade this guard" % (b.branch or "claims/" + path, b.v))
+            lines.append("newer-format %s (v=%s): upgrade this guard" % (b.branch or "claims/" + path, b.v))
         else:
             rows.append({"branch": None, "state": "unreadable", "path": path})
             lines.append("unreadable claims/%s" % path)
@@ -2264,6 +2794,9 @@ def cmd_release(args):
                 return EXIT["BLOCKED"]
             if not doc:
                 if spelled and os.path.isfile(spelled) and any(b.code == "CLAIM_UNPARSEABLE" and named(os.path.join(root, b)) for b in bad):
+                    if foreign_format(spelled):  # it may be a newer MAGOS's claim of a live lane: never released by a guard that cannot read it
+                        sys.stderr.write(T(args.lang, "blocked_format", f=spelled.replace(os.sep, "/")) + "\n")
+                        return EXIT["BLOCKED"]
                     os.remove(spelled)  # the claim file of this branch that nobody can parse blocks every creation: let it go
                     audit(g, op="release", branch=args.branch, reason="unreadable claim file removed", host="cli")
                     out_text(T(args.lang, "released", b=args.branch))
@@ -2291,6 +2824,16 @@ def cmd_release(args):
         return EXIT["LOCK_TIMEOUT"]
     out_text(T(args.lang, "released", b=doc["branch"]))
     return 0
+
+
+def foreign_format(path):
+    """True for a claim file whose line 1 is `state=active` and whose line 2 starts with `v=` in a spelling the format line does not allow:
+    a format this guard cannot read, which may come from a newer MAGOS."""
+    try:
+        lines = _read_retry(path).replace("\r", "").split("\n")
+    except (OSError, ValueError):
+        return False
+    return lines[0] == "state=active" and len(lines) > 1 and lines[1].startswith("v=") and format_number(lines[1][2:]) is None
 
 
 def in_store(root, path):
@@ -2328,26 +2871,45 @@ def guard_mode(g, host=True):
     """armed | auto | off.  MAGOS_GUARD=off is read from the HOST hook process environment only (an agent's tool environment cannot reach it)."""
     if host and host_off():
         return "off"
-    if (cfg(g, "magos.guard") or "").lower() == "off":
-        return "off"
-    return "armed" if os.path.exists(os.path.join(store(g), "ARMED")) else "auto"
+    return _memo(("mode", g.common), lambda: "off" if (cfg(g, "magos.guard") or "").lower() == "off" else
+                 "armed" if os.path.exists(os.path.join(store(g), "ARMED")) else "auto")
 
 
 def parallel(g, cwd_top):
     """AUTO engagement for branch-only and auto-named creations: another lane exists (an open claim, an unmerged branch, another dirty worktree).
-    -> (engaged, failure): failure is the error that kept the comparison from deciding, and engaged is then whether an open claim exists."""
+    A snapshot that hides lanes (more unmerged local branches than it analyses, or remote-tracking branches beyond the ones it analyses)
+    counts as engaged.  -> (engaged, failure): failure is the error that kept the comparison from deciding, and engaged is then whether an
+    open claim exists.  Once per repository and worktree within a hook call."""
+    return _memo(("parallel", g.common, pkey(cwd_top or "")), lambda: _parallel(g, cwd_top))
+
+
+def _parallel(g, cwd_top):
     claims, bad = read_claims(g)
     newer = any(b.code == "CLAIM_NEWER_FORMAT" for b in bad)  # a claim this guard cannot read is still an open claim
     try:
         snap = gather(g)
     except (Uncertain, GitFail) as err:
         return bool(claims) or newer, err
+    if any(u["code"] == "TOO_MANY_CLAIMANTS" for u in snap["unknowns"]) or any(w["code"] == "REMOTE_TRUNCATED" for w in snap["warnings"]):
+        return True, None  # the lanes the snapshot leaves out are other lanes
     if newer or any(not is_idle(d, snap["heads"], snap["merged"], snap["wt_branches"], snap["target"]["sha"]) for d in claims.values()):
         return True, None
     wts = {pkey(w["path"]): w for w in worktrees(g)}
     here = wts.get(pkey(cwd_top or ""))
     own = (lane_key(here["branch"]) if here and here["branch"] else "wt:" + pkey(cwd_top or ""))
     return any(c["key"] != own and (c["paths"]["committed"] or c["paths"]["uncommitted"]) for c in snap["claimants"]), None
+
+
+def lane_signal(g, cwd_top):
+    """A sign of another lane that needs no integration target: an open claim (also one of a newer format), a local branch other than the
+    one checked out in the worktree the creation runs from, or a second worktree."""
+    if holds_claims(g):
+        return True
+    wts = [w for w in worktrees(g) if not w["bare"]]
+    if len(wts) > 1:
+        return True
+    here = next((w for w in wts if pkey(w["path"]) == pkey(cwd_top or "")), None)
+    return any(b != (here or {}).get("branch") for b in list_refs(g)[0])
 
 
 def check_creation(g, name, cr, lang, mode):
@@ -2371,18 +2933,35 @@ def check_creation(g, name, cr, lang, mode):
 
 
 def enforce(crs, default_cwd, lang):
-    """-> None (allow) or (code, message) for the first creation that is denied."""
+    """-> None (allow) or (code, message) for the first creation that is denied.  Records of one creation that several states lead to are
+    judged once per distinct repository."""
+    seen = set()
     for cr in crs:
-        res = judge_creation(cr, default_cwd, lang)
+        res = judge_creation(cr, default_cwd, lang, seen)
         if res:
             return res
     return None
 
 
-def judge_creation(cr, default_cwd, lang):
+def _existing(path):
+    """The nearest existing directory at or above `path` (where git looks for the repository of a directory that does not exist yet)."""
+    while path and not os.path.isdir(path):
+        up = os.path.dirname(path)
+        if up == path:
+            return None
+        path = up
+    return path
+
+
+def judge_creation(cr, default_cwd, lang, seen=None):
     """One creation, judged in its own repository: the --git-dir / GIT_DIR / GIT_COMMON_DIR target when it has one, else the directory the
-    shell is in at that point (the prior directory after a cd to a missing directory, then marked unresolved), else the session directory."""
-    cwd, unresolved = cr["cwd"], isinstance(cr["cwd"], _Missing)
+    shell is in at that point (the prior directory after a cd to a missing directory, then marked unresolved, unless an earlier element of
+    the same && chain created that directory), else the session directory.  `seen` holds the (repository, creation) keys already judged."""
+    cwd = cr["cwd"]
+    follow = getattr(cwd, "follow", None)
+    if follow and follow[0] == "new":  # a repository the same && chain created: it holds no lane
+        return None
+    unresolved = isinstance(cwd, _Missing) and not follow
     if cr.get("anywhere"):  # the hook cannot tell which repository the command acts on: refused unless the session repository's guard is off
         if host_off():
             return None
@@ -2393,12 +2972,20 @@ def judge_creation(cr, default_cwd, lang):
             return None
         g = open_gitdir(cr["gitdir"]) if cr["gitdir"] else None
         if g is None:  # git would act on a repository we cannot open: whatever the session repository's mode, refuse
-            return "UNPARSEABLE", T(lang, "unparse_redirect")
+            return "UNPARSEABLE", T(lang, "unparse_git", why=cr["why"]) if cr.get("why") else T(lang, "unparse_redirect")
+    elif follow:  # the && chain entered a directory it made: git finds the repository of the worktree's repository / the nearest ancestor
+        g = open_repo(follow[1] if follow[0] == "wt" else _existing(follow[1]))
     else:
         g = open_repo(cwd.prior if unresolved else (cwd or default_cwd))
     mode = guard_mode(g) if g else "off"
     if mode == "off":
         return None
+    key = (pkey(g.common), pkey(g.top or ""), cr["redirect"], cr["verb"], tuple(cr["names"]), cr["kind"], pkey(cr["path"]) if isinstance(cr["path"], str) else None,
+           cr["dynamic"], unresolved, cwd is None)
+    if seen is not None:
+        if key in seen:
+            return None
+        seen.add(key)
     if cr["verb"] == "wt-detached" and cr["commit"]:  # `worktree add <path> <existing branch or remote-only name>` is not a detached lane
         heads, remotes, _ = list_refs(g)
         if cr["commit"] in heads or any(r.split("/", 1)[-1] == cr["commit"] for r in remotes):
@@ -2411,11 +2998,18 @@ def judge_creation(cr, default_cwd, lang):
     engaged = mode == "armed" or cr["kind"] == "worktree"
     if not engaged:
         engaged, failure = parallel(g, g.top)
-        if failure is not None:  # the comparison could not decide: warn, refuse an auto-named creation, keep the documented branch-only rule
+        if failure is not None:  # the comparison could not decide: warn; an auto-named creation follows a lane signal that needs no target
             why = "%s: %s" % (getattr(failure, "code", "TARGET_UNCERTAIN"), failure)
-            then = "undecided_auto" if cr["kind"] == "auto" else "undecided_claims" if engaged else "undecided_allow"
-            sys.stderr.write(T(lang, "undecided", why=why, then=T(lang, then)) + "\n")
             if cr["kind"] == "auto":
+                try:
+                    engaged = lane_signal(g, g.top)
+                except (GitFail, Uncertain):
+                    engaged = True
+                then = "undecided_auto" if engaged else "undecided_auto_allow"
+            else:
+                then = "undecided_claims" if engaged else "undecided_allow"
+            sys.stderr.write(T(lang, "undecided", why=why, then=T(lang, then)) + "\n")
+            if cr["kind"] == "auto" and engaged:
                 return "UNPLANNABLE", T(lang, "unplannable", why=cr["verb"]) + "\n[%s]" % why
     if not engaged:
         return None
@@ -2434,7 +3028,7 @@ def judge_creation(cr, default_cwd, lang):
         except GitFail as err:
             v = deny("UNKNOWN", unknowns=[{"code": err.code, "text": str(err)}]) if mode == "armed" or cr["kind"] == "worktree" else None
         if v:
-            if v["code"] == "NO_MANIFEST" and cr.get("redirect"):  # the creation is in the redirected repository: the plan command names it
+            if v["code"] == "NO_MANIFEST" and (cr.get("redirect") or cr["verb"] == "push"):  # the creation is in another repository: the plan command names it
                 v["message"] = T(lang, "nomanifest", b=n) + "\n" + T(lang, "how_plan", cmd='%s --repo "%s"' % (guard_cmd(), repo_dir(g)), b=n)
             return v["code"], v.get("message") or render(lang, v, n)
     if cr["kind"] == "auto" and not cr["names"]:
@@ -2451,24 +3045,36 @@ def load_aliases(g):
     return {k[6:]: v for k, _, v in (ln.partition(" ") for ln in g.text("config", "--get-regexp", r"^alias\.", ok=(0, 1)).splitlines())}
 
 
+def tamper_roots():
+    """The absolute directories (pkey form) that hold the guard itself outside any repository: the guard home, and the Hermes plugin
+    directory when it holds a launcher (the Hermes entry may run that launcher)."""
+    roots = [pkey(guard_home())]
+    plugin = os.path.join(hermes_home(), "plugins", "magos")
+    if os.path.isfile(os.path.join(plugin, "hooks", "run-guard.cmd")):
+        roots.append(pkey(os.path.abspath(plugin)))
+    return roots
+
+
 def decide(payload, lang):
     """-> None (allow) or (code, message)."""
+    tool = str(payload.get("tool_name") or "")
+    ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
+    if tool.startswith("mcp__") and not isinstance(ti.get("command"), str) and not _MCP_SESSION.fullmatch(tool):
+        return None  # an MCP tool that runs no command and starts no session: answered before any repository is opened or any git runs
     crs, prot, cwd = extract(payload)
-    if not crs and any(s not in _BUILTINS for s in _git_subcommands(shell_text(payload) or "")):  # a git alias may hide a creation
-        g = open_repo(cwd)
-        aliases = load_aliases(g) if g else {}
+    text, opened = shell_text(payload), []
+
+    def repo():  # the session directory's repository, opened at most once
+        if not opened:
+            opened.append(open_repo(cwd))
+        return opened[0]
+    if text and any(s not in _BUILTINS for s in _git_subcommands(re.sub(r"[\\`^]", "", text))):  # a git alias may hide a creation anywhere
+        aliases = load_aliases(repo()) if repo() else {}
         crs = extract(payload, aliases)[0] if aliases else crs
-    g = None
-    text = shell_text(payload)
-    if not prot and text and len(text) <= MAX_TEXT and _WRITE_HINT.search(text):  # a writer may name the store or the guard home by its absolute path
-        low, home = text.replace("\\", "/").lower(), guard_home().lower()
-        roots = [pkey(guard_home())] if home in low or re.sub(r"^([a-z]):", r"/\1", home) in low else []
-        if "magos" in low:  # the store is <git-common-dir>/magos: only then is the repository opened for its path
-            g = open_repo(cwd)
-            roots += [pkey(store(g))] if g else []
-        prot = protected(text, roots=tuple(roots)) if roots else None
+    if not prot and text and len(text) <= MAX_TEXT and _WRITE_HINT.search(re.sub(r"[\\`^'\"]", "", text)):
+        prot = protected(text, roots=tuple(tamper_roots()), lazy=lambda: [pkey(store(repo()))] if repo() else [])
     if prot:
-        g = g or open_repo(cwd)
+        g = repo()
         if prot[0] == "always" or (g and (guard_mode(g) == "armed" or holds_claims(g))):
             return "PROTECTED", T(lang, "protected", why=prot[1])
     return enforce(crs, cwd, lang) if crs else None
@@ -2493,12 +3099,25 @@ _PREFILTER = re.compile(rb"git|worktree|isolation|start_session|EnterWorktree|ma
 
 
 def cmd_hook(args):
-    global HOOK_DEADLINE
-    HOOK_DEADLINE = time.monotonic() + BUDGET_S
+    global HOOK_DEADLINE, _MEMO
+    HOOK_DEADLINE, _MEMO = time.monotonic() + BUDGET_S, {}
     try:
         return _hook(args)
     finally:
-        HOOK_DEADLINE = None
+        HOOK_DEADLINE, _MEMO = None, None
+
+
+def _lane_text(payload):
+    """Does the call look lane-related when the guard cannot recognise it?  The command text of tool_input, or for a tool without a command
+    its tool_input serialised, is matched against the prefilter; path fields of the payload (cwd, transcript_path) never decide it.  A
+    tool_input that cannot even be serialised counts as lane-related."""
+    ti = payload.get("tool_input")
+    c = ti.get("command") if isinstance(ti, dict) else None
+    try:
+        text = c if isinstance(c, str) else json.dumps(ti, ensure_ascii=False)
+    except BaseException:  # nested beyond what the encoder can walk
+        return True
+    return _PREFILTER.search(text.encode("utf-8", "surrogatepass")) is not None
 
 
 def _hook(args):
@@ -2506,17 +3125,18 @@ def _hook(args):
     try:
         payload = json.loads(raw.decode("utf-8-sig"))
         payload = payload if isinstance(payload, dict) else {}
-    except ValueError:
-        payload = None
-    if payload is None:
-        return emit_deny("MAGOS guard: unparseable hook payload") if _PREFILTER.search(raw) else (out_text("{}"), 0)[1]
+    except BaseException as err:  # invalid JSON, or any exception while decoding (RecursionError and MemoryError included)
+        if _PREFILTER.search(raw):
+            return emit_deny("MAGOS guard: unparseable hook payload (%s)" % type(err).__name__)
+        sys.stderr.write("MAGOS guard warning: unparseable hook payload (%s); the call shows no lane word and is allowed\n" % type(err).__name__)
+        return (out_text("{}"), 0)[1]
     try:
         res = decide(payload, args.lang)
-    except BaseException as err:  # fail closed only when the call looked lane-creating
+    except BaseException as err:  # fail closed only when the call looks lane-creating or protected
         try:
-            looks = bool(_PREFILTER.search(raw)) and any(extract(payload)[:2])
+            looks = any(extract(payload)[:2])
         except BaseException:
-            looks = True
+            looks = _lane_text(payload)
         if looks:
             return emit_deny("MAGOS guard error (%s: %s); the lane-creating call is denied. Diagnose: %s doctor" % (type(err).__name__, err, guard_cmd()))
         sys.stderr.write("MAGOS guard warning: %s: %s\n" % (type(err).__name__, err))
@@ -2583,10 +3203,10 @@ def local_cfg(g, key):
 
 
 def backstop_cmd():
-    """The guard command the backstop's deny message prints: the copy under the guard home when it exists (a path that survives plugin
-    upgrades), else the running script."""
+    """The guard command the backstop's deny message prints: the copy under the guard home when it declares this guard's GUARD_VERSION (a
+    path that survives plugin upgrades), else the running script."""
     copy = os.path.join(guard_home(), "guard", "scripts", "magos_guard.py")
-    return guard_cmd(copy if os.path.isfile(copy) else None)
+    return guard_cmd(copy if version_of(read_quiet(copy)) == GUARD_VERSION else None)
 
 
 def cmd_arm(args):
@@ -2626,6 +3246,7 @@ def cmd_arm(args):
     put_text(os.path.join(s, "ARMED"), now_iso() + "\n")
     for k in PACK_KEYS:
         g.run("config", "--local", k, "false")
+    audit(g, op="arm", lang=args.lang)
     for kind, target in steps:
         out_text("did %s %s" % (kind, target))
     return 0
@@ -2647,6 +3268,8 @@ def cmd_disarm(args):
             os.remove(target)
     if mine and not args.dry_run and os.path.exists(hook + ".magos-prev"):
         os.replace(hook + ".magos-prev", hook)
+    if not args.dry_run:
+        audit(g, op="disarm")
     record = os.path.join(s, "arm-config.json")
     if os.path.exists(record):  # put back what arm found; without a record the settings stay as they are
         try:
@@ -2669,6 +3292,9 @@ def cmd_disarm(args):
         out_text("%s remove %s" % (verb, record))
         if not args.dry_run:
             os.remove(record)
+    elif any(local_cfg(g, k) == "false" for k in PACK_KEYS):  # armed before 1.0.2 (no record): the values from before that arm are unknown
+        out_text("no %s: gc.packRefs and maintenance.pack-refs.enabled stay as they are; to return them to Git's defaults run "
+                 "git config --local --unset gc.packRefs and git config --local --unset maintenance.pack-refs.enabled" % record)
     return 0
 
 
@@ -2704,6 +3330,20 @@ def read_bytes(path):
         return None
 
 
+def read_quiet(path):
+    """The bytes of a file, or None when it cannot be read (missing, a directory, no permission)."""
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except (OSError, ValueError):
+        return None
+
+
+def newer(a, b):
+    """Is GUARD_VERSION text `a` newer than `b`?  A guard that declares no version (None) is older than every guard that declares one."""
+    return a is not None and (b is None or vtuple(a) > vtuple(b))
+
+
 def guard_files(home):
     """(source, copy) for the guard script and its launcher: the source is this guard's own file, the copy is under <home>/guard."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -2720,14 +3360,51 @@ def hermes_home():
     return os.path.expanduser("~/.hermes")
 
 
+_CMD_META = "&()^%;,="  # read by cmd.exe as operators, separators or expansions where it starts the launcher or runs the interpreter with call
+
+
+def cmd_unsafe(path):
+    """On Windows, the first character of `path` that cmd.exe reads as an operator, a separator or an expansion when it starts the launcher
+    by that path and runs the interpreter through `call`; None when there is none, and always None elsewhere."""
+    return next((c for c in path if c in _CMD_META), None) if sys.platform == "win32" else None
+
+
+def hermes_plugin():
+    """-> (launcher, note).  launcher: the Hermes plugin's own launcher when the Hermes entry may run it, i.e. the guard script beside it
+    declares this guard's GUARD_VERSION and, on Windows, its path holds no character cmd_unsafe names; else None.  note: why an existing
+    plugin launcher is not used, else None."""
+    plugin = os.path.abspath(os.path.join(hermes_home(), "plugins", "magos")).replace("\\", "/")
+    own = plugin + "/hooks/run-guard.cmd"
+    if not os.path.isfile(own):
+        return None, None
+    v = version_of(read_quiet(plugin + "/scripts/magos_guard.py"))
+    if v != GUARD_VERSION:
+        return None, ("the Hermes plugin %s holds guard %s, not %s, so the Hermes entry runs the copy under the guard home. Update the Hermes "
+                      "plugin (hermes plugins update magos; when its security scan asks for confirmation: hermes plugins install "
+                      "UlyssesLeoLee/MAGOS --force --enable), then run install --host hermes again" % (plugin, v or "unversioned", GUARD_VERSION))
+    bad = cmd_unsafe(own)
+    if bad:
+        return None, ("the Hermes plugin launcher %s contains %r, which cmd.exe reads as an operator, a separator or an expansion when it "
+                      "starts the launcher, so the Hermes entry runs the copy under the guard home" % (own, bad))
+    return own, None
+
+
 def host_launcher(host, home):
-    """The launcher a host entry runs: for Hermes the Hermes plugin's own launcher when it exists (it follows `hermes plugins update`),
-    otherwise the copied launcher under <home>/guard."""
-    if host == "hermes":
-        own = os.path.join(hermes_home(), "plugins", "magos", "hooks", "run-guard.cmd")
-        if os.path.isfile(own):
-            return os.path.abspath(own).replace("\\", "/")
-    return "%s/guard/hooks/run-guard.cmd" % home
+    """The launcher a host entry runs: for Hermes the Hermes plugin's own launcher when it runs this guard version (it then follows
+    `hermes plugins update`), otherwise the copied launcher under <home>/guard."""
+    own = hermes_plugin()[0] if host == "hermes" else None
+    return own or "%s/guard/hooks/run-guard.cmd" % home
+
+
+def sh_quote(text):
+    """`text` as one single-quoted word of a POSIX shell (bash, sh): each apostrophe closes the quote, is escaped and reopens it."""
+    return "'%s'" % text.replace("'", "'\\''")
+
+
+def ps_quote(text):
+    """`text` as one single-quoted PowerShell string: each quote character PowerShell accepts there (', and the typographic single quotes)
+    written twice."""
+    return "'%s'" % re.sub("(['\u2018\u2019\u201a\u201b])", r"\1\1", text)
 
 
 def host_snippet(host, home):
@@ -2735,16 +3412,25 @@ def host_snippet(host, home):
     win = sys.platform == "win32"
     if host == "codex":
         return json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash|mcp__.*(start_session|worktree|branch|hand_off_to_session)", "hooks": [{
-            "type": "command", "command": "sh '%s' hook codex pre-tool" % launcher,
-            "commandWindows": "& '%s' hook codex pre-tool; exit $LASTEXITCODE" % launcher, "timeout": 25, "statusMessage": "MAGOS lane guard"}]}]}}, indent=2)
+            "type": "command", "command": "sh %s hook codex pre-tool" % sh_quote(launcher),
+            "commandWindows": "& %s hook codex pre-tool; exit $LASTEXITCODE" % ps_quote(launcher), "timeout": 25,
+            "statusMessage": "MAGOS lane guard"}]}]}}, indent=2)
     if host == "hermes":  # command is a YAML single-quoted scalar ('' stands for '), so the POSIX form and its quoted path stay valid YAML
-        command = ('"%s"' % launcher if win else "sh '%s'" % launcher.replace("'", "'\\''")) + " hook hermes pre-tool"
+        command = ('"%s"' % launcher if win else "sh " + sh_quote(launcher)) + " hook hermes pre-tool"
         return ('hooks:\n  pre_tool_call:\n    - matcher: "terminal"\n      command: \'%s\'\n      timeout: 25\n      fail_closed: true\n'
                 % command.replace("'", "''"))
-    return json.dumps({"hooks": {"PreToolUse": [
-        {"matcher": claude_matcher(strict=True), "hooks": [{"type": "command", "command": '"%s" --strict hook claude pre-tool' % launcher, "shell": "bash", "timeout": 25}]},
+    return json.dumps({"hooks": {"PreToolUse": [  # run by bash: the single-quoted path keeps a $, a backtick or a ! literal
+        {"matcher": claude_matcher(strict=True), "hooks": [{"type": "command", "command": "%s --strict hook claude pre-tool" % sh_quote(launcher),
+                                                            "shell": "bash", "timeout": 25}]},
         {"matcher": claude_matcher(),
-         "hooks": [{"type": "command", "command": '"%s" hook claude pre-tool' % launcher, "shell": "bash", "timeout": 25}]}]}}, indent=2)
+         "hooks": [{"type": "command", "command": "%s hook claude pre-tool" % sh_quote(launcher), "shell": "bash", "timeout": 25}]}]}}, indent=2)
+
+
+def home_audit(home, **rec):
+    """One JSON line (ts first) appended to <guard home>/audit.log."""
+    os.makedirs(home, exist_ok=True)
+    with open(os.path.join(home, "audit.log"), "ab") as fh:
+        fh.write((json.dumps(dict(ts=now_iso(), **rec), ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 def cmd_version(args):
@@ -2760,15 +3446,87 @@ def version_record(source, data):
                        indent=2) + "\n").encode("utf-8")
 
 
+def read_record(home):
+    """guard/VERSION.json under the guard home: a dict, None when the file is missing, {} when it cannot be read as a JSON object."""
+    raw = read_quiet("%s/guard/VERSION.json" % home)
+    if raw is None:
+        return None
+    try:
+        doc = json.loads(raw.decode("utf-8-sig"))
+    except ValueError:
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def same_file(a, b):
+    """Do the paths name one existing file?"""
+    try:
+        return os.path.samefile(a, b)
+    except (OSError, ValueError):
+        return False
+
+
+class NotRestored(OSError):
+    """replace_files failed and could not put back every file it had already replaced."""
+
+
+def replace_files(items):
+    """Replace several files as one: write every new content to a temporary file beside its destination (with its mode on POSIX), then
+    move each into place.  When a move fails, every file already moved is put back from its previous bytes (removed when there was none),
+    the temporary files are removed and the error is raised, so the files never mix two versions.  items: [(path, bytes, previous bytes or
+    None, mode or None)]."""
+    staged, done = [], []
+    try:
+        for path, data, _cur, mode in items:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = "%s.%d.tmp" % (path, os.getpid())
+            staged.append(tmp)
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+            if mode is not None and os.name != "nt":
+                os.chmod(tmp, mode)
+        for (path, _data, cur, mode), tmp in zip(items, staged):
+            _replace(tmp, path)
+            done.append((path, cur, mode))
+    except BaseException as err:
+        lost = []
+        for path, cur, mode in reversed(done):
+            try:
+                if cur is None:
+                    os.remove(path)
+                else:
+                    write_atomic(path, cur, mode)
+            except OSError:
+                lost.append(path)
+        if lost:
+            raise NotRestored("%s; and %s could not be put back" % (err, ", ".join(lost)))
+        raise
+    finally:
+        for tmp in staged:
+            if os.path.lexists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+
+
 def cmd_install(args):
     """Copies the guard and its launcher to one canonical user-level directory and prints (and saves) the exact host snippet; never edits
-    host config.  Version-aware and atomic: identical copies are left alone, a newer copy is not downgraded without --allow-downgrade,
-    each file is replaced whole or not at all, and guard/VERSION.json (written last) records where the copy came from.
-    User-only: needs a real console except with --dry-run."""
-    if not args.dry_run and not user_console():
+    host config.  Version-aware and atomic: identical copies are left alone, a newer copy is not downgraded without --allow-downgrade, both
+    files are replaced together or not at all (the launcher stays executable on POSIX), and guard/VERSION.json is rewritten by every install.
+    On Windows a guard home whose launcher path holds a character cmd.exe would misread is refused.  User-only: needs a real console
+    except with --dry-run."""
+    home, dry = guard_home(args.home), args.dry_run
+    launcher = "%s/guard/hooks/run-guard.cmd" % home
+    bad = cmd_unsafe(launcher)
+    if bad:  # cmd.exe would split or expand the path where a host starts the launcher, so the guard would never run
+        sys.stderr.write("MAGOS: the guard home %s cannot hold the launcher on Windows: its path %s contains %r, which cmd.exe reads as an "
+                         "operator, a separator or an expansion when it starts the launcher; nothing was written. Choose a guard home whose "
+                         "path holds none of & ( ) ^ %% ; , = (--home DIR or MAGOS_HOME).\n" % (home, launcher, bad))
+        return 2
+    if not dry and not user_console():
         sys.stderr.write(T(args.lang, "need_tty") + "\n")
         return EXIT["CONSOLE_REQUIRED"]
-    home, dry = guard_home(args.home), args.dry_run
     files = [(src, dst, read_bytes(src), read_bytes(dst)) for src, dst in guard_files(home)]
     missing = [src for src, _dst, data, _cur in files if data is None]
     if missing:
@@ -2777,31 +3535,37 @@ def cmd_install(args):
     src0, data0, old = files[0][0], files[0][2], files[0][3]
     if all(data == cur for _src, _dst, data, cur in files):
         out_text("guard copy unchanged (%s)" % GUARD_VERSION)
-        if not dry and not os.path.isfile(record):
-            write_atomic(record, version_record(src0, data0))
     else:
-        if old is not None and version_of(old) and vtuple(version_of(old)) > vtuple(GUARD_VERSION) and not args.allow_downgrade:
+        if newer(version_of(old), GUARD_VERSION) and not args.allow_downgrade:
             sys.stderr.write("MAGOS: the guard copy %s is version %s, newer than this guard %s; nothing was copied. Run install from the newer "
                              "MAGOS, or pass --allow-downgrade to replace it.\n" % (files[0][1], version_of(old), GUARD_VERSION))
             return EXIT["DOWNGRADE_REFUSED"]
-        for src, dst, data, cur in files:
-            if data != cur:
-                out_text("%s copy %s -> %s" % ("would" if dry else "did", src, dst))
+        changed = [(src, dst, data, cur) for src, dst, data, cur in files if data != cur]
         if not dry:
-            try:
-                for _src, dst, data, cur in files:
-                    if data != cur:
-                        write_atomic(dst, data)
-                write_atomic(record, version_record(src0, data0))
+            try:  # the launcher first: a failure on the script puts the launcher back
+                replace_files([(dst, data, cur, 0o755 if dst.endswith(".cmd") else None) for _src, dst, data, cur in reversed(changed)])
             except OSError as err:
-                sys.stderr.write("MAGOS guard: install failed (%s: %s); the file being written keeps its previous content and VERSION.json is "
-                                 "unchanged. Run doctor, then install again.\n" % (type(err).__name__, err))
-                return EXIT["UNKNOWN"]
+                kept = "the copy may now mix two versions" if isinstance(err, NotRestored) else "the previous copy is kept whole"
+                text = "install failed (%s: %s); %s and VERSION.json is unchanged. Run doctor, then install again" % (type(err).__name__, err, kept)
+                return fail(args, "INTERNAL_ERROR", text, "MAGOS guard: " + text)
+        for src, dst, _data, _cur in changed:
+            out_text("%s copy %s -> %s" % ("would" if dry else "did", src, dst))
         out_text("guard copy %s -> %s%s" % ("none" if old is None else version_of(old) or "unversioned", GUARD_VERSION,
                                              " (dry run: nothing written)" if dry else ""))
+    if not dry:
+        source = src0
+        if same_file(src0, files[0][1]):  # install run from the copy itself: the copy still came from where VERSION.json says
+            prev = (read_record(home) or {}).get("source")
+            source = prev if isinstance(prev, str) and prev and not same_file(prev, src0) else src0
+        write_atomic(record, version_record(source, data0))
     snippet = host_snippet(args.host, home)
+    note = hermes_plugin()[1] if args.host == "hermes" else None
     if not dry:
         put_text("%s/guard/generated/%s.%s" % (home, args.host, "yaml" if args.host == "hermes" else "json"), snippet)
+        home_audit(home, op="install", host=args.host, to=GUARD_VERSION, source=src0.replace("\\", "/"),
+                   **{"from": "none" if old is None else version_of(old) or "unversioned"})
+    if note:
+        out_text("NOTE: " + note + ".")
     out_text(snippet + "\nMerge it into your own host configuration; the guard never edits it. Codex: trust the entry in /hooks. Hermes: approve it on first use.")
     return 0
 
@@ -2817,26 +3581,118 @@ def git_too_old(text):
     return "%s.%s" % m.groups() if m and (int(m.group(1)), int(m.group(2))) < (2, 36) else None
 
 
-def copy_report():
-    """Compare the copy under the guard home (run by the Codex and Hermes hooks) with the running guard.  -> True when it differs."""
-    home = guard_home()
-    (_src, dst, data, cur), (_lsrc, _ldst, ldata, lcur) = [(s, d, read_bytes(s), read_bytes(d)) for s, d in guard_files(home)]
+def described(data):
+    """'<GUARD_VERSION or unversioned> (<first 12 hex digits of the sha256>)' of a guard file's bytes."""
+    return "%s (%s)" % (version_of(data) or "unversioned", sha256_of(data or b"")[:12])
+
+
+def provenance(rec, cur):
+    """The provenance line of the copy, read from its VERSION.json (information, never a problem)."""
+    if rec is None:
+        out_text("guard copy provenance: no VERSION.json")
+    elif not rec:
+        out_text("guard copy provenance: VERSION.json cannot be read")
+    else:
+        out_text("guard copy provenance: %s (%s) from %s, installed %s%s" % (
+            rec.get("version") or "?", str(rec.get("sha256") or "?")[:12], rec.get("source") or "?", rec.get("installed_at") or "?",
+            "" if rec.get("sha256") == sha256_of(cur) else ", which does not match the copy"))
+
+
+def copy_report(home_arg=None):
+    """Compare the copy under the guard home (run by the Codex and Hermes hooks) with the running guard and its launcher, or, when the
+    running guard is that copy, with the guard VERSION.json names as its source; then the provenance line and the Hermes entry.
+    -> True on a problem."""
+    home = guard_home(home_arg)
+    (src, dst, data, cur), (_lsrc, ldst, ldata, lcur) = [(s, d, read_quiet(s), read_quiet(d)) for s, d in guard_files(home)]
     if cur is None:
         out_text("guard copy: none under %s/guard" % home)
-        return False
-    copy = "%s (%s)" % (version_of(cur) or "unversioned", sha256_of(cur)[:12])
+        return hermes_report(home, home_arg)
+    rec, against, label = read_record(home), src, "this guard"
+    if same_file(src, dst):  # doctor runs from the copy itself: compare it with the guard it was installed from
+        source = (rec or {}).get("source")
+        if not isinstance(source, str) or not source or not os.path.isfile(source) or same_file(source, dst):
+            out_text("guard copy %s: %s; this guard is the copy, and VERSION.json names no source to compare it with" % (dst, described(cur)))
+            provenance(rec, cur)
+            return hermes_report(home, home_arg)
+        against, label = source, "its source %s" % source.replace("\\", "/")
+        data = read_quiet(source)
+        ldata = read_quiet(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(source))), "hooks", "run-guard.cmd"))
+        out_text("guard copy %s: this guard is the copy; it is compared with its source %s, which VERSION.json names" % (dst, against))
+    problem = True
     if cur == data and (ldata is None or lcur == ldata):
-        out_text("guard copy %s: %s, the same as this guard" % (dst, copy))
+        out_text("guard copy %s: %s, the same as %s" % (dst, described(cur), label))
+        problem = False
+    elif newer(version_of(cur), version_of(data)):  # install would refuse it (exit 18): name the newer MAGOS instead of an install command
+        source = (rec or {}).get("source")
+        out_text("guard copy %s: %s is NEWER than %s %s; run doctor from that MAGOS%s" % (
+            dst, described(cur), label, described(data), " (VERSION.json names its source: %s)" % source if isinstance(source, str) and source else ""))
+    else:
+        hosts = [h for h in HOSTS if os.path.isfile("%s/guard/generated/%s.%s" % (home, h, "yaml" if h == "hermes" else "json"))] or list(HOSTS)
+        refresh = "%s install --host %%s%s" % (guard_cmd(against), ' --home "%s"' % home if home_arg else "")
+        out_text("guard copy %s: %s DIFFERS from %s %s; refresh it in your own terminal:\n%s"
+                 % (dst, described(cur), label, described(data), "\n".join("  " + refresh % h for h in hosts)))
+        if ldata is not None and lcur != ldata:
+            out_text("  the launcher %s (%s) differs as well" % (ldst, sha256_of(lcur or b"")[:12]))
+    provenance(rec, cur)
+    return hermes_report(home, home_arg) or problem
+
+
+def hermes_entry_launcher(text):
+    """The launcher path in the command of a Hermes entry install generated (a YAML single-quoted scalar), or None."""
+    for line in text.splitlines():
+        body = line.strip()
+        if body.startswith("- "):
+            body = body[2:].lstrip()
+        if not body.startswith("command:"):
+            continue
+        raw = body[len("command:"):].strip()
+        if len(raw) < 2 or raw[0] != "'" or raw[-1] != "'" or "'" in raw[1:-1].replace("''", ""):
+            return None
+        try:
+            words = shlex.split(raw[1:-1].replace("''", "'"))
+        except ValueError:
+            return None
+        words = words[1:] if words[:1] == ["sh"] else words
+        return words[0] if words else None
+    return None
+
+
+def hermes_report(home, home_arg=None):
+    """The Hermes entry install generated (guard/generated/hermes.yaml): its launcher must exist and run a guard of this version.
+    -> True on a problem."""
+    path = "%s/guard/generated/hermes.yaml" % home
+    raw = read_quiet(path)
+    if raw is None:
         return False
-    hosts = [h for h in HOSTS if os.path.isfile("%s/guard/generated/%s.%s" % (home, h, "yaml" if h == "hermes" else "json"))] or list(HOSTS)
-    out_text("guard copy %s: %s DIFFERS from this guard %s (%s); refresh it in your own terminal:\n%s"
-             % (dst, copy, GUARD_VERSION, sha256_of(data or b"")[:12], "\n".join("  %s install --host %s" % (guard_cmd(), h) for h in hosts)))
-    return True
+    launcher = hermes_entry_launcher(raw.decode("utf-8", "replace"))
+    if not launcher:
+        out_text("hermes entry %s: no launcher command found in it" % path)
+        return False
+    redo = "%s install --host hermes%s" % (guard_cmd(), ' --home "%s"' % home if home_arg else "")
+    if not os.path.isfile(launcher):
+        out_text("hermes entry %s: its launcher %s does NOT EXIST (the Hermes plugin was removed?), and fail_closed then blocks every Hermes "
+                 "terminal call; in your own terminal run %s and merge the new entry, or remove the MAGOS entry from the Hermes config" % (path, launcher, redo))
+        return True
+    v = version_of(read_quiet(os.path.join(os.path.dirname(os.path.dirname(launcher)), "scripts", "magos_guard.py")))
+    if v != GUARD_VERSION:
+        out_text("hermes entry %s: its launcher %s runs guard %s, not this guard %s; update the Hermes plugin or, in your own terminal, run %s "
+                 "and merge the new entry" % (path, launcher, v or "unversioned", GUARD_VERSION, redo))
+        return True
+    out_text("hermes entry: %s (guard %s)" % (launcher, v))
+    return False
+
+
+_VETO = re.compile(r"^MAGOS (?:BLOCKED|拒绝): ", re.M)  # the line the backstop's deny() writes; nothing else counts as its veto
+SELFTEST_S = 30.0
 
 
 def selftest_probe(g):
-    """Try to create the unclaimed branch __magos_selftest.  -> (exit code, stderr text)."""
-    rc, _out, err = g.run("branch", "__magos_selftest", ok=None, full=True)
+    """Try to create the unclaimed branch __magos_selftest on a Git budget of its own (not the time the rest of doctor used); a branch the
+    backstop let through is deleted again.  -> (exit code, stderr text).  Raises GitFail."""
+    probe = Git(g.start, budget=SELFTEST_S)
+    rc, _out, err = probe.run("branch", "__magos_selftest", ok=None, full=True)
+    if rc == 0:
+        probe.run("branch", "-D", "__magos_selftest", ok=(0, 1))
     return rc, err.decode("utf-8", "replace").strip()
 
 
@@ -2856,7 +3712,7 @@ def cmd_doctor(args):
     except GitFail as err:
         out_text("git: %s" % err)
         ver = None
-    problems = copy_report() or problems  # before the repository: the copy matters wherever the Codex and Hermes hooks run
+    problems = copy_report(args.home) or problems  # before the repository: the copy matters wherever the Codex and Hermes hooks run
     if ver is None:
         return 1
     g = open_repo(args.repo)
@@ -2866,8 +3722,8 @@ def cmd_doctor(args):
     claims, bad = read_claims(g)
     heads = list_refs(g)[0]
     mode = guard_mode(g)
-    newer = [b for b in bad if b.code == "CLAIM_NEWER_FORMAT"]
-    out_text("repository: %s (mode %s); claims: %d, unreadable: %d, newer-format: %d" % (g.common, mode, len(claims), len(bad) - len(newer), len(newer)))
+    too_new = [b for b in bad if b.code == "CLAIM_NEWER_FORMAT"]
+    out_text("repository: %s (mode %s); claims: %d, unreadable: %d, newer-format: %d" % (g.common, mode, len(claims), len(bad) - len(too_new), len(too_new)))
     for b in bad:
         out_text("  %s" % (b.text if b.code == "CLAIM_NEWER_FORMAT" else "unreadable claims/%s" % b.replace(os.sep, "/")))
     orphans = [d["branch"] for d in claims.values() if d["branch"] not in heads and not d["worktree"]]
@@ -2893,16 +3749,29 @@ def cmd_doctor(args):
             out_text("backstop guard command %s: the script is MISSING, so a denial names a command that cannot run; %s" % (cmd, rearm))
             problems = True
         else:
-            out_text("backstop guard command: %s" % cmd)
+            v = version_of(read_quiet(script))
+            if v != GUARD_VERSION and not newer(v, GUARD_VERSION):  # older, or no version at all (before 1.0.2)
+                out_text("backstop guard command %s: its script declares %s, older than this guard %s, so a denial sends agents to an older guard; "
+                         "refresh that copy with install when it is the copy, then %s" % (cmd, v or "no version", GUARD_VERSION, rearm))
+                problems = True
+            else:
+                out_text("backstop guard command: %s" % cmd)
     if mode == "armed" and same:
+        lock = os.path.join(g.common, "refs", "heads", "__magos_selftest.lock")
         why = ("the branch __magos_selftest already exists" if "__magos_selftest" in heads else
-               "a claim for __magos_selftest exists" if fold("__magos_selftest") in claims or newer_claim(bad, "__magos_selftest") else None)
-        rc, err = (None, "") if why else selftest_probe(g)
+               "a claim for __magos_selftest exists" if fold("__magos_selftest") in claims or newer_claim(bad, "__magos_selftest") else
+               "%s exists (a ref lock an earlier git command left behind; remove it when no git command runs)" % lock.replace("\\", "/")
+               if os.path.exists(lock) else None)
+        rc, err = None, ""
+        if not why:
+            try:
+                rc, err = selftest_probe(g)
+            except GitFail as fail_:
+                why = "the probe failed: %s: %s" % (fail_.code, fail_)
         if rc == 0:
-            g.run("branch", "-D", "__magos_selftest", ok=(0, 1))
             out_text("self-test FAILED: the backstop did not veto an unclaimed branch")
             problems = True
-        elif rc is not None and "MAGOS" in err:
+        elif rc is not None and _VETO.search(err):
             out_text("self-test ok: an unclaimed branch is vetoed")
         else:
             out_text("self-test inconclusive: %s" % (why or "git exited %d without a MAGOS veto: %s" % (rc, err[-300:] or "(no message)")))
@@ -2960,7 +3829,7 @@ def main(argv=None):
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--home")
     p.add_argument("--allow-downgrade", action="store_true")
-    sub.add_parser("doctor", parents=[common])
+    sub.add_parser("doctor", parents=[common]).add_argument("--home")
     sub.add_parser("version", parents=[common])
     try:
         args = ap.parse_args(argv)

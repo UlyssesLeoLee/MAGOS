@@ -774,10 +774,10 @@ MAGOS ships a lane guard (`scripts/magos_guard.py`). Before a branch or worktree
 - **Where it runs.** The Claude Code plugin turns on PreToolUse hooks (`hooks/hooks.json`, which runs `hooks/run-guard.cmd`, which runs `scripts/magos_guard.py`) in every repository you open in Claude Code. The Codex and Hermes plugin installs do not: in your own terminal, run `py -3 scripts/magos_guard.py install --host codex` (or `--host hermes`; `python3` on macOS and Linux) and merge the entry it prints into the host's configuration. In one repository, `arm` adds a Git `reference-transaction` backstop that vetoes an unclaimed new branch whatever tool runs git.
 - **Modes.** AUTO (the default): a named worktree creation always needs a manifest, a branch-only creation only when another lane exists, so a repository with one worktree and nothing unmerged is unaffected. ARMED (after `arm`): every new branch needs one, in the hooks and in Git. OFF: `git config --local magos.guard off`.
 - **Opting out.** `git config --local magos.guard off` (one repository), `claude plugin disable magos` (the whole Claude Code plugin), or `MAGOS_GUARD=off` in the environment of the host process.
-- **Requirements.** Python 3.9+ (`py -3`, `python3` or `python`) and Git 2.36+; `magos_guard.py doctor` checks both, and `magos_guard.py version` prints the running guard's version.
-- **Only you** run `override`, `arm`, `disarm` and `install`, from a real terminal; the hooks deny an agent that tries.
-- **After every upgrade.** Restart the running Claude Code sessions, and re-run `install` for Codex and Hermes (`doctor` prints the exact command).
-- **Limits.** The hooks read command text, and they let a call through when Python or the guard script is missing; the Git backstop does not see a branch rename or copy (`git branch -m/-c`). `references/lane-split.md` section 12 lists every limit.
+- **Requirements.** Python 3.9+ (`py -3`, `python3` or `python`) and Git 2.36+ (the other MAGOS commands need Git 2.30+); `magos_guard.py doctor` checks both, and `magos_guard.py version` prints the running guard's version.
+- **Only you** run `override`, `arm`, `disarm` and `install`, from a real terminal; the hooks deny an agent that tries, and the hook launcher runs nothing but the hook. A command started in a new console window passes the console check, so neither that check nor an override is access control.
+- **After every upgrade.** Restart the running Claude Code sessions, and re-run `install` for Codex and Hermes (`doctor` prints the exact command; for a copy installed with `install --home <dir>`, run `doctor --home <dir>`).
+- **Limits.** The hooks read command text, and they let a call through when Python or the guard script is missing; the Git backstop does not see a branch rename or copy (`git branch -m/-c`), which the hooks deny in every option spelling. `references/lane-split.md` section 12 lists every limit.
 
 ---
 
@@ -833,7 +833,7 @@ All three hosts install the plugin `magos` straight from this repository, with n
 |---|---|---|
 | Claude Code | in a session: `/plugin marketplace add UlyssesLeoLee/MAGOS`, then `/plugin install magos@magos` | `/plugin marketplace update magos`, then `/plugin update magos@magos`, then restart every running Claude Code session |
 | Codex | `codex plugin marketplace add UlyssesLeoLee/MAGOS`, then `codex plugin add magos@magos` | `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos` again, then restart Codex and refresh the guard copy (`install --host codex`) |
-| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `hermes plugins update magos` (when its security scan asks for confirmation: `hermes plugins install UlyssesLeoLee/MAGOS --force --enable`), then restart Hermes |
+| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `hermes plugins update magos` (when its security scan asks for confirmation: `hermes plugins install UlyssesLeoLee/MAGOS --force --enable`; a pinned install moves its pin instead, see Pin a version), then restart Hermes |
 
 Claude Code also works from a shell: `claude plugin marketplace add UlyssesLeoLee/MAGOS && claude plugin install magos@magos`.
 
@@ -848,7 +848,7 @@ After a new session the names line up across hosts:
 - Plugin hosts load only the skills under `skills/`, never the root `SKILL.md`, so the plugin carries an entry skill, `git-orchestrator`, that reads the root `SKILL.md`. Skills-directory installs (the sync script, or a clone into a skills folder) do not need it, and the sync script does not copy it.
 - The manifests pin a version, so Claude Code updates an installed plugin only when the version changes. A running session keeps the hooks of the version it started with, so restart every session after an update.
 - The Claude Code install also turns on the lane guard hooks; the Codex and Hermes installs do not (see Lane guard). Upgrade details per host, including the guard copy and rollback, are in `references/installation.md`; what changed in each version is in `CHANGELOG.md`.
-- Hermes warns "custom (unreviewed) source": MAGOS is not in the official Hermes plugin catalog yet. Listing it takes a pull request to NousResearch/hermes-agent by the repository owner, pinned to a commit SHA; after that, `hermes plugins install magos` works.
+- Hermes warns "custom (unreviewed) source": MAGOS is not in the official Hermes plugin catalog. Listing it takes a pull request to NousResearch/hermes-agent by the repository owner, pinned to a commit SHA; a listed plugin installs with `hermes plugins install magos`.
 - If you installed an older way, remove it first so each command exists once: `~/.claude/commands/Git*.md`, `~/.claude/skills/magos`, Codex `~/.agents/skills/MAGOS`, Hermes `skills/multi-agent-git-orchestrator`.
 
 ### Pin a version
@@ -858,10 +858,10 @@ Every release is tagged `v<version>` (`CHANGELOG.md`). The commands above follow
 ```bash
 claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.2    # then: claude plugin install magos@magos
 git clone --branch v1.0.2 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character commit SHA of v1.0.2> --enable
+hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character commit SHA of v1.0.2> --enable    # add --force when MAGOS is already installed
 ```
 
-A pinned install receives no later fixes, guard security fixes included: follow `CHANGELOG.md` and move the pin. `references/installation.md` shows how to look up the commit SHA and how to pin Codex and the sync-script installs.
+A pinned install receives no later fixes, guard security fixes included: follow `CHANGELOG.md` and move the pin. The commit SHA of a tag is the `refs/tags/v1.0.2^{}` line of `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.2 "refs/tags/v1.0.2^{}"` (the `refs/tags/v1.0.2` line when there is no `^{}` line). Hermes records a `--ref` install as pinned: `hermes plugins update magos` refuses it, and `hermes plugins install UlyssesLeoLee/MAGOS --force` without `--ref` reinstalls the pinned commit. Move the pin with `--ref <new SHA> --force --enable`; to follow the default branch again, run `hermes plugins remove magos` and then `hermes plugins install UlyssesLeoLee/MAGOS --enable`. `references/installation.md` has the details, including how to pin Codex and the sync-script installs.
 
 ### Claude Code (clone into the skills folder)
 
@@ -958,7 +958,7 @@ GitRecommend
 
 The repository root carries `.claude-plugin/` (the Claude Code `plugin.json` and the `marketplace.json` that Claude Code and Codex share) and the Hermes `plugin.yaml` and `__init__.py`, and deliberately no `.codex-plugin/` or `.cursor-plugin/`. Codex treats any of those folders as a plugin root and prefixes the skill names, so **a `git clone` straight into a Codex skills directory gives `$magos:git-recon` instead of `$git-recon`**. Install Codex and Hermes with the sync script: it copies only `SKILL.md`, `references/`, and `skills/`, never `.claude-plugin/`, so the names stay `$git-recon` and `/git-recon`. A root `plugin.json` alone does not trigger the prefix.
 
-One known deviation: section 8 of the specification asks for files meant for a single tool to live in a reverse-domain folder (such as `com.example.client/`). `commands/` serves only Claude Code, and `plugin.yaml` and `__init__.py` only Hermes, but they sit at the top level. Plugin tools ignore it, so importing is unaffected; moving it would change the install script and many tests, so it stays for now.
+One known deviation: section 8 of the specification asks for files meant for a single tool to live in a reverse-domain folder (such as `com.example.client/`). `commands/` serves only Claude Code, and `plugin.yaml` and `__init__.py` only Hermes, but they sit at the top level. Plugin tools ignore them, so importing is unaffected; the install script and the tests address them at the top level.
 
 When you change the version, update together `version` in `plugin.json`, `.claude-plugin/plugin.json` and `plugin.yaml`, `metadata.version` in `SKILL.md` and `skills/git-orchestrator/SKILL.md`, `GUARD_VERSION` in `scripts/magos_guard.py`, and line 3 of `references/commands.md` (the source contracts and the guard suite check that they agree), and add the version's section to `CHANGELOG.md`. The release gate:
 
@@ -969,7 +969,7 @@ python -X utf8 tests/codex/contracts/test_agent_plugin.py
 python -m pytest tests/codex/guard -q -p no:cacheprovider
 ```
 
-The first two run every source-contract case (including `package/agent-plugin`, the plugin format) and write nothing; they exit 1 on any failure. The third plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one. The fourth runs the lane guard suite. `.github/workflows/test.yml` runs all four on Windows and Linux with Python 3.9, 3.12 and 3.14, and checks that a release tag `v<version>` names the package version.
+The first two run every source-contract case (including `package/agent-plugin`, the plugin format) and write nothing; they exit 1 on any failure. The third plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one. The fourth runs the lane guard suite. `.github/workflows/test.yml` runs all four on Windows and Linux with Python 3.9, 3.12 and 3.14, runs the coverage commands of `.quality/qguard.json` on Windows with Python 3.12 and fails when a source file or the whole project has 90 percent line coverage or less, and checks that a release tag `v<version>` names the package version.
 
 ---
 

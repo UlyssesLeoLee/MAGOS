@@ -4,24 +4,43 @@ REM MAGOS guard launcher (polyglot: cmd.exe runs this block, POSIX sh runs every
 REM Contract: guard exit 0 = allow or deny (the deny is a JSON object on stdout). Any other exit, a missing script or no Python is a FAILURE:
 REM --strict turns it into exit 2 (block), default (soft) into a warning and exit 0.
 REM NoDefaultCurrentDirectoryInExePath keeps cmd.exe and the guard from running a py, python or git planted in the working directory.
+REM Only the hook subcommand runs through the launcher (after an optional --strict); any other first argument is refused with exit 2.
+REM The guard's stderr reaches the host unchanged.
 setlocal
 set "NoDefaultCurrentDirectoryInExePath=1"
 if /i "%MAGOS_GUARD%"=="off" exit /b 0
 set "STRICT="
 set "GARGS=%*"
-if /i "%~1"=="--strict" set "STRICT=1" & set "GARGS=%2 %3 %4 %5 %6"
+set "FIRST=%~1"
+if /i "%~1"=="--strict" set "STRICT=1" & set "GARGS=%2 %3 %4 %5 %6" & set "FIRST=%~2"
+if not "%FIRST%"=="hook" (1>&2 echo MAGOS guard: the launcher runs only the hook subcommand; run other commands with the guard script itself in your own terminal& exit /b 2)
 set "PYTHONUTF8=1"
 set "PYTHONDONTWRITEBYTECODE=1"
 for %%I in ("%~dp0..\scripts\magos_guard.py") do set "GUARD=%%~fI"
 set "STOP=To stop the guard: set MAGOS_GUARD=off in the host's environment, or remove the MAGOS entry from the host's hook configuration (for example Claude Code: claude plugin disable magos)"
 set "KIND="
 set "WHY="
+set "RC=9009"
 if not exist "%GUARD%" set "KIND=missing" & set "WHY=the guard script is missing: %GUARD%"
-if not defined WHY py -3 -X utf8 -B "%GUARD%" %GARGS% 2>nul
-set "RC=%ERRORLEVEL%"
-if not defined WHY if "%RC%"=="9009" python -X utf8 -B "%GUARD%" %GARGS% 2>nul
-if not defined WHY if "%RC%"=="9009" set "RC=%ERRORLEVEL%"
-if not defined WHY if "%RC%"=="9009" set "KIND=nopython" & set "WHY=no Python 3 found (tried py -3, python)"
+REM Each interpreter is looked up on PATH by a for search (never in the working directory) and run by its full path through call, so that a
+REM .bat or .cmd shim returns here. A name that is not on PATH is never started; one that exits 9009 (the Microsoft Store stub) passes on.
+set "PYEXE="
+for %%I in (py.exe) do set "PYEXE=%%~$PATH:I"
+if not defined WHY if defined PYEXE call "%PYEXE%" -3 -X utf8 -B "%GUARD%" %GARGS%
+if not defined WHY if defined PYEXE set "RC=%ERRORLEVEL%"
+set "PYEXE="
+if "%RC%"=="9009" for %%I in (python.exe) do set "PYEXE=%%~$PATH:I"
+if not defined WHY if defined PYEXE call "%PYEXE%" -X utf8 -B "%GUARD%" %GARGS%
+if not defined WHY if defined PYEXE set "RC=%ERRORLEVEL%"
+set "PYEXE="
+if "%RC%"=="9009" for %%I in (python.bat) do set "PYEXE=%%~$PATH:I"
+if not defined WHY if defined PYEXE call "%PYEXE%" -X utf8 -B "%GUARD%" %GARGS%
+if not defined WHY if defined PYEXE set "RC=%ERRORLEVEL%"
+set "PYEXE="
+if "%RC%"=="9009" for %%I in (python.cmd) do set "PYEXE=%%~$PATH:I"
+if not defined WHY if defined PYEXE call "%PYEXE%" -X utf8 -B "%GUARD%" %GARGS%
+if not defined WHY if defined PYEXE set "RC=%ERRORLEVEL%"
+if not defined WHY if "%RC%"=="9009" set "KIND=nopython" & set "WHY=no Python 3 found (looked for py.exe, python.exe, python.bat and python.cmd on PATH)"
 if not defined WHY if not "%RC%"=="0" set "KIND=failed" & set "WHY=the guard script failed with exit code %RC%"
 if not defined WHY exit /b 0
 setlocal EnableDelayedExpansion
@@ -39,6 +58,10 @@ CMDBLOCK
 [ "$MAGOS_GUARD" = "off" ] && exit 0
 STRICT=
 if [ "$1" = "--strict" ]; then STRICT=1; shift; fi
+if [ "$1" != hook ]; then
+    printf '%s\n' "MAGOS guard: the launcher runs only the hook subcommand; run other commands with the guard script itself in your own terminal" >&2
+    exit 2
+fi
 export PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1 NoDefaultCurrentDirectoryInExePath=1
 bs='\'
 case "$0" in
@@ -46,7 +69,9 @@ case "$0" in
     */*) d=${0%/*}; [ -n "$d" ] || d=/ ;;
     *) d=. ;;
 esac
-HERE="$(CDPATH= cd -- "$d" 2>/dev/null && pwd)"
+# pwd -W (a builtin of MSYS and Git Bash) gives the Windows spelling, which a Windows Python opens whatever characters the path holds;
+# other shells refuse the option and print the pwd path.
+HERE="$(CDPATH= cd -- "$d" 2>/dev/null && { pwd -W 2>/dev/null || pwd; })"
 GUARD="${HERE%/*}/scripts/magos_guard.py"
 fail() {
     g="$GUARD"

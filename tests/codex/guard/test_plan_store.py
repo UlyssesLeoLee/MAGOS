@@ -20,7 +20,10 @@ def claims_dir(repo):
 
 def verdict(guard, repo, *args, stdin=b""):
     r = guard(repo, "--json", *args, stdin=stdin)
-    return r.rc, json.loads(r.out)
+    try:
+        return r.rc, json.loads(r.out)
+    except ValueError:
+        raise AssertionError("no JSON verdict (exit %s); stdout %r; stderr %r" % (r.rc, r.out, r.err)) from None
 
 
 # ---- evidence ------------------------------------------------------------------------------------------------------
@@ -236,6 +239,27 @@ def test_open_repo_edge_cases(tmp_path):
     assert run(["--repo", str(tmp_path), "arm"]).rc == 2
     assert run(["--repo", str(tmp_path), "disarm"]).rc == 2
     assert run(["--repo", str(tmp_path), "override", "--fingerprint", "f", "--reason", "r"]).rc == 2
+
+
+def test_opening_a_repository_reads_a_git_failure_as_no_repository(repo, monkeypatch):
+    # Opening the repository is the one step that does not fail closed (Invariant 3): a failing rev-parse reads as "not a repository",
+    # except a missing git and an exhausted budget, which stay errors.
+    real = G.Git.run
+
+    def failing(code):
+        def run_git(self, *args, **kw):
+            if args[:1] == ("rev-parse",):
+                raise G.GitFail(code, "injected")
+            return real(self, *args, **kw)
+        return run_git
+    assert G.open_repo(str(repo.path)) is not None
+    monkeypatch.setattr(G.Git, "run", failing("GIT_FAILED"))
+    assert G.open_repo(str(repo.path)) is None
+    for code in ("GIT_MISSING", "BUDGET_EXCEEDED"):
+        monkeypatch.setattr(G.Git, "run", failing(code))
+        with pytest.raises(G.GitFail) as err:
+            G.open_repo(str(repo.path))
+        assert err.value.code == code
 
 
 # ---- plan / amend / list / release ---------------------------------------------------------------------------------
@@ -457,13 +481,17 @@ def test_concurrent_planners_one_winner(repo):
     for attempt in range(3):
         a, b = "race-a%d" % attempt, "race-b%d" % attempt
         procs = [planner(a, ["web/%d/" % attempt]), planner(b, ["web/%d/x.js" % attempt])]
-        outs = [(p.wait(), p.stdout.read().decode("utf-8")) for p in procs]
-        codes = sorted(rc for rc, _ in outs)
+        outs = []
+        for p in procs:
+            out, err = p.communicate(timeout=120)
+            outs.append((p.returncode, out.decode("utf-8"), err.decode("utf-8", "replace")))
+        codes = sorted(rc for rc, _, _ in outs)
         assert codes == [0, 10], outs
-        loser = next(json.loads(o) for rc, o in outs if rc == 10)
-        assert loser["conflicts"][0]["branch"] in (a, b)
+        loser = next(json.loads(o) for rc, o, _ in outs if rc == 10)
+        assert loser["conflicts"][0]["branch"] in (a, b), outs
     disjoint = [planner("dis-a", ["docs/"]), planner("dis-b", ["src/"])]
-    assert [p.wait() for p in disjoint] == [0, 0]
+    done = [(p.communicate(timeout=120), p.returncode) for p in disjoint]
+    assert [rc for _, rc in done] == [0, 0], done
 
 
 def test_claim_files_atomic_and_tolerant(repo, guard):

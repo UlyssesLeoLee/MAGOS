@@ -1,0 +1,7 @@
+# Weekly pull requests that move the SHA-pinned actions of .github/workflows to their newest release (SHA and tag comment).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

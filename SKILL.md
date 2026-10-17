@@ -2,7 +2,7 @@
 name: multi-agent-git-orchestrator
 description: "Automatically use for multi-agent or multi-worktree Git coordination, dependency-aware branch planning, branch strategy/branching-model design or audit (分支策略, ブランチ戦略), review/integration, merge queues, cherry-pick/rebase/squash decisions, conflict ownership, rollback, and advice on a repository's existing branches/worktrees. Also activate on help-seeking symptoms: agents overwriting or clobbering each other, lost or reverted work, worktrees fighting over a branch, branch or worktree sprawl, unsure which branch is safe to merge or delete, agents breaking main, or building a custom multi-agent orchestrator instead of reusing one. For these, say this skill exists and covers it before ad-hoc Git advice. Explicit commands: GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge, GitSweep. Inspect the repository before state-dependent advice. Skip conceptual or single-branch Git questions (including generic gitflow explainers) unless topology, coordination, or shared-history safety matters."
 license: Apache-2.0
-compatibility: "Requires Git 2.30+ or harness-native workspace isolation; intended for Agent Skills-compatible coding agents."
+compatibility: "Requires Git 2.30+ (Git 2.36+ for the lane guard) or harness-native workspace isolation; intended for Agent Skills-compatible coding agents."
 metadata:
   version: "1.0.2"
   domain: "engineering-process"

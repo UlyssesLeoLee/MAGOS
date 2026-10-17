@@ -3,14 +3,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+from pathlib import Path
 
 import pytest
 
-from conftest import ROOT, SH
+from conftest import ROOT, SH, _find_sh
 
 STUB = '''import os, sys
 mode = os.environ.get("STUB", "ok")
@@ -28,6 +31,8 @@ elif mode == "env":
     sys.stdout.write(os.environ.get("NoDefaultCurrentDirectoryInExePath", "unset"))
 elif mode == "crash":
     sys.exit(7)
+elif mode == "argv0":  # the guard path exactly as the launcher handed it to Python
+    sys.stdout.write(sys.argv[0])
 '''
 LAUNCHER = ROOT / "hooks" / "run-guard.cmd"
 NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
@@ -75,12 +80,13 @@ def without_search_guard():
 
 
 def names_path(text, path):
-    """True when text names the absolute path: natively, or on Windows in the MSYS /c/... spelling (sh without cygpath)."""
+    """True when text names the absolute path: natively, or on Windows with either separator (pwd -W gives forward slashes, cmd and cygpath
+    backslashes) or in the MSYS /c/... spelling, whatever the case."""
     native = str(path)
     if sys.platform != "win32":
         return native in text
-    msys = "/" + native[0] + native[2:].replace("\\", "/")
-    return native.lower() in text.lower() or msys.lower() in text.lower()
+    flat, seen = native.replace("\\", "/").lower(), text.replace("\\", "/").lower()
+    return flat in seen or ("/" + flat[0] + flat[2:]) in seen
 
 
 needs_cmd = pytest.mark.skipif(sys.platform != "win32", reason="cmd.exe half of the launcher")
@@ -287,3 +293,94 @@ def test_a_non_git_payload_through_the_launcher_is_fast(tmp_path, half):
         times.append(time.monotonic() - start)
         assert r.returncode == 0 and json.loads(r.stdout) == {}, r
     assert min(times) < 2.5, times
+
+
+def _shim(directory, name, body):
+    """A cmd script `name` in `directory` whose body is one line, the way pyenv-win and similar tools put python on PATH."""
+    directory.mkdir(exist_ok=True)
+    (directory / name).write_bytes(("@echo off\r\n%s\r\n" % body).encode("utf-8"))
+    return directory
+
+
+@needs_cmd
+def test_cmd_half_returns_from_a_bat_interpreter_shim(tmp_path, layout):
+    system32 = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")
+
+    def on_path(*dirs):
+        return os.pathsep.join([str(d) for d in dirs] + [system32])
+    real = sys.executable
+    # A pyenv-win style python.bat is the only interpreter on PATH: the launcher returns from it and maps the guard's exit code.
+    bat = _shim(tmp_path / "bat", "python.bat", '"%s" %%*' % real)
+    for strict in ((), ("--strict",)):
+        r = run_cmd(layout, *strict, "hook claude pre-tool", env={"STUB": "crash"}, path=on_path(bat))
+        assert r.returncode == (2 if strict else 0) and b"exit code 7" in r.stderr and b"Diagnose: " in r.stderr, (strict, r)
+        r = run_cmd(layout, *strict, "hook claude pre-tool", env={"STUB": "deny"}, path=on_path(bat))
+        assert r.returncode == 0 and json.loads(r.stdout) == {"decision": "block"}, (strict, r)
+    broken = _shim(tmp_path / "broken", "python.bat", "exit /b 1")
+    soft = run_cmd(layout, "hook claude pre-tool", path=on_path(broken))
+    strict = run_cmd(layout, "--strict hook claude pre-tool", path=on_path(broken))
+    assert soft.returncode == 0 and strict.returncode == 2 and b"exit code 1" in soft.stderr and b"exit code 1" in strict.stderr, (soft, strict)
+    # A real python.exe and no py.exe: the launcher runs it.
+    venv = tmp_path / "venv"
+    subprocess.run([real, "-m", "venv", "--without-pip", str(venv)], check=True, capture_output=True, stdin=subprocess.DEVNULL,
+                   creationflags=NO_WINDOW, timeout=120)
+    scripts = venv / "Scripts"
+    assert (scripts / "python.exe").is_file() and not (scripts / "py.exe").exists()
+    r = run_cmd(layout, "hook claude pre-tool", env={"STUB": "echo"}, stdin=b"payload", path=on_path(scripts))
+    assert r.returncode == 0 and r.stdout == b"payload|hook claude pre-tool", r
+    # A python.bat that exits 9009 (a Store stub) passes on to the python.cmd shim, which runs the guard.
+    chain = _shim(tmp_path / "chain", "python.bat", "exit /b 9009")
+    _shim(chain, "python.cmd", '"%s" %%*' % real)
+    soft = run_cmd(layout, "hook claude pre-tool", env={"STUB": "crash"}, path=on_path(chain))
+    strict = run_cmd(layout, "--strict hook claude pre-tool", env={"STUB": "crash"}, path=on_path(chain))
+    assert soft.returncode == 0 and strict.returncode == 2 and b"exit code 7" in soft.stderr and b"exit code 7" in strict.stderr, (soft, strict)
+    # No interpreter at all: no Python 3 found, never the exit code of a program that does not exist.
+    for words, rc in (("hook claude pre-tool", 0), ("--strict hook claude pre-tool", 2)):
+        r = run_cmd(layout, words, path=system32)
+        assert r.returncode == rc and b"no Python 3 found" in r.stderr and b"exit code 1" not in r.stderr, (words, r)
+
+
+@needs_sh
+def test_sh_half_gives_python_a_windows_path_for_any_directory_name(tmp_path):
+    names = ["s;c,o=m", "t`ick", "plain"] if sys.platform == "win32" else ["plain"]
+    for name in names:
+        base = tmp_path / name
+        (base / "hooks").mkdir(parents=True)
+        (base / "scripts").mkdir()
+        shutil.copy(LAUNCHER, base / "hooks" / "run-guard.cmd")
+        (base / "scripts" / "magos_guard.py").write_text(STUB, encoding="utf-8")
+        r = run_sh(base, "hook", "codex", "pre-tool", env={"STUB": "argv0"}, stdin=b"{}")
+        given = r.stdout.decode("utf-8", "replace")
+        assert r.returncode == 0 and r.stderr == b"" and given, (name, r)  # the guard started: no launcher warning
+        expected = os.path.realpath(str(base / "scripts" / "magos_guard.py"))
+        if sys.platform == "win32":  # the Windows spelling (pwd -W), never an MSYS path such as /tmp/... that Python would misread
+            assert re.match(r"[A-Za-z]:/", given), (name, given)
+            assert os.path.normcase(os.path.realpath(given)) == os.path.normcase(expected), (name, given)
+        else:
+            assert os.path.realpath(given) == expected, (name, given)
+
+
+def test_launcher_cases_need_no_particular_sh_or_temp_directory(tmp_path):
+    # Without any sh on PATH the sh cases skip and the cmd cases pass.
+    stripped = os.pathsep.join(d for d in os.environ.get("PATH", "").split(os.pathsep) if d and not _find_sh(d))
+    assert _find_sh(stripped) is None
+    r = subprocess.run([sys.executable, "-m", "pytest", __file__, "-q", "-p", "no:cacheprovider", "-rs", "-k",
+                        "test_sh_half or test_cmd_allow_deny_and_passthrough"], capture_output=True, env=dict(os.environ, PATH=stripped),
+                       cwd=str(ROOT), stdin=subprocess.DEVNULL, creationflags=NO_WINDOW, timeout=300)
+    out = r.stdout.decode("utf-8", "replace")
+    assert r.returncode == 0 and "no sh available" in out, out
+    assert re.search(r"\b1 passed, 3 skipped\b" if sys.platform == "win32" else r"\b4 skipped\b", out), out
+    if SH is None:
+        pytest.skip("no sh available")
+    # A bare sh (no cygpath, no coreutils) names the missing guard by the path the launcher derives, also for a launcher under the system
+    # temporary directory (MSYS mounts it as /tmp), wherever pytest keeps its own temporary directories.
+    work = tempfile.mkdtemp(prefix="magos launcher ", dir=tempfile.gettempdir())
+    try:
+        base = Path(work) / "guard home"
+        (base / "hooks").mkdir(parents=True)
+        shutil.copy(LAUNCHER, base / "hooks" / "run-guard.cmd")
+        r = run_sh(base, "hook", "codex", "pre-tool", stdin=b"{}", path=str(tmp_path))
+        text = r.stderr.decode("utf-8", "replace")
+        assert r.returncode == 0 and "the guard script is missing" in text and names_path(text, base / "scripts" / "magos_guard.py"), text
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
