@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import ROOT, SH, _find_sh
+from conftest import ROOT, SH, _find_sh, time_budget
 
 STUB = '''import os, sys
 mode = os.environ.get("STUB", "ok")
@@ -292,7 +292,7 @@ def test_a_non_git_payload_through_the_launcher_is_fast(tmp_path, half):
         r = runner(None, "hook", "claude", "pre-tool", stdin=body, cwd=str(tmp_path), launcher=LAUNCHER)
         times.append(time.monotonic() - start)
         assert r.returncode == 0 and json.loads(r.stdout) == {}, r
-    assert min(times) < 2.5, times
+    assert min(times) < time_budget(2.5), times
 
 
 def _shim(directory, name, body):

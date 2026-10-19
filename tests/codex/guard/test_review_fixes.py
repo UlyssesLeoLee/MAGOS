@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import SH, G, Repo, payload, run
+from conftest import SH, G, Repo, payload, run, time_budget
 from test_gitlayer import common, hook_path, repo_git_raw, vetoed
 from test_hook import denied, hook, plan
 from test_plan_store import claims_dir, verdict
@@ -117,7 +117,7 @@ def test_a_big_transaction_is_read_in_linear_time(repo, guard):
     start = time.monotonic()
     r = subprocess.run([SH, str(hook_path(repo)), "prepared"], input=lines.encode(), capture_output=True, cwd=str(repo.path),
                        env=dict(os.environ, GIT_DIR=str(common(repo))))
-    assert r.returncode == 0 and time.monotonic() - start < 20
+    assert r.returncode == 0 and time.monotonic() - start < time_budget(20)
 
 
 def test_the_veto_message_warns_about_a_half_done_checkout(repo, guard):

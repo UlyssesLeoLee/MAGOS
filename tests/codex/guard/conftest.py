@@ -43,10 +43,24 @@ SH = _find_sh()  # None when no POSIX sh exists: the sh tests skip
 
 
 def time_budget(seconds):
-    """Wall-clock bound of a linear-time test. Line tracing (coverage, a debugger) slows the guard several times over;
-    the bound still separates a linear walk from the quadratic blow-ups these tests exist to catch."""
+    """Wall-clock bound of a timing test. Line tracing (coverage, a debugger) slows the guard several times over, and a
+    shared CI runner is several times slower than a workstation; the bound still separates a linear walk from the
+    quadratic blow-ups these tests exist to catch."""
     traced = sys.gettrace() is not None or "coverage" in sys.modules
-    return seconds * (4 if traced else 1)
+    return seconds * (4 if traced else 1) * (3 if os.environ.get("GITHUB_ACTIONS") == "true" else 1)
+
+
+def pytest_runtest_logreport(report):
+    """On GitHub Actions every failure is also written as a workflow annotation, which the public API shows without
+    signing in (the job log does not)."""
+    if os.environ.get("GITHUB_ACTIONS") != "true" or not report.failed:
+        return
+    lines = [line for line in str(report.longreprtext).splitlines() if line.strip()]
+    text = " | ".join(lines[-8:])[:1500]
+    title = report.nodeid.replace("::", " ").replace(",", ";")[:200]
+    esc = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+    sys.__stdout__.write("\n::error title=%s (%s)::%s\n" % (title, report.when, esc))
+    sys.__stdout__.flush()
 
 
 @pytest.fixture(autouse=True)
