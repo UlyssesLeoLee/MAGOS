@@ -1,7 +1,6 @@
 """Replay of the confirmed high and medium findings of the 1.0.2 security audit, plus controls, against the hook entry run as its own
 process: one case per line of data/security_regressions.jsonl, each with the verdict the guard must give, for a deny the words its
-reason must hold (so a deny for another reason does not pass), and a wall-clock bound. Each finding's case gets another verdict or
-reason from the guard the finding was raised against."""
+reason must hold (so a deny for another reason does not pass), and a wall-clock bound."""
 from __future__ import annotations
 
 import json

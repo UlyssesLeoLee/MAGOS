@@ -1925,6 +1925,9 @@ _SCRUB = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_O
           "GIT_PREFIX", "GIT_QUARANTINE_PATH", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_LITERAL_PATHSPECS", "GIT_ICASE_PATHSPECS",
           "GIT_REPLACE_REF_BASE", "GIT_NO_REPLACE_OBJECTS", "GIT_SHALLOW_FILE", "GIT_GRAFT_FILE", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
 _PIN = ["-c", "core.quotepath=false", "-c", "core.longpaths=true", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "--no-optional-locks"]
+# The only subcommands Git.run starts, none of which talks to a remote (in a partial clone, git itself fetches the objects a diff needs
+# from the promisor remote).
+LOCAL_GIT = frozenset(("--version", "branch", "check-ref-format", "config", "diff", "for-each-ref", "merge-base", "rev-parse", "status", "worktree"))
 _PIN_HINT = "ask the user to pin it in their own terminal: git config magos.target <branch>"
 
 
@@ -1963,6 +1966,9 @@ class Git:
 
     def run(self, *args, cwd=None, inp=None, ok=(0,), full=False):
         """-> (exit code, stdout), or (exit code, stdout, stderr) with full=True.  An exit code outside `ok` raises GitFail (ok=None: any)."""
+        sub = next((a for a in args if not a.startswith(("--git-dir=", "--work-tree="))), None)  # the first argument after the repository
+        if sub not in LOCAL_GIT:
+            raise GitFail("GIT_FAILED", "git %s is not a subcommand the guard runs" % (sub or "(none)"))
         e = {k: v for k, v in os.environ.items() if k not in _SCRUB and not k.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
         e.update(GIT_TERMINAL_PROMPT="0", GIT_PAGER="cat", LC_ALL="C", GIT_OPTIONAL_LOCKS="0")
         cmd = ["git"] + _PIN + (["-C", cwd] if cwd else []) + list(args)

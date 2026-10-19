@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `c26b44760bf680f7ac6bf132fdb292546b561f7d997d752829c63648bf7f85b7`
+Source-SHA256: `859215deb09eb7206370109b59673a5395d4e964ae463092b7465c0fcee75458`
 
 ## Responsibility
 

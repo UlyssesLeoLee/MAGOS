@@ -226,8 +226,8 @@ def test_git_failures_fail_closed(repo, guard, monkeypatch):
     monkeypatch.setattr(G.subprocess, "run", real)
     g2 = G.open_repo(str(repo.path))
     with pytest.raises(G.GitFail) as err:
-        g2.run("no-such-command")
-    assert err.value.code == "GIT_FAILED"
+        g2.run("rev-parse", "--verify", "refs/heads/no-such-branch")  # real git exits 128 with a message
+    assert err.value.code == "GIT_FAILED" and "rev-parse" in str(err.value) and "single revision" in str(err.value), str(err.value)
 
 
 def test_open_repo_edge_cases(tmp_path):

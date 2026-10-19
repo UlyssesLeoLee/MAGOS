@@ -7,7 +7,7 @@
 {"id": "NF-bypass-01/tilde-directory-of-an-mcp-terminal", "tool": "mcp__terminal__run_in_terminal", "cwd": "C", "command": "git switch -c t1", "tool_input": {"cwd": "~/{L_from_home}"}, "expect": "deny", "reason": "creating 't1'"}
 {"id": "NF-bypass-02/read-into-GIT_DIR", "tool": "Bash", "cwd": "C", "command": "read GIT_DIR <<< '{L}/.git'; export GIT_DIR; git branch nb1", "expect": "deny", "reason": "redirected by --git-dir/GIT_DIR"}
 {"id": "NF-bypass-02/printf-v-GIT_DIR", "tool": "Bash", "cwd": "C", "command": "printf -v GIT_DIR '%s' '{L}/.git'; export GIT_DIR; git branch nb2", "expect": "deny", "reason": "redirected by --git-dir/GIT_DIR"}
-{"id": "NF-bypass-02/append-to-GIT_DIR", "tool": "Bash", "cwd": "C", "command": "GIT_DIR=; GIT_DIR+='{L}/.git'; export GIT_DIR; git branch nb3", "expect": "deny", "reason": "redirected by --git-dir/GIT_DIR"}
+{"id": "NF-bypass-02/append-to-GIT_DIR", "tool": "Bash", "cwd": "C", "command": "unset GIT_DIR; GIT_DIR+='{L}/.git'; export GIT_DIR; git branch nb3", "expect": "deny", "reason": "redirected by --git-dir/GIT_DIR"}
 {"id": "launcher-n1/payload-nested-past-every-decoder-limit", "tool": "Bash", "cwd": "L", "command": "git status", "raw": "nested", "expect": "deny", "reason": "unparseable hook payload"}
 {"id": "launcher-n7/125-unmerged-local-branches", "tool": "Bash", "cwd": "M", "command": "git branch zz1", "expect": "deny", "reason": "creating 'zz1'"}
 {"id": "NF-state-1/branch-rename-with-bundled-options", "tool": "Bash", "cwd": "L", "command": "git branch -mf feat-x feat-moved", "expect": "deny", "reason": "creating 'feat-moved'"}

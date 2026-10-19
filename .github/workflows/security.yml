@@ -93,4 +93,4 @@ jobs:
       - name: Audit the workflows and Dependabot with zizmor
         env:
           GH_TOKEN: ${{ github.token }}  # the job's read-only token, for the online audits of the pinned actions
-        run: zizmor --strict-collection --format github --persona pedantic .
+        run: zizmor --no-ignores --no-config --collect=all --strict-collection --format github --persona pedantic .
