@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "source": "scripts/magos_guard.py",
-  "baseline_source_sha256": "6ac912ff7227221000978f04d459e6233a5e2bee86e730160ffe993332c721a7",
+  "baseline_source_sha256": "c26b44760bf680f7ac6bf132fdb292546b561f7d997d752829c63648bf7f85b7",
   "prepared_branch": "agent/hardening-1.0.2",
   "technical_design": ".quality/docs/scripts/magos_guard.py.md",
   "test_design": ".quality/test-design/scripts/magos_guard.py.test.md",
-  "prepared_technical_design_sha256": "d9506a8105b123f81e63eeaafc3a548cc01e40bfdccf1a72814b79256cacbb67",
-  "prepared_test_design_sha256": "90f0ab55913fc9dbd6e693650f55404c06c1b5df8168b9f01e16aeaf34899826",
+  "prepared_technical_design_sha256": "7ee82954cd4861f14da10f5f3e13605abadb72e56012f523c137476e3dc999d0",
+  "prepared_test_design_sha256": "d4c0e96a0a8ddbbcc6d26d2af07984d08af79bc29da4b9d468086074334030a9",
   "prepared_related_design_sha256": {}
 }

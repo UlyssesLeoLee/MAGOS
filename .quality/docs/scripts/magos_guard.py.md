@@ -25,9 +25,14 @@ The file holds seven cooperating parts.
    A `**` segment matches any number of directories; `*` and `?` never cross `/`; brackets are ordinary characters.
    Entry-versus-path and entry-versus-entry use the same function, so declared manifests of lanes that do not exist yet
    collide with each other.
-2. **Evidence gatherer.** A Git runner (argv lists, scrubbed environment, `-z` machine formats, per-call timeout and a
-   total deadline that every Git call of one hook invocation shares) enumerates claimants: every non-bare worktree,
-   every local branch not merged into the target, every unmerged remote-tracking branch, and every open claim.
+2. **Evidence gatherer.** A Git runner (argv lists, scrubbed environment, pinned options that turn off the fsmonitor
+   and the untracked cache, `-z` machine formats, per-call timeout and a total deadline that every Git call of one hook
+   invocation shares) enumerates claimants: every non-bare worktree, every local branch not merged into the target,
+   every unmerged remote-tracking branch, and every open claim. The runner runs only the local subcommands
+   `--version`, `branch`, `check-ref-format`, `config`, `diff`, `for-each-ref`, `merge-base`, `rev-parse`, `status` and
+   `worktree` (`LOCAL_GIT`), read after any leading `--git-dir=` or `--work-tree=` argument; for any other first
+   argument (another subcommand, an option such as `-c` or `--config-env`, or none) it raises `GitFail` `GIT_FAILED`
+   before git starts.
    Committed evidence is the three-dot diff against each merge base minus content the target already holds; a detached
    worktree contributes the commits of its own HEAD, and a detached worktree at the lane's own registered path is the
    lane itself and is not compared. Uncommitted evidence is `status --porcelain=v2 -z --untracked-files=all` (a rename
@@ -242,8 +247,9 @@ sets `NoDefaultCurrentDirectoryInExePath=1` in its own environment at import, be
 and every other child program are never resolved from the hook's working directory. Git 2.36+ (`status --porcelain=v2`,
 `worktree list --porcelain -z` (2.36), `rev-parse --path-format=absolute` (2.31), `for-each-ref --merged`,
 `reference-transaction`); `doctor` reports an older Git. The guard imports no network module, starts no program but
-git (at one place, `Git.run`), and runs no git subcommand that talks to a remote (no `fetch`, no `push`); in a partial
-clone, git itself fetches objects missing from the local store from the promisor remote when the guard reads a diff.
+git (at one place, `Git.run`), and runs no git subcommand that talks to a remote: `Git.run` refuses every subcommand
+outside `LOCAL_GIT` before git starts; in a partial clone, git itself fetches objects missing from the local store from
+the promisor remote when the guard reads a diff.
 
 Interpreters: the minimum is Python 3.9; the hooks run under whatever interpreter the launcher finds (`py -3`, `python3`
 or `python`; CPython 3.14 on the reference machine), so path handling never depends on version-specific results of
