@@ -53,7 +53,17 @@ The file holds seven cooperating parts.
    `sudo`, `doas`, `xargs` and similar wrappers (depth 3), tracks `cd`, `git -C`, `env -C` and `sudo -D`, and recognises
    lane-creating git commands and harness tools. The value of a `sudo` or `doas` option (`-u <user>`, `-g <group>`) and
    of an `env` option that takes one (`-C`, `-u`, `-S`, `-P`, `-a` and their long forms) is never taken for the wrapped
-   program. In PowerShell the command on the right of `$name =` runs (`$out = git switch -c x` is a creation), and the
+   program. `powershell` and `pwsh` read their options the way PowerShell reads them, through one reading used by the
+   walk, by the tamper filter's child-shell text and for a Codex argv: an option word written with `-`, `--` or `/`
+   whose name is a prefix of `Command` (`-c`, `-co`, `-Comm`, `-command`) or is `-cwa` or a prefix of
+   `CommandWithArgs` longer than `command` runs the words after it as PowerShell text, and one that is `-ec` or a
+   prefix of `EncodedCommand` (`-e`, `-en`, `-enc`, `-EncodedC`) runs the base64 UTF-16LE text of the next word (an
+   undecodable value counts as a dynamic creation); `-ex` (`ExecutionPolicy`) and `-encodeda` (`EncodedArguments`) are
+   neither. bash, sh, zsh, dash and ksh read `-c` and bundled short options ending in `c` (`-lc`, `-ec`); cmd reads
+   `/c` and `/k`. `Start-Process` runs git with its `-ArgumentList` value in its `-WorkingDirectory`, each named in
+   full, by a unique prefix (`-a`, `-wo`) or in the colon form (`-WorkingDirectory:<dir>`); the directory is resolved
+   against the directory the shell is in, and a dynamic value makes the repository unknown (the session directory's
+   repository decides, as for any computed directory). In PowerShell the command on the right of `$name =` runs (`$out = git switch -c x` is a creation), and the
    text of `( .. )` and `@( .. )` inside a command is judged like `$( .. )`; text inside a quoted string is not. Dynamic
    words (`$x`, backticks, `%x%`) in a lane-creating position are treated as unparseable. The script a shell runs is the
    `-File` value or the first readable file among the first four candidates after option values. Text echoed or quoted
@@ -72,24 +82,37 @@ The file holds seven cooperating parts.
      literal, so an escaped space, `;`, `|` or `&` stays inside the word; inside double quotes a backslash is removed
      only before `$`, a backtick, `"`, `\` and a newline; inside single quotes it stays. Every test the detector makes on
      such a word (the program name, the git subcommand, the option that creates a branch, a branch name, a worktree
-     directory name) and the word gate that decides whether a line is walked at all read the unescaped text:
+     directory name) reads the unescaped text:
      `git swi\tch -c feat\ure` creates `feature`, `g\it` is `git`, `bash -\c` is `bash -c`, and
      `git worktree add ../wt\q` creates `wtq`. A quoted backslash that survives (`"feat\ure"`) leaves a name git
-     refuses, which is no creation. PowerShell and cmd text keep their backslashes, which are path separators there; a
-     PowerShell backtick makes its word dynamic. In cmd text a caret outside double quotes removes itself and makes the
+     refuses, which is no creation. PowerShell and cmd text keep their backslashes, which are path separators there.
+     In PowerShell text a backtick outside quotes is the escape character, read as PowerShell's tokenizer reads it: it
+     removes itself and makes the next character literal (``g`it`` is `git`, ``fe`at`` is `feat`, ``ma`gos`` is
+     `magos`), except that `` `0 ``, `` `a ``, `` `b ``, `` `e ``, `` `f ``, `` `n ``, `` `r ``, `` `t `` and `` `v ``
+     stand for NUL, bell, backspace, escape, form feed, newline, carriage return, tab and vertical tab (``gi`t`` is `gi`
+     followed by a tab, which is no git). In cmd text a caret outside double quotes removes itself and makes the
      next character literal, as cmd reads it (`git switch -c feat^ure` creates `feature`). In text whose shell is not
      known, a git subcommand or a branch name that holds a backslash is dynamic, because the shell may remove it;
      paths keep their backslashes there (a `cd` target, a `-C` value, a `--git-dir` value, a worktree directory),
-     because a Windows shell reads them as separators. In text a POSIX shell runs, a backslash-newline is removed and
+     because a Windows shell reads them as separators. A program word there that holds a backslash, a backtick or a
+     caret and is no program the detector knows, but names one once the backtick and caret, or all three characters,
+     are removed (`g\it`, `g^it`, ``g`it``), is read as that program: every creation it makes is dynamic, and every
+     directory or redirect change it makes is possible, because the shell may or may not remove the escape. In text a POSIX shell runs, a backslash-newline is removed and
      the words around it join, as the shell joins them (`git switch -c main\<newline>2` creates `main2`); a PowerShell
      backtick-newline, and a backslash-newline in text whose shell is not known, read as a space. A `#` that starts a
      word outside quotes starts a comment that runs to the end of the line in bash and PowerShell text (the newline
      still ends the command), so a quote character in a comment (`# Let's ...`) opens no string; in cmd text and text
      whose shell is not known, the rest of such a line is read with its quote characters as ordinary characters, so
      no quote reaches past the line and the words of the line are still read.
+   - Word gate. A line, and each text found inside it, is walked only when it may create something: its text, read with
+     every backslash, backtick, caret, `'` and `"` removed (`g''it`, `"g"it` and ``g`it`` read `git`), names `git`, `gh`,
+     `gt`, `claude`, `eval`, `iex`, `Invoke-Expression`, `source`, `-enc`, `base64`, or a `.sh`, `.bash` or `.ps1`
+     file, or holds a word that runs a script or a shell (`.`, `bash`, `sh`, `zsh`, `dash`, `ksh`, `powershell`,
+     `pwsh`, `cmd`, also with `.exe`) standing where a command may start. So `. ./mk`, `bash ./mk`, `$(. ./mk)`,
+     `$(bash ./mk)` and a here-document that runs `. ./mk` are walked, and the script they run is read.
    - Git invocations. The global options of git that take a separate value (`-C`, `-c`, `--git-dir`, `--work-tree`,
-     `--namespace`, `--exec-path`, `--config-env`, `--attr-source`, `--super-prefix`, `--list-cmds`) are skipped
-     together with their value, so the word after the value is the subcommand. Short options are read the way git
+     `--namespace`, `--exec-path`, `--config-env`, `--attr-source`, `--super-prefix`, `--list-cmds`, `--shallow-file`)
+     are skipped together with their value, so the word after the value is the subcommand. Short options are read the way git
      reads them: the letters of `-xyz` from left to right, and at the first letter that takes a value the rest of the
      word, when it is not empty, is the value, else the next word. So `git switch -cNAME`, `git switch -CNAME`,
      `git checkout -bNAME`, `git checkout -BNAME`, `git checkout -qbNAME` and `git worktree add -bNAME <dir>` create
@@ -116,10 +139,21 @@ The file holds seven cooperating parts.
      remote's configured URL is a local path). A fetch,
      pull or push refspec whose destination branch contains `*` creates branches whose names the hook cannot list: a
      dynamic creation. The command text git itself runs is inspected like `bash -c` text, in the directory and GIT_DIR
-     state of that invocation: the value of `git rebase -x`, `--exec <cmd>` and `--exec=<cmd>`, and the words after
-     `git bisect run`. Aliases: when any git invocation of the line names a subcommand that is not a built-in git
+     state of that invocation: the value of `git rebase -x`, `--exec <cmd>` and `--exec=<cmd>` (also written with a
+     unique prefix of `--exec` of at least two letters, `--ex` and `--exe`, with the value after `=` or as the next
+     word), and the words after `git bisect run`. A ref under `refs/heads/` names a branch whatever the case of `heads`
+     (`refs/HEADS/x`, `refs/Heads/x`), on every platform, because the case-insensitive file systems of Windows and
+     macOS store such a ref as the branch: `git update-ref`, `git symbolic-ref`, the destination of a fetch, pull or
+     push refspec and an `update-ref --stdin` instruction read `heads` in any case. `git update-ref` reads its options
+     as git does: `-m` takes the rest of its word, or else the next word, as its value (`-m -d` writes the message
+     `-d` and deletes nothing), a short-option word deletes when it holds `d` before any `m` (`-d`, `-zd`, `-dm <msg>`),
+     `--stdin` is also written as a unique prefix (`--s`, `--std`), and the first positional word is the ref it
+     writes. Aliases: when any git invocation of the line names a subcommand that is not a built-in git
      command, the aliases of the session directory's repository (with the user's global aliases git reports there) are
-     loaded and every git invocation of the line is checked against them, whatever else the line creates.
+     loaded and every git invocation of the line is checked against them, whatever else the line creates. The
+     subcommand of each `git` word for this test is its first word after the global options and the values of those
+     that take one (`git -C ../B nb x` names `nb`), found in one pass over the words, linear in the line's length; the
+     test reads the text with every backslash, backtick, caret, `'` and `"` removed.
    - Repositories. The detector also records the repository each git invocation acts on, as the following items state.
      A repository redirect (`--git-dir`, `GIT_DIR` or `GIT_COMMON_DIR`, spellings under Public Contract) is resolved
      per git invocation, as Git resolves it: a relative value is joined to the directory that invocation runs in (the
@@ -157,7 +191,12 @@ The file holds seven cooperating parts.
      without regard to case, so every case of `GIT_DIR` and `GIT_COMMON_DIR` is a redirect, while a bash removal ends
      only the spelling it names. `update-ref --stdin`, `gh pr checkout` and the other auto-named tools are judged in the
      directory and `GIT_DIR` state of their own invocation, like any git invocation; an `update-ref --stdin` whose
-     input the hook cannot see counts as a dynamic creation. `popd` and `Pop-Location` return to the directory the
+     input the hook cannot see counts as a dynamic creation. The instructions of an `update-ref --stdin` are read from
+     the text of the line: the name after `create refs/heads/` or `update refs/heads/` ends at whitespace, a quote or a
+     backslash. A backslash right after the name that is `\0` not followed by an octal digit, `\n`, `\t` or `\r` ends
+     it as the separator `printf` writes (`printf 'create refs/heads/x\0HEAD\0'` creates `x`); any other backslash after
+     it, an empty name and a name git refuses make the record dynamic, because `printf` or `echo -e` may turn the text
+     into another name (`printf 'create refs/heads/a\x62c HEAD'` creates `abc`). `popd` and `Pop-Location` return to the directory the
      line's own `pushd` or `Push-Location` left; without one the directory is unknown.
    - A line is walked in a set of states, each a directory, the `GIT_DIR` and `GIT_COMMON_DIR` values and a `pushd`
      stack. The line is a list of commands joined by `&&` and `||` and ended by `;`, a newline or `&`; a parenthesised
@@ -228,7 +267,11 @@ The file holds seven cooperating parts.
      never classifies these spellings with `os.path.isabs`, whose Windows result differs from Python 3.13 on.
    - Records of one creation that the walk reached in several states are judged once per distinct repository: records
      are grouped by repository (common directory and worktree top), redirect target, verb, names, kind, worktree path,
-     start point and the dynamic and unresolved marks, and each group is judged once.
+     start point and the dynamic and unresolved marks, and each group is judged once. Before that grouping the walk
+     drops a record only when every field equals another record's, where a directory after a `cd` to a missing
+     directory counts with its prior directory and the `&&` chain it follows (`cd /missing` reached from two
+     directories gives two records, each judged with its own prior directory); the directory states in which text
+     found inside the line is judged are kept apart by the same fields.
 5. **Host hook entry.** `hook <claude|codex|hermes> pre-tool` reads one PreToolUse payload from stdin and prints either
    `{}` (allow) or one deny object that carries the full conflict message. The hooked tools are named in one constant:
    the shell tools `Bash`, `PowerShell`, `Monitor`, `terminal`, `shell` and `local_shell`; the worktree-creating tools
@@ -249,7 +292,9 @@ The file holds seven cooperating parts.
    directory; a leading `~` or `~user` in it is expanded, and a Git Bash drive spelling mapped, before it is used, and a
    relative `tool_input.workdir` or `tool_input.cwd` is joined to the payload's `cwd` (else to the process directory).
 6. **Git layer.** A pure POSIX `sh` `reference-transaction` hook, embedded as a constant and written by `arm`. It needs
-   no Python and vetoes the creation of any `refs/heads/*` name that has no claim, whatever tool ran Git. A branch
+   no Python and vetoes the creation of any branch that has no claim, whatever tool ran Git: a ref under `refs/heads/`
+   and a HEAD set to such a ref (an unborn or orphan branch), with `heads` matched in any case (`refs/HEADS/x` is the
+   branch `x` on a case-insensitive file system; elsewhere it needs a claim for `x` as well). A branch
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
@@ -293,13 +338,14 @@ Downstream callers:
   is not on PATH is skipped without being started, because `call` of a program that does not exist sets exit code 1,
   not 9009, which cannot be told from a guard failure; the first one found runs by its full path through `call`, so
   that an interpreter that is a `.bat` or `.cmd` shim returns to the launcher, and one that exits 9009 (the Windows
-  Store stub) moves on to the next. When no name is found, or every one found exits 9009, the launcher reports that no
+  Store stub) moves on to the next, as does `py.exe` exiting 103 or 112 (the Python launcher found no runtime, or
+  none at the path it was given). When no name is found, or every one found exits that way, the launcher reports that no
   Python was found. The guard's stderr reaches the host unchanged. The POSIX half exports the same variable, locates itself with `${0%/*}`, takes the
   directory's spelling with the shell builtin `pwd -W` where the shell provides it (MSYS and Git Bash, which hands a
   Windows Python a path it can open whatever characters it holds; elsewhere `pwd`), reads stdin once and runs the guard
   directly with each candidate interpreter (`python3`, `py -3`, `python`: a `python` that is Python 2 is reached only
   when neither Python 3 name exists), moving to the next candidate only on exit
-  127, exit 9009 or the Windows Store stub; only shell builtins run before the guard. A missing script, no Python or a
+  127, exit 9009 or the Windows Store stub, and for `py -3` on exit 103 or 112; only shell builtins run before the guard. A missing script, no Python or a
   non-zero guard exit prints a warning that names the absolute guard path and a host-neutral way to stop the guard.
 - The user-level Codex and Hermes hook entries generated by `install` call `hook codex|hermes pre-tool`. The Hermes
   entry runs the Hermes plugin's own launcher (`<hermes home>/plugins/magos/hooks/run-guard.cmd`) when that file
@@ -531,7 +577,11 @@ ignore raises `CLAIM_FORMAT`. Values never carry a control character: a branch, 
 and each control character in `by` (the Git user name, e-mail and login) is replaced with a space. A claim file is
 written only where no file exists or where the claim of the same folded branch is, and a failed write leaves no
 temporary file behind. Branch names that would share a claim file on Windows are refused: a path component ending in
-`.` or a space, or ending in `.claim`; claims already stored under such names stay readable. A worktree path is
+`.` or a space, or ending in `.claim` (the Windows alias rule). A claim an earlier guard stored under such a name stays
+readable and keeps allowing the creation of its own branch: the host hook judges that stored claim and skips only the
+Windows alias rule for it, while `plan` and `plan --amend` refuse the name. `list` names such a claim (JSON field
+`refused_name`, the reason; text ` (name refused by plan: ...)`) and `doctor` prints one line naming every such claim,
+so the user can release it and plan the lane under another name. A worktree path is
 compared case- and separator-insensitively where the platform is. Store layout:
 `<git-common-dir>/magos/{ARMED,lang,guard,arm-config.json,claims/,override/,audit.log,lock}`; the guard home holds
 `guard/{scripts,hooks,generated}/`, `guard/VERSION.json` and `audit.log`.
@@ -680,8 +730,32 @@ Version 1.0.2 is a security release of the guard. Relative to the 1.0.1 product 
 - looks the cmd half's interpreter up on PATH and runs it through `call`, passes the guard's stderr to the host, gives
   a Windows Python the Windows spelling of the guard path in the sh half, and runs only the `hook` subcommand.
 
+Changes after the 1.0.2 release, carried by the next release; the guard:
+
+- reads an `update-ref --stdin` name up to a backslash, takes `\0`, `\n`, `\t` and `\r` after it as separators, and
+  makes the record dynamic for any other escape, an empty name or a name git refuses;
+- reads a program word with a backslash, a backtick or a caret in a shell it cannot name as the program it spells
+  without them, with dynamic creations and possible changes;
+- reads `git rebase --ex` and `--exe`, `git --shallow-file <v>`, `git update-ref -m <v>` and `--std`, and `heads` in
+  any case under `refs/` (host hook and git layer);
+- finds the subcommand of every `git` word after the values of the global options for the alias check, in one pass;
+- runs `Start-Process` git in its `-WorkingDirectory`, and reads the `-ArgumentList` and `-WorkingDirectory` prefixes
+  and colon forms;
+- reads every `powershell` and `pwsh` spelling of `-Command`, `-CommandWithArgs` and `-EncodedCommand` (`-e`, `-ec`,
+  `-EncodedC`, `-Co`, `-Comm`, `-cwa`) in the walk, the tamper filter and a Codex argv, and joins the words after a
+  PowerShell or cmd command option of a Codex argv into the text it runs;
+- reads PowerShell's backtick escape with its special sequences;
+- gates a line and its inner texts on their text without escapes and quotes, and on a word that runs a script or a
+  shell;
+- keeps records and inner-text states that differ only in a missing directory's prior directory or followed chain;
+- lets the launcher pass on from `py.exe` exiting 103 or 112 in both halves;
+- honours a claim stored under a name the Windows alias rule refuses when its branch is created, and names such
+  claims in `list` and `doctor`.
+
 Compatibility: claim files of format 1 written by 1.0.0 and 1.0.1 are read unchanged, and line 1 of every claim stays
-`state=active`, so the git layer reads old and new claims alike. The Codex and Hermes copies under `~/.magos/guard`
+`state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule
+refuses allows the creation of its branch. The git-layer hook reads `heads` in any case, so `doctor` reports an armed
+repository as different from this version until `arm` runs again. The Codex and Hermes copies under `~/.magos/guard`
 receive 1.0.2 only when the user re-runs `install`; `doctor` reports a stale copy with the refresh command, and armed
 repositories are refreshed by re-running `arm`. Exit code 18 is new. A Hermes entry points at the Hermes plugin
 launcher only while the plugin's guard declares the installing guard's version; after the plugin moves to another
@@ -700,6 +774,11 @@ Known limits, stated in `references/lane-split.md` section 12:
   interpreter the hook cannot read.
 - Tools whose shell the hook cannot name judge the commands after a group, a background list, a pipeline command or
   substituted text in every state.
+- PowerShell's typographic quotes (`‘ ’ ‚ ‛` and `“ ” „`), which PowerShell reads as quote characters, are read as
+  ordinary characters of a word.
+- `Start-Process` is recognised by that name only (not `saps` or `start`), its `-ArgumentList` only by that name, a
+  prefix or the colon form (not the alias `-Args`, not as the second positional argument), and its program among its
+  words; a creation written in another binding runs unjudged.
 - A push to a remote name is not judged, also when the remote's configured URL is a local path.
 - The git layer cannot see `-c core.hooksPath`, a `GIT_COMMON_DIR` that names another repository (Git runs that
   repository's hooks), direct `.git/refs` writes, libgit2, clones or a branch rename or copy (`git branch -m/-c`),
