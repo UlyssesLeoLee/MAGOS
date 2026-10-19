@@ -318,7 +318,8 @@ read as well.
   for a file that does not parse and `newer-format <branch> (v=N): upgrade this guard` for a claim of a newer format
   (`claims/<file>` in place of the branch when the claim has no `branch` line); `--json` gives them as rows with state
   `unreadable` (with `path`) or `newer-format` (with `branch`, `v` and `path`).
-- `release --branch B [--reason R]`: finds the claim by the folded name of B among the parsed claims and deletes the
+- `release --branch B [--reason R]`: normalises B as a ref spelling (a backslash read as `/`, empty and `.` segments
+  dropped, `..` resolved), finds the claim by the folded name of that spelling among the parsed claims and deletes the
   file of the stored canonical branch name after confirming that its real path lies inside `<store>/claims`; the
   refusal for unmerged work therefore holds for every spelling of B. Refused with exit 16 while the branch has unmerged
   work or its worktree has uncommitted changes, with the message "release refused: the branch has unmerged work or its
@@ -345,7 +346,8 @@ read as well.
   the instruction to plan the branch `worktree-<name>` first and then call `EnterWorktree name=<name>`, or to run
   `git worktree add` directly; `EnterWorktree name=N` creates the branch `worktree-N`.
 - `arm [--lang L] [--dry-run]`: needs a real console (exit 17 otherwise, except `--dry-run`). Writes
-  `<hooks dir>/reference-transaction` (a foreign hook is chained as `.magos-prev`), `<store>/ARMED`, `lang` and `guard`,
+  `<hooks dir>/reference-transaction` (a foreign hook is chained as `.magos-prev`; the backstop runs it, with the
+  transaction on its stdin, only when it is executable, as git runs only executable hooks), `<store>/ARMED`, `lang` and `guard`,
   and appends an audit line (`ts`, `by`, `op` `arm`) to `<store>/audit.log`. `guard` holds the command the backstop's deny message
   prints: the command that runs the copy under the guard home (`~/.magos` or `MAGOS_HOME`) when that copy exists and
   declares the same `GUARD_VERSION` as the running guard, else the running script. Before it sets
