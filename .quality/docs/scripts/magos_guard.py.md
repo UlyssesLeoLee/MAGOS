@@ -80,7 +80,13 @@ The file holds seven cooperating parts.
      next character literal, as cmd reads it (`git switch -c feat^ure` creates `feature`). In text whose shell is not
      known, a git subcommand or a branch name that holds a backslash is dynamic, because the shell may remove it;
      paths keep their backslashes there (a `cd` target, a `-C` value, a `--git-dir` value, a worktree directory),
-     because a Windows shell reads them as separators.
+     because a Windows shell reads them as separators. In text a POSIX shell runs, a backslash-newline is removed and
+     the words around it join, as the shell joins them (`git switch -c main\<newline>2` creates `main2`); a PowerShell
+     backtick-newline, and a backslash-newline in text whose shell is not known, read as a space. A `#` that starts a
+     word outside quotes starts a comment that runs to the end of the line in bash and PowerShell text (the newline
+     still ends the command), so a quote character in a comment (`# Let's ...`) opens no string; in cmd text and text
+     whose shell is not known, the rest of such a line is read with its quote characters as ordinary characters, so
+     no quote reaches past the line and the words of the line are still read.
    - Git invocations. The global options of git that take a separate value (`-C`, `-c`, `--git-dir`, `--work-tree`,
      `--namespace`, `--exec-path`, `--config-env`, `--attr-source`, `--super-prefix`, `--list-cmds`) are skipped
      together with their value, so the word after the value is the subcommand. Short options are read the way git
@@ -91,9 +97,17 @@ The file holds seven cooperating parts.
      `claude --worktree=<name>` start a worktree like `claude -w <name>` and `claude --worktree <name>`: an auto-named
      creation. `git branch` renames or copies
      when a short-option word holds `m`, `M`, `c` or `C` before any letter that takes a value (`-mf`, `-fm`, `-cf`, `-Cf`,
-     `-qm`), or when a long option of at least three letters is a prefix of exactly one of `--move` and `--copy`
-     (`--mov`, `--cop`); the last positional word is then the new branch. `git push` into a local repository creates the
-     branch in that repository: when the repository argument is `.`, a path (`./x`, `../x`, an absolute or drive path, a
+     `-qm`), or when a long option of at least two letters is a prefix of exactly one of `git branch`'s long options
+     and that option is `--move` or `--copy` (`--mo`, `--mov`, `--cop`; `--co` names several options and is no
+     rename); the last positional word is then the new branch. The creating long options of `git switch` (`--create`,
+     `--force-create`, `--orphan`) and of `git checkout` (`--orphan`) match from their second letter (`--cr`, `--or`).
+     `git branch --sort <key>` and `git branch --format <format>` (and `--so`, `--sor`, `--form`, `--forma`) take
+     their value as the next word and do not select list mode: the value is no branch name, the word after it is. `git push` into a local repository creates the
+     branch in that repository. The value of an option that takes a separate value is skipped before the repository
+     argument is read: for `git push` `--repo`, `--receive-pack`, `--exec`, `--push-option` and `-o`, for `git fetch`
+     and `git pull` `--upload-pack`, `--server-option`, `--depth`, `--deepen`, `--shallow-since`, `--shallow-exclude`,
+     `--refmap`, `--negotiation-tip`, `--jobs`, `--filter`, `--recurse-submodules-default`, `--submodule-prefix`, `-o`
+     and `-j` (long options also by a unique prefix of at least three letters). When the repository argument is `.`, a path (`./x`, `../x`, an absolute or drive path, a
      `file://` URL, or a word that names an existing directory), the destinations of its refspecs (under `refs/heads/`
      or bare names) are creations judged in the repository at that path, which for `.` and for a path that names the
      current repository is the current one; a dynamic repository argument (`"$PWD"`, `$(..)`) leaves the repository
@@ -190,8 +204,11 @@ The file holds seven cooperating parts.
      is incomplete. These denials apply unless the session directory's repository is off or `MAGOS_GUARD=off` is set
      (Invariant 6); outside a repository they apply.
    - A `cd`, `pushd`, `chdir`, `Set-Location` or `sl` to a directory that does not exist when the hook runs leaves the
-     shell where it was, so later commands are judged in that prior directory and the creation is marked unresolved; a
-     later relative `cd` keeps the prior directory. This holds on every platform, for absolute, relative, drive and
+     shell where it was, so later commands are judged in that prior directory and the creation is marked unresolved. A
+     later relative path (a `cd` or `pushd` target, a `-C`, `env -C` or `sudo -D` directory, a push target, a script, a
+     `--git-dir` value) resolves against the directory the shell is really in: that prior directory, or, for the later
+     elements of an `&&` chain whose earlier element creates the target, the target (`mkdir -p lanes && cd lanes &&
+     git worktree add feat -b feat` creates `lanes/feat`). This holds on every platform, for absolute, relative, drive and
      POSIX-rooted targets and for `;`, `&&` and newline separators. bash and PowerShell refuse a `cd` with a second
      directory argument (`cd /d <dir>` in bash, `cd <dir> extra`), which follows the same rule; redirections (`>x`,
      `2>&1`, `> x`) are no directory arguments. cmd's `cd /d <dir>` changes the drive and the directory, and cmd's `cd`
@@ -199,7 +216,8 @@ The file holds seven cooperating parts.
    - Inside an `&&` chain the elements after a `cd` run only when the `cd` succeeded, so for those later elements of the
      same chain the hook follows the `cd` into its target `T` when an earlier element of that chain creates `T`: after
      `git init T` or `git clone <src> T`, or when a `git init` runs in `T` earlier in the chain, nothing is judged (a new
-     repository holds no lane); after `git worktree add T` the creation is judged in the repository that worktree
+     repository holds no lane), except a creation redirected by `--git-dir`, `GIT_DIR` or `GIT_COMMON_DIR` to a git
+     directory outside `T`, which is judged in the repository it names; after `git worktree add T` the creation is judged in the repository that worktree
      belongs to; after `mkdir T` (or `mkdir -p` of `T` or of a directory above it) it is judged in the repository of
      `T`'s nearest existing ancestor, where git finds its repository. This applies only to the later elements of that
      chain. Where nothing earlier in the chain creates the target, and for every command after the chain ends, the
@@ -209,8 +227,8 @@ The file holds seven cooperating parts.
      mapped to a drive (`/does/not/exist`) resolves to no directory and follows the missing-directory rule; the guard
      never classifies these spellings with `os.path.isabs`, whose Windows result differs from Python 3.13 on.
    - Records of one creation that the walk reached in several states are judged once per distinct repository: records
-     are grouped by repository (common directory and worktree top), redirect target, verb, names, kind, worktree path
-     and the dynamic and unresolved marks, and each group is judged once.
+     are grouped by repository (common directory and worktree top), redirect target, verb, names, kind, worktree path,
+     start point and the dynamic and unresolved marks, and each group is judged once.
 5. **Host hook entry.** `hook <claude|codex|hermes> pre-tool` reads one PreToolUse payload from stdin and prints either
    `{}` (allow) or one deny object that carries the full conflict message. The hooked tools are named in one constant:
    the shell tools `Bash`, `PowerShell`, `Monitor`, `terminal`, `shell` and `local_shell`; the worktree-creating tools
@@ -218,9 +236,12 @@ The file holds seven cooperating parts.
    `start_session`, `worktree`, `branch` or `hand_off_to_session`; and the names and substrings that route an MCP tool
    that may run a command, in this order: `run_in_terminal`, `terminal`, `shell`, `exec_command`, `execute_command`,
    `start_process`, `command`, `run_command`, `exec`, `execute`, `process`, `bash`, `powershell` and `cmd`. Every hooked
-   tool and every MCP tool whose `tool_input.command` is a string is inspected as a command line (an argv list from Codex
-   is turned into one command line); the `Bash` and `Monitor` tools run bash, the `PowerShell` tool runs PowerShell, and
-   the shell of every other tool is not known. The command line is judged in addition to, never instead of, the
+   tool and every MCP tool whose `tool_input.command` is a string is inspected as a command line. An argv list from
+   Codex is turned into one command line: when its program is a shell (`bash`, `sh`, `zsh`, `dash`, `ksh`,
+   `powershell`, `pwsh`, `cmd`) and it carries a script after `-c`, `-Command` or `/c`, that script, read in that
+   shell's dialect; otherwise its words joined with POSIX quoting (a word holding a space, a quote, a backslash or a
+   shell character is quoted), read as bash. The `Bash` and `Monitor` tools run bash, the `PowerShell` tool runs
+   PowerShell, and the shell of every other tool's string command is not known. The command line is judged in addition to, never instead of, the
    judgement the tool itself calls for: an `Agent`, `Task` or `Workflow` call with worktree isolation, an
    `EnterWorktree` call and an MCP session tool are judged as such whether or not they carry a command. An MCP tool that
    is not a session tool and has no string command is answered `{}` before any repository is opened or any git runs.
@@ -251,7 +272,7 @@ git (at one place, `Git.run`), and runs no git subcommand that talks to a remote
 outside `LOCAL_GIT` before git starts; in a partial clone, git itself fetches objects missing from the local store from
 the promisor remote when the guard reads a diff.
 
-Interpreters: the minimum is Python 3.9; the hooks run under whatever interpreter the launcher finds (`py -3`, `python3`
+Interpreters: the minimum is Python 3.9; the hooks run under whatever interpreter the launcher finds (`python3`, `py -3`
 or `python`; CPython 3.14 on the reference machine), so path handling never depends on version-specific results of
 `os.path` functions.
 
@@ -276,7 +297,8 @@ Downstream callers:
   Python was found. The guard's stderr reaches the host unchanged. The POSIX half exports the same variable, locates itself with `${0%/*}`, takes the
   directory's spelling with the shell builtin `pwd -W` where the shell provides it (MSYS and Git Bash, which hands a
   Windows Python a path it can open whatever characters it holds; elsewhere `pwd`), reads stdin once and runs the guard
-  directly with each candidate interpreter (`python3`, `python`, `py -3`), moving to the next candidate only on exit
+  directly with each candidate interpreter (`python3`, `py -3`, `python`: a `python` that is Python 2 is reached only
+  when neither Python 3 name exists), moving to the next candidate only on exit
   127, exit 9009 or the Windows Store stub; only shell builtins run before the guard. A missing script, no Python or a
   non-zero guard exit prints a warning that names the absolute guard path and a host-neutral way to stop the guard.
 - The user-level Codex and Hermes hook entries generated by `install` call `hook codex|hermes pre-tool`. The Hermes
@@ -570,11 +592,13 @@ Invariants:
    state-path test read every word twice, as written and with every backslash, backtick, caret, `'` and `"` removed,
    and match when either reading matches, so the escapes of bash (`ma\gos.guard`, `conf\ig`, `ar\m`,
    `rm .git/ma\gos/ARMED`), PowerShell (``ma`gos.guard``) and cmd (`ma^gos.guard`) hide nothing, and
-   `rm .git\magos\ARMED` and `Remove-Item .git\magos\ARMED` stay denied. A plain `cp` or `Copy-Item` (without a link
-   option: `-l`, `--link`, `-s`, `--symbolic-link`) is tested on its destination only (the last positional argument,
-   `-t` / `--target-directory`, or `-Destination`), so copying from the guard home is allowed; every other writer (`rm`, `mv`, `ln` and `ln -s`, `cp`
-   with a link option, `mklink`, `del`, `unlink`, `truncate`, `shred`, `rmdir` and the rest) is tested on every
-   argument, because a link to a guard file lets a later write change the guard. The repository is opened to learn the
+   `rm .git\magos\ARMED` and `Remove-Item .git\magos\ARMED` stay denied. A plain copy (`cp` without a link option
+   `-l`, `--link`, `-s`, `--symbolic-link`; `Copy-Item`, `copy`, `cpi`) is tested on its destination only: `-t` /
+   `--target-directory`, or `-Destination` (also written `-Destination:<path>`), else every positional argument after
+   the first, so an option value after the operands (`-ErrorAction Stop`, `-S .bak`) hides no destination, and copying
+   from the guard home is allowed; every other writer (`rm`, `mv`, `move`, `ln` and `ln -s`, `cp` with a link option,
+   `mklink`, `del`, `unlink`, `truncate`, `shred`, `rmdir`, PowerShell's `sc`, `ac`, `ni`, `clc` and the rest) is
+   tested on every argument, because a link to a guard file lets a later write change the guard. The repository is opened to learn the
    store's absolute path only when a tested write target or redirect target is an absolute path with a path segment
    named `magos`. Other spellings, interpreters and file tools are the limit stated in `references/lane-split.md`
    section 12.
