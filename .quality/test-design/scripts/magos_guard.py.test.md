@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `859215deb09eb7206370109b59673a5395d4e964ae463092b7465c0fcee75458`
+Source-SHA256: `e1c0e5432ba0f969d5ac3bca4842e1a6351a87bf8b8ec74f32179527961c0495`
 
 ## Test Strategy
 
@@ -161,7 +161,7 @@ shipped text line has that shape. Coverage is measured with coverage.py (line co
 | TC-099 | Armed repository with a bare layout; `rm <absolute common dir>/magos/ARMED`, `rm -rf <absolute common dir>/magos/claims`, `cp evil.py <absolute MAGOS_HOME>/guard/scripts/magos_guard.py`, backslash and case variants; `cat` of the same paths; the same writers in a repository with no claim and no hook | Writers denied PROTECTED; reads allowed; the claim-free unarmed repository allows them | tests/codex/guard/test_hardening_state.py::test_state_paths_are_matched_by_their_absolute_spelling |
 | TC-100 | GUARD_VERSION, `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` metadata.version, `skills/git-orchestrator/SKILL.md` (when it states a version), line 3 of `references/commands.md` | All equal | tests/codex/guard/test_package.py::test_versions_agree |
 | TC-101 | Windows: launcher run through cmd.exe and through `sh` in a temporary working directory holding marker `py.cmd`, `py.bat` and `git.exe`, with `NoDefaultCurrentDirectoryInExePath` removed | No marker written; the guard's JSON verdict on stdout | tests/codex/guard/test_launcher.py::test_launcher_never_runs_programs_from_the_working_directory |
-| TC-102 | POSIX half with a PATH whose `python3` exits 127, whose `python` exits 9009, and a real `py -3` or `python3`; a guard that exits 7; no `dirname` on PATH; a payload sent on stdin | The guard runs once with the whole payload; 127 and 9009 fall through; exit 7 is a failure without fall-through; the launcher works without `dirname` | tests/codex/guard/test_launcher.py::test_sh_half_reads_stdin_once_and_runs_the_guard_directly |
+| TC-102 | POSIX half with a PATH whose `python3` exits 127, whose `py -3` exits 9009, and a real `python`; a guard that exits 7; no `dirname` on PATH; a payload sent on stdin | The guard runs once with the whole payload; 127 and 9009 fall through; exit 7 is a failure without fall-through; the launcher works without `dirname` | tests/codex/guard/test_launcher.py::test_sh_half_reads_stdin_once_and_runs_the_guard_directly |
 | TC-103 | Launcher copied without `scripts/magos_guard.py`, run through cmd.exe and `sh` with and without `--strict` | The warning names the absolute guard path and `MAGOS_GUARD=off`, and gives `claude plugin disable magos` only as the Claude example; strict exits 2, soft exits 0 | tests/codex/guard/test_launcher.py::test_failure_text_is_host_neutral_and_absolute |
 | TC-104 | Frontmatter of `skills/git-integrate`, `git-cleanup`, `git-converge`, `git-sweep` and of the read-only adapters | The four write adapters carry `disable-model-invocation: true`; the read-only adapters do not; the key is the one allowed addition to the frontmatter | tests/codex/guard/test_package.py::test_write_adapters_disable_model_invocation |
 | TC-105 | Every shipped text file of the package | No line has the echo-piped-into-shell-exec shape the Hermes scanner flags | tests/codex/guard/test_package.py::test_no_shipped_line_looks_like_an_echo_pipe_exec |

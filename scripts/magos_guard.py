@@ -334,6 +334,12 @@ _CLOSERS = ("fi", "done", "esac")
 _CONT = re.compile(r"(?:\\|`)\r?\n[ \t]*")  # a line continuation
 
 
+def _continued(cmd, sh):
+    """The text with its line continuations read: bash removes a backslash-newline, so the words around it join; a PowerShell backtick-newline
+    and the continuations of a shell the hook cannot name read as a space."""
+    return _CONT.sub(" ", re.sub(r"\\\r?\n", "", cmd) if sh == "bash" else cmd)
+
+
 class _Seg(list):
     """One command of a line: a list of (word, dynamic); `at` is the offset of its first word in the text the lexer read, `sub` tells that
     it starts inside a word's $( .. ), <( .. ) or PowerShell ( .. ) (text substituted into another command)."""
@@ -407,8 +413,8 @@ def _lex(cmd, sh=None):
             close[0] = False
         if mark:
             segs.append(mark)
-    cmd = _CONT.sub(" ", cmd)
-    i, n = 0, len(cmd)
+    cmd = _continued(cmd, sh)
+    i, n, plain_to = 0, len(cmd), 0  # plain_to: the end of a comment line of a shell that may not read it as one (quotes there are plain)
     while i < n:
         c, mode = cmd[i], cases[-1] if cases else None
         nxt, prev = cmd[i + 1:i + 2], cmd[i - 1:i]
@@ -419,6 +425,13 @@ def _lex(cmd, sh=None):
             st["has"], st["q"] = True, True
             i += 2
             continue
+        if c == "#" and not st["has"] and i >= plain_to:  # a word that starts with # starts a comment in bash and PowerShell
+            end = cmd.find("\n", i)
+            end = n if end < 0 else end
+            if posix or ps:
+                i = end  # the newline still ends the command
+                continue
+            plain_to = end  # cmd or a shell the hook cannot name: the words are read, their quote characters are plain
         if mode == "pat" and c in ")|" and st["w"] == list("esac") and not st["q"]:  # `esac)` / `esac|`: the case ends before the ')' or '|'
             word_end()
             mode = cases[-1] if cases else None
@@ -459,7 +472,7 @@ def _lex(cmd, sh=None):
             seg_end(mark)
             if arm:
                 cases[-1] = "pat"
-        elif c in "'\"":
+        elif c in "'\"" and i >= plain_to:
             j = i + 1
             while j < n and cmd[j] != c:
                 if posix and c == '"' and cmd[j] == "\\" and j + 1 < n:
@@ -581,7 +594,8 @@ def _missing(target, prior, follow=None):
 def _join(base, p):
     """`p` resolved against the directory `base` (None: unknown); None when it names no directory we may judge.  Absolute spellings are
     classified here and never with os.path.isabs, whose Windows result for a rooted path without a drive differs from Python 3.13 on.
-    A relative path after a failed cd keeps the _Missing directory (the shell is still in its prior directory)."""
+    A relative path after a failed cd resolves where the shell really is: the prior directory, or the target an earlier element of the
+    same && chain creates (`follow`)."""
     p = _norm_path(p)
     if os.name == "nt":
         if re.match(r"[A-Za-z]:|[\\/]{2}[^\\/]", p):  # a drive or a UNC path
@@ -594,7 +608,9 @@ def _join(base, p):
         return p
     if base is None:
         return None
-    return base if isinstance(base, _Missing) else os.path.normpath(os.path.join(base, p))
+    if isinstance(base, _Missing) and not base.follow:
+        base = base.prior
+    return os.path.normpath(os.path.join(base, p))
 
 
 def _cd(here, p):
@@ -610,7 +626,7 @@ def _gitdir_path(here, value, dynamic):
     against the directory the invocation runs in), or None when it cannot be resolved."""
     if dynamic or not value:
         return None
-    return _join(getattr(here, "prior", here), value)
+    return _join(here, value)
 
 
 _REDIRECTS = ("GIT_DIR", "GIT_COMMON_DIR")  # the variables that move git to another repository
@@ -745,19 +761,25 @@ def _create_opt(tok, sub):
     longs, shorts = (("create", "force-create", "orphan"), "cC") if sub == "switch" else (("orphan",), "bB")
     if tok.startswith("--"):
         key = tok[2:].split("=", 1)[0]
-        if len(key) >= 3 and any(name.startswith(key) for name in longs):
+        if len(key) >= 2 and any(name.startswith(key) for name in longs):
             return tok.split("=", 1)[1] if "=" in tok else ""
         return None
     return _short_value(tok, shorts)
 
 
+_BRANCH_LONGS = ("move", "copy", "merged", "no-merged", "color", "no-color", "column", "no-column", "contains", "no-contains", "create-reflog",
+                 "edit-description", "verbose", "quiet", "track", "no-track", "set-upstream-to", "unset-upstream", "remotes", "abbrev", "no-abbrev",
+                 "all", "delete", "list", "show-current", "force", "sort", "points-at", "ignore-case", "omit-empty", "format", "recurse-submodules")
+
+
 def _branch_moves(args):
     """Does `git branch` rename or copy?  A short-option word holding m, M, c or C before a letter that takes a value (-u), or a long option
-    of at least three letters that is a prefix of exactly one of --move and --copy."""
+    of at least two letters that is a prefix of exactly one of git branch's long options, --move or --copy (--mo; --co is ambiguous)."""
     for t in args:
         if t.startswith("--"):
             key = t[2:].split("=", 1)[0]
-            if len(key) >= 3 and sum(full.startswith(key) for full in ("move", "copy")) == 1:
+            hits = [full for full in _BRANCH_LONGS if full.startswith(key)]
+            if len(key) >= 2 and len(hits) == 1 and hits[0] in ("move", "copy"):
                 return True
         elif t.startswith("-"):
             for ch in t[1:]:
@@ -783,6 +805,10 @@ def _push_target(word, here):
     return _join(here, w) or ""
 
 
+# The long options of git push / fetch / pull that take a separate value (matched also by a unique prefix of at least three letters).
+_PUSH_VALUED = ("repo", "receive-pack", "exec", "push-option")
+_FETCH_VALUED = ("upload-pack", "server-option", "depth", "deepen", "shallow-since", "shallow-exclude", "refmap", "negotiation-tip", "jobs", "filter",
+                 "recurse-submodules-default", "submodule-prefix")
 _GLOB_WHY = "a glob refspec creates branches whose names the hook cannot list"
 _PUSH_WHY = "the repository a push writes to is dynamic"
 
@@ -891,9 +917,11 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
         return [detached] if detached else []
     if sub == "branch":
         if any(t in ("-d", "-D", "--delete", "-l", "--list", "--show-current", "-u", "-r", "-a", "--contains", "--merged", "--no-merged", "--unset-upstream",
-                     "--points-at", "--sort", "--format", "--edit-description") or t.startswith(("--set-upstream-to", "--list")) for t in a):
+                     "--points-at", "--edit-description") or t.startswith(("--set-upstream-to", "--list")) for t in a):
             return []
-        pos = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-")]
+        # --sort <key> and --format <format> (and their unique prefixes) take the next word as their value and list nothing by themselves
+        valued = {k + 1 for k, t in enumerate(a) if t in ("--so", "--sor", "--sort", "--form", "--forma", "--format")}
+        pos = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and k not in valued]
         move = _branch_moves(a)  # rename / copy: the last name is the new branch
         return [C(sub, [pos[-1 if move else 0][0]], here, pos[-1 if move else 0][1])] if pos else []
     if sub in ("switch", "checkout"):
@@ -921,7 +949,10 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
         names = [t[11:] for t in a if t.startswith("refs/heads/")]
         return [C(sub, names, here, False)] if names else []
     if sub in ("fetch", "pull", "push"):
-        pk = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-")]
+        longs, shorts = (_PUSH_VALUED, ("-o",)) if sub == "push" else (_FETCH_VALUED, ("-o", "-j"))
+        valued = {k + 1 for k, t in enumerate(a) if t in shorts or (t.startswith("--") and "=" not in t and len(t) >= 5
+                                                                    and any(full.startswith(t[2:]) for full in longs))}
+        pk = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and k not in valued]
         names, glob = [], False
         for t, _d in pk[1:]:  # the destinations of the refspecs, under refs/heads/ or bare
             m = re.fullmatch(r"\+?[^:]*:(?:refs/heads/)?([^:]+)", t)
@@ -1333,7 +1364,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
             contexts.append((here, cands))
     note(cwd, states[0][1].cands())
     cmd, bodies = _heredocs(cmd)
-    cmd = _CONT.sub(" ", cmd)  # the offsets of the substituted texts below are the lexer's
+    cmd = _continued(cmd, sh)  # the offsets of the substituted texts below are the lexer's
     subs = [(m.start(), m.group(1) or m.group(2) or "") for m in _SUBST.finditer(cmd)]
     subs += [(m.start(), cmd[m.start(1):m.end(1)]) for m in _PS_PAREN.finditer(_unquoted(cmd))] if sh == "ps" else []  # PowerShell (..), @(..)
     inner = []  # (text, shell) the line runs somewhere: judged after the walk in every context it passes through
@@ -1661,8 +1692,8 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
 
 _STATE_PATH = re.compile(r"(^|[\\/])\.git[\\/](hooks|refs|HEAD|magos|config)([\\/]|$)|(^|[\\/])packed-refs$|(^|[\\/])\.magos([\\/]|$)", re.I)
 _WRITE_CMDS = frozenset("rm mv cp tee chmod del erase ren rename remove-item move-item copy-item set-content out-file add-content new-item clear-content "
-                        "unlink truncate shred rmdir rd ln mklink rename-item rni ri mi".split())
-_COPIES = ("cp", "copy-item")  # tested on their destination only, unless they copy as a link
+                        "unlink truncate shred rmdir rd ln mklink rename-item rni ri mi move copy cpi sc ac ni clc".split())
+_COPIES = ("cp", "copy-item", "copy", "cpi")  # tested on their destination only, unless they copy as a link
 _WRITE_HINT = re.compile(r">|\b(?:%s|sed|find)\b" % "|".join(re.escape(w) for w in sorted(_WRITE_CMDS, key=len, reverse=True)), re.I)
 _USER_ONLY = ("override", "arm", "disarm", "install")
 _READ_FLAGS = ("--get", "--get-all", "--get-regexp", "--list", "-l", "--show-origin", "--show-scope")
@@ -1745,8 +1776,9 @@ def _aliased_git(bares):
 
 
 def _copy_destination(exe, args):
-    """The destination of a plain cp / Copy-Item (-t / --target-directory, -Destination, else the last positional argument), or None when cp
-    copies as a link (-l, --link, -s, --symbolic-link): a link to a guard file lets a later write change the guard."""
+    """The destinations of a plain cp / Copy-Item / copy / cpi (-t / --target-directory, -Destination or -Destination:<path>, else every
+    positional argument after the first, so an option value after the operands hides none), or None when cp copies as a link (-l, --link,
+    -s, --symbolic-link): a link to a guard file lets a later write change the guard."""
     if exe == "cp":
         for a in args:
             key = a[2:].split("=", 1)[0] if a.startswith("--") else None
@@ -1762,19 +1794,21 @@ def _copy_destination(exe, args):
             value = _short_value(a, "tS") if key is None else None  # -t DIR, -tDIR, -rt DIR
             if value is not None and re.match(r"-[^tS]*t", a):
                 return [value] if value else args[k + 1:k + 2]
-        return [a for a in args if not a.startswith("-")][-1:]
-    pos, k = [], 0
+        return [a for a in args if not a.startswith("-")][1:]
+    pos, k, source = [], 0, False
     while k < len(args):
         a = args[k]
-        name = a[1:].rstrip(":").lower() if a.startswith("-") and len(a) > 1 else None
+        name, _colon, value = a[1:].partition(":") if a.startswith("-") and len(a) > 1 else ("", "", "")
+        name = name.lower()
         if name and len(name) >= 3 and "destination".startswith(name):
-            return args[k + 1:k + 2]
+            return [value] if value else args[k + 1:k + 2]
         if name and any(full.startswith(name) for full in ("path", "literalpath", "filter", "include", "exclude", "credential", "tosession", "fromsession")):
-            k += 2
+            source = source or "path".startswith(name) or "literalpath".startswith(name)
+            k += 1 if value else 2
             continue
         pos += [] if name else [a]
         k += 1
-    return pos[-1:]
+    return pos if source else pos[1:]  # with -Path / -LiteralPath named, every positional argument is the destination
 
 
 def _state_word(word, roots, lazy=None):
@@ -1869,15 +1903,24 @@ def is_shell_tool(name):
 
 
 def shell_text(payload):
+    return shell_command(payload)[0]
+
+
+def shell_command(payload):
+    """-> (command line or None, its shell dialect).  Codex passes argv: the script of a shell's -c / -Command / /c element is read in that
+    shell's dialect; the elements of any other argv are quoted back into a line (each holding a space, a quote, a backslash or a shell
+    character) read as bash.  A string command is read in the tool's shell (Monitor and MCP tools take a string only)."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
-    c = ti.get("command")
-    if isinstance(c, list) and tool != "Monitor" and not tool.startswith("mcp__"):  # Codex passes argv: a shell -c script is one element,
-        parts = [str(x) for x in c]  # other elements are quoted back into a line (Monitor and MCP tools take a string only)
+    c, sh = ti.get("command"), _TOOL_SHELL.get(tool)
+    if isinstance(c, list) and tool != "Monitor" and not tool.startswith("mcp__"):
+        parts = [str(x) for x in c]
         k = next((j for j in range(1, len(parts) - 1) if re.fullmatch(r"-[a-z]*c|-command|/c", parts[j].lower())), None)
-        c = parts[k + 1] if k is not None and _exe(parts[0]) in _SHELLS + ("powershell", "pwsh", "cmd") else \
-            " ".join(shlex.quote(x) if re.search(r"[\s'\"$`;&|<>()]", x) else x for x in parts)
-    return c if is_shell_tool(tool) and isinstance(c, str) else None
+        if k is not None and _exe(parts[0]) in _SHELLS + ("powershell", "pwsh", "cmd"):
+            c, sh = parts[k + 1], _SHELL_OF[_exe(parts[0])]
+        else:
+            c, sh = " ".join(shlex.quote(x) if re.search(r"[\s'\"\\$`;&|<>()]", x) else x for x in parts), "bash"
+    return (c if is_shell_tool(tool) and isinstance(c, str) else None), sh
 
 
 def _rooted(p):
@@ -1904,10 +1947,10 @@ def extract(payload, aliases=None):
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     cwd = session_dir(payload)
-    crs, why, c = [], None, shell_text(payload)
+    (c, sh), crs, why = shell_command(payload), [], None
     if c is not None:
         why = protected(c)
-        crs = interpret(c, cwd, 0, aliases, sh=_TOOL_SHELL.get(tool)) if _gated(c) else []
+        crs = interpret(c, cwd, 0, aliases, sh=sh) if _gated(c) else []
     if tool in HOOKED_TOOLS["strict"] and not ti.get("path"):
         crs.append(_cr("EnterWorktree", ["worktree-%s" % ti["name"]] if ti.get("name") else [], cwd, not ti.get("name"), "worktree" if ti.get("name") else "auto", tool=True))
     elif tool in HOOKED_TOOLS["isolation"] and re.search(r"isolation\W+worktree", json.dumps(ti)):
@@ -2978,8 +3021,8 @@ def judge_creation(cr, default_cwd, lang, seen=None):
     the same && chain created that directory), else the session directory.  `seen` holds the (repository, creation) keys already judged."""
     cwd = cr["cwd"]
     follow = getattr(cwd, "follow", None)
-    if follow and follow[0] == "new":  # a repository the same && chain created: it holds no lane
-        return None
+    if follow and follow[0] == "new" and (not cr.get("redirect") or (cr.get("gitdir") and (pkey(cr["gitdir"]) + os.sep).startswith(pkey(str(cwd)) + os.sep))):
+        return None  # a repository the same && chain created holds no lane (a redirect counts only when it names a git directory inside it)
     unresolved = isinstance(cwd, _Missing) and not follow
     if cr.get("anywhere"):  # the hook cannot tell which repository the command acts on: refused unless the session repository's guard is off
         if host_off():
@@ -3000,7 +3043,7 @@ def judge_creation(cr, default_cwd, lang, seen=None):
     if mode == "off":
         return None
     key = (pkey(g.common), pkey(g.top or ""), cr["redirect"], cr["verb"], tuple(cr["names"]), cr["kind"], pkey(cr["path"]) if isinstance(cr["path"], str) else None,
-           cr["dynamic"], unresolved, cwd is None)
+           cr["dynamic"], unresolved, cwd is None, cr.get("commit"))
     if seen is not None:
         if key in seen:
             return None

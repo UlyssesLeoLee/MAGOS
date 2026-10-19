@@ -80,7 +80,7 @@ fail() {
         nohere) why="cannot locate the launcher directory from $0"; fix="Run the launcher by its full path" ;;
         missing) why="the guard script is missing: $g"
                  fix="Restore it: run magos_guard.py install again for this host from the current MAGOS package, or reinstall the plugin" ;;
-        nopython) why="no Python 3 found (tried python3, python, py -3)"; fix="Install Python 3.9 or later, then diagnose with: python3 \"$g\" doctor" ;;
+        nopython) why="no Python 3 found (tried python3, py -3, python)"; fix="Install Python 3.9 or later, then diagnose with: python3 \"$g\" doctor" ;;
         *) why="the guard script failed with exit code $1"; fix="Diagnose: $cmd \"$g\" doctor" ;;
     esac
     printf '%s\n' "MAGOS guard: $why. $fix. To stop the guard: set MAGOS_GUARD=off in the host's environment, or remove the MAGOS entry from the host's hook configuration (for example Claude Code: claude plugin disable magos)." >&2
@@ -92,7 +92,7 @@ payload=
 while IFS= read -r line; do payload="$payload$line
 "; done
 payload="$payload$line"
-for cmd in python3 python "py -3"; do
+for cmd in python3 "py -3" python; do  # a Python 2 `python` is reached only when neither Python 3 name exists
     command -v "${cmd%% *}" >/dev/null 2>&1 || continue
     out="$(printf '%s' "$payload" 2>/dev/null | $cmd -X utf8 -B "$GUARD" "$@"; echo ".$?")"
     rc="${out##*.}"

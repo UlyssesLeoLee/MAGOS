@@ -219,13 +219,13 @@ def _runs(real):
 
 @needs_sh
 def test_sh_half_reads_stdin_once_and_runs_the_guard_directly(tmp_path, layout):
-    # python3 exits 127 and python 9009 after printing the Microsoft Store stub text on stdout; each reads its stdin first, as an
-    # interpreter would. py -3 runs the real interpreter. No dirname, cat or cygpath is on this PATH.
+    # python3 exits 127 and py -3 9009 after printing the Microsoft Store stub text on stdout; each reads its stdin first, as an
+    # interpreter would. python runs the real interpreter. No dirname, cat or cygpath is on this PATH.
     stubs = _bin(tmp_path / "stubs", {
         "python3": "#!/bin/sh\nwhile IFS= read -r l; do :; done\nexit 127\n",
-        "python": "#!/bin/sh\nwhile IFS= read -r l; do :; done\n"
-                  "echo 'Python was not found; run without arguments to install from the Microsoft Store, or disable this shortcut.'\nexit 9009\n",
-        "py": _runs(sys.executable)})
+        "py": "#!/bin/sh\nwhile IFS= read -r l; do :; done\n"
+              "echo 'Python was not found; run without arguments to install from the Microsoft Store, or disable this shortcut.'\nexit 9009\n",
+        "python": _runs(sys.executable)})
     assert not any(shutil.which(tool, path=str(stubs)) for tool in ("dirname", "cat", "cygpath"))
     log = tmp_path / "runs.log"
     payload = b'{"tool_name": "Bash", "tool_input": {"command": "git status"}}\nsecond line \\ with a backslash\n\n'
@@ -245,6 +245,18 @@ def test_sh_half_reads_stdin_once_and_runs_the_guard_directly(tmp_path, layout):
     empty.mkdir()
     none = run_sh(layout, "--strict", "hook", "claude", "pre-tool", stdin=payload, path=str(empty))
     assert none.returncode == 2 and b"no Python 3 found" in none.stderr, none
+
+
+@needs_sh
+def test_sh_half_prefers_py_3_over_a_python_2_python(tmp_path, layout):
+    # No python3; `python` is a Python 2 that fails on the guard (SyntaxError, exit 1) and logs that it was started; py -3 is real.
+    log, started = tmp_path / "runs.log", tmp_path / "python2.log"
+    stubs = _bin(tmp_path / "stubs", {
+        "python": "#!/bin/sh\necho started >> '%s'\necho 'SyntaxError: future feature annotations is not defined' >&2\nexit 1\n" % str(started).replace("\\", "/"),
+        "py": _runs(sys.executable)})
+    r = run_sh(layout, "--strict", "hook", "claude", "pre-tool", env={"STUB": "echo", "STUB_LOG": str(log)}, stdin=b"{}", path=str(stubs))
+    assert r.returncode == 0 and r.stdout == b"{}|hook claude pre-tool", r  # the guard ran under py -3 and its verdict came through
+    assert log.read_text().splitlines() == ["run"] and not started.exists(), r
 
 
 def _host_neutral(text):
@@ -369,7 +381,7 @@ def test_launcher_cases_need_no_particular_sh_or_temp_directory(tmp_path):
                        cwd=str(ROOT), stdin=subprocess.DEVNULL, creationflags=NO_WINDOW, timeout=300)
     out = r.stdout.decode("utf-8", "replace")
     assert r.returncode == 0 and "no sh available" in out, out
-    assert re.search(r"\b1 passed, 3 skipped\b" if sys.platform == "win32" else r"\b4 skipped\b", out), out
+    assert re.search(r"\b1 passed, 4 skipped\b" if sys.platform == "win32" else r"\b5 skipped\b", out), out
     if SH is None:
         pytest.skip("no sh available")
     # A bare sh (no cygpath, no coreutils) names the missing guard by the path the launcher derives, also for a launcher under the system

@@ -844,8 +844,8 @@ def path_payloads(target, guard, tmp_path):
 
 
 def _launcher_python():
-    """The first interpreter the launcher would pick (python3, python, py -3) that runs, with its version."""
-    for cand in (["python3"], ["python"], ["py", "-3"]):
+    """The first interpreter the launcher would pick (python3, py -3, python) that runs, with its version."""
+    for cand in (["python3"], ["py", "-3"], ["python"]):
         exe = shutil.which(cand[0])
         if not exe:
             continue
@@ -1782,3 +1782,106 @@ def test_escapes_of_every_shell_and_git_aliases_hide_no_creation_or_tamper_word(
         assert reason and PROTECTED in reason, (tool, cmd, reason)
     for cmd in ("git commit -m 'git config --local magos.guard off'", "git log --grep ma^gos.guard", "git config --get magos.guard"):
         assert verdict(hook(armed.path, cmd)) is None, cmd
+
+
+# ---- code-review fixes of the 1.0.2 release ---------------------------------------------------------------------------------------------
+def test_relative_paths_after_a_failed_cd_resolve_where_the_shell_is(guard, tmp_path):
+    a, b = make(tmp_path, "A"), make(tmp_path, "B")
+    plan(guard, b, "other", "docs/other.md")  # B holds a claim: an unplanned branch there is denied
+    for cmd in ("cd nonexist; git -C ../B switch -c x", "cd nonexist; cd ../B; git switch -c x", "cd nonexist; git push ../B HEAD:refs/heads/x"):
+        reason = verdict(hook(a.path, cmd))
+        assert reason and NOMAN in reason and "'x'" in reason, (cmd, reason)
+    r = make(tmp_path, "R")
+    plan(guard, r, "feat-x", "docs/x.md", worktree=r.path / "lanes" / "feat-x")
+    assert verdict(hook(r.path, "mkdir -p lanes && cd lanes && git worktree add feat-x -b feat-x")) is None  # lanes/feat-x, as git creates it
+    r2 = make(tmp_path, "R2")
+    plan(guard, r2, "feat-x", "docs/x.md", worktree=r2.path / "lanes")
+    reason = verdict(hook(r2.path, "mkdir -p lanes && cd lanes && git worktree add anywhere -b feat-x"))
+    assert reason and "registered worktree path" in reason, reason  # git creates lanes/anywhere, not the registered lanes
+
+
+def test_codex_argv_is_read_in_the_dialect_of_the_shell_it_runs(guard, tmp_path):
+    a, b = make(tmp_path, "A"), make(tmp_path, "B")
+    plan(guard, b, "other", "docs/other.md")
+    sep = "\\" if os.name == "nt" else "/"  # PowerShell and cmd read a backslash as a separator on Windows
+    argvs = [["powershell.exe", "-NoProfile", "-Command", "git -C ..%sB switch -c x" % sep], ["pwsh", "-Command", "git -C ..%sB switch -c x" % sep],
+             ["bash", "-lc", "git -C ../B switch -c x"], ["git", "-C", "..%sB" % sep, "switch", "-c", "x"]]
+    argvs += [["cmd", "/c", "git -C ..\\B switch -c x"]] if os.name == "nt" else []
+    for argv in argvs:
+        reason = verdict(hook(a.path, argv, host="codex"))
+        assert reason and NOMAN in reason and "'x'" in reason, (argv, reason)
+    assert G.shell_command(payload("Bash", ["git", "-C", "..\\B", "switch", "-c", "x"], a.path)) == ("git -C '..\\B' switch -c x", "bash")
+    assert G.shell_command(payload("Bash", ["cmd", "/c", "git status"], a.path)) == ("git status", "cmd")
+    assert G.shell_command(payload("Bash", ["pwsh", "-Command", "git status"], a.path)) == ("git status", "ps")
+    assert G.shell_command(payload("terminal", "git status", a.path)) == ("git status", None)
+
+
+def test_a_second_worktree_add_of_the_same_path_with_another_start_point_is_judged(target, tmp_path):
+    wt = P(tmp_path / "dx")
+    reason = verdict(hook(target.path, "git worktree add %s main || git worktree add %s HEAD~0" % (wt, wt)))
+    assert reason and NOMAN in reason, reason
+
+
+def test_copy_destinations_and_writers_in_every_spelling_are_tested(tmp_path):
+    lines = [r"Copy-Item .\p.sh -Destination:C:\r\.git\hooks\reference-transaction", r"Copy-Item .\x.sh .git\magos\claims\f.claim -Force -ErrorAction Stop",
+             "cp p.sh .git/hooks/reference-transaction -S .bak", "move evil .git/hooks/reference-transaction", "copy evil .git/magos/ARMED",
+             "cpi evil .git/magos/ARMED", "sc .git/magos/ARMED x", "ac .git/magos/ARMED x", "ni .git/magos/ARMED", "clc .git/magos/ARMED",
+             r"Copy-Item -Path .\p.sh .git\magos\ARMED"]
+    for line in lines:
+        assert G.protected(line) == ("guarded", G._STATE_MSG), line
+    home = tmp_path / "guard home"
+    roots = (G.pkey(str(home)),)
+    for line in ('copy "%s/guard/x" .' % P(home), 'cpi "%s/guard/x" .' % P(home), 'Copy-Item "%s/guard/x" . -ErrorAction Stop' % P(home)):
+        assert G.protected(line, roots=roots) is None, line  # copying out of the guard home
+    assert G.protected('copy x "%s/guard/x"' % P(home), roots=roots) == ("guarded", G._STATE_MSG)
+
+
+def test_a_quote_in_a_comment_hides_no_command(target):
+    cases = [("Bash", "# Let's create the lane branch\ngit switch -c c1", "c1"), ("PowerShell", "# Let's go\ngit switch -c c4", "c4"),
+             ("terminal", "# it's here\ngit switch -c c5", "c5"), ("Bash", "echo a #b'\ngit switch -c c6", "c6")]
+    for tool, cmd, name in cases:
+        reason = verdict(hook(target.path, cmd, tool=tool))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (tool, cmd, reason)
+    assert G.protected("# don't panic\nrm .git/magos/ARMED") == ("guarded", G._STATE_MSG)
+    assert records("Bash", "# git switch -c c7\ngit status", target.path) == []  # a comment runs nothing in bash
+
+
+def test_a_redirect_after_init_and_cd_is_judged_in_the_repository_it_names(target):
+    gd = P(target.path / ".git")
+    for cmd in ("git init -q n && cd n && git --git-dir=%s branch feat" % gd, "git init -q n && cd n && GIT_DIR=%s git branch feat" % gd):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'feat'" in reason, (cmd, reason)
+    assert verdict(hook(target.path, "git init -q n && cd n && GIT_DIR=.git git branch x")) is None  # the new repository's own git directory
+
+
+def test_two_letter_long_option_prefixes_create_and_rename(target):
+    for cmd, name in (("git branch --mo agent/other zz2", "zz2"), ("git switch --cr zz1", "zz1"), ("git checkout --or zz3", "zz3"),
+                      ("git switch --or zz4", "zz4")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    assert [c["names"] for c in records("Bash", "git branch --co main x5", target.path)] == [["main"]]  # --co names several options
+
+
+def test_branch_sort_and_format_take_a_value_and_list_nothing(target):
+    for cmd, name in (("git branch --sort refname zz8", "zz8"), ("git branch --format x zz9", "zz9"), ("git branch --sort -refname zz10", "zz10"),
+                      ("git branch zz11 --sort refname", "zz11")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    for cmd in ("git branch --format x", "git branch --sort refname"):
+        assert records("Bash", cmd, target.path) == [], cmd
+
+
+def test_push_and_fetch_option_values_are_not_the_repository(target):
+    for cmd, name in (("git push --exec git-receive-pack . HEAD:refs/heads/zz5", "zz5"), ("git push --receive-pack git-receive-pack . HEAD:refs/heads/zz6", "zz6"),
+                      ("git push --exe git-receive-pack . HEAD:refs/heads/zz7", "zz7"), ("git push -o ci.skip . HEAD:refs/heads/zz12", "zz12"),
+                      ("git fetch --depth 1 . main:zz13", "zz13")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+
+
+def test_a_bash_backslash_newline_joins_the_words(target):
+    bs_nl = "\\" + "\n"  # a backslash, then a newline
+    for tool, cmd, name in (("Bash", "git switch -c main" + bs_nl + "2", "main2"), ("Bash", 'git switch -c "fe' + bs_nl + 'at"', "feat"),
+                            ("Bash", "git sw" + bs_nl + "itch -c feat2", "feat2"), ("PowerShell", "git switch -c `" + "\n" + "ps1", "ps1")):
+        reason = verdict(hook(target.path, cmd, tool=tool))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (tool, cmd, reason)
