@@ -1,0 +1,3 @@
+{"id": "echo-quoted-into-sh", "cmd": "echo \"git branch piped\" | sh", "names": ["piped"]}
+{"id": "echo-into-bash-s", "cmd": "echo git branch piped2 | bash -s", "names": ["piped2"]}
+{"id": "echo-spaced-into-sh", "cmd": "echo   git branch agent/e   | sh", "names": ["agent/e"]}

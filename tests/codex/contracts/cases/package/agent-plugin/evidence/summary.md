@@ -17,9 +17,11 @@
 
 - PASS `plugin: plugin.json is a valid Agent Plugins 1.0.0 manifest`
 - PASS `plugin: manifest version matches SKILL.md metadata.version and references/commands.md`
+- PASS `plugin: the entry skill's metadata.version and the guard's GUARD_VERSION equal the manifest version`
 - PASS `plugin: skills/ discovery (§7.1) finds exactly the seven command adapters and git-orchestrator`
 - PASS `plugin: every discovered skill meets Agent Skills (strict YAML, allowed fields, name = directory, string-only metadata)`
 - PASS `plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules`
+- PASS `plugin: only the write adapters (git-integrate, git-cleanup, git-converge, git-sweep) set disable-model-invocation: true (Claude Code host key)`
 - PASS `plugin: package paths stay inside the plugin root and include no links (§4.1)`
 - PASS `plugin: mcp.json is absent or valid (§7.2)`
 

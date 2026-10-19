@@ -2,3 +2,4 @@
 hooks/hooks.json text eol=lf
 scripts/magos_guard.py text eol=lf
 .quality/** text eol=lf
+*.py text eol=lf

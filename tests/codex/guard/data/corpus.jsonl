@@ -101,7 +101,7 @@
 {"id": "c100", "cat": "refs", "dialect": "bash", "cmd": "git fetch origin feature-r:f1", "adv": false, "scope": "in", "branch": true, "note": ""}
 {"id": "c101", "cat": "refs", "dialect": "bash", "cmd": "git fetch origin +feature-r:f2", "adv": false, "scope": "in", "branch": true, "note": ""}
 {"id": "c102", "cat": "refs", "dialect": "bash", "cmd": "git fetch origin feature-r:refs/heads/f3", "adv": false, "scope": "in", "branch": true, "note": ""}
-{"id": "c103", "cat": "refs", "dialect": "bash", "cmd": "git fetch origin 'refs/heads/*:refs/heads/*'", "adv": false, "scope": "in", "branch": false, "note": ""}
+{"id": "c103", "cat": "refs", "dialect": "bash", "cmd": "git fetch origin 'refs/heads/*:refs/heads/*'", "adv": false, "scope": "in", "branch": true, "note": "a glob refspec creates a local branch for every remote branch it matches"}
 {"id": "c104", "cat": "refs", "dialect": "bash", "cmd": "git pull origin feature-r:f4", "adv": false, "scope": "in", "branch": true, "note": ""}
 {"id": "c105", "cat": "refs", "dialect": "bash", "cmd": "git push . main:f5", "adv": false, "scope": "in", "branch": true, "note": ""}
 {"id": "c106", "cat": "refs", "dialect": "bash", "cmd": "git push . HEAD:refs/heads/f6", "adv": false, "scope": "in", "branch": true, "note": ""}

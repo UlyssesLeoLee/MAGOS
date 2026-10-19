@@ -9,7 +9,7 @@
         ]
       },
       {
-        "matcher": "^(Bash|PowerShell|Agent|Task|Workflow)$|^mcp__.*(start_session|worktree|branch|hand_off_to_session)",
+        "matcher": "^(Bash|PowerShell|Monitor|Agent|Task|Workflow)$|^mcp__.*(start_session|worktree|branch|hand_off_to_session|run_in_terminal|terminal|shell|exec_command|execute_command|start_process|command|run_command|exec|execute|process|bash|powershell|cmd)",
         "hooks": [
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-guard.cmd\" hook claude pre-tool", "shell": "bash", "timeout": 25 }
         ]

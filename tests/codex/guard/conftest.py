@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import os
+import shutil
 import subprocess
 import sys
 from collections import namedtuple
@@ -27,19 +28,41 @@ G = _load()
 Result = namedtuple("Result", "rc out err")
 
 
+def _find_sh(path=None):
+    """The POSIX sh the launcher and git-layer tests run: the sh on PATH (`path`, default the process PATH), else None, and the sh tests
+    then skip.  Git for Windows' bin/sh.exe is a wrapper that puts /usr/bin on PATH, so the real usr/bin/sh.exe beside it is preferred:
+    a test that empties PATH must get a shell without coreutils."""
+    found = shutil.which("sh", path=path)
+    if not found:
+        return None
+    real = os.path.join(os.path.dirname(os.path.dirname(found)), "usr", "bin", "sh.exe")
+    return real if os.path.basename(os.path.dirname(found)).lower() == "bin" and os.path.isfile(real) else found
+
+
+SH = _find_sh()  # None when no POSIX sh exists: the sh tests skip
+
+
+def time_budget(seconds):
+    """Wall-clock bound of a linear-time test. Line tracing (coverage, a debugger) slows the guard several times over;
+    the bound still separates a linear walk from the quadratic blow-ups these tests exist to catch."""
+    traced = sys.gettrace() is not None or "coverage" in sys.modules
+    return seconds * (4 if traced else 1)
+
+
 @pytest.fixture(autouse=True)
 def isolated_env(monkeypatch, tmp_path_factory):
     home = tmp_path_factory.mktemp("home")
     for key in list(os.environ):
         if key.startswith(("GIT_", "MAGOS_")):
             monkeypatch.delenv(key, raising=False)
-    (home / ".gitconfig").write_text("[user]\n  name = tester\n  email = t@example.invalid\n[init]\n  defaultBranch = main\n[core]\n  autocrlf = false\n",
+    (home / ".gitconfig").write_text("[user]\n  name = tester\n  email = t@example.invalid\n[init]\n  defaultBranch = main\n[core]\n  autocrlf = false\n  longpaths = true\n",
                                      encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(home / ".gitconfig"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("MAGOS_HOME", str(home / ".magos"))
+    monkeypatch.setenv("HERMES_HOME", str(home / ".hermes"))  # install looks for the Hermes plugin's launcher there, never in the user's own Hermes
     return home
 
 
@@ -50,7 +73,8 @@ class Repo:
         self.path = Path(path)
 
     def git(self, *args, cwd=None, check=True, inp=None):
-        p = subprocess.run(["git", *args], cwd=str(cwd or self.path), capture_output=True, input=inp, env=os.environ.copy())
+        p = subprocess.run(["git", *args], cwd=str(cwd or self.path), capture_output=True, input=inp,
+                           stdin=None if inp is not None else subprocess.DEVNULL, env=os.environ.copy())
         if check and p.returncode:
             raise AssertionError("git %s failed: %s" % (" ".join(args), p.stderr.decode("utf-8", "replace")))
         return p.stdout.decode("utf-8", "replace").strip()
@@ -120,8 +144,8 @@ def guard():
     """guard(repo, *args) -> Result for `magos_guard --repo <repo> --lang en ...`."""
     def call(repo, *args, stdin=b""):
         old = G.user_console
-        if args and args[0] in ("arm", "disarm") and "--dry-run" not in args:
-            G.user_console = lambda: True  # arm / disarm are user-only and need a console
+        if args and args[0] in ("arm", "disarm", "install") and "--dry-run" not in args:
+            G.user_console = lambda: True  # arm / disarm / install are user-only and need a console
         try:
             return run(["--repo", str(getattr(repo, "path", repo)), "--lang", "en", *args], stdin=stdin)
         finally:

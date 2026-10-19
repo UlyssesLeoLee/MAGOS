@@ -53,6 +53,8 @@ CREATE
   (project_skill)-[:USES]->(root), (f)-[:CONTAINS]->(root);
 """
 
+from __future__ import annotations
+
 """Run real Git-skill invocations in disposable fixtures and retain evidence."""
 
 import argparse
@@ -103,7 +105,7 @@ RUNTIME_ERROR = re.compile(
 def git(directory: Path, *args: str, check: bool = True) -> str:
     completed = subprocess.run(
         ["git", "-C", str(directory), *args],
-        text=True, encoding="utf-8", errors="replace", capture_output=True,
+        text=True, encoding="utf-8", errors="replace", capture_output=True, stdin=subprocess.DEVNULL,
         timeout=120, check=False,
     )
     if check and completed.returncode:
@@ -114,7 +116,7 @@ def git(directory: Path, *args: str, check: bool = True) -> str:
 def is_ancestor(directory: Path, ancestor: str, descendant: str) -> bool:
     completed = subprocess.run(
         ["git", "-C", str(directory), "merge-base", "--is-ancestor", ancestor, descendant],
-        text=True, encoding="utf-8", errors="replace", capture_output=True,
+        text=True, encoding="utf-8", errors="replace", capture_output=True, stdin=subprocess.DEVNULL,
         timeout=120, check=False,
     )
     if completed.returncode not in (0, 1):
@@ -370,7 +372,7 @@ def hermes_install() -> dict | None:
     if not executable:
         return None
     completed = subprocess.run([executable, "--version"], text=True, encoding="utf-8", errors="replace",
-                               capture_output=True, timeout=120, check=False)
+                               capture_output=True, stdin=subprocess.DEVNULL, timeout=120, check=False)
     match = re.search(r"^Install directory:\s*(.+?)\s*$", completed.stdout, re.M)
     if not match:
         return None
@@ -382,7 +384,12 @@ def hermes_install() -> dict | None:
     return {"executable": executable, "agent_dir": agent_dir, "python": python, "version": version}
 
 
-HERMES_CONFIG_BACKUP = TESTS / ".hermes-config-backup.yaml"
+def hermes_config_backup(config: Path) -> Path:
+    """Where the user's config.yaml bytes wait until a run restores them: beside config.yaml in the Hermes home, never
+    inside the repository, where `git add` could pick up the user's configuration."""
+    return config.with_name(config.name + ".magos-backup")
+
+
 # Equal when two Hermes configs differ only in fixture (.magos-accept-*) trust entries.
 CONFIG_EQUIVALENCE = """
 import sys
@@ -403,15 +410,16 @@ print("equal" if first == second else "different")
 
 def recover_hermes_config(install: dict, config: Path) -> str | None:
     """Restore config.yaml from a backup left by an interrupted run (fixture trust entries only)."""
-    if not HERMES_CONFIG_BACKUP.is_file():
+    backup = hermes_config_backup(config)
+    if not backup.is_file():
         return None
-    verdict = subprocess.run([str(install["python"]), "-c", CONFIG_EQUIVALENCE, str(HERMES_CONFIG_BACKUP),
-                              str(config)], text=True, capture_output=True, timeout=120, check=False).stdout.strip()
+    verdict = subprocess.run([str(install["python"]), "-c", CONFIG_EQUIVALENCE, str(backup),
+                              str(config)], text=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=120, check=False).stdout.strip()
     if verdict != "equal":
-        raise RuntimeError(f"{HERMES_CONFIG_BACKUP} is left from an interrupted run, but {config} has other "
+        raise RuntimeError(f"{backup} is left from an interrupted run, but {config} has other "
                            f"changes; compare them manually before running Hermes cases again")
-    config.write_bytes(HERMES_CONFIG_BACKUP.read_bytes())
-    HERMES_CONFIG_BACKUP.unlink()
+    config.write_bytes(backup.read_bytes())
+    backup.unlink()
     return "restored config.yaml left trusted by an interrupted run"
 
 
@@ -421,18 +429,19 @@ def hermes_trusted(install: dict, root: Path, evidence: Path):
 
     `hermes skills trust/untrust` rewrites config.yaml through save_config. The original bytes are
     restored only when the parsed config is otherwise unchanged; any other difference is reported.
-    The original is also kept in HERMES_CONFIG_BACKUP until then, so an interrupted run can be
-    recovered by the next one.
+    The original is also kept in hermes_config_backup(config), beside config.yaml, until then, so an
+    interrupted run can be recovered by the next one.
     """
     config = load_sync_hosts().hermes_home(Path.home(), False) / "config.yaml"
+    backup = hermes_config_backup(config)
     recovered = recover_hermes_config(install, config)
     original = config.read_bytes() if config.is_file() else None
     if original is not None:
-        HERMES_CONFIG_BACKUP.write_bytes(original)
+        backup.write_bytes(original)
     record = {"config_sha256_before": hashlib.sha256(original).hexdigest() if original else None,
               "recovered_interrupted_run": recovered}
     run = lambda *args: subprocess.run([install["executable"], "skills", *args, str(root)], text=True,  # noqa: E731
-                                       encoding="utf-8", errors="replace", capture_output=True,
+                                       encoding="utf-8", errors="replace", capture_output=True, stdin=subprocess.DEVNULL,
                                        timeout=120, check=False)
     record["trust"] = run("trust").stdout.strip()[-300:]
     try:
@@ -446,7 +455,7 @@ def hermes_trusted(install: dict, root: Path, evidence: Path):
                 saved = Path(temporary) / "original.yaml"
                 saved.write_bytes(original)
                 verdict = subprocess.run([str(install["python"]), "-c", CONFIG_EQUIVALENCE, str(saved), str(config)],
-                                         text=True, capture_output=True, timeout=120, check=False).stdout.strip()
+                                         text=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=120, check=False).stdout.strip()
             record["semantic_comparison"] = verdict
             if verdict == "equal":
                 config.write_bytes(original)
@@ -455,7 +464,7 @@ def hermes_trusted(install: dict, root: Path, evidence: Path):
             config.unlink()  # Hermes had no config.yaml before `skills trust` created one
             record["restored"] = True
         if record["restored"] or current == original:
-            HERMES_CONFIG_BACKUP.unlink(missing_ok=True)
+            backup.unlink(missing_ok=True)
         final = config.read_bytes() if config.is_file() else None
         record["config_sha256_after"] = hashlib.sha256(final).hexdigest() if final else None
         write_json(evidence / "hermes_trust.json", record)
@@ -465,7 +474,7 @@ def hermes_probe(install: dict, fixture: dict, skill: str, instruction: str) -> 
     completed = subprocess.run(
         [str(install["python"]), "-X", "utf8", str(TESTS / "hermes_probe.py"), str(install["agent_dir"]),
          skill, instruction],
-        cwd=fixture["cwd"], text=True, encoding="utf-8", errors="replace", capture_output=True,
+        cwd=fixture["cwd"], text=True, encoding="utf-8", errors="replace", capture_output=True, stdin=subprocess.DEVNULL,
         timeout=300, check=False)
     line = next((line for line in completed.stdout.splitlines() if line.startswith("MAGOS_PROBE_RESULT ")), None)
     if not line:
@@ -889,9 +898,9 @@ def main() -> int:
     parser.add_argument("--allow-user-install", action="store_true",
                         help="run even if ~/.agents/skills/MAGOS or $CODEX_HOME/skills/MAGOS exists; Codex may "
                              "then load that copy instead of the fixture's")
-    parser.add_argument("--fixture-root", type=Path, default=TESTS,
-                        help="directory for disposable fixtures (default: tests/codex); use a short path "
-                             "if Windows reports 'Filename too long'")
+    parser.add_argument("--fixture-root", type=Path, default=Path(tempfile.gettempdir()),
+                        help="directory for disposable fixtures (default: the system temporary directory, outside "
+                             "the repository); use a short path if Windows reports 'Filename too long'")
     parser.add_argument("--codex-sandbox", choices=("read-only", "workspace-write", "danger-full-access"),
                         default="workspace-write")
     options = parser.parse_args()

@@ -10,7 +10,7 @@ from test_hook import denied, hook
 
 
 def raw(repo, *args, cwd=None):
-    return subprocess.run(["git", *args], cwd=str(cwd or repo.path), capture_output=True, env=os.environ.copy())
+    return subprocess.run(["git", *args], cwd=str(cwd or repo.path), capture_output=True, stdin=subprocess.DEVNULL, env=os.environ.copy())
 
 
 def test_lane_lifecycle_from_plan_to_release(repo, guard):
