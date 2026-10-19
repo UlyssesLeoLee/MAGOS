@@ -22,7 +22,7 @@ strictly above 90 percent for the file and for the project).
   `{"version": 2, "plugins": {"<name>@<marketplace>": [{"scope": ..., "installPath": ..., "version": ...}]}}`) and a
   plugins cache manifest (`.claude/plugins/cache/<marketplace>/<plugin>/<version>/.claude-plugin/plugin.json`).
 - Write failures are injected by replacing `copy_file` with a function that raises `OSError` or does nothing.
-- The suite runs on Python 3.9, 3.12 and 3.14 on Windows and Linux (CI matrix of `.github/workflows/test.yml`).
+- The suite runs on Python 3.9 and 3.14 on Windows and Linux (CI matrix of `.github/workflows/test.yml`).
 
 ## Test Cases
 

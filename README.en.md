@@ -969,7 +969,7 @@ python -X utf8 tests/codex/contracts/test_agent_plugin.py
 python -m pytest tests/codex/guard -q -p no:cacheprovider
 ```
 
-The first two run every source-contract case (including `package/agent-plugin`, the plugin format) and write nothing; they exit 1 on any failure. The third plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one. The fourth runs the lane guard suite. `.github/workflows/test.yml` runs all four on Windows and Linux with Python 3.9, 3.12 and 3.14, runs the coverage commands of `.quality/qguard.json` on Windows with Python 3.12 and fails when a source file or the whole project has 90 percent line coverage or less, and checks that a release tag `v<version>` names the package version.
+The first two run every source-contract case (including `package/agent-plugin`, the plugin format) and write nothing; they exit 1 on any failure. The third plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one. The fourth runs the lane guard suite. `.github/workflows/test.yml` runs all four on Windows and Linux with Python 3.9 and 3.14, runs the coverage commands of `.quality/qguard.json` on Windows with Python 3.14 and fails when a source file or the whole project has 90 percent line coverage or less, and checks that a release tag `v<version>` names the package version.
 
 ---
 

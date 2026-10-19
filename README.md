@@ -1074,7 +1074,7 @@ python -X utf8 tests/codex/contracts/test_agent_plugin.py
 python -m pytest tests/codex/guard -q -p no:cacheprovider
 ```
 
-前两条运行全部源码契约用例（包括检查插件格式的 `package/agent-plugin`），不写任何文件，有失败时以退出码 1 结束；第三条故意制造各种错误（清单写错、版本号对不上、文件夹里多出链接等），确认检查真的能把它们找出来；第四条运行车道守卫的测试。`.github/workflows/test.yml` 在 Windows 与 Linux、Python 3.9 / 3.12 / 3.14 上运行这四项；在 Windows 与 Python 3.12 上运行 `.quality/qguard.json` 的覆盖率命令，任何源文件或整个项目的行覆盖率不高于 90% 时失败；并检查发布标签 `v<版本号>` 与包的版本号一致。
+前两条运行全部源码契约用例（包括检查插件格式的 `package/agent-plugin`），不写任何文件，有失败时以退出码 1 结束；第三条故意制造各种错误（清单写错、版本号对不上、文件夹里多出链接等），确认检查真的能把它们找出来；第四条运行车道守卫的测试。`.github/workflows/test.yml` 在 Windows 与 Linux、Python 3.9 / 3.14 上运行这四项；在 Windows 与 Python 3.14 上运行 `.quality/qguard.json` 的覆盖率命令，任何源文件或整个项目的行覆盖率不高于 90% 时失败；并检查发布标签 `v<版本号>` 与包的版本号一致。
 
 ---
 

@@ -402,7 +402,7 @@ def test_ci_coverage_job_runs_the_qguard_commands(tmp_path):
     jobs = [job for job in flow["jobs"].values() if any("coverage_gate.py" in step.get("run", "") for step in job["steps"])]
     assert len(jobs) == 1 and jobs[0]["runs-on"] == "windows-latest", jobs
     steps = jobs[0]["steps"]
-    assert [s["with"]["python-version"] for s in steps if s.get("uses", "").startswith("actions/setup-python@")] == ["3.12"]
+    assert [s["with"]["python-version"] for s in steps if s.get("uses", "").startswith("actions/setup-python@")] == ["3.14"]
     runs = [s.get("run", "").strip() for s in steps]
     assert any(r.startswith("python -m pip install") and '"coverage==7.16.2"' in r for r in runs), runs
     assert [r for r in runs if "coverage_gate.py" in r] == ["python -X utf8 tests/codex/coverage_gate.py"]

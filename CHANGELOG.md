@@ -36,7 +36,7 @@ Tag `v1.0.2`. A security release of the lane guard (`scripts/magos_guard.py`, `h
 - The Hermes entry that `install --host hermes` writes runs the Hermes plugin's own launcher, which follows the Hermes plugin's updates, when the plugin's guard is the installing guard's version and (on Windows) its path holds none of the characters above; otherwise it runs the guard copy, and `install` says why. The entry is valid YAML on every platform.
 - With `--json`, a Git failure or an internal error prints a deny object on stdout; a Git call that fails without a message names its exit code.
 - `scripts/sync_hosts.py` recognises a MAGOS plugin installed from a Claude Code marketplace and leaves the Claude command copies out of a default run, as it does for a clone in `~/.claude/skills`.
-- A CI workflow runs the guard suite, the package contract suite and both source-contract runners (`--check`) on Windows and Linux with Python 3.9, 3.12 and 3.14, runs the coverage commands of `.quality/qguard.json` on Windows with Python 3.12 and fails when a source file or the project has 90 percent line coverage or less, and checks that a release tag names the package version. CodeQL analyses the Python sources and the workflows, and Dependabot keeps the SHA-pinned actions current.
+- A CI workflow runs the guard suite, the package contract suite and both source-contract runners (`--check`) on Windows and Linux with Python 3.9 and 3.14, runs the coverage commands of `.quality/qguard.json` on Windows with Python 3.14 and fails when a source file or the project has 90 percent line coverage or less, and checks that a release tag names the package version. CodeQL analyses the Python sources and the workflows, and Dependabot keeps the SHA-pinned actions current.
 
 ### Changed
 
