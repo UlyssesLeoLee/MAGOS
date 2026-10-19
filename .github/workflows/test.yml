@@ -3,7 +3,8 @@ name: tests
 # The guard suite, the package contract suite and both source-contract runners on the minimum Python (3.9) and on 3.14
 # (the python3 the hooks run under), on Windows and on Linux; the coverage gate of .quality/qguard.json on Windows with
 # Python 3.14; and the version agreement of every version statement and of a release tag. Every job has
-# read-only permissions and reads no secret. Actions are pinned by full commit SHA (the tag is in the comment).
+# read-only permissions and reads no secret. Actions are pinned by full commit SHA (the tag is in the comment), and every
+# install takes wheels only, each package pinned by version and sha256 (.github/requirements, .github/requirements-py39).
 
 on:
   push:
@@ -38,7 +39,8 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install the test runner
-        run: python -m pip install "pytest==9.1.1"
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r .github/requirements/tests-py314.txt
       - name: Every version statement equals plugin.yaml
         run: python -m pytest tests/codex/guard/test_package.py::test_versions_agree -q -p no:cacheprovider
       - name: A release tag names the plugin.yaml version
@@ -61,6 +63,11 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
         python: ["3.9", "3.14"]
+        include:  # pytest 9 needs Python 3.10+; the 3.9 legs use the last releases that support 3.9
+          - python: "3.9"
+            requirements: requirements-py39/tests-py39.txt
+          - python: "3.14"
+            requirements: requirements/tests-py314.txt
     defaults:
       run:
         shell: bash
@@ -72,8 +79,10 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install the test runner
-        # pytest 9 needs Python 3.10+; the 3.9 legs use the last pytest that supports it
-        run: python -m pip install "pytest==9.1.1; python_version >= '3.10'" "pytest==8.4.2; python_version < '3.10'" "PyYAML==6.0.3"
+        env:
+          REQUIREMENTS: .github/${{ matrix.requirements }}
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r "$REQUIREMENTS"
       - name: Interpreter, git and sh
         run: |
           python -VV
@@ -110,6 +119,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install the test runner and coverage
-        run: python -m pip install "pytest==9.1.1" "PyYAML==6.0.3" "coverage==7.16.2"
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r .github/requirements/tests-py314.txt -r .github/requirements/coverage.txt
       - name: The coverage commands of .quality/qguard.json; every source file and the project above 90 percent
         run: python -X utf8 tests/codex/coverage_gate.py

@@ -2775,20 +2775,33 @@ def challenge(expected, lang):
     return box[0] == expected
 
 
+def ref_spelling(name):
+    """A branch spelling read as a ref path: a backslash is a separator, empty and `.` segments are dropped, `..` is resolved."""
+    parts = []
+    for part in name.replace("\\", "/").split("/"):
+        if part == "..":
+            if parts:
+                parts.pop()
+        elif part not in ("", "."):
+            parts.append(part)
+    return "/".join(parts)
+
+
 def cmd_release(args):
     g = open_repo(args.repo)
     if g is None:
         return 2
+    branch = ref_spelling(args.branch) or args.branch
     try:
         with Lock(g):
             claims, bad = read_claims(g)
             root = os.path.join(store(g), "claims")
-            spelled = in_store(root, claim_path(g, args.branch))  # the claim file this spelling names, when it lies inside the store
+            spelled = in_store(root, claim_path(g, branch))  # the claim file this spelling names, when it lies inside the store
 
             def named(p):
                 return spelled is not None and os.path.normcase(in_store(root, p) or "") == os.path.normcase(spelled)
-            doc = claims.get(fold(args.branch)) or next((d for d in claims.values() if named(claim_path(g, d["branch"]))), None)
-            newer = newer_claim(bad, args.branch) or next((b for b in bad if b.code == "CLAIM_NEWER_FORMAT" and named(os.path.join(root, b))), None)
+            doc = claims.get(fold(branch)) or next((d for d in claims.values() if named(claim_path(g, d["branch"]))), None)
+            newer = newer_claim(bad, branch) or next((b for b in bad if b.code == "CLAIM_NEWER_FORMAT" and named(os.path.join(root, b))), None)
             if newer is not None:  # a newer guard's claim is never released by this one: its rules for releasing cannot be known
                 sys.stderr.write(T(args.lang, "blocked_newer", why=newer.text) + "\n")
                 return EXIT["BLOCKED"]
@@ -3148,7 +3161,7 @@ def _hook(args):
 HOOK_SH = r'''#!/bin/sh
 # MAGOS lane guard, git layer: reference-transaction only. POSIX sh, LF endings, no Python, no environment switch.
 Z=0000000000000000000000000000000000000000; in=
-chain() { p=${0%/*}/reference-transaction.magos-prev; [ -f "$p" ] || exit 0
+chain() { p=${0%/*}/reference-transaction.magos-prev; [ -f "$p" ] && [ -x "$p" ] || exit 0
   if [ -n "$in" ]; then printf '%s\n' "$in" | "$p" "$@"; else "$p" "$@"; fi; exit $?; }
 [ "$1" = prepared ] || chain "$@"
 if [ -n "$GIT_DIR" ]; then g=$GIT_DIR; elif [ -d .git ]; then g=.git; elif [ -f .git ]; then read -r l <.git; g=${l#gitdir: }; else g=.; fi

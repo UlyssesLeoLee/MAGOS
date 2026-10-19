@@ -1436,7 +1436,9 @@ def test_any_exception_on_a_lane_looking_payload_denies(target, tmp_path, monkey
     assert "unparseable hook payload" in (verdict(r) or "")
     plain = nested("ls")  # no path, no prefilter word
     p = guard_child(plain, tmp_path)
-    assert p.returncode == 0 and json.loads(p.stdout) == {} and b"warning" in p.stderr, p
+    decodes = subprocess.run([sys.executable, "-c", "import json, sys; json.loads(sys.stdin.buffer.read())"], input=plain,
+                             capture_output=True).returncode == 0  # a large C stack (Linux) decodes 100,000 levels; Windows' does not
+    assert p.returncode == 0 and json.loads(p.stdout) == {} and (b"warning" in p.stderr) != decodes, (decodes, p)
 
 
 def test_too_many_claimants_and_truncated_remotes_engage_auto_mode(tmp_path, monkeypatch):

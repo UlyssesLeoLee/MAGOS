@@ -13,13 +13,18 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: codeql-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
-      security-events: write
+      security-events: write  # upload the analysis results to code scanning
     strategy:
       fail-fast: false
       matrix:

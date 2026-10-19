@@ -376,7 +376,7 @@ def test_launcher_cases_need_no_particular_sh_or_temp_directory(tmp_path):
     # temporary directory (MSYS mounts it as /tmp), wherever pytest keeps its own temporary directories.
     work = tempfile.mkdtemp(prefix="magos launcher ", dir=tempfile.gettempdir())
     try:
-        base = Path(work) / "guard home"
+        base = Path(os.path.realpath(work)) / "guard home"  # the long spelling of a temp dir given in 8.3 form (CI runners)
         (base / "hooks").mkdir(parents=True)
         shutil.copy(LAUNCHER, base / "hooks" / "run-guard.cmd")
         r = run_sh(base, "hook", "codex", "pre-tool", stdin=b"{}", path=str(tmp_path))

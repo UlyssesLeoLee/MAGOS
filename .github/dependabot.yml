@@ -1,7 +1,17 @@
-# Weekly pull requests that move the SHA-pinned actions of .github/workflows to their newest release (SHA and tag comment).
+# Weekly pull requests that move the SHA-pinned actions of .github/workflows and the hash-pinned packages of
+# .github/requirements (the Python 3.14 sets) to their newest release, once that release is at least seven days old.
+# .github/requirements-py39 stays frozen at the last releases that support Python 3.9.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: pip
+    directory: /.github/requirements
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

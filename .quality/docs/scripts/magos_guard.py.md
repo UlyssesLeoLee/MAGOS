@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `6ac912ff7227221000978f04d459e6233a5e2bee86e730160ffe993332c721a7`
+Source-SHA256: `c26b44760bf680f7ac6bf132fdb292546b561f7d997d752829c63648bf7f85b7`
 
 ## Responsibility
 
@@ -241,7 +241,9 @@ Upstream: Python 3.9+ standard library only (`argparse`, `base64`, `collections`
 sets `NoDefaultCurrentDirectoryInExePath=1` in its own environment at import, before any subprocess starts, so `git`
 and every other child program are never resolved from the hook's working directory. Git 2.36+ (`status --porcelain=v2`,
 `worktree list --porcelain -z` (2.36), `rev-parse --path-format=absolute` (2.31), `for-each-ref --merged`,
-`reference-transaction`); `doctor` reports an older Git. No network access, no `fetch`, no `push`.
+`reference-transaction`); `doctor` reports an older Git. The guard imports no network module, starts no program but
+git (at one place, `Git.run`), and runs no git subcommand that talks to a remote (no `fetch`, no `push`); in a partial
+clone, git itself fetches objects missing from the local store from the promisor remote when the guard reads a diff.
 
 Interpreters: the minimum is Python 3.9; the hooks run under whatever interpreter the launcher finds (`py -3`, `python3`
 or `python`; CPython 3.14 on the reference machine), so path handling never depends on version-specific results of

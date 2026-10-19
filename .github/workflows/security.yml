@@ -1,0 +1,96 @@
+name: security
+
+# The security gates of the repository. The replay of the 1.0.2 audit findings, the hardening and review suites and the
+# supply-chain contracts (pinned workflows, hash-pinned installs, no credential in a tracked file, no network module and
+# no remote git subcommand in the hook code) run on Windows and on Linux with Python 3.14, the python3 the hooks run
+# under; zizmor audits the workflows and the Dependabot configuration, with its online audits of the pinned actions
+# (impostor commits, tag mismatches, known vulnerabilities). It runs on pushes and pull requests to main, develop_claude
+# and develop_codex, on v* tags, and weekly, so a new runner image (Git, Python, the shells) meets the suites when nothing
+# was pushed. The workflow token has no permissions; each job may read the repository and nothing else, and reads no
+# repository secret. Actions are pinned by full commit SHA (the tag is in the comment), and every install takes wheels
+# only, each package pinned by version and sha256.
+
+on:
+  push:
+    branches: [main, develop_claude, develop_codex]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, develop_claude, develop_codex]
+  schedule:
+    - cron: "37 3 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: security-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUTF8: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  regressions:
+    name: audit replay and hardening suites (${{ matrix.os }}, Python 3.14)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14"
+      - name: Install the test runner
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r .github/requirements/tests-py314.txt
+      - name: Interpreter, git and sh
+        run: |
+          python -VV
+          git --version
+          command -v sh
+      - name: Audit replay, hardening and review suites, supply-chain contracts
+        run: >-
+          python -m pytest -q -p no:cacheprovider -ra --basetemp="$RUNNER_TEMP/security"
+          tests/codex/guard/test_security_regressions.py tests/codex/guard/test_supply_chain.py
+          tests/codex/guard/test_hardening_hook.py tests/codex/guard/test_hardening_state.py
+          tests/codex/guard/test_review_fixes.py tests/codex/guard/test_second_review.py
+      - name: The run left the checkout untouched
+        run: |
+          changes="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$changes" ]; then
+            printf '%s\n' "$changes"
+            exit 1
+          fi
+
+  workflows:
+    name: zizmor (workflows and Dependabot)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14"
+      - name: Install zizmor
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r .github/requirements/zizmor.txt
+      - name: Audit the workflows and Dependabot with zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}  # the job's read-only token, for the online audits of the pinned actions
+        run: zizmor --strict-collection --format github --persona pedantic .

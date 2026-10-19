@@ -404,7 +404,8 @@ def test_ci_coverage_job_runs_the_qguard_commands(tmp_path):
     steps = jobs[0]["steps"]
     assert [s["with"]["python-version"] for s in steps if s.get("uses", "").startswith("actions/setup-python@")] == ["3.14"]
     runs = [s.get("run", "").strip() for s in steps]
-    assert any(r.startswith("python -m pip install") and '"coverage==7.16.2"' in r for r in runs), runs
+    assert ("python -m pip install --require-hashes --only-binary :all: -r .github/requirements/tests-py314.txt -r .github/requirements/coverage.txt"
+            in runs), runs
     assert [r for r in runs if "coverage_gate.py" in r] == ["python -X utf8 tests/codex/coverage_gate.py"]
 
     # The gate runs exactly the coverage commands of .quality/qguard.json and gates every tracked source file.
@@ -458,7 +459,7 @@ def test_codeql_analyses_python_and_the_workflows_with_minimal_permissions():
         if "uses" in step:
             assert re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", step["uses"]), step
     updates = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))["updates"]
-    assert [(u["package-ecosystem"], u["directory"]) for u in updates] == [("github-actions", "/")]  # the SHA pins get update requests
+    assert [(u["package-ecosystem"], u["directory"]) for u in updates] == [("github-actions", "/"), ("pip", "/.github/requirements")]  # the pins get update requests
 
 
 def _section(text, heading):

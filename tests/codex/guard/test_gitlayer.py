@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -81,6 +82,7 @@ def test_disarm_restores_a_foreign_hook(repo, guard):
     hook_path(repo).parent.mkdir(exist_ok=True)
     marker = repo.path.parent / "foreign.log"
     hook_path(repo).write_bytes(('#!/bin/sh\necho "$1" >> "%s"\ncat >/dev/null\n' % str(marker).replace("\\", "/")).encode("utf-8"))
+    os.chmod(hook_path(repo), 0o755)  # an active hook: git runs only executable hooks
     assert guard(repo, "arm").rc == 0
     assert (hook_path(repo).parent / "reference-transaction.magos-prev").is_file()
     repo.git("tag", "t1")  # a non-creation transaction: the foreign hook still runs (prepared, committed)
@@ -92,6 +94,22 @@ def test_disarm_restores_a_foreign_hook(repo, guard):
     assert "MAGOS lane guard" not in hook_path(repo).read_text(encoding="utf-8")  # the foreign hook is back
     assert not (hook_path(repo).parent / "reference-transaction.magos-prev").exists() and not (common(repo) / "magos" / "ARMED").exists()
     assert guard(repo, "disarm").rc == 0  # nothing left to do
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes; MSYS sh treats a file with #! as executable")
+def test_a_non_executable_foreign_hook_is_not_run(repo, guard):
+    hook_path(repo).parent.mkdir(exist_ok=True)
+    marker = repo.path.parent / "inactive.log"
+    hook_path(repo).write_bytes(('#!/bin/sh\necho "$1" >> "%s"\ncat >/dev/null\n' % str(marker)).encode("utf-8"))
+    os.chmod(hook_path(repo), 0o644)  # git would not run it
+    assert guard(repo, "arm").rc == 0
+    prev = hook_path(repo).parent / "reference-transaction.magos-prev"
+    repo.git("tag", "t2")  # the transaction succeeds and the inactive hook stays inactive
+    assert not marker.exists()
+    os.chmod(prev, 0o755)
+    repo.git("tag", "t3")
+    seen = marker.read_text(encoding="utf-8").split()
+    assert "prepared" in seen and "committed" in seen
 
 
 # ---- vetoes ----------------------------------------------------------------------------------------------------------

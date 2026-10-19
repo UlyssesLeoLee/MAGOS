@@ -1074,7 +1074,7 @@ python -X utf8 tests/codex/contracts/test_agent_plugin.py
 python -m pytest tests/codex/guard -q -p no:cacheprovider
 ```
 
-前两条运行全部源码契约用例（包括检查插件格式的 `package/agent-plugin`），不写任何文件，有失败时以退出码 1 结束；第三条故意制造各种错误（清单写错、版本号对不上、文件夹里多出链接等），确认检查真的能把它们找出来；第四条运行车道守卫的测试。`.github/workflows/test.yml` 在 Windows 与 Linux、Python 3.9 / 3.14 上运行这四项；在 Windows 与 Python 3.14 上运行 `.quality/qguard.json` 的覆盖率命令，任何源文件或整个项目的行覆盖率不高于 90% 时失败；并检查发布标签 `v<版本号>` 与包的版本号一致。
+前两条运行全部源码契约用例（包括检查插件格式的 `package/agent-plugin`），不写任何文件，有失败时以退出码 1 结束；第三条故意制造各种错误（清单写错、版本号对不上、文件夹里多出链接等），确认检查真的能把它们找出来；第四条运行车道守卫的测试。`.github/workflows/test.yml` 在 Windows 与 Linux、Python 3.9 / 3.14 上运行这四项；在 Windows 与 Python 3.14 上运行 `.quality/qguard.json` 的覆盖率命令，任何源文件或整个项目的行覆盖率不高于 90% 时失败；并检查发布标签 `v<版本号>` 与包的版本号一致。`.github/workflows/security.yml` 在推送到 `main`、`develop_claude`、`develop_codex` 及向它们发起拉取请求时、推送 `v*` 标签时和每周运行：在 Windows 与 Linux、Python 3.14 上重放 1.0.2 审计确认的问题（`tests/codex/guard/data/security_regressions.jsonl`，每例都规定判定结果，拒绝时还规定理由），运行加固与评审测试和供应链检查（Action 按提交 SHA 固定；除 CodeQL 上传结果外每个作业的权限都只读；安装包按版本与 sha256 固定且只用 wheel；被跟踪的文件中没有凭据；守卫与启动器不导入网络模块，守卫只启动 git，也不运行连接远端的 git 子命令；部分克隆（partial clone）中 git 读取差异时会自行从 promisor 远端补取缺失的对象）；并用 zizmor 审计工作流与 Dependabot 配置，有任何发现或无法解析的文件即失败。CI 的每次安装都只从 `.github/requirements`（Python 3.14，由 Dependabot 在新版本发布满 7 天后更新）或 `.github/requirements-py39`（固定为支持 3.9 的最后版本）中按 hash 固定的 wheel 安装。
 
 ---
 

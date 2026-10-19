@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -144,7 +145,9 @@ def test_script_files_are_read_when_small(tmp_path):
     here = str(tmp_path)
     assert names("bash mk.sh", cwd=here) == ["from-script"] and names("sh ./mk.sh", cwd=here) == ["from-script"] and names("./mk.sh", cwd=here) == ["from-script"]
     assert names("source mk.sh", cwd=here) == ["from-script"] and names(". ./mk.sh", cwd=here) == ["from-script"]
-    assert names("powershell -File mk.ps1", cwd=here) == ["from-ps1"] and names(".\\mk.ps1", cwd=here) == ["from-ps1"]
+    assert names("powershell -File mk.ps1", cwd=here) == ["from-ps1"]
+    if sys.platform == "win32":  # on POSIX a bash `.\mk.ps1` is `.mk.ps1`: the backslash escapes the next character
+        assert names(".\\mk.ps1", cwd=here) == ["from-ps1"]
     assert names("bash huge.sh", cwd=here) == [] and names("bash missing.sh", cwd=here) == []
 
 
