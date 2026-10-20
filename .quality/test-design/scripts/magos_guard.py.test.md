@@ -375,11 +375,13 @@ the entry skill, no third file in `.claude-plugin/`), the source-contract cases 
 `tests/codex/contracts/run_contract_cases.py --check` (including `README.md` and `README.en.md` pins), the Claude
 source-contract cases (`SKILL.md` strings, `README.md`, `references/installation.md` and `references/commands.md` pins,
 `references/pressure-tests.md` headings) run by
-`tests/claude/scripts/run_claude_contracts.py --check` with the version taken from `plugin.yaml`, and the host runtime
+`tests/claude/scripts/run_claude_contracts.py --check` with the version taken from `plugin.yaml` (its GitSweep cases
+`git-sweep/preview-and-help`, `git-sweep/remote-delete-safety`, `git-sweep/one-shot-readiness` and
+`git-sweep/push-target` pin the readiness block, the `--push` fast-forward and the hard stops of `/GitSweep`), and the host runtime
 cases (`tests/codex/run_host_cases.py`) that require refs and worktree files to be unchanged after read-only commands
 (the guard writes only on `plan`, `release`, `override`, `arm`, `disarm` and `install`).
 
-Within the guard, the cases that pin behaviour other parts of 1.0.2 must not disturb: format-1 claims written by
+Within the guard, the cases that pin behaviour other parts of 1.0.3 must not disturb: format-1 claims written by
 earlier guards stay readable and line 1 stays `state=active` for the git layer (TC-055, TC-086); ordinary commands of
 every hooked tool still get `{}` (TC-027, TC-066, TC-139, TC-162); the AUTO branch-only allow when its check fails or when
 its engagement check fails in a repository without an open claim (TC-052, TC-073); the console gates of `override`, `arm` and `disarm` (TC-020, TC-032); the generated Codex snippet;

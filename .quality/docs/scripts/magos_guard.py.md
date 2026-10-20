@@ -298,7 +298,7 @@ The file holds seven cooperating parts.
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
-7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.2) and equals
+7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.3) and equals
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the
@@ -730,7 +730,7 @@ Version 1.0.2 is a security release of the guard. Relative to the 1.0.1 product 
 - looks the cmd half's interpreter up on PATH and runs it through `call`, passes the guard's stderr to the host, gives
   a Windows Python the Windows spelling of the guard path in the sh half, and runs only the `hook` subcommand.
 
-Changes after the 1.0.2 release, carried by the next release; the guard:
+Version 1.0.3 is a hardening release of the guard (`GUARD_VERSION` 1.0.3). Relative to the 1.0.2 product it:
 
 - reads an `update-ref --stdin` name up to a backslash, takes `\0`, `\n`, `\t` and `\r` after it as separators, and
   makes the record dynamic for any other escape, an empty name or a name git refuses;
@@ -756,7 +756,7 @@ Compatibility: claim files of format 1 written by 1.0.0 and 1.0.1 are read uncha
 `state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule
 refuses allows the creation of its branch. The git-layer hook reads `heads` in any case, so `doctor` reports an armed
 repository as different from this version until `arm` runs again. The Codex and Hermes copies under `~/.magos/guard`
-receive 1.0.2 only when the user re-runs `install`; `doctor` reports a stale copy with the refresh command, and armed
+receive 1.0.3 only when the user re-runs `install`; `doctor` reports a stale copy with the refresh command, and armed
 repositories are refreshed by re-running `arm`. Exit code 18 is new. A Hermes entry points at the Hermes plugin
 launcher only while the plugin's guard declares the installing guard's version; after the plugin moves to another
 version, `doctor` reports the difference and `install` points the entry at the copy until the versions agree again.

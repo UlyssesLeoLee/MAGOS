@@ -5,7 +5,7 @@
   "prepared_branch": "agent/review-fixes-1.0.3",
   "technical_design": ".quality/docs/scripts/magos_guard.py.md",
   "test_design": ".quality/test-design/scripts/magos_guard.py.test.md",
-  "prepared_technical_design_sha256": "b4efe349ffd1f33131e6ef98cedae443a923177eaf11fad226065cc0e257702f",
-  "prepared_test_design_sha256": "88e1b163cdfe29e35e1bb43b3e03c3c6f15b05dcb6be8b01382bb7b91ea227b8",
+  "prepared_technical_design_sha256": "5ff807ad60f6de97264cfbb1ec5fedb6e882a6b894fec2a3270cdc252ea3e876",
+  "prepared_test_design_sha256": "60a6263ad61601478099bd00b71a2bdda9b458f9c5553106b1d59daaa2b7ee60",
   "prepared_related_design_sha256": {}
 }
