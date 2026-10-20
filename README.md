@@ -201,7 +201,7 @@ flowchart LR
 | `/GitIntegrate` | 把某个 AI 的成果安全地并进主线 | 会，但要先过一连串检查 |
 | `/GitCleanup` | 清理已经完成的旧分支和工作区 | 默认不会；加 `--apply` 才会 |
 | `/GitConverge` | 把所有分支的成果汇总到一条分支，只留 `main` 和它 | 默认不会；加 `--apply` 才会 |
-| `/GitSweep` | 先做 `/GitConverge`，再一并清除远端已合并的分支 | 默认不会；加 `--apply` 才会（含删除远端分支） |
+| `/GitSweep` | 先做 `/GitConverge`，再一并清除远端已合并的分支 | 默认不会；加 `--apply` 才会（含删除远端分支）；再加 `--push` 才会把 `<branch>` 推送一次 |
 
 每个命令都可以加 `--lang <语言>`（回复语言，不写就是中文）和 `--help`（只看说明）；三个只看的命令还有 `--remote`（`/GitSweep` 的 `--remote <名字>` 是另一个参数，见它自己的说明）。它们的详细用法见上面的“三个通用参数”，下面每个命令只写它**自己独有**的参数。
 
@@ -620,7 +620,7 @@ agent/c        内容早就被包含了，没有新东西
 
 #### 它会拒绝执行的几种情况
 
-下面这些情况，它会**在动手之前**就停下并说明原因，对仓库不做任何改动：
+下面这些情况，它会**在动手之前**就停下并说明原因，对仓库不做任何改动。没通过的门槛会一次全部列出，每一项都附带处理办法，一次运行就能看到要先清掉的全部事项：
 
 | 情况 | 它会怎么说 | 你该怎么办 |
 |---|---|---|
@@ -685,21 +685,39 @@ flowchart TD
 分两步，且只有加 `--apply` 才会动手：
 
 1. **本地收敛**：和 `/GitConverge` 完全一样（同样的检查、同样的合并顺序）。遇到冲突或检查失败就整个停下，本地、远端都不会删任何东西。
-2. **清除远端**：只删除“提交已经被远端自己保留的分支包含”的远端分支，也就是已并入远端默认分支或远端的 `<branch>` 的那些。只在你本地合并过、还没推送的分支，会标成 `PENDING_PUSH` 留着，等你把 `<branch>` 推上去后再跑一次 `/GitSweep` 才会删。
+2. **清除远端**：只删除“提交已经被远端自己保留的分支包含”的远端分支，也就是已并入远端默认分支或远端的 `<branch>` 的那些。判断“已并入”时，`<branch>` 按收敛之后的样子计算（本地的 `<branch>` 加上将被合并进来的各分支），所以预览和随后的执行会给出同样的分类。只在你本地合并过、还没推送的分支，只要 `<branch>` 的推送预计会执行，就标成 `PUSH_THEN_DELETE`（预览里不管有没有写 `--push` 都这样标）：加了 `--push`，它们会在同一次运行里被清除（见下面的 `--push`）；不加 `--push`，运行会留着它们，报告里写明保留的原因是没写 `--push`，要等你加上 `--push` 重跑，或者自己把 `<branch>` 推上去后再跑一次 `/GitSweep`。
 
 ```text
 /GitSweep agent/release                          只看计划（不联网）
 /GitSweep agent/release --apply                  照计划执行
+/GitSweep agent/release --apply --push           照计划执行，并把 agent/release 推送到远端一次
 /GitSweep agent/release --apply --remote upstream   清理 upstream 而不是 origin
 ```
 
-**参数**：`<branch>`（必填，接收所有成果的本地分支）、`--apply`（才真正执行）、`--discard-ignored`（原样交给第一步，允许清理含 `.env` 的工作区）、`--remote <名字>`（要清理的远端，默认 `origin`，注意它和只看命令里的 `--remote` 开关不同，后面要跟名字，也不会 fetch）。
+**参数**：`<branch>`（必填，接收所有成果的本地分支）、`--apply`（才真正执行）、`--discard-ignored`（原样交给第一步，允许清理含 `.env` 的工作区）、`--push`（可选，要和 `--apply` 一起写：本地收敛之后、删除远端分支之前，把 `<branch>` 推送到远端一次）、`--remote <名字>`（要清理的远端，默认 `origin`，必须是 `git remote` 列出的名字，否则门槛不通过；注意它和只看命令里的 `--remote` 开关不同，后面要跟名字，也不会 fetch）。
+
+**`--push` 到底做什么？** 它只多做一件事，而且命令固定、不会变：`git push --no-follow-tags <远端> refs/heads/<branch>:refs/heads/<branch>`。这是一次“快进”推送：绝不强推，绝不跳过钩子（`--no-verify`），也不推标签；远端还没有 `<branch>` 时会新建它，计划和报告都会写明。推出去的是收敛之后的本地 `<branch>` 里远端还没有的提交，预览会把它们列出来（已有的提交，和将被合并进来的分支）。不管有没有写 `--push`，预览都会根据本地记录预测这次推送：会不会执行、会推出哪些提交、会不会新建远端分支，以及哪些 `PUSH_THEN_DELETE` 分支依赖它；预计不会执行时，写明是哪个条件不满足（例如 `<branch>` 就是远端默认分支）。这样，只合并进本地 `<branch>` 的远端分支，就能在同一次运行里被清除，不用先手动推送、再跑第二遍。远端的 `<branch>` 已经停在本地的位置时，没有什么可发布的：不推送，报告写 `PUBLISH_NOT_NEEDED`。其余情况下，即使没有远端分支依赖这次推送，也照样推送，因为 `--push` 就是你要求发布 `<branch>`。
+
+下面任何一种情况，推送都会被跳过，报告里写明原因（`PUSH_SKIPPED`）：远端上的 `<branch>` 不是本地 `<branch>` 的祖先（别人推送过新提交，请先 `git fetch <远端>` 并把它合并进来）；`<branch>` 是 `main` 或远端的默认分支；本地收敛中途停止，或它之后的校验失败；整个远端清理是 `UNKNOWN`。前两种情况下，不依赖推送的远端删除照常进行；后两种情况下，一条远端分支也不会删。推送被拒绝或出错（受保护分支、钩子、网络）时，命令不重试、不换写法，标为 `PUSH_FAILED`；推送成功之后会核对远端的 `<branch>` 是否停在本地的位置，不一致就标为 `PUSH_UNCONFIRMED`，按失败处理。推送一旦完成，撤销它需要强推，而这个命令从不强推：所以 `--push` 是你明确授权的一次发布。不写 `--push` 或不写 `--apply`，命令都不会推送。
+
+**预览的结尾：一次完成就绪度。** 预览除了计划，最后还会告诉你这条命令能不能一次做完。“做完”的意思是：本地只剩 `main` 和 `<branch>`，被删除分支的工作区都已移除，远端的分支不是已被删除就是受保护。命令从不去碰的工作区（没挂在分支上的，或挂着 `main` 或其他保留分支的）不属于这个状态，报告会把它列出来。结论评判的是推荐命令（见下），而不是你敲的那条命令。结论有三种：
+
+| 结论 | 含义 |
+|---|---|
+| `ONE_SHOT` | 没有门槛失败；每个分支都能合并或已被包含，剩下的唯一阻塞只能靠 `--discard-ignored` 解除；没有预计冲突，远端清理不是 `UNKNOWN`；每个远端分支都是 `SAFE_CANDIDATE`、`PUSH_THEN_DELETE` 或 `NOT_TOUCHED`。运行推荐命令一次就够（以本地记录能看到的为限，执行时会再核对远端） |
+| `PARTIAL` | 没有门槛失败，但还有开关解不开的事项（别的删除阻塞项、做到一半的操作、历史无关的分支、`UNKNOWN`、预计冲突、没合并的远端分支、预计不会执行推送的 `PENDING_PUSH` 等）。推荐命令照样做它能做的一切，其余的逐项列出：每一项都写明证据、处理办法，以及处理完要不要再跑一次 |
+| `BLOCKED` | 有门槛没通过，什么都不能执行（`--remote` 写了 `git remote` 没有列出的名字，也是门槛之一）。所有没通过的门槛一次列全，每一项都附带处理办法 |
+
+**推荐命令**是完整的一行 `/GitSweep <branch> --apply`（你怎么写，它就怎么写，`--remote <名字>` 和 `--lang <语言>` 照抄），只带真正能解除事项的开关：`--discard-ignored` 只在某个工作区唯一的阻塞是被忽略文件时才带，并把将被删除的被忽略文件逐个列在旁边；`--push` 只在有远端分支会是 `PUSH_THEN_DELETE` 时才带（不管你有没有写 `--push`），并写明将发布的提交数和是否会新建远端分支。没有用的开关绝不推荐，会丢文件或会发布提交的开关绝不会被悄悄加上。开关按 `--apply`、`--discard-ignored`、`--push`、`--remote`、`--lang` 的顺序排列。
+
+**执行报告的结尾：运行状态。** `COMPLETE` 表示目标状态已经达成；`PARTIAL` 表示还有遗留事项：报告列出每一项和它的处理办法，最后一行 `Next command:` 是处理完之后要运行的那一行命令，按推荐命令的同样规则和同样的开关顺序生成，所以 `--remote` 和 `--lang` 照抄；有远端分支停在 `PUSH_THEN_DELETE`，或因推送被跳过、失败、没能确认而停在 `PENDING_PUSH` 时，它带上 `--push`（`<branch>` 是远端默认分支时不带）；没有任何重跑能改变结果时，这一行省略。
 
 **哪些远端分支会被留下**（报告里逐条标出原因）：
 
 | 状态 | 含义 |
 |---|---|
-| `PENDING_PUSH` | 只在本地并入了 `<branch>`，远端还没有；推送后再跑才会删 |
+| `PUSH_THEN_DELETE` | 只在本地并入了 `<branch>`，而且 `<branch>` 的推送预计会执行（预览里不管有没有写 `--push` 都会这样标）。加了 `--push`，执行时先推送 `<branch>`，再删除它；没加 `--push`，执行时不动它，报告写明保留的原因是没写 `--push`。出路有两条：加 `--push` 重跑，或自己 `git push <远端> refs/heads/<branch>:refs/heads/<branch>` 之后重跑 |
+| `PENDING_PUSH` | 只在本地并入了 `<branch>`，远端还没有，而且这一次运行里没有任何推送能清掉它：推送预计不会执行（例如 `<branch>` 就是远端默认分支，或远端上的 `<branch>` 不是本地 `<branch>` 的祖先），或者执行时推送被跳过、失败、没能确认（报告会写明是哪个条件）。先处理那个条件，再重跑 |
 | `KEPT_NOT_MERGED` | 还有远端没有保留的提交，不删 |
 | `KEPT_LOCAL` | 同名本地分支在本地收敛之后仍然保留（被阻塞、历史无关、做到一半、`UNKNOWN`，或预览之后才出现），远端也留着 |
 | `STALE` | 执行时发现这条远端分支有了新提交或已不在远端，跳过 |
@@ -710,9 +728,11 @@ flowchart TD
 
 只有 `SAFE_CANDIDATE`（已并入远端保留的分支，且以上都不适用）的远端分支会被删除。
 
-`--apply` 会在本地收敛完成之后，才联网核对一次远端。如果远端当前的默认分支，或它用来判断“已合并”的保留分支（远端默认分支、远端上的 `<branch>`），和记录对不上，整个远端清理都不做，不删任何远端分支（本地收敛的结果保留）；请先 `git fetch <远端>`（默认分支变了，再加 `git remote set-head <远端> --auto`）再重跑。如果只是某条待删的远端分支与记录对不上，或已经不在远端，只跳过这一条，标为 `STALE`。
+留下来的每一项，报告都写出处理办法：`--remote` 写了 `git remote` 没有列出的名字，改成列出的远端（`git remote -v`），或用 `git remote add <名字> <地址>` 添加；`UNKNOWN` 按上表补全信息（推送地址与拉取地址不同时，`git config --unset-all remote.<远端>.pushurl`，或者清理推送地址所指的那个远端）；没写 `--push` 而保留的 `PUSH_THEN_DELETE` 加上 `--push` 重跑，或者自己 `git push <远端> refs/heads/<branch>:refs/heads/<branch>` 之后重跑；`PENDING_PUSH` 先处理报告写明的那个条件，再重跑（`<branch>` 是远端默认分支：自己发布，或走你们的评审流程，命令从不推送远端默认分支；远端的 `<branch>` 不是本地的祖先：`git fetch <远端>` 并把它合并进 `<branch>`，再加 `--push` 重跑；推送失败或被拒绝：满足托管平台的规则（分支保护、钩子）后加 `--push` 重跑，或者自己发布；整个远端清理是 `UNKNOWN`：补全那条信息）；`PUSH_SKIPPED`、`PUSH_FAILED`、`PUSH_UNCONFIRMED` 处理报告写明的条件（拉取并合并更新的远端提交，或满足托管平台的分支保护），或自己发布，然后重跑；`KEPT_LOCAL` 先处理那条本地分支的阻塞；`BLOCKED_UPSTREAM` 在以它为上游的本地分支上运行 `git branch --unset-upstream <分支>`；`KEPT_NOT_MERGED` 请审查后合并进 `<branch>`，或在托管平台上自己删除（命令绝不会替你删）；`BLOCKED_BAD_NAME` 在托管平台上删除或改名。
 
-它**绝不会**：推送提交或标签、强推、删除远端默认分支 / `main` / `<branch>` 本身、删除没有并入的远端分支。每条远端分支单独删除，并带上“远端仍停在记录的 SHA”的保护，对方期间有新提交就会拒绝。删除远端分支会让以它为源的未合并 PR 被关闭；在一些平台上，以它为目标的 PR 也会被关闭或改指向别处，请先确认。报告里会列出每条被删分支的 SHA，可用 `git push <remote> <sha>:refs/heads/<name>` 恢复。
+`--apply` 会在本地收敛完成之后，才联网核对一次远端。如果远端当前的默认分支，或它用来判断“已合并”的保留分支（远端默认分支、远端上的 `<branch>`），和记录对不上，整个远端清理都不做，不删任何远端分支（本地收敛的结果保留）；请先 `git fetch <远端>`（默认分支变了，再加 `git remote set-head <远端> --auto`）再重跑。如果只是某条待删的远端分支与记录对不上，或已经不在远端，只跳过这一条，标为 `STALE`。加了 `--push` 时，也在这一次核对里记下远端 `<branch>` 现在的位置，推送前据此确认它是本地 `<branch>` 的祖先。
+
+它**绝不会**：推送提交或标签（唯一的例外，是加了 `--push` 时对 `<branch>` 的那一次快进推送）、强推、没写 `--push` 就发布、删除远端默认分支 / `main` / `<branch>` 本身、删除没有并入的远端分支。每条远端分支单独删除，并带上“远端仍停在记录的 SHA”的保护，对方期间有新提交就会拒绝。删除远端分支会让以它为源的未合并 PR 被关闭；在一些平台上，以它为目标的 PR 也会被关闭或改指向别处，请先确认。报告里会列出每条被删分支的 SHA，可用 `git push <remote> <sha>:refs/heads/<name>` 恢复。
 
 ---
 
@@ -880,12 +900,12 @@ Claude Code 也可以在终端里执行：`claude plugin marketplace add Ulysses
 从 1.0.1 起，每个发布都有标签 `v<版本号>`（见 `CHANGELOG.md`）；1.0.0 没有标签，不要安装或固定它；标签 `v1.0` 是插件化与改号之前的 3.4.0 版 Skill，不是插件版本，也不要固定到它。上面的命令跟随默认分支；要停留在某个版本：
 
 ```bash
-claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.2    # 然后：claude plugin install magos@magos
-git clone --branch v1.0.2 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.2 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
+claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.3    # 然后：claude plugin install magos@magos
+git clone --branch v1.0.3 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.3 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
 ```
 
-固定版本收不到之后的修复，包括守卫的安全修复：请关注 `CHANGELOG.md` 并移动固定点。标签的 commit SHA 是 `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.2 "refs/tags/v1.0.2^{}"` 输出里 `refs/tags/v1.0.2^{}` 那一行的 SHA（没有这一行时取 `refs/tags/v1.0.2` 那一行）。Hermes 把带 `--ref` 的安装记为固定：`hermes plugins update magos` 会拒绝它，不带 `--ref` 的 `hermes plugins install UlyssesLeoLee/MAGOS --force` 会重装原来固定的提交。移动固定点用 `--ref <新的 SHA> --force --enable`；要重新跟随默认分支，先 `hermes plugins remove magos`，再 `hermes plugins install UlyssesLeoLee/MAGOS --enable`。细节以及如何固定 Codex 与同步脚本安装，见 `references/installation.md`。
+固定版本收不到之后的修复，包括守卫的安全修复：请关注 `CHANGELOG.md` 并移动固定点。标签的 commit SHA 是 `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.3 "refs/tags/v1.0.3^{}"` 输出里 `refs/tags/v1.0.3^{}` 那一行的 SHA（没有这一行时取 `refs/tags/v1.0.3` 那一行）。Hermes 把带 `--ref` 的安装记为固定：`hermes plugins update magos` 会拒绝它，不带 `--ref` 的 `hermes plugins install UlyssesLeoLee/MAGOS --force` 会重装原来固定的提交。移动固定点用 `--ref <新的 SHA> --force --enable`；要重新跟随默认分支，先 `hermes plugins remove magos`，再 `hermes plugins install UlyssesLeoLee/MAGOS --enable`。细节以及如何固定 Codex 与同步脚本安装，见 `references/installation.md`。
 
 ### Claude Code：clone 到 Skill 目录
 
@@ -965,7 +985,7 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 | GitIntegrate | `/GitIntegrate` | `/git-integrate` | `$git-integrate` | 通过安全门禁后集成指定 lane 或 branch |
 | GitCleanup | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` | 默认预览可清理项；`--apply` 才允许删除 |
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | 把所有本地分支合并进指定分支并只保留 `main` 和它；默认预览，`--apply` 才执行 |
-| GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge` 之后再删除远端已合并分支；默认预览且不联网，`--apply` 才执行 |
+| GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge` 之后再删除远端已合并分支；默认预览且不联网，`--apply` 才执行，`--push`（需要 `--apply`）才把 `<branch>` 推送一次 |
 
 斜杠入口说明：
 

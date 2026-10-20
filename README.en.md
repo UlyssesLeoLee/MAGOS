@@ -202,7 +202,7 @@ The core principle:
 | `/GitIntegrate` | Lands one agent's work behind a safety gate | Yes, after a series of checks |
 | `/GitCleanup` | Removes finished branches and worktrees | Not by default; only with `--apply` |
 | `/GitConverge` | Folds every branch into one and keeps only `main` and it | Not by default; only with `--apply` |
-| `/GitSweep` | Runs `/GitConverge`, then also deletes merged remote branches | Not by default; only with `--apply` (includes remote deletion) |
+| `/GitSweep` | Runs `/GitConverge`, then also deletes merged remote branches | Not by default; only with `--apply` (includes remote deletion); `<branch>` is pushed once only when you also add `--push` |
 
 Every command accepts `--lang <language>` (reply language, Chinese by default) and `--help` (instructions only); the three read-only commands also accept `--remote` (`/GitSweep`'s `--remote <name>` is a different option; see its section). Their details are in "Three arguments that work everywhere" above, so each command below describes only the arguments **it alone** has.
 
@@ -617,7 +617,7 @@ Examples:
 
 #### Situations where it refuses
 
-In these cases it stops **before doing anything** and explains why; the repository is not changed:
+In these cases it stops **before doing anything** and explains why; the repository is not changed. Every failed gate is listed at once, each with its remedy, so one run shows everything you must clear first:
 
 | Situation | What it says | What you do |
 |---|---|---|
@@ -680,21 +680,39 @@ flowchart TD
 Two phases, and nothing happens without `--apply`:
 
 1. **Local converge**: identical to `/GitConverge` (same gates, same merge order). A conflict or failed check stops everything; nothing is deleted locally or remotely.
-2. **Remote sweep**: deletes only remote branches whose tip is already contained in a branch the remote keeps: its default branch or its own `<branch>`. A branch merged only on your machine is `PENDING_PUSH` and stays until you push `<branch>` and run `/GitSweep` again.
+2. **Remote sweep**: deletes only remote branches whose tip is already contained in a branch the remote keeps: its default branch or its own `<branch>`. "Already contained" is judged with `<branch>` as it will be once the local converge has finished (your local `<branch>` plus the branches that will be merged into it), so a preview and the run after it classify a remote branch alike. A branch merged only on your machine is `PUSH_THEN_DELETE` while the push of `<branch>` is predicted to run (a preview shows this with or without `--push`): with `--push` it is cleared in the same run (see `--push` below); without `--push` the run leaves it, and the report says it was kept because `--push` was not typed, until you rerun with `--push` or push `<branch>` yourself and run `/GitSweep` again.
 
 ```text
 /GitSweep agent/release                              just the plan (no network)
 /GitSweep agent/release --apply                      run the plan
+/GitSweep agent/release --apply --push               run the plan and push agent/release to the remote once
 /GitSweep agent/release --apply --remote upstream    sweep upstream instead of origin
 ```
 
-**Arguments**: `<branch>` (required, the local branch that receives everything), `--apply` (actually run), `--discard-ignored` (passed to phase 1: also clear worktrees that hold `.env`), `--remote <name>` (the remote to sweep, `origin` by default; unlike the read-only commands' `--remote` switch it takes a value and never fetches).
+**Arguments**: `<branch>` (required, the local branch that receives everything), `--apply` (actually run), `--discard-ignored` (passed to phase 1: also clear worktrees that hold `.env`), `--push` (optional, written together with `--apply`: after the local converge and before the remote deletions, push `<branch>` to the remote once), `--remote <name>` (the remote to sweep, `origin` by default; it must be listed by `git remote`, otherwise a gate fails; unlike the read-only commands' `--remote` switch it takes a value and never fetches).
+
+**What does `--push` do?** It adds one step, and the command is fixed: `git push --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`. It is a fast-forward push: never forced, never `--no-verify`, no tags; when the remote does not have `<branch>` yet, the push creates it, and the plan and the report say so. What goes out is the commits of the converged local `<branch>` that the remote lacks, and the preview lists them (the existing commits, and the branches that will be merged). With or without `--push`, the preview predicts the push from your local records: whether it would run, which commits it would publish, whether it would create the remote branch, and which `PUSH_THEN_DELETE` branches depend on it; when it would not run, it names the condition that fails (for example, `<branch>` is the remote default). So remote branches merged only into your local `<branch>` are cleared in the same run, with no manual push and no second run. When the remote's `<branch>` already sits at the local tip there is nothing to publish: no push is made and the report says `PUBLISH_NOT_NEEDED`. Otherwise the push runs even when no remote branch depends on it, because `--push` is your request to publish `<branch>`.
+
+In each of these cases the push is skipped and the report says why (`PUSH_SKIPPED`): the remote's `<branch>` is not an ancestor of the local `<branch>` (someone pushed new commits; run `git fetch <remote>` and merge them first); `<branch>` is `main` or the remote's default branch; the local converge stopped midway, or its validation failed; the whole remote sweep is `UNKNOWN`. In the first two cases the remote deletions that do not depend on the push go on; in the last two no remote branch is deleted at all. When the push is rejected or fails (a protected branch, a hook, the network), the command does not retry and does not rewrite it, and reports `PUSH_FAILED`; after a successful push it checks that the remote's `<branch>` now sits at the local tip, and otherwise reports `PUSH_UNCONFIRMED` and treats the push as failed. Once a push has happened, undoing it takes a force push, which this command never makes: `--push` is a publication you authorize explicitly. Without `--push`, or without `--apply`, the command pushes nothing.
+
+**The end of the preview: one-shot readiness.** Besides the plan, the preview tells you whether this command can finish in one run. "Finished" means: only `main` and `<branch>` remain as local branches, the worktrees of the deleted branches are removed, and every remote branch is either deleted or protected. A worktree the command never touches (a detached one, or one that holds `main` or another kept branch) is not part of that state; the report lists it. The verdict judges the recommended command (below), not the command as you typed it. There are three verdicts:
+
+| Verdict | Meaning |
+|---|---|
+| `ONE_SHOT` | No gate fails; every branch can be merged or is already contained, and the only blocker left is one that `--discard-ignored` lifts; there is no predicted conflict and the remote sweep is not `UNKNOWN`; every remote branch is `SAFE_CANDIDATE`, `PUSH_THEN_DELETE` or `NOT_TOUCHED`. One run of the recommended command is enough (as far as the local records can show; the apply rechecks the live remote) |
+| `PARTIAL` | No gate fails, but something remains that no flag lifts (another delete blocker, an operation in progress, a branch with unrelated history, `UNKNOWN`, a predicted conflict, a remote branch that is not merged, a `PENDING_PUSH` whose push is not predicted to run, and so on). The recommended command still does everything it can, and the rest is listed item by item: its evidence, its remedy, and whether you must rerun afterwards |
+| `BLOCKED` | A gate fails, so nothing can run (a `--remote` that `git remote` does not list is one of the gates). Every failed gate is listed at once, each with its remedy |
+
+The **recommended command** is the full line `/GitSweep <branch> --apply` (spelled the way you wrote it, with `--remote <name>` and `--lang <language>` as given), carrying only the flags that lift something: `--discard-ignored` only when a worktree's only blocker is ignored files, with every ignored file that would be deleted listed next to the line; `--push` only when at least one remote branch would be `PUSH_THEN_DELETE` (whether or not you wrote `--push`), with the number of commits it would publish and whether it would create the remote branch. A flag that lifts nothing is never recommended, and a flag that discards files or publishes commits is never added silently. The flags come in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang`.
+
+**The end of the apply report: the run state.** `COMPLETE` means the end state was reached; `PARTIAL` means something remains: the report lists each item with its remedy, and its last line, `Next command:`, is the exact line to run once the remedies are done, built by the same rules as the recommended command and in the same flag order, so it carries `--remote` and `--lang` as given, and `--push` when a remote branch ended `PUSH_THEN_DELETE`, or `PENDING_PUSH` because the push was skipped, failed or was not confirmed (not when `<branch>` is the remote default); the line is left out when no rerun would change anything.
 
 **What stays on the remote** (each one is reported with its reason):
 
 | Status | Meaning |
 |---|---|
-| `PENDING_PUSH` | Merged only locally; push `<branch>` and rerun to delete it |
+| `PUSH_THEN_DELETE` | Merged only into your local `<branch>`, and the push of `<branch>` is predicted to run (a preview shows this with or without `--push`). With `--push` the run pushes `<branch>` first and then deletes this branch; without `--push` the run leaves it, and the report says it was kept because `--push` was not typed. Two ways forward: rerun with `--push`, or `git push <remote> refs/heads/<branch>:refs/heads/<branch>` yourself and rerun |
+| `PENDING_PUSH` | Merged only into your local `<branch>` and not on the remote yet, and no push of this run clears it: the push is not predicted to run (for example `<branch>` is the remote default, or the remote's `<branch>` is not an ancestor of the local `<branch>`), or in the run it was skipped, failed or was not confirmed (the report names the condition). Clear that condition, then rerun |
 | `KEPT_NOT_MERGED` | Holds commits the remote does not keep elsewhere |
 | `KEPT_LOCAL` | The local branch of the same name is still kept after the local converge (blocked, unrelated history, in progress, `UNKNOWN`, or appeared after the preview), so the remote one stays too |
 | `STALE` | At apply time the remote branch has new commits or is gone from the remote; skipped |
@@ -705,9 +723,11 @@ Two phases, and nothing happens without `--apply`:
 
 Only a `SAFE_CANDIDATE` (merged into a branch the remote keeps, and none of the above applies) is deleted.
 
-After the local converge phase, `--apply` checks the live remote once. If the remote's default branch or a branch it relies on (the remote default, the remote's `<branch>`) differs from what was recorded, the whole remote sweep is skipped and no remote branch is deleted (the local convergence stays); run `git fetch <remote>` (plus `git remote set-head <remote> --auto` if the default changed) and rerun. If only a candidate branch differs from the record or is gone from the remote, only that branch is skipped as `STALE`.
+For every item that stays, the report gives the remedy: for a `--remote` that `git remote` does not list, name a listed remote (`git remote -v`) or add it with `git remote add <name> <url>`; for `UNKNOWN`, complete the missing fact as the table says (when the push URL differs from the fetch URL, `git config --unset-all remote.<remote>.pushurl`, or sweep the remote that the push URL names); for a `PUSH_THEN_DELETE` kept because `--push` was not typed, rerun with `--push`, or `git push <remote> refs/heads/<branch>:refs/heads/<branch>` yourself and rerun; for `PENDING_PUSH`, clear the condition the report names (when `<branch>` is the remote default, publish it by hand or through your review process, because the command never pushes the remote default; when the remote's `<branch>` is not an ancestor of the local one, `git fetch <remote>` and merge it into `<branch>`, then rerun with `--push`; when the push failed or was refused, satisfy the host's rule (branch protection, a hook) and rerun with `--push`, or publish by hand; when the whole remote sweep is `UNKNOWN`, complete the missing fact) and rerun; for `PUSH_SKIPPED`, `PUSH_FAILED` and `PUSH_UNCONFIRMED`, clear the named condition (fetch and merge a newer remote tip, or satisfy the host's branch protection) or publish by hand, then rerun; for `KEPT_LOCAL`, clear that local branch's blocker first; for `BLOCKED_UPSTREAM`, run `git branch --unset-upstream <branch>` on the local branch that tracks it; for `KEPT_NOT_MERGED`, review it and merge it into `<branch>`, or delete it on the host yourself (the command never deletes it); for `BLOCKED_BAD_NAME`, delete or rename it on the host.
 
-It never pushes commits or tags, never force-pushes, and never deletes the remote default branch, `main`, or `<branch>` itself. Each remote branch is deleted on its own with a lease on its recorded SHA, so the remote refuses if the branch moved meanwhile. Deleting a remote branch closes open pull requests that use it as their head; on some hosts it also closes or retargets pull requests that use it as their base. The report lists every deleted branch with its SHA (`git push <remote> <sha>:refs/heads/<name>` restores it).
+After the local converge phase, `--apply` checks the live remote once. If the remote's default branch or a branch it relies on (the remote default, the remote's `<branch>`) differs from what was recorded, the whole remote sweep is skipped and no remote branch is deleted (the local convergence stays); run `git fetch <remote>` (plus `git remote set-head <remote> --auto` if the default changed) and rerun. If only a candidate branch differs from the record or is gone from the remote, only that branch is skipped as `STALE`. With `--push`, the same check records where the remote's `<branch>` sits now, and the push is made only when that is an ancestor of the local `<branch>`.
+
+It never pushes commits or tags (the one exception is the fast-forward push of `<branch>` that `--push` makes), never force-pushes, never publishes without `--push`, and never deletes the remote default branch, `main`, or `<branch>` itself. Each remote branch is deleted on its own with a lease on its recorded SHA, so the remote refuses if the branch moved meanwhile. Deleting a remote branch closes open pull requests that use it as their head; on some hosts it also closes or retargets pull requests that use it as their base. The report lists every deleted branch with its SHA (`git push <remote> <sha>:refs/heads/<name>` restores it).
 
 ---
 
@@ -870,12 +890,12 @@ After a new session the names line up across hosts:
 Every release from 1.0.1 on is tagged `v<version>` (`CHANGELOG.md`); 1.0.0 has no tag, so do not install or pin it, and the tag `v1.0` is the skill release 3.4.0 from before the package became a plugin, not a plugin version, so do not pin it either. The commands above follow the default branch; to stay on one release:
 
 ```bash
-claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.2    # then: claude plugin install magos@magos
-git clone --branch v1.0.2 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character commit SHA of v1.0.2> --enable    # add --force when MAGOS is already installed
+claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.3    # then: claude plugin install magos@magos
+git clone --branch v1.0.3 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character commit SHA of v1.0.3> --enable    # add --force when MAGOS is already installed
 ```
 
-A pinned install receives no later fixes, guard security fixes included: follow `CHANGELOG.md` and move the pin. The commit SHA of a tag is the `refs/tags/v1.0.2^{}` line of `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.2 "refs/tags/v1.0.2^{}"` (the `refs/tags/v1.0.2` line when there is no `^{}` line). Hermes records a `--ref` install as pinned: `hermes plugins update magos` refuses it, and `hermes plugins install UlyssesLeoLee/MAGOS --force` without `--ref` reinstalls the pinned commit. Move the pin with `--ref <new SHA> --force --enable`; to follow the default branch again, run `hermes plugins remove magos` and then `hermes plugins install UlyssesLeoLee/MAGOS --enable`. `references/installation.md` has the details, including how to pin Codex and the sync-script installs.
+A pinned install receives no later fixes, guard security fixes included: follow `CHANGELOG.md` and move the pin. The commit SHA of a tag is the `refs/tags/v1.0.3^{}` line of `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.3 "refs/tags/v1.0.3^{}"` (the `refs/tags/v1.0.3` line when there is no `^{}` line). Hermes records a `--ref` install as pinned: `hermes plugins update magos` refuses it, and `hermes plugins install UlyssesLeoLee/MAGOS --force` without `--ref` reinstalls the pinned commit. Move the pin with `--ref <new SHA> --force --enable`; to follow the default branch again, run `hermes plugins remove magos` and then `hermes plugins install UlyssesLeoLee/MAGOS --enable`. `references/installation.md` has the details, including how to pin Codex and the sync-script installs.
 
 ### Claude Code (clone into the skills folder)
 
@@ -1053,7 +1073,7 @@ CI is made of three workflows and the Dependabot configuration, all under `.gith
 | GitIntegrate | `/GitIntegrate` | `/git-integrate` | `$git-integrate` | Integrate a lane through safety gates |
 | GitCleanup | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` | Preview cleanups; `--apply` required to delete |
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | Merge every local branch into one and keep only `main` and it; preview by default, `--apply` to run |
-| GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge`, then delete merged remote branches; preview by default (no network), `--apply` to run |
+| GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge`, then delete merged remote branches; preview by default (no network), `--apply` to run, `--push` (with `--apply`) to push `<branch>` once |
 
 ```bash
 python -X utf8 tests/codex/contracts/run_contract_cases.py
