@@ -6,7 +6,7 @@
 
 ## Expected behavior
 
-- Publishes only refs/heads/<branch>, with exactly git push --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>: a fast-forward push, never forced, never --no-verify, never tags.
+- Publishes only refs/heads/<branch>, with exactly git push --recurse-submodules=no --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>: a fast-forward push, never forced, never --no-verify, never tags, and never into a repository other than the remote or into submodules.
 - Skips the push and reports PUSH_SKIPPED when the live remote tip is not an ancestor of the local branch, when <branch> is main or the remote default, when the converge phase stopped or its validation failed, or when the remote sweep is UNKNOWN.
 - A push that exits non-zero is PUSH_FAILED and one whose remote-tracking ref does not match is PUSH_UNCONFIRMED; neither is retried with another command, and the branches that waited for it are reported as PENDING_PUSH with that reason.
 - Publishes nothing and reports PUBLISH_NOT_NEEDED when the live remote tip already equals the local tip; otherwise the push runs even when no remote branch depends on it, because --push is the request to publish <branch>.
@@ -14,6 +14,8 @@
 - The hard stop reads: except the one fast-forward push of <branch> that --push makes, never push commits or tags and never force-push; /GitConverge never pushes.
 - When the push cannot run, the apply says so: phase 1 stopped or phase 2 UNKNOWN delete no remote branch at all, while a live remote tip that is not an ancestor, or a <branch> that is main or the remote default, skips only the push and the SAFE_CANDIDATE deletions go on.
 - When <branch> is the remote default the publish is never predicted to run: a remote branch merged only into the local <branch> is PENDING_PUSH with or without --push, the report names that condition, the recommended command and the Next command: line carry no --push, and the remedy is to publish <branch> by hand or through the review process, because the command never pushes the remote default.
+- A --push that was typed and whose publish prediction says the push will run stays in the recommended command even when no remote branch depends on it (the commit count is printed next to the line), so that the recommended command does what the typed one does; a typed --push that cannot run is dropped from the line with the reason.
+- The preview counts the N existing commits to publish; the apply adds at most one --no-ff merge commit per source it merges and its report gives the exact range and count; the hand push of a PUSH_THEN_DELETE branch is offered only once local <branch> holds its tip.
 
 ## Contract checks
 
@@ -31,5 +33,15 @@
 - PASS `README.md`
 - PASS `README.en.md`
 - PASS `README.ja.md`
+- PASS `references/commands.md`
+- PASS `commands/GitSweep.md`
+- PASS `skills/git-sweep/SKILL.md`
+- PASS `README.md`
+- PASS `README.en.md`
+- PASS `README.ja.md`
+- PASS `CHANGELOG.md`
+- PASS `RELEASE_NOTES_1.0.3.md`
+- PASS `references/pressure-tests.md`
+- PASS `references/branch-strategy.md`
 
 Evidence scope: source-contract check; no AI host CLI is invoked.

@@ -21,24 +21,28 @@
       "remote tip already equals the local tip",
       "no remote branch depends on the push",
       "--push without --apply",
-      "/GitConverge"
+      "/GitConverge",
+      "remote with several URLs",
+      "push.recurseSubmodules=on-demand"
     ]
   },
   "expected": [
-    "Publishes only refs/heads/<branch>, with exactly git push --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>: a fast-forward push, never forced, never --no-verify, never tags.",
+    "Publishes only refs/heads/<branch>, with exactly git push --recurse-submodules=no --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>: a fast-forward push, never forced, never --no-verify, never tags, and never into a repository other than the remote or into submodules.",
     "Skips the push and reports PUSH_SKIPPED when the live remote tip is not an ancestor of the local branch, when <branch> is main or the remote default, when the converge phase stopped or its validation failed, or when the remote sweep is UNKNOWN.",
     "A push that exits non-zero is PUSH_FAILED and one whose remote-tracking ref does not match is PUSH_UNCONFIRMED; neither is retried with another command, and the branches that waited for it are reported as PENDING_PUSH with that reason.",
     "Publishes nothing and reports PUBLISH_NOT_NEEDED when the live remote tip already equals the local tip; otherwise the push runs even when no remote branch depends on it, because --push is the request to publish <branch>.",
     "A remote branch merged only into the converged target is PUSH_THEN_DELETE when the publish step is predicted to run, whether or not --push was typed (with --push the apply publishes first and deletes after; without --push it leaves the branch and reports \"kept: --push not typed\"), and PENDING_PUSH otherwise or when the publish was skipped, failed or unconfirmed; both are decided against the converged target, so a preview and the apply after it agree; without --apply the push is only predicted, and the preview gives that prediction whether or not --push was typed.",
     "The hard stop reads: except the one fast-forward push of <branch> that --push makes, never push commits or tags and never force-push; /GitConverge never pushes.",
     "When the push cannot run, the apply says so: phase 1 stopped or phase 2 UNKNOWN delete no remote branch at all, while a live remote tip that is not an ancestor, or a <branch> that is main or the remote default, skips only the push and the SAFE_CANDIDATE deletions go on.",
-    "When <branch> is the remote default the publish is never predicted to run: a remote branch merged only into the local <branch> is PENDING_PUSH with or without --push, the report names that condition, the recommended command and the Next command: line carry no --push, and the remedy is to publish <branch> by hand or through the review process, because the command never pushes the remote default."
+    "When <branch> is the remote default the publish is never predicted to run: a remote branch merged only into the local <branch> is PENDING_PUSH with or without --push, the report names that condition, the recommended command and the Next command: line carry no --push, and the remedy is to publish <branch> by hand or through the review process, because the command never pushes the remote default.",
+    "A --push that was typed and whose publish prediction says the push will run stays in the recommended command even when no remote branch depends on it (the commit count is printed next to the line), so that the recommended command does what the typed one does; a typed --push that cannot run is dropped from the line with the reason.",
+    "The preview counts the N existing commits to publish; the apply adds at most one --no-ff merge commit per source it merges and its report gives the exact range and count; the hand push of a PUSH_THEN_DELETE branch is offered only once local <branch> holds its tip."
   ],
   "checks": [
     {
       "file": "references/commands.md",
       "contains": [
-        "`git push --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`",
+        "`git push --recurse-submodules=no --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`",
         "**Publish step (`--push`).** It publishes the local `<branch>` and no other ref, with this one command and no variation:",
         "It is a fast-forward push: never `--force`, `-f`, a `+` refspec or `--force-with-lease`, never `--no-verify`, `--tags`, `--all`, `--mirror`, `--prune`, `--delete`, `--set-upstream` or a refspec pattern.",
         "A `pre-push` hook of the repository runs as git runs it.",
@@ -72,10 +76,10 @@
       "file": "references/commands.md",
       "contains": [
         "Also the **publish prediction**, from local refs only and with or without `--push`: the push would run when every condition of the **Publish step** that the local refs can show holds",
-        "the commits it would publish (the commits of the converged target that `refs/remotes/<remote>/<branch>` lacks, the sources to merge among them, each commit list shortened only with an explicit \"(N more)\")",
+        "the commits it would publish (the commits of the converged target that no `refs/remotes/<remote>/*` ref holds yet, `git rev-list <converged tips> --not --remotes=<remote>`, the sources to merge among them, each commit list shortened only with an explicit \"(N more)\"; the count is N existing commits, and phase 1 adds at most one `--no-ff` merge commit per source to merge, so the apply publishes at most N plus the number of sources to merge and its report gives the exact range and count)",
         "whether it creates the remote branch, and the `PUSH_THEN_DELETE` branches that depend on it",
         "or says that nothing needs publishing when the remote tip already equals the converged target",
-        "A `PUSH_THEN_DELETE` branch is listed with its two ways forward: run with `--push`, or push `<branch>` by hand (`git push <remote> refs/heads/<branch>:refs/heads/<branch>`) and rerun; a `PENDING_PUSH` branch is listed with the condition that keeps the publish from running."
+        "A `PUSH_THEN_DELETE` branch is listed with its two ways forward: run with `--push`, or, once local `<branch>` holds its tip (after an `--apply` without `--push` when the tip is covered only through a source that phase 1 has yet to merge), push `<branch>` by hand (`git push <remote> refs/heads/<branch>:refs/heads/<branch>`) and rerun; a `PENDING_PUSH` branch is listed with the condition that keeps the publish from running."
       ]
     },
     {
@@ -93,7 +97,7 @@
       "file": "references/commands.md",
       "contains": [
         "All of section 6, except that the lease-guarded deletion above and, only with `--push`, the publish step replace its ban on pushing and on deleting remote branches and remote-tracking refs.",
-        "never push commits or tags except the one fast-forward push of `<branch>` that `--push` makes; never force-push (the only pushes are the lease-guarded deletion above, one named branch per command, and that publish command)",
+        "never push commits or tags except the one fast-forward push of `<branch>` that `--push` makes; a push never reaches a repository other than `<remote>` (a remote with several URLs makes phase 2 `UNKNOWN`) and never recurses into submodules (`--recurse-submodules=no` in both push commands); never run a git command as a shell string (section 6 **Argument safety**), or pass the name of a `BLOCKED_BAD_NAME` branch to one; never force-push (the only pushes are the lease-guarded deletion above, one named branch per command, and that publish command)",
         "never use `--mirror`, `--prune`, `--all`, `--tags`, `--no-verify`, or a refspec pattern (in a push; the pattern in the step 2 `ls-remote` only selects what to read)",
         "never publish without `--push`, publish when phase 1 stopped or its validation failed, publish `main` or the remote default, or retry a failed publish with another command",
         "Never: move, reset, or delete `main`; push, force-push, or delete remote branches, or delete remote-tracking refs (`git branch -d -r`, `git remote prune`)",
@@ -103,7 +107,7 @@
     {
       "file": "commands/GitSweep.md",
       "contains": [
-        "- `--push`: With `--apply`, after the converge phase and before the remote deletions, publish `<branch>` with one fast-forward push, exactly `git push --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>` (never forced, never `--no-verify`)",
+        "- `--push`: With `--apply`, after the converge phase and before the remote deletions, publish `<branch>` with one fast-forward push, exactly `git push --recurse-submodules=no --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>` (never forced, never `--no-verify`)",
         "The push is refused when the remote's `<branch>` is not an ancestor of the local one, when `<branch>` is `main` or the remote default, when the converge phase stopped or its validation failed, or when the remote sweep is `UNKNOWN`.",
         "Without `--apply` the preview only predicts the push, and it gives that prediction whether or not `--push` was typed. A published branch cannot be undone by this command.",
         "The only pushes allowed are the deletion of one named, fully merged remote branch at a time, guarded by `--force-with-lease` on its recorded SHA, and, only with `--push`, the one fast-forward push of `<branch>`, run only after the converge phase finished and its validation did not fail; a skipped or failed push is reported and never retried with another command. Never push other commits or tags, never force-push, never use `--no-verify`, `--mirror` or `--prune`",
@@ -114,7 +118,7 @@
     {
       "file": "skills/git-sweep/SKILL.md",
       "contains": [
-        "- `--push`: With `--apply`, after the converge phase and before the remote deletions, publish `<branch>` with one fast-forward push, exactly `git push --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>` (never forced, never `--no-verify`)",
+        "- `--push`: With `--apply`, after the converge phase and before the remote deletions, publish `<branch>` with one fast-forward push, exactly `git push --recurse-submodules=no --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>` (never forced, never `--no-verify`)",
         "The push is refused when the remote's `<branch>` is not an ancestor of the local one, when `<branch>` is `main` or the remote default, when the converge phase stopped or its validation failed, or when the remote sweep is `UNKNOWN`.",
         "Without `--apply` the preview only predicts the push, and it gives that prediction whether or not `--push` was typed. A published branch cannot be undone by this command.",
         "The only pushes allowed are the deletion of one named, fully merged remote branch at a time, guarded by `--force-with-lease` on its recorded SHA, and, only with `--push`, the one fast-forward push of `<branch>`, run only after the converge phase finished and its validation did not fail; a skipped or failed push is reported and never retried with another command. Never push other commits or tags, never force-push, never use `--no-verify`, `--mirror` or `--prune`",
@@ -125,7 +129,7 @@
     {
       "file": "SKILL.md",
       "contains": [
-        "It is also the only command that pushes commits, and only with `--push`: one fast-forward `git push --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>` after the converge phase, never forced, never `--no-verify`, and refused when the live remote branch is not an ancestor of the local one, when `<branch>` is `main` or the remote default, when the converge phase stopped or its validation failed, or when the remote sweep is `UNKNOWN`; without `--apply` the preview only predicts it.",
+        "It is also the only command that pushes commits, and only with `--push`: one fast-forward `git push --recurse-submodules=no --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>` after the converge phase, never forced, never `--no-verify`, and refused when the live remote branch is not an ancestor of the local one, when `<branch>` is `main` or the remote default, when the converge phase stopped or its validation failed, or when the remote sweep is `UNKNOWN`; without `--apply` the preview only predicts it.",
         "It never pushes other commits or tags, never force-pushes"
       ]
     },
@@ -158,7 +162,7 @@
       "file": "README.md",
       "contains": [
         "/GitSweep agent/release --apply --push",
-        "git push --no-follow-tags",
+        "git push --recurse-submodules=no --no-follow-tags",
         "refs/heads/<branch>:refs/heads/<branch>",
         "`PUSH_SKIPPED`",
         "`PUSH_FAILED`",
@@ -174,7 +178,7 @@
       "file": "README.en.md",
       "contains": [
         "/GitSweep agent/release --apply --push",
-        "git push --no-follow-tags",
+        "git push --recurse-submodules=no --no-follow-tags",
         "refs/heads/<branch>:refs/heads/<branch>",
         "`PUSH_SKIPPED`",
         "`PUSH_FAILED`",
@@ -190,7 +194,7 @@
       "file": "README.ja.md",
       "contains": [
         "/GitSweep agent/release --apply --push",
-        "git push --no-follow-tags",
+        "git push --recurse-submodules=no --no-follow-tags",
         "refs/heads/<branch>:refs/heads/<branch>",
         "`PUSH_SKIPPED`",
         "`PUSH_FAILED`",
@@ -200,6 +204,88 @@
         "`--push` を付けても付けなくても、プレビューはローカルの記録からこのプッシュを予測します：実行されるかどうか、公開されるコミット、リモートブランチが新規作成されるかどうか、このプッシュに依存する `PUSH_THEN_DELETE` のブランチ。実行されない見込みのときは、満たされていない条件（たとえば `<branch>` がリモートのデフォルトブランチである）が書かれます。",
         "（プレビューでは `--push` の有無にかかわらずこう表示されます）。`--push` を付けた実行では、先に `<branch>` をプッシュしてから、このブランチを削除します。",
         "プッシュが実行される見込みがない（たとえば `<branch>` がリモートのデフォルトブランチである、またはリモートの `<branch>` がローカルの `<branch>` の祖先ではない）、または実行中にプッシュがスキップ・失敗・未確認になった（レポートに条件が書かれます）。"
+      ]
+    },
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "It is the one push of commits that this command makes, and `--apply --push` is the user's acceptance of publishing the local `<branch>` as phase 1 leaves it: the commits that no ref of the remote holds yet, which the preview listed as existing commits and sources to merge (the merge commits of phase 1 are the only others), and the report lists by range and count.",
+        "git push --recurse-submodules=no --force-with-lease=refs/heads/<name>:<sha> <remote> :refs/heads/<name>",
+        "It is a fast-forward push: never `--force`, `-f`, a `+` refspec or `--force-with-lease`"
+      ]
+    },
+    {
+      "file": "commands/GitSweep.md",
+      "contains": [
+        "The preview counts the existing commits it would publish; the apply adds at most one merge commit per branch it merges, and its report gives the exact range and count.",
+        "A push never reaches a repository other than the remote and never recurses into submodules; git commands run as argument lists, never as shell strings.",
+        "or when you typed `--push` and the publish prediction says the push will run, with the commit count printed next to the line"
+      ]
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "The preview counts the existing commits it would publish; the apply adds at most one merge commit per branch it merges, and its report gives the exact range and count.",
+        "A push never reaches a repository other than the remote and never recurses into submodules; git commands run as argument lists, never as shell strings.",
+        "or when you typed `--push` and the publish prediction says the push will run, with the commit count printed next to the line"
+      ]
+    },
+    {
+      "file": "README.md",
+      "contains": [
+        "命令都不会发布任何提交（只写 `--apply` 时，仍会删除下文所述的已合并远端分支）",
+        "所以最多再多推这么多个提交，报告里会写出确切的范围和数量"
+      ]
+    },
+    {
+      "file": "README.en.md",
+      "contains": [
+        "the command publishes nothing (`--apply` alone still deletes the merged remote branches described below)",
+        "the run adds at most one merge commit per branch it merges, so it publishes at most that many commits more, and its report gives the exact range and count"
+      ]
+    },
+    {
+      "file": "README.ja.md",
+      "contains": [
+        "コマンドは何も公開しません（`--apply` だけを付けた場合も、後述のマージ済みのリモートブランチは削除されます）",
+        "公開されるコミットは最大でその数だけ多くなり、レポートに正確な範囲と数が書かれます"
+      ]
+    },
+    {
+      "file": "CHANGELOG.md",
+      "contains": [
+        "`git push --recurse-submodules=no --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`",
+        "A push never reaches a repository other than `<remote>` and never recurses into submodules: both push commands carry `--recurse-submodules=no`.",
+        "- **Argument safety and names.**",
+        "- **One URL.**",
+        "- **Live remote `HEAD`.**",
+        "- **Worktrees with submodules.**",
+        "- **Ignored-file overlap.**",
+        "- **Long-lived roles.**",
+        "- **Plan and report.**",
+        "- **Documentation.** `README.ja.md`, a Japanese edition that follows the Chinese README section for section"
+      ]
+    },
+    {
+      "file": "RELEASE_NOTES_1.0.3.md",
+      "contains": [
+        "`git push --recurse-submodules=no --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`",
+        "- Remote sweep safety:",
+        "- Documentation: `README.ja.md`, a Japanese edition that follows the Chinese README section for section"
+      ]
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "contains": [
+        "### GitSweep publish count with merge commits to come",
+        "### GitSweep with a PUSH_THEN_DELETE branch that a source still to be merged covers"
+      ]
+    },
+    {
+      "file": "references/branch-strategy.md",
+      "contains": [
+        "The hand push works only once local `<branch>` holds the branch's tip",
+        "At least two such merge commits are evidence of a long-lived role; one merge is a lane merge, and merges the candidate inherited from before it was cut do not count."
       ]
     }
   ]

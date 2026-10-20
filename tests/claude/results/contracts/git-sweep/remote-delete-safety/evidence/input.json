@@ -7,6 +7,10 @@
     "branch merged only locally",
     "remote default",
     "moved remote tip",
-    "--push"
+    "--push",
+    "remote with several URLs",
+    "live remote HEAD that names no branch",
+    "branch names {a,develop} and x;touch${IFS}p",
+    "branch merged by one lane merge only"
   ]
 }

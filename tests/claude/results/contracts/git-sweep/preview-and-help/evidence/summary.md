@@ -15,5 +15,8 @@
 - PASS `skills/git-sweep/SKILL.md`
 - PASS `references/commands.md`
 - PASS `SKILL.md`
+- PASS `references/commands.md`
+- PASS `commands/GitSweep.md`
+- PASS `skills/git-sweep/SKILL.md`
 
 Evidence scope: source-contract check; no AI host CLI is invoked.

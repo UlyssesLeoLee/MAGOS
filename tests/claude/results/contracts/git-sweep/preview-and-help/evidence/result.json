@@ -24,6 +24,21 @@
       "file": "SKILL.md",
       "passed": true,
       "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "commands/GitSweep.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "passed": true,
+      "missing": []
     }
   ]
 }

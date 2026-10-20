@@ -11,13 +11,15 @@
       "README.md",
       "references/installation.md",
       "references/pressure-tests.md",
-      "SKILL.md"
+      "SKILL.md",
+      "references/lane-split.md"
     ]
   },
   "expected": [
     "sync_hosts.py installs commands/GitConverge.md for Claude.",
     "Docs list /GitConverge, /git-converge, and $git-converge.",
-    "Pressure tests describe the GitConverge scenarios."
+    "Pressure tests describe the GitConverge scenarios.",
+    "The lane-split reference states how the guard reads command lines (PowerShell backtick, escaped program words, abbreviated rebase --exec, --shallow-file, Start-Process -WorkingDirectory, update-ref options, refs/HEADS) and the claim stored under a refused name."
   ],
   "checks": [
     {
@@ -57,6 +59,26 @@
         "version: \"{plugin.yaml version}\"",
         "| `/GitConverge` | `/GitConverge` | `/git-converge` | `$git-converge` |",
         "discover the seven Agent Skills"
+      ]
+    },
+    {
+      "file": "references/lane-split.md",
+      "contains": [
+        "In PowerShell text a backtick escapes the next character",
+        "``g`it`` is `git`, ``git sw`itch`` is `git switch`, and ``gi`t`` is `gi` followed by a tab, which runs no git",
+        "a program word written with a backslash, a backtick or a caret that spells a program the guard knows once the escapes are removed (`g\\it`, ``g`it``, `g^it`, also after `env` and the other wrappers) is read as that program",
+        "(also by the abbreviations `--ex` and `--exe`, with the value attached by `=` or separate; `--e` is ambiguous for git and runs nothing)",
+        "`--list-cmds`, `--shallow-file`) are skipped with that value",
+        "`-ex` (the execution policy) and `-encodeda` are neither.",
+        "`bash -ec` is bash",
+        "`-m <message>` and `-mMESSAGE` take a value (`-m -d` writes the message `-d` and deletes nothing)",
+        "A ref under `refs/heads/` names a branch whatever the letter case of `heads` (`refs/HEADS/x`, `refs/Heads/x`)",
+        "`Start-Process git ... -WorkingDirectory`",
+        "- `Start-Process git -ArgumentList <args> -WorkingDirectory <dir>` runs git in `<dir>`",
+        "- Whether a line is read at all:",
+        "A line with neither is not read.",
+        "A claim file stored under a name that `plan` refuses (section 5: a path component ending in `.`, a space or `.claim`) stays readable and keeps allowing the creation of its own branch.",
+        "`refused_name` with `--json`"
       ]
     }
   ]

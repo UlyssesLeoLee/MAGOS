@@ -15,20 +15,25 @@
       "branch merged only locally",
       "remote default",
       "moved remote tip",
-      "--push"
+      "--push",
+      "remote with several URLs",
+      "live remote HEAD that names no branch",
+      "branch names {a,develop} and x;touch${IFS}p",
+      "branch merged by one lane merge only"
     ]
   },
   "expected": [
     "Deletes only SAFE_CANDIDATE remote branches whose tip is an ancestor of the remote default or origin/<branch>.",
     "Leaves PENDING_PUSH, KEPT_NOT_MERGED, STALE and protected branches alone; a branch merged only into the local <branch> is PUSH_THEN_DELETE while the publish is predicted to run, in the preview with or without --push, and is deleted only after --push has published <branch> in the same run (it becomes SAFE_CANDIDATE); without --push the apply leaves it and reports \"kept: --push not typed\"; it is PENDING_PUSH only when the publish is not predicted to run or was skipped, failed or unconfirmed.",
-    "Deletes with only the lease-guarded single-branch delete push and, only with --push, the one fast-forward push of <branch>; it never pushes other commits or tags and never force-pushes."
+    "Deletes with only the lease-guarded single-branch delete push (git push --recurse-submodules=no --force-with-lease=refs/heads/<name>:<sha> <remote> :refs/heads/<name>) and, only with --push, the one fast-forward push of <branch>; it never pushes other commits or tags, never force-pushes, never lets a push reach another repository than the remote or recurse into submodules, and runs every git command as an argument list.",
+    "A remote with several URLs (or a push URL that differs from the fetch URL), a live remote HEAD that names no branch, and a name outside ASCII letters, digits and . _ / + - (BLOCKED_BAD_NAME) each keep a remote branch from being deleted; a long-lived role needs a policy file, CI filters, release tags or at least two merge commits between the branch and a survivor, and one merge is a lane merge."
   ],
   "checks": [
     {
       "file": "references/commands.md",
       "contains": [
-        "git push --force-with-lease=refs/heads/<name>:<sha> <remote> :refs/heads/<name>",
-        "never push commits or tags except the one fast-forward push of `<branch>` that `--push` makes; never force-push",
+        "git push --recurse-submodules=no --force-with-lease=refs/heads/<name>:<sha> <remote> :refs/heads/<name>",
+        "never push commits or tags except the one fast-forward push of `<branch>` that `--push` makes; a push never reaches a repository other than `<remote>` (a remote with several URLs makes phase 2 `UNKNOWN`) and never recurses into submodules (`--recurse-submodules=no` in both push commands); never run a git command as a shell string (section 6 **Argument safety**), or pass the name of a `BLOCKED_BAD_NAME` branch to one; never force-push",
         "PENDING_PUSH",
         "Each `PUSH_THEN_DELETE` candidate whose tip is an ancestor of that tip becomes `SAFE_CANDIDATE`; when the push was skipped, failed or unconfirmed, it is reported as `PENDING_PUSH` with that reason.",
         "never run `git remote prune`, `git fetch --prune`, or `git branch -d -r`",
@@ -37,7 +42,7 @@
         "PUSH_THEN_DELETE     its tip is an ancestor of the converged target but not of any survivor, and the publish step is predicted to run",
         "without `--push` the apply leaves it and reports \"kept: --push not typed\"",
         "A `PUSH_THEN_DELETE` branch is listed with its two ways forward",
-        "Phase 2 is `UNKNOWN` when the live `HEAD` names a branch other than the remote default, when a survivor's live tip differs from its remote-tracking SHA, or when a survivor is missing."
+        "Phase 2 is `UNKNOWN` unless the `ref:` line for `HEAD` names exactly the remote default (a live `HEAD` that is detached, unborn or missing has no `ref:` line), and also when a survivor's live tip differs from its remote-tracking SHA or when a survivor is missing."
       ]
     },
     {
@@ -48,9 +53,9 @@
         "Never push other commits or tags, never force-push",
         "A remote branch is deleted only when its tip is already contained in the remote's own copy of `<branch>` or its default branch.",
         "`PENDING_PUSH`",
-        "(rerun with `--push`, or push `<branch>` yourself and run `/GitSweep` again)",
+        "(rerun with `--push`, or, once local `<branch>` holds its tip, push `<branch>` yourself and run `/GitSweep` again)",
         "Stop on a conflict and delete nothing, locally or remotely.",
-        "A branch merged only into the local `<branch>` is `PUSH_THEN_DELETE` while the push is predicted to run, in the preview with or without `--push`: with `--push` the run publishes `<branch>` first and then deletes it, and without `--push` the run leaves it on the remote and reports \"kept: `--push` not typed\" (rerun with `--push`, or push `<branch>` yourself and run `/GitSweep` again).",
+        "A branch merged only into the local `<branch>` is `PUSH_THEN_DELETE` while the push is predicted to run, in the preview with or without `--push`: with `--push` the run publishes `<branch>` first and then deletes it, and without `--push` the run leaves it on the remote and reports \"kept: `--push` not typed\" (rerun with `--push`, or, once local `<branch>` holds its tip, push `<branch>` yourself and run `/GitSweep` again).",
         "It is `PENDING_PUSH` when the push is not predicted to run (for example `<branch>` is the remote default, or the remote's `<branch>` is not an ancestor of the local one) or when the run skipped the push, or the push failed or was not confirmed: clear the condition the report names, then rerun (with `--push`, except when `<branch>` is the remote default, which the command never pushes)."
       ]
     },
@@ -61,9 +66,9 @@
         "Never push other commits or tags, never force-push",
         "A remote branch is deleted only when its tip is already contained in the remote's own copy of `<branch>` or its default branch.",
         "`PENDING_PUSH`",
-        "(rerun with `--push`, or push `<branch>` yourself and run `$git-sweep` again)",
+        "(rerun with `--push`, or, once local `<branch>` holds its tip, push `<branch>` yourself and run `$git-sweep` again)",
         "Stop on a conflict and delete nothing, locally or remotely.",
-        "A branch merged only into the local `<branch>` is `PUSH_THEN_DELETE` while the push is predicted to run, in the preview with or without `--push`: with `--push` the run publishes `<branch>` first and then deletes it, and without `--push` the run leaves it on the remote and reports \"kept: `--push` not typed\" (rerun with `--push`, or push `<branch>` yourself and run `$git-sweep` again).",
+        "A branch merged only into the local `<branch>` is `PUSH_THEN_DELETE` while the push is predicted to run, in the preview with or without `--push`: with `--push` the run publishes `<branch>` first and then deletes it, and without `--push` the run leaves it on the remote and reports \"kept: `--push` not typed\" (rerun with `--push`, or, once local `<branch>` holds its tip, push `<branch>` yourself and run `$git-sweep` again).",
         "It is `PENDING_PUSH` when the push is not predicted to run (for example `<branch>` is the remote default, or the remote's `<branch>` is not an ancestor of the local one) or when the run skipped the push, or the push failed or was not confirmed: clear the condition the report names, then rerun (with `--push`, except when `<branch>` is the remote default, which the command never pushes)."
       ]
     },
@@ -71,6 +76,83 @@
       "file": "skills/git-sweep/agents/openai.yaml",
       "contains": [
         "allow_implicit_invocation: false"
+      ]
+    },
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "- **URL**: phase 2 and the publish step are `UNKNOWN` unless `git remote get-url --all <remote>` and `git remote get-url --all --push <remote>` each print exactly one URL and the two are identical.",
+        "BLOCKED_BAD_NAME     the name holds a character outside ASCII letters, ASCII digits and `.` `_` `/` `+` `-`, starts with `-` or `+`, or fails `git check-ref-format --branch`; never passed to a command",
+        "It needs recorded or observed evidence: a policy file, CI trigger filters, matching release tags, or at least two merge commits between the candidate and a survivor, read from `git log --first-parent --merges` of each of the two, run on their recorded SHAs (as in `references/branch-strategy.md`): a merge on the survivor's `--first-parent` chain whose second parent lies on the candidate's `--first-parent` chain, or a merge on the candidate's chain, and not on the survivor's, whose second parent lies on the survivor's chain. One merge is a lane merge, not role evidence, and merges the candidate inherited from before it was cut do not count.",
+        "| phase 2 `UNKNOWN`: the remote has several URLs, or a push URL that differs from the fetch URL | leave exactly one URL, the same for fetch and push: `git remote set-url --delete <remote> <extra-url>` for each extra URL, and for a separate push URL `git config --unset-all remote.<remote>.pushurl` |",
+        "| phase 2 `UNKNOWN`: the live remote `HEAD` names no branch (detached or unborn) | set the remote's default branch on the remote or its host (`git remote set-head <remote> --auto` cannot fix it), then rerun |",
+        "1. Record the remote candidate list in the plan (included in the final report), each candidate classified against the actual local `<branch>` tip."
+      ]
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "contains": [
+        "### GitSweep with remote branch names that a shell would expand",
+        "### GitSweep with a remote that has several URLs",
+        "### GitSweep when the live remote HEAD names no branch",
+        "### GitSweep role evidence for a remote branch"
+      ]
+    },
+    {
+      "file": "commands/GitSweep.md",
+      "contains": [
+        "A source branch, or a remote branch that is not `NOT_TOUCHED`, whose name holds a character outside ASCII letters, ASCII digits and `.` `_` `/` `+` `-`, or starts with `-` or `+`, is never passed to a command: such a source is `UNKNOWN` (rename it) and such a remote branch is `BLOCKED_BAD_NAME` (delete or rename it on the host).",
+        "A remote with several URLs, or a push URL that differs from the fetch URL, makes the remote sweep `UNKNOWN`, because a push goes to every URL.",
+        "A push never reaches a repository other than the remote and never recurses into submodules; git commands run as argument lists, never as shell strings.",
+        "Each remote deletion closes the open pull requests that use the branch as their head, and on some hosts closes or retargets those that use it as their base; the preview cannot see them.",
+        "after the converge phase, record every remote candidate with its SHA, classified against the actual `<branch>` tip"
+      ]
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "A source branch, or a remote branch that is not `NOT_TOUCHED`, whose name holds a character outside ASCII letters, ASCII digits and `.` `_` `/` `+` `-`, or starts with `-` or `+`, is never passed to a command: such a source is `UNKNOWN` (rename it) and such a remote branch is `BLOCKED_BAD_NAME` (delete or rename it on the host).",
+        "A remote with several URLs, or a push URL that differs from the fetch URL, makes the remote sweep `UNKNOWN`, because a push goes to every URL.",
+        "A push never reaches a repository other than the remote and never recurses into submodules; git commands run as argument lists, never as shell strings.",
+        "Each remote deletion closes the open pull requests that use the branch as their head, and on some hosts closes or retargets those that use it as their base; the preview cannot see them.",
+        "after the converge phase, record every remote candidate with its SHA, classified against the actual `<branch>` tip"
+      ]
+    },
+    {
+      "file": "SKILL.md",
+      "contains": [
+        "git push --recurse-submodules=no --force-with-lease=<ref>:<sha> <remote> :<ref>",
+        "never lets a push reach a repository other than `<remote>` or recurse into submodules, runs every git command as an argument list and never as a shell string"
+      ]
+    },
+    {
+      "file": "README.en.md",
+      "contains": [
+        "A push never reaches a repository other than the remote you name and never recurses into submodules: both push commands carry `--recurse-submodules=no`, and a remote with several URLs makes the sweep `UNKNOWN`.",
+        "outside ASCII letters, ASCII digits and `.` `_` `/` `+` `-` (a Chinese or Japanese name, for example)",
+        "leave exactly one URL, the same for fetch and push: `git remote set-url --delete <remote> <extra-url>` for each extra URL",
+        "at least two merge commits between the branch and a branch the remote keeps (one merge is a lane merge, and a role guessed only from the name does not count)",
+        "a live `HEAD` that names no branch makes the whole remote sweep `UNKNOWN`"
+      ]
+    },
+    {
+      "file": "README.md",
+      "contains": [
+        "两条推送命令都带 `--recurse-submodules=no`，远端有多个地址时整个清理标为 `UNKNOWN`",
+        "以外的字符（比如中文或日文名字）",
+        "只留一个地址，拉取和推送用同一个：对每个多余的地址运行 `git remote set-url --delete <远端> <extra-url>`",
+        "这条分支与远端保留的某条分支之间至少有两次合并提交",
+        "远端的 `HEAD` 没有指向任何分支时"
+      ]
+    },
+    {
+      "file": "README.ja.md",
+      "contains": [
+        "二つのプッシュコマンドには `--recurse-submodules=no` が付き、リモートに URL が複数あるときはクリーンアップ全体が `UNKNOWN` になります",
+        "以外の文字が含まれている（たとえば中国語や日本語の名前）",
+        "URL を一つだけ残し、フェッチとプッシュで同じにします：余分な URL ごとに `git remote set-url --delete <リモート> <extra-url>` を実行し",
+        "そのブランチとリモートが保持するブランチとの間の 2 回以上のマージコミットです",
+        "その `HEAD` がどのブランチも指していない場合は"
       ]
     }
   ]

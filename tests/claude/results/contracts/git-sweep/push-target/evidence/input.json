@@ -13,6 +13,8 @@
     "remote tip already equals the local tip",
     "no remote branch depends on the push",
     "--push without --apply",
-    "/GitConverge"
+    "/GitConverge",
+    "remote with several URLs",
+    "push.recurseSubmodules=on-demand"
   ]
 }

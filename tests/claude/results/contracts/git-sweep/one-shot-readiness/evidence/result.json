@@ -64,6 +64,41 @@
       "file": "RELEASE_NOTES_1.0.3.md",
       "passed": true,
       "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "commands/GitSweep.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.en.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.ja.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "passed": true,
+      "missing": []
     }
   ]
 }

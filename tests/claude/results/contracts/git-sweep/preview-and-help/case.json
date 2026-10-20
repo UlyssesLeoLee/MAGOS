@@ -59,6 +59,25 @@
       "contains": [
         "`/GitSweep` without `--apply` MUST NOT merge, switch, delete, prune, fetch, or contact the network."
       ]
+    },
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "The report also says that each remote deletion closes the open pull requests that use the branch as their head, and on some hosts closes or retargets those that use it as their base; the preview cannot see them.",
+        "- **Flags in a preview.** A preview computes everything that depends on `--discard-ignored` as if the recommended command had been typed (**One-shot readiness**)"
+      ]
+    },
+    {
+      "file": "commands/GitSweep.md",
+      "contains": [
+        "Each remote deletion closes the open pull requests that use the branch as their head, and on some hosts closes or retargets those that use it as their base; the preview cannot see them."
+      ]
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "Each remote deletion closes the open pull requests that use the branch as their head, and on some hosts closes or retargets those that use it as their base; the preview cannot see them."
+      ]
     }
   ]
 }

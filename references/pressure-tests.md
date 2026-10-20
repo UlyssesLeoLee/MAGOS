@@ -86,7 +86,7 @@ Expected: map the rebase back to its branch through `rebase-merge/head-name`; ne
 ### GitConverge with ignored local files
 A source tracks `.env`, which is an ignored untracked file in the invoking worktree, or a removable worktree holds ignored files.
 
-Expected: stop before the overwriting merge; keep a worktree with ignored files unless `--discard-ignored` was given.
+Expected: the preview marks such a source `PREDICTED_IGNORED_OVERLAP` with the source, the changed path and the ignored entry (a hint, like `PREDICTED_CONFLICT`), and a GitSweep preview then ends `PARTIAL` because no flag lifts it; an apply stops before the overwriting merge, names the same three things and keeps completed merges, and the remedy is to move or delete those ignored entries (they are untracked, so keep a copy first). A worktree with ignored files is kept unless `--discard-ignored` was given.
 
 ### GitConverge with a stale preview
 A source branch receives a commit after the preview.
@@ -96,44 +96,69 @@ Expected: stop and show a new preview; do not merge or delete from the old plan.
 ### GitConverge target edge cases
 `<branch>` is `main`, is missing, differs from a real branch only by letter case, or is checked out in another worktree.
 
-Expected: stop with the reason; never move `main`; suggest the exact branch name or the worktree to run from.
+Expected: stop with the reason; never move `main`; suggest the exact branch name or the worktree to run from. For a name that matches an existing branch only when case is ignored (`Develop` for `develop`), the remedy is to rerun with the exact existing name, and the report never offers to create a branch that differs from an existing one only by case; creating a missing target is offered only for a name with no case-insensitive match, after `git for-each-ref --format=%(refname) refs/heads` shows that no local branch equals it ignoring case.
 
 ### GitConverge with a tag named like a branch
 A tag and a branch share a name.
 
 Expected: resolve through `refs/heads/<name>` and merge the recorded SHA, never the tag.
 
+### GitConverge with branch names that a shell would expand
+A local branch is named `x;touch${IFS}p` and another `{a,develop}` (both pass `git check-ref-format`), and both hold unmerged commits.
+
+Expected: both are `UNKNOWN` because their names are not safe (a character outside ASCII letters, ASCII digits and `. _ / + -`): neither is merged or deleted, whatever else applies, and the remedy is to rename it with a name inside that class. Every git command is run as an argument list with each name as one argument, so no file `p` is created and nothing is expanded; a command printed in the report carries each name in POSIX single quotes (`'x;touch${IFS}p'`).
+
+### GitConverge with a worktree that holds a submodule
+A source's linked worktree has an initialized submodule, or had one that `git submodule deinit --all` has since deinitialized.
+
+Expected: `BLOCKED_SUBMODULE` before and after the deinit, because the worktree's git directory still has a `modules` directory (or a gitlink path is populated): the source is merged as planned and kept with its branch, the preview does not end `ONE_SHOT`, and the remedy is that the command cannot remove that worktree: after confirming it holds nothing unique, the user removes it with `git worktree remove --force <path>` or keeps it, and the branch stays as long as the worktree does. The command never runs `git worktree remove --force` itself.
+
+### GitConverge with the target checked out elsewhere and a detached invoking worktree
+`<branch>` is checked out in another worktree, and the invoking worktree is detached.
+
+Expected: both gates are reported at once, and the remedy for the detached worktree is the same as for the other gate: run the command from the worktree that holds `<branch>` (`cd <path>`), not `git switch <branch>`, which git refuses while `<branch>` is checked out elsewhere.
+
+### GitConverge in a repository whose trunk is not `main`
+The trunk is `master` and there is no local or remote-tracking `main`.
+
+Expected: the gate `local main missing` fails and nothing is created. The remedy says that there is no `<remote>/main`, that this command needs a branch named `main`, and offers to create it deliberately at the trunk's tip (`git branch main <trunk>`, after the case check, and where the lane guard is armed after registering the branch with `magos_guard.py plan`) or to not use the command.
+
+### GitConverge with `main` contained in the target
+`main` is an ancestor of `<branch>`, and every other source is merged or contained.
+
+Expected: `main` is listed under the contained sources as kept, the delete step takes every source other than `main`, and `main` is never deleted, moved or reset.
+
 ## GitSweep pressure tests (v1.0.3)
 
 ### GitSweep --push that would not be a fast-forward
 A teammate pushed a commit to the remote `<branch>` that the local `<branch>` lacks, the user fetched it, and the user runs `GitSweep agent/release --apply --push`.
 
-Expected: phase 1 completes, and apply step 2 records the live remote tip. That tip is not an ancestor of the local `<branch>`, so the push is skipped and reported as `PUSH_SKIPPED` with that condition and the advice to `git fetch <remote>` and merge the remote tip into `<branch>`, then rerun with `--push`. Never `--force`, `--force-with-lease`, a `+` refspec, or a rebase to make the push fit. The `SAFE_CANDIDATE` deletions still run, the branches that waited for the push are reported as `PENDING_PUSH` (the preview already lists them so, because the publish is not predicted to run), and the run state is `PARTIAL` with a `Next command:` line that carries `--push`. When the user has not fetched the teammate's commit, the live check of step 2 finds that the survivor `refs/remotes/<remote>/<branch>` differs from the live remote: the whole remote sweep is `UNKNOWN`, the push is skipped for that reason, no remote branch is deleted, and the remedy is `git fetch <remote>` and a rerun.
+Expected: phase 1 completes, and apply step 2 records the live remote tip. That tip is not an ancestor of the local `<branch>`, so the push is skipped and reported as `PUSH_SKIPPED` with that condition and the advice to `git fetch <remote>` and merge the remote tip into `<branch>`, then rerun with `--push`. Never `--force`, `--force-with-lease`, a `+` refspec, or a rebase to make the push fit. The `SAFE_CANDIDATE` deletions still run, the branches that waited for the push are reported as `PENDING_PUSH` (the preview already lists them so, because the publish is not predicted to run), and the run state is `PARTIAL`, ending with a `Next preview:` line (`/GitSweep agent/release --push`) and a `Next command:` line (`/GitSweep agent/release --apply --push`), both carrying `--push`. After the fetch and the merge the user runs the preview first, because an apply whose plan is older than the repository stops with a new preview; that preview lists the waiting branches as `PUSH_THEN_DELETE`, and the apply then publishes and deletes them. When the user has not fetched the teammate's commit, the live check of step 2 finds that the survivor `refs/remotes/<remote>/<branch>` differs from the live remote: the whole remote sweep is `UNKNOWN`, the push is skipped for that reason, no remote branch is deleted, and the remedy is `git fetch <remote>` and a rerun.
 
 ### GitSweep --push on the remote default
 `<branch>` is the branch the remote names as its default (`refs/remotes/<remote>/HEAD`), and the user adds `--push`.
 
-Expected: nothing is published. The preview's publish prediction names the failed condition, and the apply reports `PUSH_SKIPPED`. The remote default stays `NOT_TOUCHED` and is never deleted, and the branches that waited for the push stay `PENDING_PUSH`; their remedy is to publish `<branch>` by hand or through the review process, because the command never pushes the remote default. The `Next command:` line, when the report has one, does not carry `--push`.
+Expected: nothing is published. The preview's publish prediction names the failed condition, and the apply reports `PUSH_SKIPPED`. The remote default stays `NOT_TOUCHED` and is never deleted, and the branches that waited for the push stay `PENDING_PUSH`; their remedy is to publish `<branch>` by hand or through the review process, because the command never pushes the remote default. The `Next preview:` and `Next command:` lines, when the report has them, do not carry `--push`, and the recommended command of a preview drops a typed `--push` that cannot run and says why.
 
 ### GitSweep PENDING_PUSH because the branch is the remote default
 `<branch>` is the branch the remote names as its default, a remote branch is merged only into the local `<branch>`, and the user runs `GitSweep agent/release` and then `GitSweep agent/release --apply`, without `--push`.
 
-Expected: the preview lists the remote branch as `PENDING_PUSH`, not `PUSH_THEN_DELETE`, because the publish is not predicted to run, and the report names the condition: `<branch>` is the remote default. The verdict is `PARTIAL`, and the recommended command is `/GitSweep agent/release --apply` without `--push`, because a flag that lifts nothing is never recommended. The apply publishes nothing and leaves the branch `PENDING_PUSH` with the same condition (`PUSH_SKIPPED` is reported only by a run that typed `--push`). The command never pushes the remote default, so the remedy is to publish `<branch>` by hand or through the review process and then rerun; the run state is `PARTIAL`, and the `Next command:` line, `/GitSweep agent/release --apply`, does not carry `--push`.
+Expected: the preview lists the remote branch as `PENDING_PUSH`, not `PUSH_THEN_DELETE`, because the publish is not predicted to run, and the report names the condition: `<branch>` is the remote default. The verdict is `PARTIAL`, and the recommended command is `/GitSweep agent/release --apply` without `--push`, because a flag that lifts nothing is never recommended. The apply publishes nothing and leaves the branch `PENDING_PUSH` with the same condition (`PUSH_SKIPPED` is reported only by a run that typed `--push`). The command never pushes the remote default, so the remedy is to publish `<branch>` by hand or through the review process and then rerun; the run state is `PARTIAL`, and the report ends with `Next preview:` (`/GitSweep agent/release`) and `Next command:` (`/GitSweep agent/release --apply`), neither of which carries `--push`.
 
 ### GitSweep --push without --apply
 The user runs `GitSweep agent/release --push`.
 
-Expected: a preview only. Nothing is merged, deleted, or pushed and the network is not contacted. The report says that `--push` has no effect without `--apply`, gives the publish prediction from local refs (the exact `git push --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`, the commits it would publish, whether it would create the remote branch, and the `PUSH_THEN_DELETE` branches that depend on it, or the failed condition), and says that `refs/remotes/<remote>/*` may be behind the live remote.
+Expected: a preview only. Nothing is merged, deleted, or pushed and the network is not contacted. The report says that `--push` has no effect without `--apply`, gives the publish prediction from local refs (the exact `git push --recurse-submodules=no --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`, the commits it would publish as N existing commits plus at most one merge commit per source to merge, whether it would create the remote branch, and the `PUSH_THEN_DELETE` branches that depend on it, or the failed condition), and says that `refs/remotes/<remote>/*` may be behind the live remote.
 
 ### GitSweep --push whose push exits non-zero
 Branch protection on the host, a `pre-push` hook, or the network makes the publish push exit non-zero. A second variant: the push exits zero, yet `refs/remotes/<remote>/<branch>` does not equal the local tip afterwards.
 
-Expected: record the error text and report `PUSH_FAILED` (`PUSH_UNCONFIRMED` for the second variant, treated as failed). Do not retry and do not alter the command: no `--force`, no `--no-verify`, no other refspec. The `SAFE_CANDIDATE` deletions go on, the dependent branches are `PENDING_PUSH`, and the report ends with run state `PARTIAL`, the remedy (satisfy the host's rule, such as branch protection or a hook, and rerun with `--push`, or publish by hand), and a `Next command:` line that carries `--push`.
+Expected: record the error text and report `PUSH_FAILED` (`PUSH_UNCONFIRMED` for the second variant, treated as failed). Do not retry and do not alter the command: no `--force`, no `--no-verify`, no other refspec. The `SAFE_CANDIDATE` deletions go on, the dependent branches are `PENDING_PUSH`, and the report ends with run state `PARTIAL`, the remedy (satisfy the host's rule, such as branch protection or a hook, and rerun with `--push`, or publish by hand), and `Next preview:` and `Next command:` lines that carry `--push`.
 
 ### GitSweep with a PUSH_THEN_DELETE branch and no --push
 A remote branch is merged only into the local `<branch>`, the remote's `<branch>` is an ancestor of the local one, and the user runs `GitSweep agent/release` and then `GitSweep agent/release --apply`.
 
-Expected: the preview lists the remote branch as `PUSH_THEN_DELETE` (the publish is predicted to run, whether or not `--push` was typed), ends with `ONE_SHOT`, and recommends `/GitSweep agent/release --apply --push` with the publish prediction next to the line. The apply without `--push` leaves the branch and reports "kept: `--push` not typed"; its classification stays `PUSH_THEN_DELETE`. Nothing is published, because publishing needs `--push`. The report names the two ways forward (rerun with `--push`, or push `<branch>` yourself and rerun), the run state is `PARTIAL`, and the `Next command:` line is `/GitSweep agent/release --apply --push`.
+Expected: the preview lists the remote branch as `PUSH_THEN_DELETE` (the publish is predicted to run, whether or not `--push` was typed), ends with `ONE_SHOT`, and recommends `/GitSweep agent/release --apply --push` with the publish prediction next to the line. The apply without `--push` leaves the branch and reports "kept: `--push` not typed"; its classification stays `PUSH_THEN_DELETE`. Nothing is published, because publishing needs `--push`. The report names the two ways forward (rerun with `--push`, or push `<branch>` yourself and rerun), the run state is `PARTIAL`, and the report ends with `Next preview:` (`/GitSweep agent/release --push`) and `Next command:` (`/GitSweep agent/release --apply --push`). The preview also says that each remote deletion closes the open pull requests that use the branch as their head, and on some hosts closes or retargets those that use it as their base, and that it cannot see them.
 
 ### GitSweep --push when the remote already holds the local tip
 The live remote `<branch>` equals the local `<branch>` tip, and the user runs `GitSweep agent/release --apply --push`.
@@ -148,7 +173,57 @@ Expected: the preview ends with `ONE_SHOT` and the recommended command `/GitSwee
 ### GitSweep recommended command with --remote and --lang
 The user runs `GitSweep agent/release --remote upstream --lang English` in a repository where a worktree holds only ignored files.
 
-Expected: the recommended command is the `/GitSweep agent/release --apply` line carrying `--remote upstream` and `--lang English` as given, and exactly the flags that lift something (`--discard-ignored` here). After an apply that leaves items to remedy, the `Next command:` line carries the same `--remote` and `--lang`.
+Expected: the recommended command is the `/GitSweep agent/release --apply` line carrying `--remote upstream` and `--lang English` as given, and exactly the flags that lift something (`--discard-ignored` here). After an apply that leaves items to remedy, the `Next preview:` and `Next command:` lines carry the same `--remote` and `--lang`.
+
+### GitSweep --push with nothing that depends on it
+The user runs `GitSweep agent/release --push`. The remote's `agent/release` is a proper ancestor of the converged target, no remote branch depends on the push, and every local branch can be merged or is contained.
+
+Expected: the publish prediction says that the push will run and gives the commit count, and the preview ends `ONE_SHOT` with the recommended command `/GitSweep agent/release --apply --push` and the count next to it, so that the recommended command does what the typed line does. When the prediction instead names a failed condition (for example `<branch>` is the remote default) or says that nothing needs publishing, the typed `--push` is dropped from the recommended command and the report says why.
+
+### GitSweep run again after a remedy
+A lane `foo` has a dirty worktree and `origin/foo` equals the local `foo`. The user runs `GitSweep agent/release --apply`: `foo` is merged and kept (`BLOCKED_DIRTY`), `origin/foo` is `KEPT_LOCAL`, and the run state is `PARTIAL`. The user then commits in `foo`'s worktree.
+
+Expected: the report ended with `Next preview:` (`/GitSweep agent/release`) and `Next command:` (`/GitSweep agent/release --apply`). Running the `Next command:` line right away stops with a new preview, because `foo`'s tip changed (section 6 apply step 1); nothing is merged, deleted or pushed. Running the `Next preview:` line first lists `foo` as a source to merge and `origin/foo` as `PUSH_THEN_DELETE`, ends `ONE_SHOT`, and recommends `/GitSweep agent/release --apply --push`; when the preview recommends another line than the old `Next command:`, the recommended line is the one to run. The apply then runs with that preview as the earlier plan and ends `COMPLETE`.
+
+### GitSweep with a remote branch that is not merged yet
+A remote branch `rel/1.0` holds commits that no survivor and not the converged target holds (`KEPT_NOT_MERGED`), and the run state is `PARTIAL`. The user merges `refs/remotes/<remote>/rel/1.0` into `<branch>` by hand.
+
+Expected: the remedy names the merge and says that the preview then lists `rel/1.0` as `PUSH_THEN_DELETE` and recommends `--apply --push` (`PENDING_PUSH` with its condition when the publish is not predicted to run). The `Next command:` line printed before the merge carries no `--push`; the user runs the `Next preview:` line and then the line that the preview recommends, and the run state is `COMPLETE`.
+
+### GitSweep with a PUSH_THEN_DELETE branch that a source still to be merged covers
+A remote branch `topic` is merged only through the local source `topic` that phase 1 has yet to merge (`origin/topic` is an ancestor of local `topic`, which is a `MERGE` source), and `<branch>` has not moved. The user previews.
+
+Expected: `origin/topic` is `PUSH_THEN_DELETE`. The preview offers `--push` as the way forward, and offers a hand push of `<branch>` only once local `<branch>` holds the tip: because `topic` is still to be merged, it says to run `--apply` without `--push` first. A hand push of the unconverged `<branch>` is never offered as the way that clears the branch.
+
+### GitSweep publish count with merge commits to come
+Two sources are to be merged, and three existing commits of the converged target are held by no remote ref. The user previews `GitSweep agent/release --push` and then applies it.
+
+Expected: the preview lists the three existing commits and gives the count as three existing commits plus at most two merge commits (`git merge --no-ff` creates one per source to merge); the apply merges, publishes, and its report gives the exact range and count (at most five). When the remote branch is absent, the commits listed are those that no remote ref holds, not the whole history of the branch.
+
+### GitSweep with ignored files and a same-named remote branch
+A lane `foo` is merged and clean except for ignored files (`.env`), and `origin/foo` equals the local `foo`. The user previews `GitSweep agent/release` without `--discard-ignored`.
+
+Expected: the preview shows the state that the recommended command reaches: `foo` and its worktree are removed once `--discard-ignored` applies, so `origin/foo` is a `SAFE_CANDIDATE` (not `KEPT_LOCAL`), the verdict is `ONE_SHOT`, and the recommended command is `/GitSweep agent/release --apply --discard-ignored` with every ignored path listed. An apply typed without `--discard-ignored` keeps `foo` and its worktree (`BLOCKED_IGNORED_FILES`), classifies `origin/foo` as `KEPT_LOCAL`, deletes nothing remote for it, and the run state is `PARTIAL`, with `Next preview:` and `Next command:` lines that carry `--discard-ignored`.
+
+### GitSweep with remote branch names that a shell would expand
+The remote holds `develop` (kept as `NOT_TOUCHED`), `a`, and a branch literally named `{a,develop}`, all at the same merged commit, and another branch named `x;touch${IFS}p`.
+
+Expected: `{a,develop}` and `x;touch${IFS}p` are `BLOCKED_BAD_NAME` (a character outside ASCII letters, ASCII digits and `. _ / + -`) and are never passed to a command; the remedy is to delete or rename them on the host. `a` alone is a `SAFE_CANDIDATE`, deleted by one push in which every name is one argument, printed as `git push --recurse-submodules=no '--force-with-lease=refs/heads/a:<sha>' 'origin' ':refs/heads/a'`. `develop` is untouched and no file `p` is created. Every git command runs as an argument list, never as a shell string.
+
+### GitSweep with a remote that has several URLs
+The remote has two fetch URLs (`git remote set-url --add origin <second-url>`, a mirror), or a separate `pushurl` that differs from its URL. The user runs `GitSweep agent/release --apply --push`.
+
+Expected: `git remote get-url --all <remote>` or `git remote get-url --all --push <remote>` prints more than one URL, or the two differ, so phase 2 and the publish are `UNKNOWN`: nothing is pushed or deleted on any remote, no remote branch is classified, and phase 1 still completes. The run state is `PARTIAL` and the remedy is `git remote set-url --delete <remote> <extra-url>` for each extra URL and, for a separate push URL, `git config --unset-all remote.<remote>.pushurl`. The `Next preview:` and `Next command:` lines carry `--push` because it was typed.
+
+### GitSweep when the live remote HEAD names no branch
+The user runs `GitSweep agent/release --apply`. The live `git ls-remote --symref <remote> HEAD 'refs/heads/*'` prints a `HEAD` line without a `ref:` line (the remote's `HEAD` is detached or unborn), while the stale `refs/remotes/<remote>/HEAD` still names a branch.
+
+Expected: phase 2 is `UNKNOWN`: no push and no deletion. The report names the missing `ref:` line and the remedy (set the remote's default branch on the remote or its host; `git remote set-head <remote> --auto` cannot fix it), and the run state is `PARTIAL`.
+
+### GitSweep role evidence for a remote branch
+Remote `feat/b` was merged into the remote default once with `--no-ff`. Remote `develop_a` has been merged into the default branch twice, at different tips, and has merged the default branch back once. Neither has a policy file, a CI trigger filter or a release tag.
+
+Expected: `feat/b` has one merge between it and the survivor, which is a lane merge and not role evidence, so it is a `SAFE_CANDIDATE` when merged. `develop_a` has at least two merge commits that join its `--first-parent` chain and the survivor's, so it is `NOT_TOUCHED` with those merges as the evidence. Merges that a branch inherited from before it was cut count for nothing, and a role inferred only from the name never counts.
 
 ### GitSweep end state with a worktree it never touches
 A detached worktree exists, and every branch can be merged or is already contained.
