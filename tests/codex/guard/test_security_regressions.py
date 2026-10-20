@@ -103,6 +103,8 @@ def body_of(case, lab):
     tool_input = {k: expand(v, lab) if isinstance(v, str) else v for k, v in case.get("tool_input", {}).items()}
     if "command" in case:
         tool_input["command"] = expand(case["command"], lab)
+    if "build" in case:  # a hostile line made of repeated parts, [[text, times], ..], too long to keep in the data file
+        tool_input["command"] = "".join(text * times for text, times in case["build"])
     body = {"tool_name": case["tool"], "tool_input": tool_input, "cwd": str(lab[case["cwd"]])}
     if case.get("raw") == "nested":  # an extra key nested deeper than any decoder's recursion or stack limit
         return (json.dumps(body)[:-1] + ', "x": ' + "[" * NESTED + "]" * NESTED + "}").encode("utf-8")
@@ -137,13 +139,15 @@ def test_audit_finding_stays_fixed(case, lab):
 
 def test_the_cases_cover_every_replayed_finding():
     ids = [c["id"] for c in CASES]
-    assert len(ids) == len(set(ids)) == 49
+    assert len(ids) == len(set(ids)) == 76
     findings = {i.split("/")[0] for i in ids}
     assert findings == {"h-overdeny-01", "h-overdeny-03", "h-overdeny-04", "h-bypass-1", "h-bypass-2", "h-upgrade-02", "NF-bypass-01", "NF-bypass-02",
                         "NF-state-1", "launcher-n1", "launcher-n7", "critic-new-01", "critic-new-02", "bypass-3", "dir-change", "control",
+                        "g1-updateref-escapes", "g3-refs-case",  # the review of release 1.0.3: the update-ref and refs family
+                        "g5-gate-and-cd", "g6-launcher-claims-overdeny", "g2-gitopts", "g4-powershell",  # redirections, bundled branch options, hostile nesting
                         *("cr-%02d" % n for n in (*range(1, 14), 15))}  # cr-14 is a launcher case, which a hook payload cannot express
     for c in CASES:
         assert c["expect"] in ("allow", "deny") and c["cwd"] in ("E", "L", "C", "T", "M", "R"), c
-        assert set(c) <= {"id", "tool", "cwd", "command", "tool_input", "raw", "expect", "reason"}, c
+        assert set(c) <= {"id", "tool", "cwd", "command", "build", "tool_input", "raw", "expect", "reason"}, c
         assert ("reason" in c) == (c["expect"] == "deny") and c.get("reason", "x").strip(), c  # every deny names the reason it must give
     assert {c["expect"] for c in CASES if c["id"].startswith("control/")} == {"allow", "deny"}

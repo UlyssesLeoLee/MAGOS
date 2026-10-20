@@ -150,10 +150,24 @@ def test_the_backstop_reads_refs_heads_in_any_case(armed, guard):
     assert armed.git("for-each-ref") == before
     assert guard(armed, "plan", "--branch", "y2", "--paths", "docs/").rc == 0
     assert repo_git_raw(armed, "update-ref", "refs/HEADS/y2", "HEAD").returncode == 0
-    arm = "[Hh][Ee][Aa][Dd][Ss]"  # both case arms of the hook: a ref, and the ref HEAD points at
-    assert "\n  refs/%s/*) " % arm in G.HOOK_SH and "b=${ref#refs/%s/};" % arm in G.HOOK_SH
-    assert "case $new in ref:refs/%s/*) b=${new#ref:refs/%s/}" % (arm, arm) in G.HOOK_SH
-    assert "refs/heads/*)" not in G.HOOK_SH
+    arm = "[Rr][Ee][Ff][Ss]/[Hh][Ee][Aa][Dd][Ss]/"  # both case arms of the hook: a ref, and the ref HEAD points at, with both words in any case
+    assert "\n  %s*) " % arm in G.HOOK_SH and "b=${ref#%s};" % arm in G.HOOK_SH
+    assert "case $new in ref:%s*) b=${new#ref:%s}" % (arm, arm) in G.HOOK_SH
+    assert "refs/heads/*)" not in G.HOOK_SH and arm == G._HEADS_CI
+
+
+def test_the_backstop_reads_the_refs_prefix_in_any_case(armed, guard):
+    import subprocess
+    before = armed.git("for-each-ref")
+    for ref, name in (("REFS/heads/y3", "y3"), ("Refs/Heads/y4", "y4"), ("rEfS/heads/y5", "y5")):
+        msg = vetoed(armed, "update-ref", ref, "HEAD")  # the case-insensitive file systems of Windows and macOS store each as the branch
+        assert "'%s' has no registered file manifest" % name in msg and "plan --branch %s" % name in msg
+    p = subprocess.run(["git", "update-ref", "--stdin"], cwd=str(armed.path), input=b"create REFS/heads/y6 HEAD\n", capture_output=True, env=os.environ.copy())
+    assert p.returncode != 0 and b"'y6' has no registered file manifest" in p.stderr, p.stderr
+    assert armed.git("for-each-ref") == before  # every veto left the refs as they were
+    assert guard(armed, "plan", "--branch", "y7", "--paths", "docs/").rc == 0
+    assert repo_git_raw(armed, "update-ref", "REFS/heads/y7", "HEAD").returncode == 0
+    assert repo_git_raw(armed, "update-ref", "REFS/tags/t1", "HEAD").returncode == 0  # a ref outside refs/heads/ is no branch in any case
 
 
 def test_everything_else_passes(armed):

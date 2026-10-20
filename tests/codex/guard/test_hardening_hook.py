@@ -2069,3 +2069,440 @@ def test_missing_directory_records_keep_their_prior_directory(target, tmp_path):
     assert reason and UNPARSE in reason, reason
     follows = [c["cwd"].follow for c in G.interpret(chain, str(target.path)) if c["names"] == ["f1"]]
     assert sorted(f is None for f in follows) == [False, True]  # a record that follows the chain and one that does not stay two records
+
+
+# ---- the update-ref and refs family of the review of release 1.0.3 -----------------------------------------------------------------------------
+def must_be_dynamic(target, cmd, tool="Bash"):
+    reason = verdict(hook(target.path, cmd, tool=tool))
+    assert reason and UNPARSE in reason, (tool, cmd, reason)
+
+
+def must_name(target, cmd, name, tool="Bash"):
+    reason = verdict(hook(target.path, cmd, tool=tool))
+    assert reason and NOMAN in reason and "'%s'" % name in reason, (tool, cmd, reason)
+
+
+def must_pass(target, cmd, tool="Bash"):
+    assert verdict(hook(target.path, cmd, tool=tool)) is None, (tool, cmd)
+
+
+def test_update_ref_stdin_c_quoted_name_is_dynamic(target, guard):
+    lines = [r"""printf 'update "refs/heads/q1" HEAD\n' | git update-ref --stdin""", r"""printf 'create "refs/heads/q2" HEAD\n' | git update-ref --stdin""",
+             """git update-ref --stdin <<< 'update "refs/heads/q6" HEAD'""", """git update-ref --stdin <<EOF\nupdate "refs/heads/q7" HEAD\nEOF""",
+             r"""printf 'update "refs/heads/\142" HEAD\n' | git update-ref --stdin""", """echo 'create "refs/heads/q8" HEAD' | git update-ref --stdin""",
+             r"""printf 'create refs/tags/t HEAD\nsymref-create "refs/heads/q9" refs/heads/main\n' | git update-ref --stdin"""]
+    for cmd in lines:  # git unquotes the name: the hook cannot tell which branch it is
+        must_be_dynamic(target, cmd)
+    plan(guard, target, "q1", "docs/q1.md")
+    must_be_dynamic(target, lines[0])  # a claim for the name inside the quotes allows nothing the hook cannot read
+    assert G._stdin_refs('create "refs/heads/x" HEAD') == ([], True)
+    assert G._stdin_refs("update 'refs/heads/x' HEAD") == ([], True)
+
+
+def test_update_ref_stdin_escaped_or_formatted_text_is_dynamic(target):
+    lines = [r"printf 'update refs/he\x61ds/q3 HEAD\n' | git update-ref --stdin", r"printf 'update re\x66s/heads/q4 HEAD\n' | git update-ref --stdin",
+             r"printf '%s refs/heads/q5 HEAD\n' update | git update-ref --stdin", r"echo -e 'update \x72efs/heads/q10 HEAD' | git update-ref --stdin",
+             r"printf '%b' 'update refs/he\x61ds/q11 HEAD\n' | git update-ref --stdin", r"printf 'create refs/%s/q2 HEAD\n' heads | git update-ref --stdin",
+             r"printf 'create %s HEAD\n' refs/heads/q4 | git update-ref --stdin", r"printf 'create refs/hea\144s/q3 HEAD\n' | git update-ref --stdin",
+             r"printf 'start\ncre\x61te refs/heads/x HEAD\ncommit\n' | git update-ref --stdin",  # the verbs around it do not make it a readable text
+             r"""printf 'create refs/heads/x %s\n' "$sha" | git update-ref --stdin""", "git update-ref --stdin <<EOF\ncreate refs/heads/$B HEAD\nEOF",
+             "echo create refs/heads/x{a,b} HEAD | git update-ref --stdin", r"printf 'create\x20refs/heads/x HEAD\n' | git update-ref --stdin"]
+    for cmd in lines:
+        must_be_dynamic(target, cmd)
+    for text in (r"create refs/heads/a\x62c HEAD", r"cre\x61te refs/heads/a HEAD", r"start\ncre\x61te refs/heads/a HEAD", r"create refs/heads/a\0123 HEAD",
+                 r"create refs/heads/a\\b HEAD", "create refs/heads/a%sb HEAD"):
+        assert G._stdin_refs(text)[1] is True, text
+
+
+def test_update_ref_stdin_name_continued_after_a_quote_is_the_joined_name(target, guard):
+    for cmd in (r"printf 'update refs/heads/main''x HEAD\n' | git update-ref --stdin", """echo "update refs/heads/main"x" HEAD" | git update-ref --stdin"""):
+        must_name(target, cmd, "mainx")  # the shell joins the pieces: the new branch is mainx, not the existing main
+    plan(guard, target, "mainx", "docs/mainx.md")
+    must_pass(target, r"printf 'update refs/heads/main''x HEAD\n' | git update-ref --stdin")  # judged by the name the shell makes, so a claim for it allows it
+
+
+def test_update_ref_stdin_from_an_unreadable_source_is_dynamic(target):
+    unreadable = ["git commit -qm x ; git update-ref --stdin < instr.txt", 'git update-ref -m "start work" --stdin < instr.txt',
+                  "git update-ref --stdin < instr.txt # update later", "git update-ref --stdin<instr.txt", "git update-ref --stdin 0< instr.txt",
+                  "git update-ref --stdin < <(cat instr.txt)", "git update-ref --stdin < refs.txt; git commit --allow-empty -m x",
+                  "cat refs.txt | git update-ref --stdin && git commit -m done", "echo 'create refs/heads/q HEAD' | cat | git update-ref --stdin",
+                  "{ echo 'create refs/heads/q HEAD'; } | git update-ref --stdin", "echo hi | (git update-ref --stdin)", "git update-ref --stdin",
+                  "exec 0< instr.txt; git update-ref --stdin", "cat f <<EOF | git update-ref --stdin\ncreate refs/heads/q HEAD\nEOF",
+                  "git update-ref --stdin <<< 'delete refs/heads/agent/other' && git update-ref --stdin < f", "git update-ref --stdin <<< \"$x\"",
+                  "bash -c \"git update-ref --stdin < f\""]
+    for cmd in unreadable:
+        must_be_dynamic(target, cmd)
+    for cmd in ("printf 'create refs/heads/x HEAD\\n' | git update-ref --stdin", "git update-ref --stdin <<< 'create refs/heads/x HEAD'",
+                "cat <<< 'create refs/heads/x HEAD' | git update-ref --stdin", "cat <<EOF | git update-ref --stdin\ncreate refs/heads/x HEAD\nEOF",
+                "cat << EOF | git update-ref --stdin\ncreate refs/heads/x HEAD\nEOF", "git update-ref --stdin <<EOF\ncreate refs/heads/x HEAD\nEOF",
+                "git update-ref --stdin <<'EOF'\ncreate refs/heads/x HEAD\nEOF", "bash -c \"printf 'create refs/heads/x HEAD\\n' | git update-ref --stdin\""):
+        must_name(target, cmd, "x")  # a source the hook reads: the name it holds is judged
+    must_name(target, "'create refs/heads/x HEAD' | git update-ref --stdin", "x", tool="PowerShell")
+    must_name(target, "Write-Output 'create refs/heads/x HEAD' | git update-ref --stdin", "x", tool="PowerShell")
+    must_name(target, "echo 'create refs/heads/x HEAD' | git update-ref --stdin", "x", tool="terminal")
+    for cmd in ("git update-ref --stdin <<< 'delete refs/heads/agent/other'", "printf 'delete refs/heads/agent/other\\n' | git update-ref --stdin",
+                "printf 'start\\nupdate refs/tags/v1 HEAD\\nupdate HEAD HEAD\\ncommit\\n' | git update-ref --stdin",
+                "git update-ref -m 'why <here' --stdin <<< 'delete refs/heads/agent/other'", "git update-ref --stdin -z <<< 'verify refs/heads/agent/other'"):
+        must_pass(target, cmd)  # nothing it holds creates a branch
+
+
+def test_update_ref_stdin_every_create_and_update_needs_a_plain_name(target):
+    for cmd in (r"""printf 'create refs/heads/a1 HEAD\ncreate "refs/heads/a2" HEAD\n' | git update-ref --stdin""",  # the second name hides behind a plain one
+                r"""printf 'create refs/heads/a1\0HEAD\0create "refs/heads/a2"\0HEAD\0' | git update-ref -z --stdin""",
+                "git update-ref --stdin <<EOF\ncreate refs/tags/a HEAD\\\ncreate refs/heads/b HEAD\nEOF",
+                r"""printf 'create refs/heads/a HEAD\n''create "refs/heads/b" HEAD\n' | git update-ref --stdin"""):  # one printf format, joined by the shell
+        must_be_dynamic(target, cmd)
+    two = r"printf 'create refs/heads/a1 HEAD\ncreate refs/heads/a2 HEAD\n' | git update-ref --stdin"
+    must_name(target, two, "a1")
+    assert [c["names"] for c in records("Bash", two, target.path)] == [["a1", "a2"]]  # both instructions are read
+    must_name(target, r"printf 'create refs/heads/feature/update-docs HEAD\n' | git update-ref --stdin", "feature/update-docs")  # a verb word inside a name is no verb
+    table = [("create refs/heads/x HEAD", (["x"], False)), ("update refs/tags/v1 HEAD", ([], False)), ("update HEAD HEAD", ([], False)),
+             ("update ORIG_HEAD HEAD", ([], False)), ("symref-create refs/heads/s refs/heads/main", (["s"], False)), ("delete refs/heads/old", ([], False)),
+             (r"create refs/heads/a HEAD\ncreate refs/heads/b HEAD", (["a", "b"], False)), ("create refs/heads/x", (["x"], False)),
+             (r"create refs/heads/x\0HEAD\0", (["x"], False)), ("create refs/heads/-x HEAD", (["-x"], False)),
+             ("create refs/heads/a b HEAD", (["a b"], False)), ("create REFS/HEADS/x HEAD", (["x"], False)),
+             ("", ([], True)), ("hello", ([], True)), ("create", ([], True)), ("create ", ([], True)), ('create "refs/heads/x" HEAD', ([], True)),
+             ("create refs/heads/ HEAD", ([], True)), ("create refs/heads/x..y HEAD", (["x..y"], True)), ("create refs/heads/$B HEAD", ([], True)),
+             ("create refs/heads/x$B HEAD", (["x"], True)), (r"create refs/heads/a\x62c HEAD", (["a"], True)), ("create heads/x HEAD", ([], True)),
+             ("xcreate refs/heads/x HEAD", ([], True)), ("CREATE refs/heads/x HEAD", ([], True)), ("create refs/heads/x;y\nupdate foo", (["x;y"], True))]
+    for text, want in table:
+        assert G._stdin_refs(text) == want, text
+
+
+def test_update_ref_stdin_is_read_only_where_it_is_run(target):
+    mentions = ["""git grep -n "update-ref --stdin\\|create refs/heads/" -- docs""", """git log --oneline --grep="update-ref --stdin" --grep="create refs/heads/\"""",
+                """git commit -m "tests: update-ref --stdin reads names (create refs/heads/ then a quote)\"""",
+                "git show HEAD:docs/d.md | grep -n 'update-ref --stdin' | grep 'create refs/heads/'",
+                "cat > notes.md <<'EOF'\nUse: printf 'create refs/heads/x HEAD\\n' | git update-ref --stdin\nEOF",
+                'git commit -m "docs: note update-ref --stdin create refs/heads/foo"', 'git commit -m "docs: update-ref --stdin takes create refs/heads/newthing lines"',
+                'echo "git update-ref --stdin reads: create refs/heads/new1 sha" >> notes.md', "cat > doc.md <<EOF\nuse git update-ref --stdin:\ncreate refs/heads/new2 HEAD\nEOF",
+                "echo git update-ref --stdin takes create refs/heads/new3", "git grep update-ref --stdin -- docs"]
+    for cmd in mentions:
+        must_pass(target, cmd)  # no update-ref runs: nothing is created, and nothing is read as an instruction
+    for cmd in ("\"$GIT\" update-ref --stdin <<< 'create refs/heads/x HEAD'", "/usr/bin/env git update-ref --stdin <<< 'create refs/heads/x HEAD'",
+                "GIT=git; \"$GIT\" -C . update-ref --stdin <<< 'create refs/heads/x HEAD'", "git-update-ref --stdin <<< 'create refs/heads/x HEAD'"):
+        must_name(target, cmd, "x")  # a git the walk cannot name is still read, in command position
+    must_be_dynamic(target, "\"$GIT\" update-ref --stdin < f")
+    must_be_dynamic(target, "git-update-ref --stdin < f")
+    reason = verdict(hook(target.path, "git update-ref --stdin <<< 'create refs/heads/x HEAD'; git commit -m \"update-ref --stdin create refs/heads/foo\""))
+    assert reason and "'x'" in reason and "'foo'" not in reason, reason  # only the command that runs it
+    assert G._unseen_update_ref([("echo", False), ("git", False), ("update-ref", False), ("--stdin", False)]) is None
+    assert G._unseen_update_ref([("git", False), ("grep", False), ("update-ref", False), ("--stdin", False)]) is None
+    assert G._unseen_update_ref([("$g", True), ("update-ref", False), ("--stdin", False)])["file"] is False
+    assert G._unseen_update_ref([("$g", True), ("update-ref", False), ("--stdin", False), ("<", False), ("f", False)])["file"] is True
+
+
+def test_refs_prefix_in_any_case_is_a_branch(target):
+    for cmd, name in (("git update-ref REFS/heads/zz1 HEAD", "zz1"), ("git update-ref Refs/Heads/zz2 HEAD", "zz2"), ("git update-ref rEfS/heads/c3 HEAD", "c3"),
+                      ("git update-ref REFS/HEADS/c2 HEAD", "c2"), ("printf 'create REFS/heads/c6 HEAD' | git update-ref --stdin", "c6"),
+                      (r"printf 'update Refs/Heads/q5 HEAD\n' | git update-ref --stdin", "q5"), ("git push . HEAD:REFS/heads/zz3", "zz3"),
+                      ("git fetch . main:Refs/heads/zz4", "zz4"), ("git symbolic-ref HEAD REFS/heads/zz5", "zz5"),
+                      ("git symbolic-ref REFS/heads/zz6 refs/heads/main", "zz6")):
+        must_name(target, cmd, name)
+    for cmd in ("git update-ref REFS/tags/t1 HEAD", "git update-ref refs/remotes/origin/x HEAD", "git update-ref refs/headſ/x HEAD", "git push . HEAD:REFS/tags/t",
+                "git update-ref -d REFS/heads/agent/other", "git update-ref REFS/notes/x HEAD"):
+        must_pass(target, cmd)  # a ref outside refs/heads/, and a letter outside ASCII that only looks like s
+    assert G._HEADS.match("REFS/heads/x") and G._HEADS.match("rEfS/HeAdS/x") and not G._HEADS.match("refs/headſ/x") and not G._HEADS.match("heads/x")
+
+
+def test_a_refspec_destination_under_refs_heads_is_the_branch_after_it(target):
+    for cmd, name in (("git push . HEAD:refs/heads/refs/x1", "refs/x1"), ("git fetch . main:refs/heads/refs/x1b", "refs/x1b"),
+                      ("git push . HEAD:refs/HEADS/refs/x2", "refs/x2"), ("git push . HEAD:REFS/heads/refs/x3", "refs/x3"),
+                      ("git pull . main:refs/heads/refs/x4", "refs/x4"), ("git push . HEAD:x5", "x5"), ("git push . +HEAD:x6", "x6")):
+        must_name(target, cmd, name)
+    for cmd in ("git push . HEAD:refs/tags/t", "git push . HEAD:refs/refs/x", "git push . HEAD:refs/remotes/o/x", "git push . HEAD:refs/notes/x",
+                "git push . HEAD:REFS/tags/t", "git fetch . main:refs/tags/t2"):
+        must_pass(target, cmd)  # a destination that begins with refs/ outside refs/heads/ is no branch
+
+
+def test_a_push_refspec_with_an_empty_source_creates_nothing(target):
+    for cmd in ("git push . :refs/HEADS/nothere", "git push . +:refs/HEADS/nothere", "git push . :refs/heads/nothere", "git push . :nothere",
+                "git push . :refs/HEADS/agent/other"):
+        must_pass(target, cmd)  # git deletes the destination, or warns that it does not exist
+    for cmd, name in (("git fetch . :refs/heads/zz9", "zz9"), ("git pull . :refs/heads/zz10", "zz10"), ("git push . HEAD:refs/heads/zz11", "zz11"),
+                      ("git fetch . +:zz12", "zz12")):
+        must_name(target, cmd, name)  # an empty source of fetch and pull is HEAD: the destination is created
+
+
+def test_symbolic_ref_message_is_no_ref(target):
+    for cmd, name in (("git symbolic-ref -m why HEAD refs/heads/z1", "z1"), ("git symbolic-ref -m why refs/heads/z2 refs/heads/main", "z2"),
+                      ("git symbolic-ref -m why HEAD refs/HEADS/z5", "z5"), ("git symbolic-ref -qm why HEAD refs/heads/z7", "z7"),
+                      ("git symbolic-ref -mwhy HEAD refs/heads/z4", "z4"), ("git symbolic-ref HEAD refs/heads/z6 -m why", "z6"),
+                      ("git symbolic-ref -- HEAD refs/heads/z8", "z8")):
+        must_name(target, cmd, name)
+    for cmd in ("git symbolic-ref HEAD", "git symbolic-ref -q --short HEAD", "git symbolic-ref -m why HEAD refs/heads/agent/other", "git symbolic-ref HEAD refs/tags/x",
+                "git symbolic-ref -m refs/heads/z9 HEAD"):
+        must_pass(target, cmd)  # a read, an existing branch, and a reason that looks like a ref
+    assert G._symbolic_ref_args(["-m", "why", "HEAD", "refs/heads/z"], [False] * 4) == [("HEAD", False), ("refs/heads/z", False)]
+    assert G._symbolic_ref_args(["-qm", "why", "--", "-m", "x"], [False] * 5) == [("-m", False), ("x", False)]
+
+
+def test_names_git_accepts_are_creations(target):
+    for cmd, name in (("git update-ref refs/heads/-x9 HEAD", "-x9"), ("git push . HEAD:refs/heads/-x12", "-x12"), ("git fetch . main:-dash5", "-dash5"),
+                      ('git update-ref "refs/heads/a b" HEAD', "a b"), ('git branch "a b"', "a b"), ('git switch -c "a b"', "a b"),
+                      ('git checkout -b "a　b"', "a　b"), ('git worktree add -b "a\u0085b" ../wt', "a\u0085b"),
+                      ("git update-ref --stdin <<< 'create refs/heads/-x HEAD'", "-x")):
+        must_name(target, cmd, name)
+    for cmd in ("git switch -c -x9", "git branch -- -x9", "git checkout -b -x9", 'git update-ref "refs/heads/a b" HEAD', 'git update-ref "refs/heads/a~b" HEAD',
+                "git push . HEAD:refs/heads/a:b", 'git branch "a\tb"'):
+        must_pass(target, cmd)  # git refuses these names (a dash makes an option of the branch name; an ASCII space, ~ and a control character are never allowed)
+    assert G._BAD_NAME.search("a b") and G._BAD_NAME.search("a\x7fb") and G._BAD_NAME.search("a\x1fb") and not G._BAD_NAME.search("a b\u0085")
+    assert [c["names"] for c in records("Bash", "git update-ref refs/heads/-x9 HEAD", target.path)] == [["-x9"]]
+    assert records("Bash", "git branch -- -x9", target.path) == [] and records("Bash", "git switch -c -x9", target.path) == []
+
+
+def test_update_ref_and_symbolic_ref_dynamic_ref_words_are_dynamic(target):
+    dynamic = ["git update-ref $ref HEAD", 'git update-ref "$REF" HEAD', "git update-ref -- $ref HEAD", "git update-ref -m msg $ref HEAD", "git update-ref ${R} HEAD",
+               "git update-ref $(printf refs/heads/d3) HEAD", "read r; git update-ref $r HEAD", "echo refs/heads/d8 | xargs -I{} git update-ref {} HEAD",
+               "echo refs/heads/d9 HEAD | xargs git update-ref", "git symbolic-ref HEAD $ref", "git symbolic-ref HEAD $B", "git symbolic-ref $name refs/heads/main",
+               "git symbolic-ref -m why HEAD $B", "git update-ref $dir/x HEAD"]
+    for cmd in dynamic:
+        must_be_dynamic(target, cmd)
+    for tool in ("PowerShell", "terminal"):
+        must_be_dynamic(target, "git update-ref $r HEAD", tool=tool)
+    must_name(target, "ref=refs/heads/d1; git update-ref $ref HEAD", "d1")  # a variable the line assigns is read
+    for cmd in ("git update-ref refs/tags/$T HEAD", "git update-ref -d $ref", "git update-ref HEAD $new", 'git update-ref -m "$msg" refs/tags/x HEAD',
+                "echo refs/tags/t | xargs git update-ref refs/tags/x", "git symbolic-ref HEAD", "git symbolic-ref --short $x", "git symbolic-ref HEAD refs/tags/$T",
+                "git update-ref -d --no-deref $ref"):
+        must_pass(target, cmd)  # a delete, a dynamic value, and a word under another namespace name no branch
+
+
+def test_the_refs_family_reads_in_linear_time(target):
+    here = str(target.path)
+    start = time.monotonic()
+    piped = G.interpret("printf '" + "create refs/heads/x HEAD\\n" * 5000 + "' | git update-ref --stdin", here)
+    doc = G.interpret("git update-ref --stdin <<EOF\n" + "create refs/heads/a HEAD\n" * 5000 + "EOF", here)
+    deletes = G.interpret("git update-ref --stdin <<< 'delete refs/heads/a'; " * 3000, here)
+    unseen = G.interpret("\"$GIT\" update-ref --stdin < f; " * 3000, here)
+    symbolic = G.interpret("git symbolic-ref " + "-m x " * 20000 + "HEAD refs/heads/z", here)
+    update = G.interpret("git update-ref " + "-m x " * 20000 + "refs/heads/z HEAD", here)
+    for text in ("create " * 100000, "create refs/heads/x HEAD\\n" * 40000, "\\n" * 100000, "update refs/heads/" + "a" * 100000):
+        G._stdin_refs(text)
+    assert time.monotonic() - start < time_budget(15)
+    assert [(c["names"][:1], len(c["names"]), c["dynamic"]) for c in piped] == [(["x"], 5000, False)]
+    assert [(c["names"][:1], len(c["names"]), c["dynamic"]) for c in doc] == [(["a"], 5000, False)]
+    assert deletes == [] and [c["dynamic"] for c in unseen] == [True]  # 3,000 identical unreadable sources are one record
+    assert [c["names"] for c in symbolic] == [["z"]] and [c["names"] for c in update] == [["z"]]
+
+
+# ---- redirections of the shell, bundled `git branch` options and hostile nesting of the review of release 1.0.3 -----------------------------------
+def test_a_leading_redirection_hides_no_creation(target):
+    for cmd, name in ((">/dev/null git switch -c r1", "r1"), ("2>/dev/null git switch -c r2", "r2"), ("&>f git switch -c r3", "r3"),
+                      (">>f git switch -c r4", "r4"), ("<f git switch -c r5", "r5"), ("> /dev/null git switch -c r6", "r6"),
+                      ("2> /dev/null git switch -c r7", "r7"), ("<<< x git switch -c r8", "r8"), (">&2 git switch -c r9", "r9"),
+                      ("2>&1 git switch -c r10", "r10"), (">/dev/null 2>&1 git switch -c r11", "r11"), ("3>&1 git switch -c r12", "r12"),
+                      (">|f git switch -c r13", "r13"), (">& /dev/null git switch -c r14", "r14"), ("<< EOF git switch -c r15\nbody\nEOF", "r15"),
+                      ("FOO=1 >f git switch -c r16", "r16"), (">f env git switch -c r17", "r17"), ("time >f git switch -c r18", "r18"),
+                      ("git>/dev/null switch -c r19", "r19"), ("git switch -c r20>/dev/null", "r20"), ('bash -c ">/dev/null git switch -c r21"', "r21"),
+                      ("{fd}>f git switch -c r28", "r28"), ("{fd}> f git switch -c r29", "r29"), ('>"/dev/null" git switch -c r30', "r30"),
+                      ("eval '>/dev/null git switch -c r31'", "r31"),
+                      ("sh -c '2>/dev/null git switch -c r22'", "r22"), ("true && >/dev/null git switch -c r23", "r23"),
+                      ("{ >/dev/null git switch -c r24; }", "r24"), ("( 2>&1 git switch -c r25 )", "r25"),
+                      ("if true; then >/dev/null git switch -c r26; fi", "r26"), ("echo $(2>/dev/null git switch -c r27)", "r27"),
+                      ('cmd /c ">nul git switch -c c1"', "c1")):
+        must_name(target, cmd, name)
+    for cmd, name in (("git 2>$null switch -c k1", "k1"), (">$null git switch -c k2", "k2"), ("git *> $null switch -c k3", "k3"),
+                      ("git switch -c k4 2>&1", "k4")):
+        must_name(target, cmd, name, tool="PowerShell")
+    for cmd in (">/dev/null gh pr checkout 1", "gh 2>/dev/null pr checkout 1", "gt >/dev/null create x", "claude 2>/dev/null -w x"):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and UNPLAN in reason, (cmd, reason)
+    for cmd in (">/dev/null git status", "2>&1 git log --oneline", "git status >/dev/null 2>&1", "echo hi > out.txt", ">/dev/null echo git switch -c x",
+                "> git switch -c x"):  # the last redirects into a file named git and runs `switch`
+        must_pass(target, cmd)
+
+
+def test_a_redirection_between_git_and_its_subcommand_hides_no_creation(target, tmp_path):
+    for cmd, name in (("git >/dev/null switch -c m1", "m1"), ("git 2>/dev/null checkout -b m2", "m2"), ("git -C . >/dev/null switch -c m3", "m3"),
+                      ("git -C >/dev/null . switch -c m4", "m4"), ("git -c core.x=y 2>&1 branch m5", "m5"), ("git > /dev/null switch -c m6", "m6"),
+                      ("git <f switch -c m7", "m7"), ("git >|f branch m8", "m8"), ("git -C . 2>&1 worktree add -b m9 ../wt-m9", "m9")):
+        must_name(target, cmd, name)
+    cwd, c = session("clean", tmp_path)
+    c.git("config", "--local", "alias.nb", "branch")
+    for cmd, name in (("git -C %s >/dev/null switch -c d1" % P(target.path), "d1"), ("git -C %s 2>&1 nb d2" % P(target.path), "d2")):
+        reason = verdict(hook(cwd, cmd))  # the repository -C names judges it, behind the redirection as well
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    for cmd in ("git >/dev/null status", "git -C . 2>&1 log -1"):
+        must_pass(target, cmd)
+
+
+def test_a_redirection_among_the_words_of_a_git_invocation_is_no_argument(target):
+    for cmd, name in (("git update-ref >/dev/null refs/heads/n1 HEAD", "n1"), ("git update-ref 2>/dev/null refs/heads/n2 HEAD", "n2"),
+                      ("git update-ref 2> /dev/null refs/heads/n3 HEAD", "n3"), ("git update-ref -m msg >/dev/null refs/heads/n4 HEAD", "n4"),
+                      ("git update-ref &>f refs/heads/n5 HEAD", "n5"), ("git update-ref >/dev/null --stdin <<< 'create refs/heads/n6 HEAD'", "n6"),
+                      ("git symbolic-ref >/dev/null HEAD refs/heads/n7", "n7"), ("git symbolic-ref 2>&1 -m why HEAD refs/heads/n8", "n8"),
+                      ("git branch >/dev/null n9", "n9"), ("git branch -m old n10 >/dev/null", "n10"), ("git switch -c >/dev/null n11", "n11")):
+        must_name(target, cmd, name)
+    for cmd in ("git update-ref >/dev/null -d refs/heads/agent/other", "git update-ref --stdin >/dev/null <<< 'delete refs/heads/agent/other'",
+                "git update-ref >/dev/null refs/tags/t HEAD", "git symbolic-ref >/dev/null HEAD"):
+        must_pass(target, cmd)
+    assert [c["names"] for c in records("Bash", "git update-ref >/dev/null refs/heads/n1 HEAD", target.path)] == [["n1"]]
+    assert [c["names"] for c in records("Bash", "git branch -m old n10 >/dev/null", target.path)] == [["n10"]]  # not the redirection that ends the words
+
+
+def test_the_lexer_reads_redirection_operators_as_words():
+    def show(text, sh="bash"):
+        return [[("R%d:%s" % (w.take, w) if isinstance(w, G._Redir) else str(w)) for w, _d in ev] if isinstance(ev, list) else ev for ev in G._lex(text, sh)]
+    assert show("git status 2>&1") == [["git", "status", "R1:2>&1"]]
+    assert show("git >&2 status") == [["git", "R1:>&2", "status"]]
+    assert show("echo hi &>f") == [["echo", "hi", "R1:&>f"]] and show("echo hi &>>f") == [["echo", "hi", "R1:&>>f"]]
+    assert show("echo hi >|f") == [["echo", "hi", "R1:>|f"]] and show("echo hi >&2 | cat") == [["echo", "hi", "R1:>&2"], "|", ["cat"]]
+    assert show("cat <<< x") == [["cat", "R2:<<<", "x"]] and show("cat << EOF") == [["cat", "R2:<<", "EOF"]] and show("cat <<-EOF") == [["cat", "R1:<<-EOF"]]
+    assert show("git>/dev/null switch -c x") == [["git", "R1:>/dev/null", "switch", "-c", "x"]]
+    assert show("echo a2>f") == [["echo", "a2", "R1:>f"]] and show("echo 2>f") == [["echo", "R1:2>f"]] and show("echo a>f") == [["echo", "a", "R1:>f"]]
+    assert show("echo > f") == [["echo", "R2:>", "f"]] and show("echo 2> f") == [["echo", "R2:2>", "f"]] and show("echo >& f") == [["echo", "R2:>&", "f"]]
+    assert show("echo $((1<<2))") == [["echo", "$((1<<2))"]] and show("echo ${x:-a>b}") == [["echo", "${x:-a>b}"]]
+    assert not any(isinstance(w, G._Redir) for ev in G._lex("cat <(echo a) >(cat)", "bash") if isinstance(ev, list) for w, _d in ev)
+    assert show("echo hi |& cat") == [["echo", "hi"], "|", ["cat"]] and show("a && b") == [["a"], "&&", ["b"]] and show("a & b") == [["a"], "&", ["b"]]
+    assert show("git switch -c x &") == [["git", "switch", "-c", "x"], "&"] and show("echo hi >f&&git status") == [["echo", "hi", "R1:>f"], "&&", ["git", "status"]]
+    assert show("{fd}>f git status") == [["R1:{fd}>f", "git", "status"]] and show("{fd}> f git status") == [["R2:{fd}>", "f", "git", "status"]]
+    assert show("git 2>&1 status", "ps") == [["git", "R1:2>&1", "status"]] and show("git *>$null status", "ps") == [["git", "R1:*>$null", "status"]]
+    assert show("git status 2>&1", "ps") == [["git", "status", "R1:2>&1"]] and show("echo hi &>f", "ps")[0][:2] == ["echo", "hi"]
+    assert show("echo hi 2>&1 & git switch -c x", "cmd") == [["echo", "hi", "R1:2>&1"], "&", ["git", "switch", "-c", "x"]]
+    assert show("echo a>f", "cmd") == [["echo", "a", "R1:>f"]] and show("git 2>&1 status", None) == [["git", "R1:2>&1", "status"]]
+    assert show("echo *>f") == [["echo", "*", "R1:>f"]]  # bash: a glob, then the redirection
+    for text in ("2>&1", ">&2", "<&3", "2>", "<<<", ">|f", "&>f"):  # every spelling is one word, taking a second one only when it is the operator alone
+        word = next(w for ev in G._lex(text, "bash") if isinstance(ev, list) for w, _d in ev)
+        assert isinstance(word, G._Redir) and word == text and word.take == (2 if text in ("2>", "<<<") else 1), text
+
+
+def test_a_quoted_or_escaped_redirection_looking_word_is_a_word(target):
+    for cmd, name in (("git -c '>x' branch x3", "x3"), ("git branch '>x'", ">x"), ("git branch \\>y", ">y"), ("git switch -c '>z'", ">z")):
+        must_name(target, cmd, name)
+    for cmd in ("git --git-dir '>' branch x1", "git --git-dir \\> branch x2"):  # the quoted word is the value of the option: a directory that is no repository
+        reason = verdict(hook(target.path, cmd))
+        assert reason and REDIRECT in reason, (cmd, reason)
+    for cmd in ("'>f' git switch -c x4", '">" git switch -c x5', "git '>' switch -c x6"):
+        must_pass(target, cmd)  # the program is `>f` or `>`, and the subcommand of git is `>`
+    for text in ("'>x'", "\\>x", '">" y', "'2>&1' x"):
+        assert not any(isinstance(w, G._Redir) for ev in G._lex(text, "bash") if isinstance(ev, list) for w, _d in ev), text
+
+
+def test_the_word_gate_skips_leading_redirections(target):
+    target.write("mk", "git switch -c fromscript\n")  # untracked
+    for cmd in (">/dev/null bash ./mk", "2>&1 sh ./mk", "&>f . ./mk", "> out bash ./mk", "FOO=1 2>/dev/null source ./mk", "time >f bash ./mk",
+                "echo ok | >/dev/null bash ./mk"):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'fromscript'" in reason, (cmd, reason)
+    for text in (">/dev/null bash x", "2>&1 bash x", "&>f . x", "> out sh x", ">/dev/null\nbash x", "<f zsh x", ">& /dev/null cmd /c dir", "FOO=1 >f pwsh x"):
+        assert G._gated(text) and G._runs_script(text), text
+    for text in ("echo hi >/dev/null", "ls 2>&1", "echo '>x' bash", ">f echo bash", "echo hi >bash", "> bash", "ls >&2", "cat <(echo sh)"):
+        assert not G._gated(text), text  # a runner as the target of a redirection, or in the arguments of another command, is no gate
+    assert G._TOKEN.findall("2>&1 bash x") == ["2>&1", "bash", "x"] and G._TOKEN.findall("a &&b") == ["a", "&", "&", "b"]
+
+
+def test_the_alias_check_and_the_tamper_filter_skip_redirections(target, tmp_path):
+    cwd, c = session("clean", tmp_path)
+    c.git("config", "--local", "alias.nb", "branch")
+    for cmd, name in (("git 2>/dev/null -C %s nb a1" % P(target.path), "a1"), ("git -C %s >/dev/null nb a2" % P(target.path), "a2"),
+                      ("git > /dev/null -C %s nb a3" % P(target.path), "a3"), ("git>/dev/null -C %s nb a4" % P(target.path), "a4")):
+        reason = verdict(hook(cwd, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    for text, subs in (("git 2>/dev/null nb x", ["nb"]), ("git -C a >f nb y", ["nb"]), ("git -C '>' nb z", ["nb"]), ("git > f status", ["status"]),
+                       ("git>f nb x", ["nb"]), ("git >f", []), ("git >", [])):
+        assert G._git_subcommands(G._bare(text)) == subs, text
+    start = time.monotonic()
+    assert len(G._git_subcommands("git >f " * 30000)) == 29999 and time.monotonic() - start < time_budget(2)  # each git word is the subcommand of the one before
+    for line in ("2>/dev/null rm .git/hooks/reference-transaction", "> out rm -f .git/hooks/x", ">f cp x .git/magos/claims/f.claim",
+                 "FOO=1 2>&1 rm .git/magos/ARMED", ">/dev/null env rm .git/magos/ARMED"):
+        assert G.protected(line) == ("guarded", G._STATE_MSG), line
+    for line in ("rm -f out >/dev/null", "echo hi > x", ">f echo .git/hooks/x", "ls .git/hooks 2>&1"):
+        assert G.protected(line) is None, line
+
+
+def test_a_redirection_before_the_script_of_a_shell_hides_none(target):
+    target.write("mk", "git switch -c fromscript\n")
+    target.write("harmless.txt", "ls\n")
+    for cmd, name in (("bash -c >/dev/null 'git switch -c s1'", "s1"), ("bash 2>&1 -c 'git switch -c s2'", "s2"), ('sh -c 2>/dev/null "git switch -c s3"', "s3"),
+                      ("bash -lc >/dev/null 'git switch -c s4'", "s4"), ("bash >a >b >c >d ./mk", "fromscript"), ("bash 2>&1 ./mk", "fromscript"),
+                      ("bash < ./mk", "fromscript"), ("bash -s < ./mk", "fromscript"), ("bash <./mk", "fromscript"), ("sh 0<./mk", "fromscript"),
+                      (". 2>&1 ./mk", "fromscript"), ("source >/dev/null ./mk", "fromscript")):
+        must_name(target, cmd, name)
+    must_name(target, "powershell -Command 2>&1 'git switch -c s5'", "s5", tool="PowerShell")
+    for cmd in ("bash -c >/dev/null 'git status'", "bash >a >b >c >d ./harmless.txt", "bash <<< 'ls'", "bash <(echo ls)", "sh 2>&1 -c 'ls -la'"):
+        must_pass(target, cmd)
+    assert G._input_files([("<", False), ("./mk", False), ("<x", False), ("0<y", False), ("<<<", False), ("t", False), ("<(a)", False), ("<", False)]) == ["./mk", "x", "y"]
+
+
+def test_bundled_short_options_of_git_branch_are_read_left_to_right(target):
+    for cmd in ("git branch -df old", "git branch -Df old", "git branch -Dr origin/old", "git branch -dr origin/old", "git branch -rd origin/old",
+                "git branch -rD origin/old", "git branch -fd old", "git branch -dq old", "git branch -qd old", "git branch -vd old", "git branch -vvd old",
+                "git branch -vu origin/main", "git branch -dr origin/feat-x origin/old", "git branch -uorigin/main", "git branch -lr 'x*'", "git branch -d -f old",
+                "git branch -D -r origin/old", "git branch --delete -f old", "git branch -a", "git branch -vv", "git branch -r", "git branch -ra"):
+        must_pass(target, cmd)  # a deletion, a listing or an upstream change creates no lane
+        must_pass(target, cmd, tool="PowerShell")
+    for cmd, name in (("git branch -mr old n1", "n1"), ("git branch -ma old n2", "n2"), ("git branch -cr old n3", "n3"), ("git branch -Cr old n4", "n4"),
+                      ("git branch -fmr old n5", "n5"), ("git branch -m -r old n6", "n6"), ("git branch -m -a old n7", "n7"), ("git branch -c -r old n8", "n8"),
+                      ("git branch -tdirect n9 main", "n9"), ("git branch -td n10 main", "n10"), ("git branch -ft n11 main", "n11"), ("git branch -f n12", "n12"),
+                      ("git branch -v n13", "n13"), ("git branch -vf n14 main", "n14"), ("git branch -q n15", "n15")):
+        must_name(target, cmd, name)
+        must_name(target, cmd, name, tool="PowerShell")
+    assert [G._branch_short(t) for t in ("-vvd", "-uorigin/d", "-tdm", "--delete", "-", "-f", "x")] == ["vvd", "u", "t", "", "", "f", ""]
+    assert G._branch_moves(["-mr", "a", "b"]) and G._branch_moves(["-tc", "a"]) is False and G._branch_lists(["-vd", "a"]) and not G._branch_lists(["-td", "a"])
+
+
+def test_a_chain_of_relative_c_options_is_linear(target):
+    here = str(target.path)
+    base = (here + "/" + "d" * 4100)[:4090]
+    assert len(base) == 4090 and G._join(base, "a/bcdefghij") is None and G._join(None, "a/b") is None and G._join(base, "a") is not None
+    big = ("C:/" if os.name == "nt" else "/") + "x" * 5000
+    assert G._join(base, big) == big
+    line = "git " + "-C a/b " * 27000 + "status; git switch -c zzpad"
+    assert len(line) < G.MAX_TEXT
+    start = time.monotonic()
+    chain = G.interpret(line, here)
+    inside = G.interpret("git " + "-C a/b " * 27000 + "switch -c zzin", here)
+    aliased = G.interpret("git " + "-C a " * 20000 + "nb x", here)
+    assert time.monotonic() - start < time_budget(5)
+    assert [c["names"] for c in chain] == [["zzpad"]] and chain[0]["cwd"] == here  # the chain's own `status` creates nothing
+    assert [(c["names"], c["cwd"]) for c in inside] == [(["zzin"], None)] and aliased == []  # a path past the limit is an unknown directory
+    start = time.monotonic()
+    seen = verdict(hook(target.path, line))
+    assert time.monotonic() - start < time_budget(5)
+    assert seen and NOMAN in seen and "'zzpad'" in seen, seen
+    start = time.monotonic()
+    reason = verdict(hook(target.path, "git " + "-C a/b " * 27000 + "switch -c zzin"))
+    assert time.monotonic() - start < time_budget(5)
+    assert reason and UNPARSE in reason, reason
+
+
+def test_nested_groups_are_walked_in_linear_time(target):
+    here, n = str(target.path), 98000
+    deep = "(" * n + "git status" + ")" * n
+    shapes = [("bash", deep, []), ("ps", deep, []), ("bash", "{ " * 49000 + "git status; " + "} " * 49000, []), ("ps", "{ " * 49000 + "git status; " + "} " * 49000, []),
+              ("ps", "(" * n + ")" * n + "; git switch -c hz3", ["hz3"]), ("bash", "(" * n + ")" * n + "; git switch -c hz3", ["hz3"]),
+              ("bash", "if true; then " * 10000 + "git status" + "; fi" * 10000, []), ("bash", ")" * 100000 + "; git switch -c hz4", ["hz4"]),
+              ("bash", "} " * 90000 + "git switch -c hz5", ["hz5"])]
+    for sh, text, names in shapes:
+        assert len(text) <= G.MAX_TEXT
+        start = time.monotonic()
+        found = [c["names"][0] for c in G.interpret(text, here, sh=sh)]
+        assert time.monotonic() - start < time_budget(5), (sh, text[:20], time.monotonic() - start)
+        assert found == names, (sh, text[:20], found)
+    for tool, text in (("PowerShell", "(" * n + ")" * n + "; git switch -c hz3"), ("Bash", "{ " * 49000 + "git status; " + "} " * 49000 + "git switch -c hz6")):
+        start = time.monotonic()
+        reason = verdict(hook(target.path, text, tool=tool))
+        assert time.monotonic() - start < time_budget(5), (tool, time.monotonic() - start)
+        assert reason and NOMAN in reason, (tool, reason)
+
+
+def test_redirection_operators_are_read_in_linear_time(target):
+    here = str(target.path)
+    shapes = [">" * 199000 + " git switch -c x", ">&" * 66000 + " git switch -c x", "2>&1 " * 39000 + "git switch -c x", "> f " * 49000 + "git switch -c x",
+              "git " + ">f " * 66000 + "switch -c x", "a>" * 99000, "{fd}>f " * 28000 + "git switch -c x", "<<< x " * 30000 + "git switch -c x",
+              "&>f " * 45000 + "git switch -c x", ">|f " * 45000 + "git switch -c x", "1" * 199000 + ">f git switch -c x", "echo $((" + "1<<" * 60000 + "2))",
+              "git " + "-C >f a " * 24000 + "switch -c x", "git update-ref " + ">f " * 60000 + "refs/heads/x HEAD", "bash " + ">f " * 60000 + "./mk"]
+    for text in shapes:
+        assert len(text) <= G.MAX_TEXT
+        for sh in ("bash", "ps", None):
+            start = time.monotonic()
+            G.interpret(text, here, sh=sh)
+            assert time.monotonic() - start < time_budget(5), (text[:12], sh, time.monotonic() - start)
+        start = time.monotonic()
+        G._gated(text), G.protected(text), G._git_subcommands(G._bare(text))
+        assert time.monotonic() - start < time_budget(5), (text[:12], time.monotonic() - start)
+    assert [c["names"] for c in G.interpret(shapes[2], here, sh="bash")] == [["x"]] and G.interpret(shapes[5], here, sh="bash") == []
+    start = time.monotonic()
+    reason = verdict(hook(target.path, shapes[3]))
+    assert time.monotonic() - start < time_budget(5)
+    assert reason and NOMAN in reason and "'x'" in reason, reason

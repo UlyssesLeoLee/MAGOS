@@ -37,6 +37,7 @@ GUARD_VERSION = "1.0.3"  # the one version constant of the guard; equals the pac
 CLAIM_FORMAT = 1  # the claim file format this guard reads and writes (line `v=`); a claim of a newer format is never misread
 GS = "**"
 BUDGET_S, MAX_CLAIMANTS, MAX_REMOTES, MAX_ENTRIES, LOCK_S, MAX_TEXT = 18.0, 120, 300, 200, 30.0, 200000
+MAX_DIR = 4096  # the longest directory spelling the detector resolves: a longer one is an unknown directory
 # The tools the host hooks inspect.  The Claude matchers (hooks/hooks.json, host_snippet) are built from this one table by claude_matcher().
 HOOKED_TOOLS = {
     "shell": ("Bash", "PowerShell", "Monitor"),  # Claude Code tools that run a shell command
@@ -326,7 +327,10 @@ def render(lang, v, name):
 
 
 # ---------------------------------------------------------------- pure: command parsing (a UX layer: the git hook is the hard stop)
-_BAD_NAME = re.compile(r"[\s~^:?*\[\\\x00-\x1f]|\.\.|^-|^/|/$|\.lock$")
+# What check_refname_format refuses in a name, in ASCII only: a space, a control character, ~ ^ : ? * [ \, '..', a leading or trailing '/', '.lock'.
+# Whitespace and letters outside ASCII belong to a name git accepts; a leading dash is judged per verb (_DASH_REFS).
+_BAD_NAME = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|^/|/$|\.lock$")
+_DASH_REFS = ("update-ref", "symbolic-ref", "fetch", "pull", "push")  # the verbs whose operand is a full ref: `refs/heads/-x` is a ref, `-x` no branch name
 
 
 _OPENERS = ("if", "while", "until", "for", "select", "case")  # POSIX-shell words that open a compound command: what runs inside may not run
@@ -345,6 +349,109 @@ class _Seg(list):
     """One command of a line: a list of (word, dynamic); `at` is the offset of its first word in the text the lexer read, `sub` tells that
     it starts inside a word's $( .. ), <( .. ) or PowerShell ( .. ) (text substituted into another command)."""
     at, sub = 0, False
+
+
+# A redirection operator, with the file descriptor in front of it: a number, a variable name in braces (`{fd}>f`, bash), in PowerShell also a stream
+# (`*>`); `>&`, `<&` and `&>` come before `>` and `<` so that `>&` alone is one operator and the target of `>& 2` is the next word.
+_OPERATOR = r"(?:&>>?|>&|<&|>>?\|?|<<<|<<-?|<>|<)"
+_REDIR_OP = re.compile(r"(?:[0-9]+|\{[A-Za-z_][A-Za-z0-9_]*\})?" + _OPERATOR)
+_REDIR_OP_PS = re.compile(r"(?:[0-9]+|\*|\{[A-Za-z_][A-Za-z0-9_]*\})?" + _OPERATOR)
+_FD_VAR = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}[<>]")  # `{fd}>` at a word start: the redirection of a variable's file descriptor, no brace block
+
+
+class _Redir(str):
+    """A word that is a redirection of the shell: the lexer read an unquoted, unescaped redirection operator at its start (`>f`, `2>&1`, `<<EOF`,
+    or the operator alone: `>`, `2>`, `<<<`).  `take` is the number of words it occupies, 2 when its target is the next word.  It is the text it
+    spells in every other respect."""
+    take = 1
+
+
+def _redirection(word, plain, ps=False):
+    """`word` as a _Redir when it starts with a redirection operator written in its first `plain` characters (before any quote or escape), else
+    `word`.  `<(` and `>(` are substituted text, no redirection."""
+    m = (_REDIR_OP_PS if ps else _REDIR_OP).match(word)
+    if m is None or m.end() > plain or word[m.end():m.end() + 1] == "(":
+        return word
+    r = _Redir(word)
+    r.take = 1 if word[m.end():] else 2
+    return r
+
+
+def _skip_redirs(words, k):
+    """The index of the first word from `k` on that is no redirection: the redirections of the shell standing there, with their targets, are skipped."""
+    while k < len(words) and isinstance(words[k], _Redir):
+        k += words[k].take
+    return k
+
+
+def _is_redirection(word):
+    """Does the text of a word (as written, quotes kept) start with a redirection operator?  Text-based, for the word gate and the alias check,
+    which read no lexer words; `<(` and `>(` are substituted text."""
+    m = _REDIR_OP_PS.match(word)
+    return m is not None and word[m.end():m.end() + 1] != "("
+
+
+def _redir_like(old, text):
+    """`text` as the redirection `old` becomes when an expansion changes its target: the operator and the number of words it takes stay."""
+    r = _Redir(text)
+    r.take = old.take
+    return r
+
+
+def _redir_indices(words, end):
+    """The indices below `end` of the redirections of the shell among `words` and of their targets."""
+    found, k = set(), 0
+    while k < end:
+        if isinstance(words[k], _Redir):
+            found.update(range(k, min(k + words[k].take, end)))
+            k += words[k].take
+        else:
+            k += 1
+    return found
+
+
+_IN_PATH = re.compile(r"[0-9]*<(?![<&>(])(.*)$", re.S)  # `<file` and `0<file`; `<` alone leaves the file to the next word
+
+
+def _input_files(ins):
+    """The file names the `<` redirections among `ins` (the input redirections _split_redirs returns) read: the target written with the
+    operator, else the next word."""
+    out = []
+    for k, (w, _d) in enumerate(ins):
+        m = _IN_PATH.match(w)
+        if m and m.group(1):
+            out.append(m.group(1))
+        elif m and k + 1 < len(ins):
+            out.append(ins[k + 1][0])
+    return out
+
+
+def _fd_word(parts, quoted, ps):
+    """Is the word the lexer has read so far (`parts`, written outside quotes and escapes unless `quoted`) the number of a file descriptor, or in
+    PowerShell `*`: the operator right after it is part of that word (`2>f`, `*>f`)?"""
+    if quoted:
+        return False
+    w = "".join(parts)
+    return (w.isascii() and w.isdigit()) or (ps and w == "*") or re.fullmatch(r"\{[A-Za-z_][A-Za-z0-9_]*\}", w) is not None
+
+
+def _split_redirs(words, dyn):
+    """-> (words, dynamic flags, input redirections): the words of a command without the redirections of the shell (git never sees them), and
+    the input redirections (`<f`, `< f`, `<<< text`, `<<EOF`) with their targets as (word, dynamic) pairs, which an `update-ref --stdin` reads."""
+    if not any(isinstance(w, _Redir) for w in words):
+        return words, dyn, []
+    out, od, ins, k = [], [], [], 0
+    while k < len(words):
+        w = words[k]
+        if isinstance(w, _Redir):
+            if re.match(r"(?:[0-9]+|\{[A-Za-z_][A-Za-z0-9_]*\})?<", w):
+                ins += list(zip(words[k:k + w.take], dyn[k:k + w.take]))
+            k += w.take
+        else:
+            out.append(w)
+            od.append(dyn[k])
+            k += 1
+    return out, od, ins
 
 
 def _lex(cmd, sh=None):
@@ -366,7 +473,9 @@ def _lex(cmd, sh=None):
     backspace, escape, form feed, newline, carriage return, tab and vertical tab (_PS_ESCAPES); PowerShell and a shell the hook cannot name
     keep their backslashes (path separators there)."""
     segs, cur, parens, close, cases, at = [], [], [], [False], [], [0, False]  # at: offset of the segment's first word, and whether it is substituted
-    st = {"w": [], "dyn": False, "has": False, "open": False, "q": False, "b": 0, "kw": True, "inword": 0}  # kw: cur holds reserved words only
+    # kw: cur holds reserved words only; pp: the characters at the start of the word written outside quotes and escapes (until ppx); op: the word
+    # ends in an unquoted '<' or '>'
+    st = {"w": [], "dyn": False, "has": False, "open": False, "q": False, "b": 0, "kw": True, "inword": 0, "pp": 0, "ppx": False, "op": ""}
     kw, ps, posix = sh not in ("ps", "cmd"), sh == "ps", sh == "bash"
     escape = "\\" if posix else "^" if sh == "cmd" else "`" if ps else None  # the character that quotes the next one outside quotes
 
@@ -387,7 +496,8 @@ def _lex(cmd, sh=None):
         if not st["has"]:
             return
         w, dyn, quoted, mode = "".join(st["w"]), st["dyn"], st["q"], cases[-1] if cases else None
-        st.update(w=[], dyn=False, has=False, open=False, q=False, b=0)
+        plain_len = st["pp"]
+        st.update(w=[], dyn=False, has=False, open=False, q=False, b=0, pp=0, ppx=False, op="")
         plain, first = not quoted and not dyn, st["kw"]  # first: the word stands where a command starts
         kw_here = kw and not st["inword"]  # inside a word's $( .. ) the text is a command of its own, judged as such
         if plain and w == "esac" and (mode == "pat" or (mode == "body" and first)):
@@ -405,7 +515,7 @@ def _lex(cmd, sh=None):
             segs.append("K)")
         elif plain and mode == "head" and w == "in":
             cases[-1] = "pat"
-        cur.append((w, dyn))
+        cur.append((_redirection(w, plain_len, ps), dyn))
         st["kw"] = st["kw"] and w in _KEYWORDS
 
     def seg_end(mark=None):
@@ -425,7 +535,7 @@ def _lex(cmd, sh=None):
             if not st["has"] and not cur:
                 at[:] = [i, st["inword"] > 0]
             st["w"].append(_PS_ESCAPES.get(nxt, nxt) if ps else nxt)
-            st["has"], st["q"] = True, True
+            st["has"], st["q"], st["ppx"], st["op"] = True, True, True, ""
             i += 2
             continue
         if c == "#" and not st["has"] and i >= plain_to:  # a word that starts with # starts a comment in bash and PowerShell
@@ -438,6 +548,16 @@ def _lex(cmd, sh=None):
         if mode == "pat" and c in ")|" and st["w"] == list("esac") and not st["q"]:  # `esac)` / `esac|`: the case ends before the ')' or '|'
             word_end()
             mode = cases[-1] if cases else None
+        fdvar = c == "{" and not st["has"] and mode != "pat" and not (ps or sh == "cmd") and _FD_VAR.match(cmd, i) is not None
+        glue = False  # a '&' or '|' that belongs to a redirection operator (`2>&1`, `>&2`, `&>f`, `>|f`), no command separator
+        if c == "&" and nxt != "&" and mode != "pat":
+            if st["op"]:
+                glue = True
+            elif nxt == ">" and not (ps or sh == "cmd"):
+                word_end()
+                glue = True
+        elif c == "|" and st["op"] == ">" and nxt != "|" and mode != "pat" and not (ps or sh == "cmd"):
+            glue = True
         if c in " \t\r" or (c == "\n" and mode == "pat"):
             word_end()
         elif mode == "pat" and c == "(" and not st["has"]:
@@ -447,8 +567,8 @@ def _lex(cmd, sh=None):
         elif mode == "pat" and c == ")" and not st["open"]:
             seg_end()
             cases[-1] = "body"
-        elif c in ";\n&|" or (c in "()" and not st["has"] and not cur) or (c == ")" and not st["open"]) or \
-                (c == "{" and (not st["has"] or (ps and prev not in "$@"))) or (c == "}" and (not st["has"] or (ps and not st["b"]))):
+        elif (c in ";\n&|" and not glue) or (c in "()" and not st["has"] and not cur) or (c == ")" and not st["open"]) or \
+                (c == "{" and not fdvar and (not st["has"] or (ps and prev not in "$@"))) or (c == "}" and (not st["has"] or (ps and not st["b"]))):
             mark, arm = None, False
             if c == "|":
                 mark = "||" if nxt == "|" else "|"
@@ -491,11 +611,18 @@ def _lex(cmd, sh=None):
                 text, dyn = (body.replace('`"', '"').replace('\\"', '"'), bool(re.search(r"[$`]", body))) if c == '"' else (body, False)
             st["w"].append(text)
             st["has"], st["dyn"], st["open"], st["q"] = True, st["dyn"] or dyn, st["open"] or "(" in body, True
+            st["ppx"], st["op"] = True, ""
             i = j
         else:
+            if c in "<>" and st["has"] and not st["op"] and not (st["inword"] or st["b"] or mode == "pat") and nxt != "(" and \
+                    not _fd_word(st["w"], st["q"], ps):
+                word_end()  # a redirection operator ends the word before it, unless that is the number of a file descriptor (`2>f`)
             if not st["has"] and not cur:
                 at[:] = [i, st["inword"] > 0]
             st["w"].append(c)
+            st["op"] = c if c in "<>" or (glue and nxt == ">") else ""  # the '&' of `&>` takes the '>' after it into the word
+            if not st["ppx"]:
+                st["pp"] += 1
             if c == "(":
                 parens.append("w")
                 st["inword"] += 1
@@ -547,20 +674,25 @@ _VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-pa
 # The words that decide whether a command line is walked at all, read on the text with every escape character and quote removed (g\it and g''it are git).
 _GATE = re.compile(r"git|gh|gt|claude|eval|iex|invoke-expression|\.sh|\.bash|\.ps1|source|-enc|base64", re.I)
 _RUNNERS = frozenset((".", "bash", "sh", "zsh", "dash", "ksh", "powershell", "pwsh", "cmd"))  # the words that run a script or a shell
-# A word of a command line (quotes kept in it) or a character that ends a command; a quote that never closes belongs to no word.
-_TOKEN = re.compile(r"""[;&|(){}`\n]|(?:[^\s;&|(){}`'"]|'[^']*'|"[^"]*")+""")
+# A word of a command line (quotes kept in it) or a character that ends a command; a quote that never closes belongs to no word.  A word that
+# starts with `>&`, `<&`, `&>` or `>|` (`2>&1`) is one token: the & and | of a redirection end no command.
+_TOKEN = re.compile(r"""(?:[0-9]*[<>]&|&>>?|>\|)[^\s;&|(){}`'"]*|[;&|(){}`\n]|(?:[^\s;&|(){}`'"]|'[^']*'|"[^"]*")+""")
 
 
 def _runs_script(text):
     """Does a command of `text` start with a word that runs a script or a shell (`. ./mk`, `bash ./mk`, `cmd /c ..`; also with .exe, behind a
-    path, prefix assignments, keywords and wrappers, and after the -exec of find)?  One pass over the words; a word that follows a wrapper may
-    be the program it starts."""
-    start, wrapped = True, False
+    path, prefix assignments, keywords, wrappers and redirections, and after the -exec of find)?  One pass over the words; a word that follows a
+    wrapper may be the program it starts."""
+    start, wrapped, target = True, False, False
     for tok in _TOKEN.findall(text):
         if len(tok) == 1 and tok in ";&|(){}`\n":
-            start, wrapped = True, False
+            start, wrapped, target = True, False, False
+        elif target:  # the target of a redirection that stands before the program: `> out bash ./mk`
+            target = False
         elif _bare(tok).lower() in ("-exec", "-execdir"):  # find runs the command that follows
             start = True
+        elif start and _is_redirection(tok):
+            target = _REDIR_OP_PS.match(tok).end() == len(tok)
         elif start:
             names = {_exe(w) for w in (re.sub(r"[`^'\"]", "", tok), _bare(tok))}  # as written (a backslash is a separator), and unescaped
             if not names.isdisjoint(_RUNNERS):
@@ -645,7 +777,8 @@ def _join(base, p):
         return None
     if isinstance(base, _Missing) and not base.follow:
         base = base.prior
-    return os.path.normpath(os.path.join(base, p))
+    t = os.path.normpath(os.path.join(base, p))
+    return None if len(t) > MAX_DIR else t  # no real directory is spelled longer: a chain of `-C a/b` never grows a path that every step copies
 
 
 def _cd(here, p):
@@ -771,34 +904,219 @@ def _expand(cr):
 
 def _cr(verb, names, cwd, dynamic, kind="branch", path=None, tool=False, commit=None):
     """A creation record.  kind: worktree (named worktree), branch (branch only) or auto (the tool names the worktree itself).
-    A name is dropped when git would refuse it anyway (spaces, '..', a leading dash, a backslash that quoting kept ...).  A bell in a name
+    A name is dropped when git certainly refuses it (_BAD_NAME; a leading dash for the verbs that read the word as a branch name, which
+    git then takes for an option).  A bell in a name
     (PowerShell's `a) is judged as the letter a: git refuses the bell, so the stricter reading only denies more (``fe`at`` is named feat).
     redirect: True when the record is judged in the git directory `gitdir` (--git-dir / GIT_DIR; None: it cannot be resolved)."""
-    names = [n for n in (n.replace("\a", "a") for n in names) if _BAD_NAME.search(n) is None or re.search(r"[$`%()]", n)]
+    dash = verb in _DASH_REFS
+    names = [n for n in (n.replace("\a", "a") for n in names)
+             if (_BAD_NAME.search(n) is None and (dash or not n.startswith("-"))) or re.search(r"[$`%()]", n)]
     return {"verb": verb, "names": names, "cwd": cwd, "dynamic": dynamic or any(re.search(r"[$`%()]", n) for n in names), "kind": kind, "path": path, "tool": tool,
             "commit": commit, "redirect": False, "gitdir": None}
 
 
-_HEADS = re.compile(r"refs/(?i:heads)/")  # the case-insensitive file systems of Windows and macOS store refs/HEADS/x as the branch x
-_STDIN_REF = re.compile(r"(?:create|update)\s+refs/(?i:heads)/([^\s\"'\\]*)")
-_STDIN_OPT = re.compile(r"--s(?:t(?:d(?:in?)?)?)?(?![\w-])")  # --stdin and its unique prefixes
+# `refs/heads/` in any case of both words (ASCII letters only: refs/headſ/ is no branch).  The case-insensitive file systems of Windows and macOS
+# store REFS/HEADS/x as the branch x.  The one place that reads it: the host hook (_HEADS and the patterns below) and the git layer (HOOK_SH).
+_REFS_CI = "[Rr][Ee][Ff][Ss]/"
+_HEADS_CI = _REFS_CI + "[Hh][Ee][Aa][Dd][Ss]/"
+_HEADS = re.compile(_HEADS_CI)  # callers cut the name with t[11:]: the prefix is 11 characters whatever its case
+_OUTSIDE_HEADS = re.compile(_REFS_CI + "(?![Hh][Ee][Aa][Dd][Ss]/)[^/$`%()]+/")  # a literal ref namespace other than heads: no branch
+
+
+def _maybe_heads(word):
+    """May the (dynamic) ref word name a branch?  Only a word that begins with a literal namespace other than `heads` (refs/tags/$T) cannot."""
+    return _OUTSIDE_HEADS.match(word) is None
+
+
+# The instructions of `git update-ref --stdin`, read from the text that feeds it.  A verb is a word of its own (`refs/heads/update-docs` holds
+# none); the operand of `create` and `update` must be a plain name: a run of characters no shell, printf or git quoting changes.
+_STDIN_START = r"(?:(?<!\w)|(?<=\\[ntr0]))"  # a word starts here, or right after a separator printf writes (`\n` ends in a letter)
+_STDIN_WORD = re.compile(_STDIN_START + r"(?:create|update|delete|verify|option|start|prepare|commit|abort)(?![\w-])")
+_STDIN_VERB = re.compile(_STDIN_START + r"(?:create|update)(?![\w-])")  # also the end of symref-create and symref-update
+_STDIN_OPERAND = re.compile(r"[ \t]+([^\x00-\x20\x7f\"'\\$`%(){}]*)")
+_STDIN_END = re.compile(r"$|[ \t\r\n]|\\(?:[ntr]|0(?![0-7]))")  # what may follow a plain operand: the end, a blank, a separator printf writes
+_STDIN_ESC = re.compile(r"\\(?![ntr]|0(?![0-7]))")  # a backslash that is no separator: printf and echo -e turn it into another text
+_STDIN_PSEUDO = re.compile(r"[A-Z][A-Z_]*")  # HEAD, ORIG_HEAD: no branch
+_STDIN_OUTSIDE = re.compile(_REFS_CI + "(?![Hh][Ee][Aa][Dd][Ss]/).")  # refs/tags/v1: a ref outside refs/heads/
 
 
 def _stdin_refs(text):
-    """-> (names, dynamic) for the `create` and `update` instructions of an `update-ref --stdin` written in `text`.  A name ends at whitespace, a
-    quote or a backslash; a backslash right after it that is `\\0` not followed by an octal digit, `\\n`, `\\t` or `\\r` is the separator printf
-    writes.  Any other backslash after a name (printf turns `\\x62` into a letter), an empty name and a name git refuses make the creation
-    dynamic."""
-    names, dynamic = [], False
-    for m in _STDIN_REF.finditer(text):
-        name, esc = m.group(1), text[m.end():m.end() + 3]
-        if esc[:1] == "\\" and not (esc[1:2] in ("n", "t", "r") or (esc[1:2] == "0" and not re.match(r"[0-7]", esc[2:3]))):
+    """-> (names, dynamic) for the instructions of an `update-ref --stdin` written in `text`, the text the hook can read.  The record is dynamic
+    unless the instructions are accounted for by plainly read names: an instruction word must stand in the text; every backslash must begin
+    a separator printf writes (`\\n`, `\\t`, `\\r`, `\\0` not followed by an octal digit; printf turns `\\x62` into a letter); every `create` and
+    `update` must be followed by blanks and a plain operand that ends at the end of the text, a blank or such a separator: `refs/heads/<name>`
+    (the name is read; an empty name and a name git refuses are dynamic) or a literal ref outside refs/heads/ or a pseudo-ref.  A quote, `$`,
+    `%`, a brace, a parenthesis or an escape in an operand, and a word that is no ref, are not plainly read."""
+    names, dynamic = [], _STDIN_ESC.search(text) is not None or _STDIN_WORD.search(text) is None
+    for m in _STDIN_VERB.finditer(text):
+        op = _STDIN_OPERAND.match(text, m.end())
+        if op is None:
             dynamic = True
-        if not name or _BAD_NAME.search(name):
+            continue
+        ref = op.group(1)
+        if _STDIN_END.match(text, op.end()) is None:
             dynamic = True
-        if name:
-            names.append(name)
+        if _HEADS.match(ref):
+            name = ref[11:]
+            dynamic = dynamic or not name or _BAD_NAME.search(name) is not None
+            if name:
+                names.append(name)
+        elif _STDIN_PSEUDO.fullmatch(ref) is None and _STDIN_OUTSIDE.match(ref) is None:
+            dynamic = True
     return names, dynamic
+
+
+# Where the instructions of an update-ref --stdin come from: the input redirections of its words, and the command before the pipe that feeds it.
+_IN_STR = re.compile(r"\d*<<<")  # a here-string
+_IN_DOC = re.compile(r"\d*<<(?!<)")  # a here-document
+_IN_FILE = re.compile(r"\d*<(?!<)")  # < file, <file, 0<file, <(cmd): input the hook cannot read
+_FEEDERS = ("echo", "printf", "write-output", "write-host")  # the commands whose words are the text they write
+
+
+def _no_input():
+    return {"here": [], "doc": False, "file": False}
+
+
+def _input_of(src, word, dynamic, nxt):
+    """Note in `src` the input redirection that `word` is (`nxt`: the next word and its dynamic flag, None at the end).  -> the number of words
+    after it that it takes (the text of `<<<`, the file of `<`), None when `word` is no input redirection."""
+    m = _IN_STR.match(word)
+    if m:
+        if word[m.end():]:
+            src["here"].append((word[m.end():], dynamic))
+            return 0
+        src["here"].append(nxt or ("", True))
+        return 1
+    if _IN_DOC.match(word):
+        src["doc"] = True
+        return 1 if re.fullmatch(r"\d*<<-?", word) else 0  # `<< EOF`: the delimiter is the next word
+    if _IN_FILE.match(word):
+        src["file"] = True
+        return 1 if re.fullmatch(r"\d*<", word) else 0
+    return None
+
+
+def _update_ref_args(a, ad):
+    """`git update-ref`'s words (after the subcommand), read as git reads them.  -> (stdin, delete, positional words as (word, dynamic), input
+    sources).  -m takes the rest of its word or else the next word, a short-option word deletes when it holds a d before any m, --stdin is also
+    written as a unique prefix (and may have a redirection glued to it: --stdin<file), `--` ends the options."""
+    stdin = delete = ended = False
+    pos, src, k = [], _no_input(), 0
+    while k < len(a):
+        t, d = a[k], ad[k]
+        took = _input_of(src, t, d, (a[k + 1], ad[k + 1]) if k + 1 < len(a) else None)
+        if took is not None:
+            k += took
+        elif ended:
+            pos.append((t, d))
+        elif t == "--":
+            ended = True
+        elif t.startswith("--"):
+            cut = re.search(r"[<>]", t)
+            if cut:  # the shell ends the word at a redirection
+                k += _input_of(src, t[cut.start():], d, (a[k + 1], ad[k + 1]) if k + 1 < len(a) else None) or 0
+                t = t[:cut.start()]
+            key = t[2:].split("=", 1)[0]
+            stdin = stdin or (key != "" and "stdin".startswith(key))  # --s, --std ...
+        elif t.startswith("-") and len(t) > 1:
+            for j in range(1, len(t)):
+                if t[j] == "m":
+                    k += 0 if t[j + 1:] else 1
+                    break
+                delete = delete or t[j] == "d"
+        else:
+            pos.append((t, d))
+        k += 1
+    return stdin, delete, pos, src
+
+
+def _symbolic_ref_args(a, ad):
+    """`git symbolic-ref`'s positional words as (word, dynamic): -m takes the rest of its word or else the next word (also -qm <reason>), and
+    `--` ends the options."""
+    pos, k = [], 0
+    while k < len(a):
+        t = a[k]
+        if t == "--":
+            pos += list(zip(a[k + 1:], ad[k + 1:]))
+            break
+        if t.startswith("-"):
+            j = t.find("m", 1) if not t.startswith("--") else -1
+            if j > 0 and not t[j + 1:]:
+                k += 1
+        else:
+            pos.append((t, ad[k]))
+        k += 1
+    return pos
+
+
+def _unseen_update_ref(ev):
+    """The input sources of `"$GIT" update-ref --stdin` and `/usr/bin/env git update-ref --stdin`, a git invocation the walk cannot name: a
+    dynamic or git program word in command position (after prefix assignments, keywords and wrappers, which may be written with a path),
+    git's global options, `update-ref`, and a --stdin word after it (or the program `git-update-ref` and a --stdin word).  None for any
+    other command: a commit message, an echo operand, a `git grep` pattern or a here-document written to a file only mention
+    `update-ref --stdin`."""
+    words, dyn, ins = _split_redirs([w for w, _ in ev], [d for _, d in ev])  # the redirections stand anywhere; the input ones feed update-ref
+    i = 0
+    while i < len(words) and (_ASSIGN.match(words[i]) or _exe(words[i]) in _WRAP or words[i].lower() in _KEYWORDS or words[i] == "&"):
+        i += 1
+    prog = _exe(words[i]) if i < len(words) else ""
+    if i >= len(words) or not (dyn[i] or prog in ("git", "git-update-ref")):
+        return None
+    if prog != "git-update-ref":
+        i += 1
+        while i < len(words) and words[i].startswith("-"):  # git's global options and the values of those that take one
+            i += 2 if words[i] in _VALUE_OPTS else 1
+        if words[i:i + 1] != ["update-ref"]:
+            return None
+    stdin, _delete, _pos, src = _update_ref_args(words[i + 1:] + [w for w, _ in ins], dyn[i + 1:] + [d for _, d in ins])  # the options follow the word at i
+    return src if stdin else None
+
+
+def _stdin_feed(src, up, docs):
+    """-> (text, unseen) for an `update-ref --stdin`: the text of the sources of its instructions that the hook can read, and whether some
+    source cannot be read (then the creation is dynamic).  `src` holds the input redirections of the invocation, `docs` the here-document bodies
+    of the line, `up` the command before the pipe that feeds it: False (no pipe), None (a pipe from something that is no plain command) or the
+    words of that command as (word, dynamic).  Readable: a here-string, the here-documents, the words of a directly piped echo, printf,
+    Write-Output or Write-Host (also a single string word that holds a blank: PowerShell writes a string expression), a cat of here-documents.  An
+    expansion in a readable source (a word with $, a backtick, %, ( or ), a body with $ or a backtick) makes it unreadable."""
+    pieces, unseen = [], src["file"]
+    for text, dyn in src["here"]:
+        pieces.append(text)
+        unseen = unseen or dyn
+    doc = src["doc"]
+    if up is None:
+        unseen = True
+    elif up:
+        words = [w for w, _ in up]
+        i = next((k for k, w in enumerate(words) if not _ASSIGN.match(w)), len(words))
+        exe = _exe(words[i]) if i < len(words) else ""
+        if exe in _FEEDERS:
+            pieces.append(" ".join(words[i + 1:]))
+            unseen = unseen or any(d for _, d in up)
+        elif exe == "cat" and words[i + 1:]:
+            inner, rest = _no_input(), []
+            k = i + 1
+            while k < len(up):
+                took = _input_of(inner, up[k][0], up[k][1], up[k + 1] if k + 1 < len(up) else None)
+                if took is None and not up[k][0].startswith("-"):
+                    rest.append(up[k][0])
+                k += 1 + (took or 0)
+            for text, dyn in inner["here"]:
+                pieces.append(text)
+                unseen = unseen or dyn
+            doc = doc or inner["doc"]
+            unseen = unseen or inner["file"] or bool(rest) or not (inner["here"] or inner["doc"])
+        elif len(words) == 1 and " " in words[0]:  # PowerShell and unknown shells: a string expression writes its text
+            pieces.append(words[0])
+            unseen = unseen or up[0][1]
+        else:
+            unseen = True
+    elif not (src["here"] or doc):
+        unseen = True  # no input at all: the terminal, or a file descriptor the hook cannot see
+    if doc:
+        pieces += docs
+        unseen = unseen or not docs or any(re.search(r"[$`]", body) for body in docs)
+    return "\n".join(pieces), unseen
 
 
 def _short_value(tok, letters):
@@ -830,8 +1148,19 @@ _BRANCH_LONGS = ("move", "copy", "merged", "no-merged", "color", "no-color", "co
                  "all", "delete", "list", "show-current", "force", "sort", "points-at", "ignore-case", "omit-empty", "format", "recurse-submodules")
 
 
+def _branch_short(tok):
+    """The letters of a short-option word of `git branch`, read from left to right up to the first letter that takes a value (`u`, and `t`, whose
+    tracking mode is the rest of its word): that letter is the last one returned.  '' for a word that is no short-option word."""
+    if len(tok) < 2 or tok[0] != "-" or tok[1] == "-":
+        return ""
+    for k in range(1, len(tok)):
+        if tok[k] in "ut":
+            return tok[1:k + 1]
+    return tok[1:]
+
+
 def _branch_moves(args):
-    """Does `git branch` rename or copy?  A short-option word holding m, M, c or C before a letter that takes a value (-u), or a long option
+    """Does `git branch` rename or copy?  A short-option word holding m, M, c or C before a letter that takes a value (-u, -t), or a long option
     of at least two letters that is a prefix of exactly one of git branch's long options, --move or --copy (--mo; --co is ambiguous)."""
     for t in args:
         if t.startswith("--"):
@@ -839,12 +1168,19 @@ def _branch_moves(args):
             hits = [full for full in _BRANCH_LONGS if full.startswith(key)]
             if len(key) >= 2 and len(hits) == 1 and hits[0] in ("move", "copy"):
                 return True
-        elif t.startswith("-"):
-            for ch in t[1:]:
-                if ch in "mMcC":
-                    return True
-                if ch == "u":
-                    break
+        elif any(ch in "mMcC" for ch in _branch_short(t)):
+            return True
+    return False
+
+
+def _branch_lists(args):
+    """Does `git branch` create nothing, as it neither renames nor copies: it deletes, lists, shows the current branch, edits a description or
+    sets an upstream?  A short-option word holding d, D, l, r, a or u before any other letter that takes a value (-d, -df, -rd, -vd, -vu <up>), or
+    one of the long options that do."""
+    for t in args:
+        if t in ("--delete", "--list", "--show-current", "--contains", "--merged", "--no-merged", "--unset-upstream", "--points-at", "--edit-description") or \
+                t.startswith(("--set-upstream-to", "--list")) or any(ch in "dDlrau" for ch in _branch_short(t)):
+            return True
     return False
 
 
@@ -912,6 +1248,7 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
     ref.  `work` is the walking budget interpret() shares with the text git runs itself (a `!` alias, rebase --exec, bisect run).  `sh`
     names the shell that wrote the words: where it is not known (None) a subcommand or a branch name that holds a backslash is dynamic,
     because that shell may remove the backslash."""
+    words, dyn, ins = _split_redirs(words, dyn)  # git is never handed a redirection of the shell; an update-ref --stdin reads the input ones
     i, here, defs, rd = 1, cwd, dict(aliases or {}), tuple(gitdir or ())
     while i < len(words) and words[i].startswith("-"):
         w = words[i]
@@ -937,9 +1274,10 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
     if sub in defs and depth < 3:  # an alias: expand it (a leading ! is a shell command, run with git's environment)
         val = defs[sub]
         if val.startswith("!"):
-            return interpret(val[1:] + " " + " ".join(a), here, depth + 1, gitdir=rd, sh="bash", work=work)
+            return interpret(val[1:] + " " + " ".join(a + [w for w, _ in ins]), here, depth + 1, gitdir=rd, sh="bash", work=work)
         vw = [w for seg in split_command(val) for w in seg]
-        return parse_git(["git"] + [w for w, _ in vw] + a, [False] * (len(vw) + 1) + list(ad), here, defs, depth + 1, rd, work, sh)
+        return parse_git(["git"] + [w for w, _ in vw] + a + [w for w, _ in ins], [False] * (len(vw) + 1) + list(ad) + [d for _, d in ins], here, defs,
+                         depth + 1, rd, work, sh)
 
     def take(**kw):
         for k, t in enumerate(a):
@@ -977,13 +1315,12 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
             return [C("dwim", [pos[1][0]], here, pos[1][1], kind="worktree", path=path), detached]
         return [detached] if detached else []
     if sub == "branch":
-        if any(t in ("-d", "-D", "--delete", "-l", "--list", "--show-current", "-u", "-r", "-a", "--contains", "--merged", "--no-merged", "--unset-upstream",
-                     "--points-at", "--edit-description") or t.startswith(("--set-upstream-to", "--list")) for t in a):
+        move = _branch_moves(a)  # rename / copy: the last name is the new branch, whatever else (-r, -a) stands beside the option
+        if not move and _branch_lists(a):
             return []
         # --sort <key> and --format <format> (and their unique prefixes) take the next word as their value and list nothing by themselves
         valued = {k + 1 for k, t in enumerate(a) if t in ("--so", "--sor", "--sort", "--form", "--forma", "--format")}
         pos = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and k not in valued]
-        move = _branch_moves(a)  # rename / copy: the last name is the new branch
         return [C(sub, [pos[-1 if move else 0][0]], here, pos[-1 if move else 0][1])] if pos else []
     if sub in ("switch", "checkout"):
         cr = take()
@@ -998,45 +1335,43 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
         return []
     if sub == "stash" and a[:1] == ["branch"]:
         return [C("stash branch", a[1:2], here, len(a) < 2 or ad[1])]
-    if sub == "symbolic-ref":
-        pos = [t for t in a if not t.startswith("-")]
-        return [C(sub, [pos[1][11:]], here, False)] if len(pos) >= 2 and pos[0] == "HEAD" and _HEADS.match(pos[1]) else \
-            [C(sub, [pos[0][11:]], here, False)] if pos and _HEADS.match(pos[0]) else []
-    if sub == "update-ref":  # options as git reads them: -m takes the rest of its word or else the next word, a short word deletes with a d before any m
-        stdin = delete = False
-        pos, k = [], 0
-        while k < len(a):
-            t = a[k]
-            if t == "--":
-                pos += a[k + 1:]
-                break
-            if t.startswith("--"):
-                key = t[2:].split("=", 1)[0]
-                stdin = stdin or (key != "" and "stdin".startswith(key))  # --s, --std ...
-            elif t.startswith("-") and len(t) > 1:
-                for j in range(1, len(t)):
-                    if t[j] == "m":
-                        k += 0 if t[j + 1:] else 1
-                        break
-                    delete = delete or t[j] == "d"
-            else:
-                pos.append(t)
-            k += 1
-        if stdin:  # the instructions arrive on stdin: interpret() reads them from the command text
-            return [dict(C(sub, [], here, False), stdin=True)]
-        names = [t[11:] for t in pos[:1] if _HEADS.match(t)]  # the first positional word is the ref it writes
-        return [C(sub, names, here, False)] if names and not delete else []
+    if sub == "symbolic-ref":  # -m <reason> is no ref; HEAD <target> and <name> <target> write the branch the word names
+        pos = _symbolic_ref_args(a, ad)
+        words = [w for w, _ in pos]
+        if len(pos) >= 2 and words[0] == "HEAD" and _HEADS.match(words[1]):
+            return [C(sub, [words[1][11:]], here, False)]
+        if pos and _HEADS.match(words[0]):
+            return [C(sub, [words[0][11:]], here, False)]
+        if len(pos) >= 2 and ((pos[0][1] and _maybe_heads(words[0])) or (words[0] == "HEAD" and pos[1][1] and _maybe_heads(words[1]))):
+            return [C(sub, [], here, True)]  # a dynamic ref word that may name a branch, as for every other creating verb
+        return []
+    if sub == "update-ref":
+        stdin, delete, pos, src = _update_ref_args(a + [w for w, _ in ins], ad + [d for _, d in ins])
+        if stdin:  # the instructions arrive on stdin: interpret() reads them from the sources that feed it
+            return [dict(C(sub, [], here, False), stdin=True, src=src)]
+        if delete or not pos:
+            return []
+        word, dynamic = pos[0]  # the first positional word is the ref it writes
+        if _HEADS.match(word):
+            return [C(sub, [word[11:]], here, False)]
+        known = word == "HEAD" or not _maybe_heads(word)  # a ref the word certainly names outside refs/heads/
+        # behind xargs the input supplies words in any position: the appended `$stdin` marks it
+        if not known and (dynamic or any(w == "$stdin" and d for w, d in pos)):
+            return [C(sub, [], here, True)]
+        return []
     if sub in ("fetch", "pull", "push"):
         longs, shorts = (_PUSH_VALUED, ("-o",)) if sub == "push" else (_FETCH_VALUED, ("-o", "-j"))
         valued = {k + 1 for k, t in enumerate(a) if t in shorts or (t.startswith("--") and "=" not in t and len(t) >= 5
                                                                     and any(full.startswith(t[2:]) for full in longs))}
         pk = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and k not in valued]
         names, glob = [], False
-        for t, _d in pk[1:]:  # the destinations of the refspecs, under refs/heads/ or bare
-            m = re.fullmatch(r"\+?[^:]*:(?:refs/(?i:heads)/)?([^:]+)", t)
-            if m and not m.group(1).startswith("refs/"):
-                glob = glob or "*" in m.group(1)
-                names += [] if "*" in m.group(1) else [m.group(1)]
+        for t, _d in pk[1:]:  # the destinations of the refspecs: under refs/heads/ (whatever follows is the name) or bare; refs/<other>/ is no branch
+            m = re.fullmatch(r"\+?([^:]*):(?:%s([^:]+)|(?!%s)([^:]+))" % (_HEADS_CI, _REFS_CI), t)
+            if m is None or (sub == "push" and not m.group(1)):  # a push with an empty source deletes its destination; fetch and pull read it as HEAD
+                continue
+            dest = m.group(2) or m.group(3)
+            glob = glob or "*" in dest
+            names += [] if "*" in dest else [dest]
         if not names and not glob:
             return []
         if sub == "push" and pk[0][0] != ".":  # a push creates the branch in the repository it pushes to
@@ -1068,8 +1403,9 @@ def _script(path, here):
     return None
 
 
-def _heredocs(cmd):
-    """-> (command text without heredoc bodies, [bodies fed to a shell]).  A body fed to cat or a file is data, not a command."""
+def _heredocs(cmd, every=None):
+    """-> (command text without heredoc bodies, [bodies fed to a shell]).  A body fed to cat or a file is data, not a command.  `every`, when a
+    list is given, receives every body: an `update-ref --stdin` reads them as instructions."""
     lines, out, bodies, k = cmd.split("\n"), [], [], 0
     while k < len(lines):
         line = lines[k]
@@ -1082,6 +1418,8 @@ def _heredocs(cmd):
                 body.append(lines[k])
                 k += 1
             k += 1
+            if every is not None:
+                every.append("\n".join(body))
             if re.search(r"(?:^|[|;&\s])(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|powershell|pwsh|source|iex|invoke-expression)\b", line, re.I):
                 bodies.append("\n".join(body))
     return "\n".join(out), bodies
@@ -1091,10 +1429,15 @@ def _git_subcommands(text):
     """The subcommand after every `git` word, in text order: its first word after the global options and the values of those that take one
     (`git -C ../B nb x` names `nb`).  One right-to-left pass fills `first[p]`, the index of the first word from p on that is neither an option
     nor an option value, so the text is read once whatever the number of git words."""
-    toks = text.split()
+    toks = re.sub(r"(?<![A-Za-z0-9_])git(?=[<>])", "git ", text).split()  # `git>/dev/null nb x`: the operator ends the word git
     first = [None] * (len(toks) + 2)
     for p in range(len(toks) - 1, -1, -1):
-        first[p] = p if not toks[p].startswith("-") else first[p + (2 if toks[p] in _VALUE_OPTS else 1)]
+        if toks[p].startswith("-"):
+            first[p] = first[p + (2 if toks[p] in _VALUE_OPTS else 1)]
+        elif _is_redirection(toks[p]):  # a redirection between git and its subcommand: it and its target, when that is the next word, are no subcommand
+            first[p] = first[p + (1 if _REDIR_OP_PS.match(toks[p]).end() < len(toks[p]) else 2)]
+        else:
+            first[p] = p
     subs = []
     for k, tok in enumerate(toks):
         if first[k + 1] is not None and re.search(r"(?:^|\W)git$", tok):
@@ -1473,6 +1816,7 @@ _INIT_VALUE = frozenset(("-b", "--initial-branch", "--separate-git-dir", "--temp
 
 def _git_new_repo(words, dyn, run):
     """The directory a `git init` / `git clone` invocation makes a new repository in (`run` for a bare `git init`), or None."""
+    words, dyn, _ins = _split_redirs(words, dyn)
     i = 1
     while i < len(words) and words[i].startswith("-"):
         if words[i] == "-C" and i + 1 < len(words):
@@ -1525,7 +1869,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
     work[0] -= len(cmd)
     if work[0] < 0:
         return [_anywhere("nested text", _OVER_WORK)]
-    out, early, env, galias, whole, over = [], [], {}, {}, cmd, []
+    out, early, env, galias, over, unseen_git = [], [], {}, {}, [], []
     states = [[cwd, _GitDirs(gitdir, sh), list(dirs)]]
     contexts, noted, bash = [], set(), sh == "bash"
 
@@ -1535,7 +1879,8 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
             noted.add(key)
             contexts.append((here, cands))
     note(cwd, states[0][1].cands())
-    cmd, bodies = _heredocs(cmd)
+    docs = []  # every here-document body of the text: the instructions of an update-ref --stdin may be one
+    cmd, bodies = _heredocs(cmd, docs)
     cmd = _continued(cmd, sh)  # the offsets of the substituted texts below are the lexer's
     subs = [(m.start(), m.group(1) or m.group(2) or "") for m in _SUBST.finditer(cmd)]
     subs += [(m.start(), cmd[m.start(1):m.end(1)]) for m in _PS_PAREN.finditer(_unquoted(cmd))] if sh == "ps" else []  # PowerShell (..), @(..)
@@ -1563,7 +1908,10 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         if env:  # literal variables: g=git; $g branch x   /   $g = 'git'; & $g branch x
             for k, w in enumerate(words):
                 nw = re.sub(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", lambda m: env.get(m.group(1), m.group(0)), w)
-                words[k], dyn[k] = nw, bool(re.search(r"[$`%()]", nw)) if nw != w else dyn[k]
+                if nw != w:
+                    if isinstance(w, _Redir):  # the target of a redirection: the operator, and so the redirection, stays
+                        nw = _redir_like(w, nw)
+                    words[k], dyn[k] = nw, bool(re.search(r"[$`%()]", nw))
         ps = _PS_ENV.match(words[0]) if words else None
         if ps and _gd_name(ps.group(1)) and (ps.group(2) or words[1:2] in (["="], ["+="])):  # PowerShell $env:GIT_DIR = 'x' ($null or '' removes it)
             if ps.group(2) and (ps.group(3) or len(words) < 2):
@@ -1619,8 +1967,14 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                 if names:
                     return True, []
         i = 0
-        while i < len(words) and (_ASSIGN.match(words[i]) or words[i].lower() in _WRAP + _KEYWORDS or words[i] == "&" or (i == 0 and words[i].endswith(")")) or
-                                  (sh is None and _spelled(words[i]) in _WRAP)):  # a shell the hook cannot name may remove the escapes of en\v
+        while i < len(words):
+            j = _skip_redirs(words, i)  # a redirection of the shell is no word of the command: >/dev/null git switch -c x, 2>&1 bash ./mk
+            if j != i:
+                i = j
+                continue
+            if not (_ASSIGN.match(words[i]) or words[i].lower() in _WRAP + _KEYWORDS or words[i] == "&" or (i == 0 and words[i].endswith(")")) or
+                    (sh is None and _spelled(words[i]) in _WRAP)):  # a shell the hook cannot name may remove the escapes of en\v
+                break
             name = words[i].lower() if words[i].lower() in _WRAP else _spelled(words[i]) if sh is None else None
             wrapped, vals = name in _WRAP, _SU_VALUE if name in ("sudo", "doas") else _ENV_VALUE if name == "env" else ()
             i += 1
@@ -1629,11 +1983,14 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                           words[k - 1] not in vals), len(words))
         if i >= len(words):
             return False, []
+        redirs = _redir_indices(words, i)  # the redirections (and their targets) before the program: no assignment, wrapper or option among them
         exe, rest = _exe(galias.get(words[i], words[i])), words[i + 1:]
         spelled = _spelled(galias.get(words[i], words[i])) if sh is None and exe not in _KNOWN else None  # g\it, g^it, g`it: the shell may or may not remove them
         exe = spelled or exe
+        if exe in ("gh", "gt", "claude", "source", "."):  # a redirection that stands before the subcommand or the script is no word of it
+            rest = _split_redirs(rest, dyn[i + 1:])[0]
         script = re.search(r"\.(sh|ps1|bash)$", words[i], re.I) is not None
-        if not i and exe not in _STATEFUL and not script:  # neither depends on nor changes the state
+        if i == len(redirs) and exe not in _STATEFUL and not script:  # neither depends on nor changes the state
             return False, []
         isolated = not _ALONE.isdisjoint(low[:i])  # a builtin behind a program wrapper runs in no shell: env cd x changes nothing
         chdir = _wrapped_dir(words, dyn, i)  # env -C <dir> and the privilege wrapper -D <dir>: the wrapped program runs in <dir>
@@ -1648,6 +2005,8 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
             inv = gds.copy()  # GIT_DIR of this invocation: prefix and env assignments set it, env -u / -i remove it
             after_env = after_exec = False  # an env / exec word stands before word k
             for k in range(i):
+                if k in redirs:
+                    continue
                 w = words[k]
                 unset = w[2:] if w.startswith("-u") and len(w) > 2 else w[8:] if w.startswith("--unset=") else \
                     words[k + 1] if w in ("-u", "--unset") and k + 1 < i and after_env else None
@@ -1712,11 +2071,13 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                 k = next(k for k, w in enumerate(rest) if w in ("-exec", "-execdir"))
                 out.extend(interpret(" ".join(rest[k + 1:]).replace("\\;", " "), run, depth + 1, aliases, cands, work=work))
             elif exe in _SHELLS + ("powershell", "pwsh", "cmd") and depth < 3:
-                child = _child_script(exe, rest, _OPAQUE)  # -c / -Command / -EncodedCommand in every spelling the shell reads
+                plain, _plain_dyn, ins = _split_redirs(rest, dyn[i + 1:])  # the text and the script are read behind redirections
+                child = _child_script(exe, plain, _OPAQUE)  # -c / -Command / -EncodedCommand in every spelling the shell reads
                 handled = child is not None
                 if handled:
                     out.extend(interpret(child, run, depth + 1, aliases, cands, _SHELL_OF[exe], work=work))
-                files = [w for k, w in enumerate(rest) if not w.startswith("-") and (k == 0 or rest[k - 1].lower() != "-command")]  # option values come first
+                files = [w for k, w in enumerate(plain) if not w.startswith("-") and (k == 0 or plain[k - 1].lower() != "-command")]  # option values come first
+                files += _input_files(ins)  # the file a `<` redirection feeds to the shell is its script
                 for w in [] if handled else files[:4]:
                     relative(w)
                 text = None if handled else next((s for s in (_script(w, run) for w in files[:4]) if s), None)
@@ -1774,6 +2135,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         return states
 
     events, frames, closing = _lex(cmd, sh), [_frame("top", states)], {")": "(", "}": "{", "K)": "K("}
+    opened = {"(": 0, "{": 0, "K(": 0}  # the open frames of each kind: a closer finds its opener in constant time, however deep the nesting
     starts = [ev.at for ev in events if isinstance(ev, list)] + [len(cmd) + 1]  # where each segment starts
     subs = sorted(s for s in subs if s[1] and _CHANGES.search(s[1])) if depth < 3 else []  # substituted texts that may change the state
     nseg = nsub = 0
@@ -1785,14 +2147,16 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         if ev in ("(", "{", "K("):  # a group, a brace block, a compound command: it keeps the states it was opened in
             states = states if fr["inside"] else _enter(fr, states)
             frames.append(_frame(ev, states))
+            opened[ev] += 1
             continue
         if ev == "|":
             continue
         if isinstance(ev, str) and ev in closing:
-            if not any(f["kind"] == closing[ev] for f in frames[1:]):
+            if not opened[closing[ev]]:
                 continue
             while True:
                 f = frames.pop()
+                opened[f["kind"]] -= 1
                 ends = _end_list(f, states, last=True)
                 states = _snap(f["open"]) if bash and f["kind"] == "(" else _merge(f["open"], ends)  # bash: a group is a subshell
                 if f["kind"] == closing[ev]:
@@ -1810,7 +2174,16 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
             apart = bash and (ev.sub or nxt == "|")  # bash runs it in a subshell: the commands after it keep the states before it
             piped = not apart and (ev.sub or "|" in (prv, nxt))  # in $( .. ) or a pipeline: a possible change
             before = _snap(states) if piped or apart else None
+            made_at = len(out)
             changed, finals = segment([w for w, _ in ev], [d for _, d in ev])
+            up = (events[k - 2] if k > 1 and isinstance(events[k - 2], list) else None) if prv == "|" else False  # the command before the pipe, if any
+            for cr in out[made_at:]:
+                if cr.get("stdin"):  # an update-ref --stdin: where its instructions come from is read after the walk
+                    cr["up"] = up
+            if not any(cr["verb"] == "update-ref" for cr in out[made_at:]):
+                src = _unseen_update_ref(ev)  # `$g update-ref --stdin`: a git the walk cannot name
+                if src is not None:
+                    unseen_git.append((src, up))
             nseg, due = nseg + 1, []
             while nsub < len(subs) and subs[nsub][0] < starts[nseg]:  # the texts substituted into this command
                 due.append(subs[nsub])
@@ -1831,15 +2204,27 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
     states = capped(_end_list(frames[0], states, last=True))
     if final is not None:
         final.extend((h, g.cands(), tuple(d)) for h, g, d in states)
-    if any(cr.get("stdin") for cr in out):  # update-ref --stdin: the instructions are in the text that feeds it, or nowhere the hook can see
-        found, odd = _stdin_refs(whole)
-        named = _cr("update-ref", found, None, odd)
-        shown = bool(named["names"]) or re.search(r"\b(?:create|update|delete|verify|option|start|prepare|commit|abort)\s", whole) is not None
-        out = [dict(cr, names=named["names"], dynamic=named["dynamic"] or not shown or cr["dynamic"]) if cr.pop("stdin", False) else cr for cr in out]
-    elif depth < 3 and not any(cr["verb"] == "update-ref" for cr in out) and \
-            any(_STDIN_OPT.search(s.partition("update-ref")[2]) for s in re.split(r"[\n|;&]", whole) if "update-ref" in s):  # fed to a git the walk did not see
-        names, odd = _stdin_refs(whole)
-        early += [_with_rds(_cr("update-ref", names, h, odd), h, c) for h, c in contexts[:MAX_CONTEXTS]] if names or odd else []
+    feeds = {}
+
+    def feed(src, up):  # -> (names, dynamic) of the instructions of an update-ref --stdin whose input sources are `src` and `up`
+        key = (tuple(src["here"]), src["doc"], src["file"], tuple(up) if up else up)
+        if key not in feeds:
+            text, unseen = _stdin_feed(src, up, docs)
+            work[0] -= len(text) + STEP_COST
+            names, odd = _stdin_refs(text)
+            feeds[key] = (names, odd or unseen)
+        return feeds[key]
+    for cr in out:  # update-ref --stdin: the instructions are in the sources that feed it, or nowhere the hook can see
+        if cr.get("stdin"):
+            names, odd = feed(cr.pop("src", None) or _no_input(), cr.pop("up", False))
+            cr.pop("stdin")
+            named = _cr("update-ref", names, None, odd)
+            cr.update(names=named["names"], dynamic=named["dynamic"] or cr["dynamic"])
+    for src, up in unseen_git:  # fed to a git the walk did not see
+        names, odd = feed(src, up)
+        early += [_with_rds(_cr("update-ref", names, h, odd), h, c) for h, c in contexts[:MAX_CONTEXTS]]
+    if work[0] < 0 and not over:
+        over = [_anywhere("nested text", _OVER_WORK)]
     places = contexts
     if inner and len(contexts) > 1 and (len(contexts) > MAX_CONTEXTS or len(inner) * len(contexts) > 4096):  # too much to judge everywhere:
         early.append(dict(_anywhere("command substitution", "the command runs text from inside itself in more directory or GIT_DIR states than the hook judges"),
@@ -2029,7 +2414,11 @@ def _protected_words(words, depth, roots, lazy):
     if ("config" in seen and "core.hookspath" in seen and not reads) or any_word(lambda x: x.startswith("core.hookspath=")) or \
             ("config" in seen and "--worktree" in seen) or any(_ENV_WRITE.match(w) or _ENV_WRITE.match(_bare(w)) for w in words):
         return "guarded", "core.hooksPath / GIT_CONFIG_* / worktree config can switch the git layer off"
-    e = next((k for k, w in enumerate(words) if not _ASSIGN.match(w) and bares[k] not in _WRAP), None)
+    e, redirs = None, _redir_indices(words, len(words))  # the program: the first word that is no assignment, wrapper or redirection of the shell
+    for k, w in enumerate(words):
+        if k not in redirs and not _ASSIGN.match(w) and bares[k] not in _WRAP:
+            e = k
+            break
     exe = _exe(bares[e]) if e is not None else ""
     if exe in _WRITE_CMDS or (exe == "sed" and "-i" in words) or (exe == "find" and "-delete" in seen):
         targets = _copy_destination(exe, words[e + 1:]) if exe in _COPIES else None
@@ -3399,19 +3788,19 @@ exists() { [ -e "$CD/$1" ] || git rev-parse --verify -q "$1" >/dev/null; }
 in=$(cat)
 while read -r old new ref; do
   case $ref in
-  refs/[Hh][Ee][Aa][Dd][Ss]/*) [ "$new" = $Z ] && continue
-    b=${ref#refs/[Hh][Ee][Aa][Dd][Ss]/}; claim "$b" && continue
+  @HEADS@*) [ "$new" = $Z ] && continue
+    b=${ref#@HEADS@}; claim "$b" && continue
     if [ -f "$CD/$ref" ]; then read -r cur <"$CD/$ref"; else cur=$(git rev-parse --verify -q "$ref"); fi
     [ "$cur" = "$new" ] && continue
     [ -z "$cur" ] && need "$b" "creation / 新建分支";;
-  HEAD) case $new in ref:refs/[Hh][Ee][Aa][Dd][Ss]/*) b=${new#ref:refs/[Hh][Ee][Aa][Dd][Ss]/}
+  HEAD) case $new in ref:@HEADS@*) b=${new#ref:@HEADS@}
       exists "refs/heads/$b" || need "$b" "unborn or orphan branch / 孤儿分支";; esac;;
   esac
 done <<EOT
 $in
 EOT
 chain "$@"
-'''
+'''.replace("@HEADS@", _HEADS_CI)  # the arms match refs/heads/ in any case of both words, from the pattern the host hook reads
 
 
 def read_text(path):

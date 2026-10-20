@@ -47,3 +47,30 @@
 {"id": "cr-13/missing-directory-before-a-creation-in-another-repository", "tool": "Bash", "cwd": "C", "command": "cd /nonexist; git switch -c m1; cd '{L}'; cd /nonexist; git switch -c m1", "expect": "deny", "reason": "cannot tell which branch this creates"}
 {"id": "cr-15/claim-stored-by-1.0.1-under-a-refused-name", "tool": "Bash", "cwd": "R", "command": "git switch -c rel.claim", "expect": "allow"}
 {"id": "cr-15/unclaimed-name-of-the-same-kind", "tool": "Bash", "cwd": "R", "command": "git switch -c other.claim", "expect": "deny", "reason": "creating 'other.claim'"}
+{"id": "g1-updateref-escapes/c-quoted-ref-name", "tool": "Bash", "cwd": "L", "command": "printf 'update \"refs/heads/q1\" HEAD\\n' | git update-ref --stdin", "expect": "deny", "reason": "cannot tell which branch this creates"}
+{"id": "g1-updateref-escapes/escape-inside-the-ref-prefix", "tool": "Bash", "cwd": "L", "command": "printf 'update refs/he\\x61ds/q3 HEAD\\n' | git update-ref --stdin", "expect": "deny", "reason": "cannot tell which branch this creates"}
+{"id": "g1-updateref-escapes/file-fed-input-beside-an-unrelated-verb-word", "tool": "Bash", "cwd": "L", "command": "git commit -qm x ; git update-ref --stdin < instr.txt", "expect": "deny", "reason": "cannot tell which branch this creates"}
+{"id": "g1-updateref-escapes/name-continued-after-a-quote", "tool": "Bash", "cwd": "L", "command": "printf 'update refs/heads/main''x HEAD\\n' | git update-ref --stdin", "expect": "deny", "reason": "creating 'mainx'"}
+{"id": "g1-updateref-escapes/dynamic-ref-word", "tool": "Bash", "cwd": "L", "command": "git update-ref \"$REF\" HEAD", "expect": "deny", "reason": "cannot tell which branch this creates"}
+{"id": "g1-updateref-escapes/commit-message-that-shows-an-update-ref-example", "tool": "Bash", "cwd": "L", "command": "git commit -m \"docs: note update-ref --stdin create refs/heads/foo\"", "expect": "allow"}
+{"id": "g3-refs-case/refs-prefix-in-capitals", "tool": "Bash", "cwd": "L", "command": "git update-ref REFS/heads/zz1 HEAD", "expect": "deny", "reason": "creating 'zz1'"}
+{"id": "g3-refs-case/refspec-destination-refs-under-heads", "tool": "Bash", "cwd": "L", "command": "git push . HEAD:refs/heads/refs/x1", "expect": "deny", "reason": "creating 'refs/x1'"}
+{"id": "g3-refs-case/symbolic-ref-message-option", "tool": "Bash", "cwd": "L", "command": "git symbolic-ref -m why HEAD refs/heads/z1", "expect": "deny", "reason": "creating 'z1'"}
+{"id": "g3-refs-case/leading-dash-name-of-a-full-ref", "tool": "Bash", "cwd": "L", "command": "git update-ref refs/heads/-x9 HEAD", "expect": "deny", "reason": "creating '-x9'"}
+{"id": "g3-refs-case/printf-format-in-an-instruction", "tool": "Bash", "cwd": "L", "command": "printf 'create refs/%s/q2 HEAD\\n' heads | git update-ref --stdin", "expect": "deny", "reason": "cannot tell which branch this creates"}
+{"id": "g3-refs-case/stdin-fed-by-cat-of-a-file", "tool": "Bash", "cwd": "L", "command": "cat refs.txt | git update-ref --stdin && git commit -m done", "expect": "deny", "reason": "cannot tell which branch this creates"}
+{"id": "g3-refs-case/dynamic-symbolic-ref-target", "tool": "Bash", "cwd": "L", "command": "git symbolic-ref HEAD $B", "expect": "deny", "reason": "cannot tell which branch this creates"}
+{"id": "g3-refs-case/delete-of-a-missing-branch-in-odd-case", "tool": "Bash", "cwd": "L", "command": "git push . :refs/HEADS/nothere", "expect": "allow"}
+{"id": "g3-refs-case/echo-that-mentions-update-ref-stdin", "tool": "Bash", "cwd": "L", "command": "echo \"git update-ref --stdin reads: create refs/heads/new1 sha\" >> notes.md", "expect": "allow"}
+{"id": "control/update-ref-stdin-delete-from-a-here-string", "tool": "Bash", "cwd": "L", "command": "git update-ref --stdin <<< 'delete refs/heads/feat-x'", "expect": "allow"}
+{"id": "g5-gate-and-cd/G5-01-leading-redirection-hides-the-program", "tool": "Bash", "cwd": "L", "command": ">/dev/null git switch -c r1", "expect": "deny", "reason": "creating 'r1'"}
+{"id": "g5-gate-and-cd/G5-01-leading-stderr-duplication", "tool": "Bash", "cwd": "L", "command": "2>&1 git switch -c r10", "expect": "deny", "reason": "creating 'r10'"}
+{"id": "g5-gate-and-cd/G5-01-leading-redirection-before-a-script", "tool": "Bash", "cwd": "L", "command": ">/dev/null bash ../mk", "expect": "deny", "reason": "creating 'zz33'"}
+{"id": "g5-gate-and-cd/G5-02-redirection-between-git-and-its-subcommand", "tool": "Bash", "cwd": "L", "command": "git -C . >/dev/null switch -c m1", "expect": "deny", "reason": "creating 'm1'"}
+{"id": "g5-gate-and-cd/G5-03-update-ref-redirection-before-the-ref", "tool": "Bash", "cwd": "L", "command": "git update-ref 2>/dev/null refs/heads/m14 HEAD", "expect": "deny", "reason": "creating 'm14'"}
+{"id": "g5-gate-and-cd/control-redirected-read-only-commands", "tool": "Bash", "cwd": "L", "command": ">/dev/null git status; 2>&1 git log --oneline | cat; git branch -vv 2>&1 | cat", "expect": "allow"}
+{"id": "g6-launcher-claims-overdeny/G6-1-bundled-delete-options", "tool": "Bash", "cwd": "L", "command": "git branch -df old; git branch -Dr origin/old; git branch -vu origin/main", "expect": "allow"}
+{"id": "g6-launcher-claims-overdeny/G6-1-rename-beside-a-remote-option", "tool": "Bash", "cwd": "L", "command": "git branch -m -r feat-x feat-moved2", "expect": "deny", "reason": "creating 'feat-moved2'"}
+{"id": "g2-gitopts/g2-11-chain-of-relative-C-options", "tool": "Bash", "cwd": "L", "build": [["git ", 1], ["-C a/b ", 27000], ["status; git switch -c zzpad", 1]], "expect": "deny", "reason": "creating 'zzpad'"}
+{"id": "g4-powershell/G4-16-nested-parentheses", "tool": "PowerShell", "cwd": "L", "build": [["(", 98000], [")", 98000], ["; git switch -c hz3", 1]], "expect": "deny", "reason": "creating 'hz3'"}
+{"id": "g4-powershell/G4-16-nested-braces", "tool": "Bash", "cwd": "L", "build": [["{ ", 49000], ["git status; ", 1], ["} ", 49000], ["git switch -c hz6", 1]], "expect": "deny", "reason": "creating 'hz6'"}

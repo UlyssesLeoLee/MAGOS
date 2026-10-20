@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `e1c0e5432ba0f969d5ac3bca4842e1a6351a87bf8b8ec74f32179527961c0495`
+Source-SHA256: `b60d2552f7e5bd2e6a7fd7a5499f3b7fceb3b6e1dab038919fc797920e6ead8a`
 
 ## Responsibility
 
@@ -74,7 +74,12 @@ The file holds seven cooperating parts.
    (`FOO=1 sh`, `env FOO=1 bash`, `sudo -E sh`, `command sh`, `doas -u <user> sh`). Command text longer than 200,000
    characters is not inspected: it counts as an unparseable creation and, once claims or the git layer exist, as a
    protected command. Every pattern runs in time linear in the command length: each word a pattern reads excludes `|`,
-   `;` and `&`, and has one reading; the lexer reads each character once. The walk of one command line, nested text and
+   `;` and `&`, and has one reading; the lexer reads each character once. A directory spelling longer than 4,096
+   characters is an unknown directory: a chain of relative `-C` values or `cd` targets never grows a path past that
+   length, so a line of 200,000 characters of `git -C a/b -C a/b ...` costs time linear in its length (the creation after
+   it is judged against an unknown directory and denied `UNPARSEABLE` where lanes exist). The walker counts the open
+   groups, brace blocks and compound commands per kind, so a closer finds its opener in constant time and a line of
+   98,000 nested parentheses or braces is walked in linear time, in bash and in PowerShell. The walk of one command line, nested text and
    every further state included, is bounded by a budget of 1,600,000 characters (eight times the inspection limit;
    walking one command in one further state counts 128, and walking one substituted text in one state for the states it
    leaves counts 1,024); a line that exceeds it is denied under the overflow rule below.
@@ -117,7 +122,7 @@ The file holds seven cooperating parts.
      `gt`, `claude`, `eval`, `iex`, `Invoke-Expression`, `source`, `-enc`, `base64`, or a `.sh`, `.bash` or `.ps1`
      file, or holds a word that runs a script or a shell (`.`, `bash`, `sh`, `zsh`, `dash`, `ksh`, `powershell`,
      `pwsh`, `cmd`, also with `.exe` and behind a path) standing where a command may start: first in a command, after
-     prefix assignments, keywords (`then`, `do`, ...) and a PowerShell `$name =`, or anywhere after a wrapper (`env`,
+     prefix assignments, redirections, keywords (`then`, `do`, ...) and a PowerShell `$name =`, or anywhere after a wrapper (`env`,
      `sudo`, `timeout 5`, `xargs`, ...), whose program follows its options, or right after the `-exec` or `-execdir` of
      `find`. A runner's name in the arguments of another
      command (`ls .`, `echo sh`) is no gate. So `. ./mk`, `bash ./mk`, `$(. ./mk)`, `$(bash ./mk)` and a here-document
@@ -125,6 +130,31 @@ The file holds seven cooperating parts.
      (a quoted string is one word, a quote that never closes belongs to no word) and in one more pass over the text with
      its quotes removed, so that a quote the shell reads as a literal (`echo \"; bash ./mk`) hides no word; a text longer
      than 200,000 characters is walked, and the walk refuses it as too long to inspect.
+   - Redirections. The lexer reads a redirection of the shell as a word of its own, marked as such, in bash, PowerShell,
+     cmd and a shell the hook cannot name: an operator written outside quotes and escapes, with an optional file
+     descriptor in front (`2>`, `3>&1`; in bash and a shell the hook cannot name a variable name in braces, `{fd}>f`;
+     in PowerShell the stream `*>`), among `>`, `>>`, `>|`, `<`, `<<`,
+     `<<-`, `<<<`, `<>`, `>&`, `<&`, `&>` and `&>>` (the `&` of `>&` and `<&` ends no command in any shell, and the `&`
+     of `&>` and the `|` of `>|` end none in bash and in a shell the hook cannot name, so `2>&1`, `>&2`, `&>f` and
+     `>|f` stay in one word, while `|&` and `&&` still end a command), followed by its target in the same word (`>f`,
+     `2>&1`, `<<EOF`, `<<<text`, `>$null`) or
+     else in the next word (`> f`, `>& 2`, `<< EOF`, `<<< text`). An operator written inside a word without a blank
+     before it ends the word there (`git>/dev/null switch` is `git`, `>/dev/null`, `switch`), except right after a
+     number that makes the whole word so far (`2>f`), inside `${..}`, `$(..)` and `(..)` of a word, and for `<(` and `>(`,
+     which are substituted text and no redirection. A quoted or escaped word (`'>x'`, `\>x`, `">"`) is no redirection.
+     A redirection is no word of the command it stands in: it is skipped, with its target when that is the next word,
+     before the program word of a command (after prefix assignments, keywords and wrappers as well: `>/dev/null git
+     switch -c x`, `2>&1 bash ./mk`, `FOO=1 >f git ...`, `time >f git ...`), between `git`, `gh`, `gt` or `claude` and its
+     subcommand and between the global options of git and their values (`git -C . >/dev/null switch -c x`, `git -C
+     >/dev/null . switch -c x`), and among the words of every git invocation, so the subcommand, the options and the
+     names are those git is handed (`git branch -m old new >/dev/null` creates `new`; `git update-ref >/dev/null
+     refs/heads/x HEAD` and `git symbolic-ref 2>/dev/null HEAD refs/heads/x` create `x`; `git switch -c >/dev/null x`
+     creates `x`). A word that is no redirection is never skipped, so `git -C '>' switch -c x` still reads `>` as the value
+     of `-C`, and `git branch '>x'` creates `>x`. The input redirections of an `update-ref --stdin` stay readable as its
+     sources. The text a shell is told to run is read behind redirections as well (`bash -c >/dev/null 'git switch -c
+     x'`, `sh 2>&1 -c ...`). The word gate skips the same words (`>/dev/null bash ./mk`, `2>&1 . ./mk` are walked), the
+     alias check finds the subcommand behind them (`git 2>/dev/null nb x`), and the tamper filter finds the program behind
+     them (`2>/dev/null rm .git/hooks/reference-transaction`).
    - Git invocations. The global options of git that take a separate value (`-C`, `-c`, `--git-dir`, `--work-tree`,
      `--namespace`, `--exec-path`, `--config-env`, `--attr-source`, `--super-prefix`, `--list-cmds`, `--shallow-file`)
      are skipped together with their value, so the word after the value is the subcommand. Short options are read the way git
@@ -137,7 +167,15 @@ The file holds seven cooperating parts.
      when a short-option word holds `m`, `M`, `c` or `C` before any letter that takes a value (`-mf`, `-fm`, `-cf`, `-Cf`,
      `-qm`), or when a long option of at least two letters is a prefix of exactly one of `git branch`'s long options
      and that option is `--move` or `--copy` (`--mo`, `--mov`, `--cop`; `--co` names several options and is no
-     rename); the last positional word is then the new branch. The creating long options of `git switch` (`--create`,
+     rename); the last positional word is then the new branch, whatever other option stands beside it (`-mr a b`,
+     `-m -r a b`, `-m -a a b` and `-c -r a b` create `b`). The letters of a short-option word are read from left to
+     right, and at the first letter that takes a value (`u`, and `t`, whose tracking mode is the rest of its word) the rest of the
+     word is that value (`-tdirect b main` creates `b`, `-uorigin/main` sets an upstream). `git branch` creates nothing
+     when it does not rename or copy and a short-option word holds `d`, `D`, `l`, `r`, `a` or `u` before any other letter
+     that takes a value (`-d`, `-df`, `-Dr`, `-rd`, `-fd`, `-qd`, `-vd`, `-vvd`, `-vu <upstream>`, `-lr`), or a long option
+     lists, deletes or sets an upstream (`--delete`, `--list`, `--show-current`, `--contains`, `--merged`, `--no-merged`,
+     `--unset-upstream`, `--points-at`, `--edit-description`, `--set-upstream-to`); a word that holds only
+     letters that take no value and are none of these (`-f`, `-q`, `-v`) leaves the invocation a creation. The creating long options of `git switch` (`--create`,
      `--force-create`, `--orphan`) and of `git checkout` (`--orphan`) match from their second letter (`--cr`, `--or`).
      `git branch --sort <key>` and `git branch --format <format>` (and `--so`, `--sor`, `--form`, `--forma`) take
      their value as the next word and do not select list mode: the value is no branch name, the word after it is. `git push` into a local repository creates the
@@ -156,14 +194,36 @@ The file holds seven cooperating parts.
      dynamic creation. The command text git itself runs is inspected like `bash -c` text, in the directory and GIT_DIR
      state of that invocation: the value of `git rebase -x`, `--exec <cmd>` and `--exec=<cmd>` (also written with a
      unique prefix of `--exec` of at least two letters, `--ex` and `--exe`, with the value after `=` or as the next
-     word), and the words after `git bisect run`. A ref under `refs/heads/` names a branch whatever the case of `heads`
-     (`refs/HEADS/x`, `refs/Heads/x`), on every platform, because the case-insensitive file systems of Windows and
-     macOS store such a ref as the branch: `git update-ref`, `git symbolic-ref`, the destination of a fetch, pull or
-     push refspec and an `update-ref --stdin` instruction read `heads` in any case. `git update-ref` reads its options
+     word), and the words after `git bisect run`. A ref under `refs/heads/` names a branch whatever the case of `refs` and `heads`
+     (`refs/HEADS/x`, `REFS/heads/x`, `Refs/Heads/x`), on every platform, because the case-insensitive file systems of
+     Windows and macOS store such a ref as the branch. One pattern of ASCII letters reads it, shared by the host hook
+     and the git-layer hook (a letter outside ASCII is no part of it: `refs/headſ/x` is no branch), for `git
+     update-ref`, `git symbolic-ref`, the destination of a fetch, pull or push refspec and an `update-ref --stdin`
+     instruction. The destination of a refspec is read on its raw text: `refs/heads/<name>` (in any case) names the
+     branch `<name>` even when `<name>` begins with `refs/` (`HEAD:refs/heads/refs/x` creates `refs/x`), any other
+     destination that begins with `refs/` is a non-branch ref (`refs/tags/t`, `refs/refs/x`, `refs/notes/x`) that
+     creates no branch, and a bare destination is a branch. A push refspec with an empty source (`:refs/heads/x`,
+     `+:x`) deletes its destination and creates nothing; a fetch or pull refspec with an empty source reads it as `HEAD`
+     and creates the destination. A name is dropped from a record only when git certainly refuses it: an ASCII space or
+     control character, `~`, `^`, `:`, `?`, `*`, `[`, `\`, `..`, a leading or trailing `/`, a `.lock` suffix.
+     Whitespace and letters outside ASCII (U+00A0, U+2003, U+3000, U+0085) belong to a name git accepts. A leading dash
+     refuses a name for `git branch`, `git switch`, `git checkout`, `git worktree add -b` and `git stash branch` (git
+     reads it as an option or refuses it), but not for `update-ref`, `symbolic-ref`, `fetch`, `pull` and `push`, whose
+     operand is a full ref (`refs/heads/-x`, `main:-x`): those names are creations. `git update-ref` reads its options
      as git does: `-m` takes the rest of its word, or else the next word, as its value (`-m -d` writes the message
      `-d` and deletes nothing), a short-option word deletes when it holds `d` before any `m` (`-d`, `-zd`, `-dm <msg>`),
      `--stdin` is also written as a unique prefix (`--s`, `--std`), and the first positional word is the ref it
-     writes. Aliases: when any git invocation of the line names a subcommand that is not a built-in git
+     writes. A first positional word that is dynamic (`$ref`, `"$REF"`, `${R}`, `$(..)`) and may name a branch makes
+     the creation dynamic, as every other creating verb does with a dynamic name; only a word that begins with a
+     literal `refs/` namespace other than `heads` (`refs/tags/$T`) names no branch. Behind `xargs` the words that the
+     input supplies may stand in any position, so there every positional word that is not a literal ref outside
+     `refs/heads/` or `HEAD` makes the creation dynamic (`xargs -I{} git update-ref {} HEAD`). A delete never creates.
+     `git symbolic-ref` reads `-m` the same way (it takes the rest of its word, or else the next word, as the reason;
+     `-qm <reason>` too) and `--` ends its options, so `git symbolic-ref -m why HEAD refs/heads/z` creates `z`.
+     `git symbolic-ref HEAD <target>` creates the branch a target under `refs/heads/` names, and `git symbolic-ref
+     refs/heads/<name> <target>` creates `<name>`; with two positional words, a first word that is dynamic and may name
+     a branch, or `HEAD` followed by a dynamic target that may name one (`git symbolic-ref HEAD $B`), is a dynamic
+     creation. Aliases: when any git invocation of the line names a subcommand that is not a built-in git
      command, the aliases of the session directory's repository (with the user's global aliases git reports there) are
      loaded and every git invocation of the line is checked against them, whatever else the line creates. The
      subcommand of each `git` word for this test is its first word after the global options and the values of those
@@ -206,12 +266,36 @@ The file holds seven cooperating parts.
      without regard to case, so every case of `GIT_DIR` and `GIT_COMMON_DIR` is a redirect, while a bash removal ends
      only the spelling it names. `update-ref --stdin`, `gh pr checkout` and the other auto-named tools are judged in the
      directory and `GIT_DIR` state of their own invocation, like any git invocation; an `update-ref --stdin` whose
-     input the hook cannot see counts as a dynamic creation. The instructions of an `update-ref --stdin` are read from
-     the text of the line: the name after `create refs/heads/` or `update refs/heads/` ends at whitespace, a quote or a
-     backslash. A backslash right after the name that is `\0` not followed by an octal digit, `\n`, `\t` or `\r` ends
-     it as the separator `printf` writes (`printf 'create refs/heads/x\0HEAD\0'` creates `x`); any other backslash after
-     it, an empty name and a name git refuses make the record dynamic, because `printf` or `echo -e` may turn the text
-     into another name (`printf 'create refs/heads/a\x62c HEAD'` creates `abc`). `popd` and `Pop-Location` return to the directory the
+     input the hook cannot see counts as a dynamic creation. The instructions of an `update-ref --stdin` are read only
+     from the sources of that invocation that the hook can see, as the words the shell hands over (quotes removed,
+     `printf 'update refs/heads/main''x HEAD'` is `update refs/heads/mainx HEAD`): a here-string (`<<< word`,
+     `<<<word`); the bodies of the here-documents of the line (`<<EOF`); and, when a pipe feeds the invocation, the
+     words of the command directly before the pipe if that is `echo`, `printf`, `Write-Output` or `Write-Host`, joined
+     with spaces (also a single string word that holds a blank, the text a PowerShell string expression writes), or a
+     `cat` whose only operands are here-documents or here-strings. Every other source is unreadable and makes the
+     creation dynamic: a `<` redirect (`< file`, `<file`, `0< file`, `<&3`, `< <(..)`, also glued to the option:
+     `--stdin<file`), a pipe from any other command (`cat file |`), from a group, a loop or a substitution, and no input
+     at all. A readable source that holds an expansion is unreadable as well: a word with `$`, a backtick, `%`, `(` or
+     `)` (a `printf` format with `%s`), a here-document body with `$` or a backtick. The text that remains is accounted
+     for by plainly read names, or the record is dynamic. At least one instruction word (`create`, `update`, `delete`,
+     `verify`, `option`, `start`, `prepare`, `commit`, `abort`, also the end of `symref-create` and `symref-update`)
+     must stand in it. Every backslash must begin one of the separators `printf` writes (`\n`, `\t`, `\r`, and `\0` not
+     followed by an octal digit: `printf 'create refs/heads/x\0HEAD\0'` creates `x`); any other escape (`\x62`,
+     `\142`, `\\`) lets `printf` or `echo -e` write another text. Every `create` and `update` word (a verb ends at a
+     character that is no letter, digit, `_` or `-`, so `refs/heads/update-docs` holds none) must be followed by blanks
+     and one of: `refs/heads/<name>`, in any case of `refs` and `heads`, whose non-empty name git accepts and ends at a
+     blank, a newline, the end of the text or one of those separators, which creates `<name>`; a literal ref outside
+     `refs/heads/` (`refs/tags/v1`, `refs/notes/x`); `HEAD` or another pseudo-ref of capital letters and underscores.
+     Anything else is not plainly read and makes the record dynamic: a quote (a C-quoted name `update "refs/heads/q"
+     HEAD`), `$`, `%`, a brace or parenthesis, a backslash, an empty name, a name git refuses, a word that is no ref.
+     So a verb, a prefix or a name written with escapes or `printf` formats, and a name that a quote continues, never
+     pass as a plain name, and no other verb counts for one that is not plainly read. A git invocation the walk cannot
+     name, `$g update-ref --stdin` (a dynamic or `git` program word in command position, behind prefix assignments and
+     wrappers written with or without a path, then git's global options, then `update-ref`, and a `--stdin` word after
+     it; also the program `git-update-ref` with a `--stdin` word), is read in the same way in every directory and
+     redirect state of the line. A command that only mentions `update-ref --stdin` and an instruction (a commit message, an `echo` operand,
+     a `git grep` pattern, a here-document written to a file, documentation) runs no `update-ref` and is not read.
+     `popd` and `Pop-Location` return to the directory the
      line's own `pushd` or `Push-Location` left; without one the directory is unknown.
    - A line is walked in a set of states, each a directory, the `GIT_DIR` and `GIT_COMMON_DIR` values and a `pushd`
      stack. The line is a list of commands joined by `&&` and `||` and ended by `;`, a newline or `&`; a parenthesised
@@ -310,8 +394,9 @@ The file holds seven cooperating parts.
    relative `tool_input.workdir` or `tool_input.cwd` is joined to the payload's `cwd` (else to the process directory).
 6. **Git layer.** A pure POSIX `sh` `reference-transaction` hook, embedded as a constant and written by `arm`. It needs
    no Python and vetoes the creation of any branch that has no claim, whatever tool ran Git: a ref under `refs/heads/`
-   and a HEAD set to such a ref (an unborn or orphan branch), with `heads` matched in any case (`refs/HEADS/x` is the
-   branch `x` on a case-insensitive file system; elsewhere it needs a claim for `x` as well). A branch
+   and a HEAD set to such a ref (an unborn or orphan branch), with `refs` and `heads` matched in any case (`refs/HEADS/x`
+   and `REFS/heads/x` are the branch `x` on a case-insensitive file system; elsewhere they need a claim for `x` as well;
+   the arms are written from the same pattern the host hook reads). A branch
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
@@ -749,12 +834,19 @@ Version 1.0.2 is a security release of the guard. Relative to the 1.0.1 product 
 
 Version 1.0.3 is a hardening release of the guard (`GUARD_VERSION` 1.0.3). Relative to the 1.0.2 product it:
 
-- reads an `update-ref --stdin` name up to a backslash, takes `\0`, `\n`, `\t` and `\r` after it as separators, and
-  makes the record dynamic for any other escape, an empty name or a name git refuses;
+- reads the instructions of an `update-ref --stdin` only from the sources of that invocation (here-string,
+  here-documents, a directly piped `echo`, `printf` or `cat` of a here-document), takes `\0`, `\n`, `\t` and `\r` as
+  separators, and makes the record dynamic unless every `create` and `update` instruction is a plainly read name:
+  an unreadable source, an expansion, any other escape, a quote, an empty name or a name git refuses make it dynamic;
+  a command that only mentions `update-ref --stdin` is not read;
+- reads `refs/heads/` in any case of `refs` and `heads` for `update-ref`, `symbolic-ref`, refspec destinations and
+  `update-ref --stdin` with one pattern shared by the host hook and the git-layer hook; reads `refs/heads/refs/x` as
+  the branch `refs/x`; reads `symbolic-ref -m <reason>` and the dynamic ref words of `update-ref` and `symbolic-ref`
+  (also behind `xargs`) as dynamic creations; ignores a push refspec with an empty source; keeps the names git accepts
+  (a leading dash for `update-ref`, `symbolic-ref`, `fetch`, `pull` and `push`, whitespace outside ASCII);
 - reads a program word with a backslash, a backtick or a caret in a shell it cannot name as the program it spells
   without them, with dynamic creations and possible changes;
-- reads `git rebase --ex` and `--exe`, `git --shallow-file <v>`, `git update-ref -m <v>` and `--std`, and `heads` in
-  any case under `refs/` (host hook and git layer);
+- reads `git rebase --ex` and `--exe`, `git --shallow-file <v>`, `git update-ref -m <v>` and `--std`;
 - finds the subcommand of every `git` word after the values of the global options for the alias check, in one pass;
 - runs `Start-Process` git in its `-WorkingDirectory`, and reads the `-ArgumentList` and `-WorkingDirectory` prefixes
   and colon forms;
@@ -766,12 +858,18 @@ Version 1.0.3 is a hardening release of the guard (`GUARD_VERSION` 1.0.3). Relat
   shell;
 - keeps records and inner-text states that differ only in a missing directory's prior directory or followed chain;
 - lets the launcher pass on from `py.exe` exiting 103 or 112 in both halves;
+- reads the redirections of the shell as words of their own and skips them before the program word, between a program
+  and its subcommand, among the words of a git invocation, in the word gate, the alias check and the tamper filter, so
+  a creation behind `>/dev/null`, `2>&1` or `&>f` is judged; reads `2>&1`, `>&2`, `&>f` and `>|f` as one word;
+- reads the bundled short options of `git branch` the way git reads them, so `-df`, `-dr` and `-vd` are deletions and
+  `-mr`, `-m -r` and `-c -a` are renames and copies;
+- bounds a chain of relative `-C` values and the nesting of groups and brace blocks to time linear in the command length;
 - honours a claim stored under a name the Windows alias rule refuses when its branch is created, and names such
   claims in `list` and `doctor`.
 
 Compatibility: claim files of format 1 written by 1.0.0 and 1.0.1 are read unchanged, and line 1 of every claim stays
 `state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule
-refuses allows the creation of its branch. The git-layer hook reads `heads` in any case, so `doctor` reports an armed
+refuses allows the creation of its branch. The git-layer hook reads `refs/heads/` in any case of `refs` and `heads`, so `doctor` reports an armed
 repository as different from this version until `arm` runs again. The Codex and Hermes copies under `~/.magos/guard`
 receive 1.0.3 only when the user re-runs `install`; `doctor` reports a stale copy with the refresh command, and armed
 repositories are refreshed by re-running `arm`. Exit code 18 is new. A Hermes entry points at the Hermes plugin
@@ -812,6 +910,121 @@ Known limits, stated in `references/lane-split.md` section 12:
   refs, `packed-refs` and config of a bare repository's git directory written by an absolute path, the Claude plugin
   directory the Claude hooks run from, a guard home chosen with `--home` that `MAGOS_HOME` does not name,
   interpreters and file tools.
+- The hooks are a best-effort detector of the text of one command line: they judge the words and routes they are written
+  to read, and the classes below are the spellings and routes that reading does not cover. The Git backstop does not
+  read the command line. In a repository the user has armed (`arm`), it vetoes the creation of a branch (a ref under
+  `refs/heads/`, or a `HEAD` set to a branch that does not exist) without a claim whatever tool ran the git binary,
+  within its own limits above (a branch rename or copy, a `core.hooksPath` or `GIT_CONFIG_*` override, a
+  `GIT_COMMON_DIR` that names another repository, direct `.git/refs` writes, libgit2 and JGit, clones). For every class
+  below the user does the same three things: keeps the repositories where lanes live armed, runs the commands that
+  matter through a script they have reviewed (the guard cannot read what a script does through the routes below), and
+  stays on the lane discipline of the skill (plan before creating, never work around a denial); a class whose remedy
+  differs says so.
+- Aliases that git reads from a place the hook does not read: `-c alias.<name>=` written in another letter case (git
+  folds the name) or naming a built-in (git ignores it, the hook expands it), `--config-env=alias.<name>=<VAR>`,
+  `GIT_CONFIG_COUNT` with `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_GLOBAL`
+  and `GIT_CONFIG_SYSTEM`, `-c include.path=`, an alias that `git config alias.<name>` defines earlier on the same line,
+  the local aliases of a repository other than the session directory's (`git -C <other> <alias>`, `cd <other> && git
+  <alias>`, `--git-dir`), and every alias when the session directory is no repository (the aliases are loaded for the
+  session directory's repository, with the global aliases git reports there). Also not followed: a chain of more than
+  three aliases or nested shells, and a `!` alias that calls another alias; the alias check does not run when git is
+  spelled `git.exe`, `Git`, a path to `git.exe` or a variable (`g=git; $g <alias>`), and an alias load that runs out of
+  its Git budget lets an alias creation through. The backstop vetoes the ref whatever alias git expanded: keep armed the
+  repository the line reaches (for `-C`, `cd` and `--git-dir`, the other repository).
+- Command text that git runs from its configuration or environment (`-c core.fsmonitor=`, `core.editor`,
+  `sequence.editor`, `diff.external`, `GIT_EDITOR`, `GIT_SEQUENCE_EDITOR`, `GIT_EXTERNAL_DIFF`) and the text of `git
+  rebase --exec` or `git bisect run` whose program word is dynamic (`-x "$(echo git branch x)"`) are not inspected. Keep
+  the repository armed: the backstop vetoes the branch that text creates.
+- Wrappers and program spellings outside the walker's lists are not read: a wrapper the walk does not unwrap (`ionice`,
+  `flock`, `taskset`, `chrt`, `fakeroot`, `coproc`, `eatmydata`, `busybox`, ...), a listed wrapper written with a path
+  or `.exe` (`/usr/bin/env git ...`, `env.exe`, `/usr/bin/nohup`, `/usr/bin/xargs`, `/usr/bin/sudo`), a program word
+  written with ANSI-C or locale quoting (`$'g\x69t'`, `$"git"`), split by a backslash and a newline (`g\<newline>it`, in
+  bash and in a tool whose shell is not known), spelled by an empty expansion or a command substitution (`g${x}it`,
+  `$(echo git)`), held in a literal variable (`x=gi; ${x}t switch -c y`, `b=bash; $b ../mk`) or computed (`g=$(command
+  -v git); $g ...`, `$git = (Get-Command git).Source; & $git ...`), run by a shell outside the named list (`fish`,
+  `csh`, `tcsh`, `busybox sh`, `pwsh-preview`), or found through `PATH`. Run the commands that matter through a script
+  you have reviewed, and keep the repository armed: only its backstop stops the branch they create.
+- In a tool whose shell the hook cannot name (the Codex and Hermes shell tools, MCP command tools), a backslash in the
+  program word, the subcommand or the branch name of a git invocation makes the creation dynamic, but a backslash inside
+  any other word is compared as written: an option word (`-\C <repo>`, `--git\-dir=<repo>`, `-c al\ias.x=branch`,
+  `--cr\eate`), a sub-subcommand (`worktree a\dd`, `stash b\ranch`) or the ref of `update-ref` (`refs/he\ads/x`), so the
+  creation, or the repository it reaches, is not judged. Keep the repository armed.
+- Text a shell is told to run is not walked in these routes: text inside a process substitution (`cat <(git switch -c
+  x)`, `diff <(git status) <(git switch -c x)`), text quoted, echoed or fed by a here-string into a shell when it names
+  no git (`printf '. ../mk\n' | sh`, `sh <<< 'bash ../mk'`), a script run directly without a `.sh`, `.bash` or `.ps1`
+  name (`./mk`) and a script another command feeds (`cat ../mk | bash`, `. <(cat ../mk)`). Read such a script before it
+  runs, and keep the repository armed.
+- A `cd` into a directory that an earlier command of the line creates is followed only in a `&&` chain of `mkdir`, `git
+  init`, `git clone` and `git worktree add`; after `;`, a newline, `&`, `install -d`, `ln -s` or `cp -r` the commands
+  after it are judged where the shell was before the `cd` (`mkdir L/nd; cd L/nd; git switch -c x`, run from a directory
+  outside the repository `L`). Create the directory in a call of its own, or chain the commands with `&&`, and keep the
+  repository armed.
+- A push or fetch whose destination the hook does not read: a fetch that writes `refs/heads/*` through `--refmap` or `-c
+  remote.<name>.fetch=` (`git fetch --refmap=refs/heads/b:refs/heads/b <repo> b`), a push into another local repository
+  whose refspec has no colon (`git push ../R newb`, `+newb`, `refs/heads/newb`, `HEAD`) or that is `--all`, `--mirror`
+  or `--branches`, and a push whose repository argument a bundled short option with a value displaces (`git push -fo x .
+  HEAD:b`, `-uo x`); only a refspec with a colon names its destination. A push to a remote name is not judged either
+  (above). Arm every repository lanes are made in, the receiving one of a push or fetch included: its backstop vetoes
+  the ref.
+- A symbolic ref created outside `refs/heads/` that points into it (`git symbolic-ref refs/x/alias refs/heads/z`, then
+  `git update-ref refs/x/alias HEAD`) writes the branch through the alias; the host hook does not follow aliases. Keep
+  the repository armed: its backstop vetoes the write.
+- A substituted text with a group inside it is not read: `$(git switch -c x $(git rev-parse HEAD))` in bash, `( .. ( ..
+  ) )`, `@( .. ( .. ) )` and `$( .. $( .. ) )` in PowerShell (also inside a double-quoted string); only a group with no
+  parenthesis inside it is judged. Keep the repository armed.
+- PowerShell text is read with approximations: a `\"` or a doubled backtick before `"` in a double-quoted string is read
+  as an escaped quote (PowerShell ends the string there: `Write-Output "C:\tmp\"; git switch -c x`), a backslash at the
+  end of a line joins the next line (PowerShell continues a line only with a backtick), and a here-string whose body
+  holds an apostrophe or a double quote and a block comment `<# .. #>` (also one between the words of a command, `git
+  <##> switch -c x`) are read as commands and quotes, so the quote tracking is off for the rest of the line and the
+  creation after them goes unjudged; a command-shaped line inside a here-string or a block comment is judged as a
+  command and denied although nothing runs it. Keep the repository armed.
+- PowerShell code built from a string and run through a script block (`& ([scriptblock]::Create('git switch -c x'))`,
+  `.Invoke()`, `$ExecutionContext.InvokeCommand.InvokeScript('..')`) and a program called by a dot (`. git switch -c x`)
+  are not read (`iex`, `Invoke-Expression`, `{ }` blocks, `Invoke-Command` and `Start-Job` are). Keep the repository
+  armed.
+- The switches of `cmd` other than a lone `/c` or `/k` (`/r`, `/d/c`, `/q/c`, `/cgit`, `/c"git .."`), also in a Codex
+  argv, and cmd's own `start` (`cmd /c start /b git switch -c x`) are not read. Keep the repository armed.
+- What `Start-Process` starts is read only when the word `git` itself is among its words: a shell it starts
+  (`Start-Process powershell -ArgumentList '-Command "git switch -c x"'`, also `cmd`, `bash` and `pwsh`) and a call
+  through splatting (`Start-Process @p`) are not read, and the `-ArgumentList` of `Start-Process git` is cut at its
+  commas and read with shell quoting, so a name with a comma or quotes is judged as another name than the one git
+  receives (a registered claim for `a` then licenses `a,b`). Keep the repository armed.
+- The options of a child shell are read in part: `pwsh -WorkingDirectory <dir>` (also `-wd`) runs its text in `<dir>`,
+  which the guard judges in the session directory, `powershell -File <script>` is read only when the script is among the
+  first four words that are no option (four option values before it hide it), and `env -S` with bundled short options
+  before the `S` (`env -vS`, `env -iS`) or the `\_` separator (`env -S 'git\_switch\_-c\_x'`) is not split. Keep the
+  repository armed.
+- The tamper filter does not follow these routes: user-only commands (`disarm`, `override`, `arm`, `install`) pass
+  through `Start-Process` comma and array lists (`Start-Process py -ArgumentList 'C:\x\magos_guard.py','disarm'`), a
+  launcher followed by `-ArgumentList` or a variable, an argument split by a block comment (`py magos_guard.py <##>
+  disarm`) and `env -S`, and writes to the guard's state (`.git/hooks`, refs, config) pass through `cmd /r`, `/d/c` and
+  `/cdel`, a shell that `Start-Process` starts, `env -S`, `iex` and `ScriptBlock::Create`, besides the lexer
+  approximations above; a command started in a new console also passes the console gate. This is the one class where the
+  backstop itself can be removed, so the user runs `doctor` (an armed repository must report `git layer: installed`; the
+  audit logs record the `arm`, `disarm` and `install` runs that went through the guard) and re-runs `arm` in their own
+  terminal when it does not.
+- An MCP command tool whose command is not a string under `command` is allowed without parsing: a list (`{"command":
+  ["git", "switch", "-c", "x"]}`), `command` with `args`, or another key (`cmd`, `script`, `argv`, `commandLine`,
+  `input`); a Codex or Hermes shell tool with an argv list is read, and an MCP tool named for sessions, worktrees or
+  branches is still judged by its name. Keep the repository armed.
+- Judged as a creation or a protected command by their text or name, so these calls are denied although they create
+  nothing: an `Agent`, `Task` or `Workflow` prompt or script that mentions `isolation: worktree`, quoted text with a git
+  creation word beside a here-string or a process substitution (`grep "git switch -c x" <(git log)`, `cat <<< "git
+  switch -c x"`), an MCP tool named `get_branch`, `delete_branch` or `get_worktree_status`, the help forms of `gh pr
+  checkout`, `gt create` and `claude -w`, the one-argument read `git config magos.<key>`, `git branch` with an
+  abbreviated long option for a deletion or a listing (`--del`, `--li`), git options that print and exit (`git --version
+  branch x`), and a word that names a program after a wrapper and a redirection operator written alone (`env > git
+  switch -c x`). The denial stops only that call: report it, and the user runs the command in their own terminal.
+- An `update-ref --stdin` whose input is a file, another command or text with an expansion is denied as a dynamic
+  creation even when it only deletes or writes refs outside `refs/heads/`, because the hook cannot read it; it reads the
+  instructions only when a here-document, a here-string or an `echo` or `printf` piped into it feeds them.
+- The sh half of the launcher (`hooks/run-guard.cmd`) reads its input line by line, so a payload of tens of thousands of
+  raw lines costs quadratic time (20,000 lines cost about 18 to 22 s, against the hook's 25 s timeout; the host decides
+  what a hook that times out means; section 12 of `references/lane-split.md` lists the hosts that fail open). A Claude
+  Code payload carries its command in a JSON string, which cannot hold a raw newline, so an agent cannot cause it; only
+  a host that pretty-prints its payload can, and it should send the payload on one line. The cmd half hands its input to
+  Python directly.
 - `doctor` run from the copy compares it with the file `VERSION.json` names as its `source`; a plugin that installs
   each version into a directory of its own leaves that file at the copy's own version, so a newer plugin is not seen
   from the copy.
