@@ -6,6 +6,7 @@
   "also": [
     "branch merged only locally",
     "remote default",
-    "moved remote tip"
+    "moved remote tip",
+    "--push"
   ]
 }

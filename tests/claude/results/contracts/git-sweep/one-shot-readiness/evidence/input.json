@@ -1,0 +1,23 @@
+{
+  "arguments": [
+    "<branch>"
+  ],
+  "apply": false,
+  "verdicts": [
+    "ONE_SHOT",
+    "PARTIAL",
+    "BLOCKED"
+  ],
+  "run_states": [
+    "COMPLETE",
+    "PARTIAL"
+  ],
+  "also": [
+    "worktree whose only blocker is ignored files",
+    "remote branch merged only into the local branch",
+    "detached worktree or worktree holding a kept branch",
+    "several failed gates",
+    "--remote not listed by git remote",
+    "/GitConverge gate failures"
+  ]
+}

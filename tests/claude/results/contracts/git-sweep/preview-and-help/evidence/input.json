@@ -4,6 +4,7 @@
   ],
   "also": [
     "--help",
-    "--remote <name>"
+    "--remote <name>",
+    "--push"
   ]
 }

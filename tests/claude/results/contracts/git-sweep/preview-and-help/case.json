@@ -12,27 +12,46 @@
     ],
     "also": [
       "--help",
-      "--remote <name>"
+      "--remote <name>",
+      "--push"
     ]
   },
   "expected": [
-    "Help stops before any inspection.",
-    "Default run previews the converge plan and remote candidates without fetching or contacting the remote."
+    "Help stops before any inspection and lists --push and a --remote that must be listed by git remote.",
+    "Default run previews the converge plan and remote candidates without fetching or contacting the remote, and only predicts the push."
   ],
   "checks": [
     {
       "file": "commands/GitSweep.md",
       "contains": [
-        "Usage: `/GitSweep <branch> [--apply] [--discard-ignored] [--remote <name>] [--lang <language>] [--help]`",
+        "Usage: `/GitSweep <branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]`",
+        "argument-hint: \"<branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]\"",
         "nothing is changed and the network is not contacted",
-        "then stop before any tool call, file read, skill load, or repository inspection"
+        "Without `--apply` the preview only predicts the push, and it gives that prediction whether or not `--push` was typed. A published branch cannot be undone by this command.",
+        "then stop before any tool call, file read, skill load, or repository inspection",
+        "- `--remote <name>`: The remote whose merged branches are swept (`origin` when absent). It must be listed by `git remote`; otherwise the command stops before anything is changed and names the remedy."
+      ]
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "- Hermes: `/git-sweep <branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]`",
+        "- Codex: `$git-sweep <branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]`",
+        "nothing is changed and the network is not contacted",
+        "Without `--apply` the preview only predicts the push, and it gives that prediction whether or not `--push` was typed. A published branch cannot be undone by this command.",
+        "If `--help` is present, even with other arguments, answer from the inline Usage section above and stop before any tool call",
+        "- `--remote <name>`: The remote whose merged branches are swept (`origin` when absent). It must be listed by `git remote`; otherwise the command stops before anything is changed and names the remedy."
       ]
     },
     {
       "file": "references/commands.md",
       "contains": [
         "The preview does not contact the network and does not fetch",
-        "Run section 6 unchanged"
+        "Run section 6 unchanged",
+        "| `--push` | No | With `--apply`, after phase 1 and before the remote deletions, publish `<branch>` to the remote with one fast-forward push (**Publish step**)",
+        "Without `--apply` the preview only reports what the push would do.",
+        "It must be listed by `git remote`; the value is never used as a revision or a path.",
+        "and the sweep adds one: `--remote <name>` not listed by `git remote`."
       ]
     },
     {

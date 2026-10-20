@@ -14,38 +14,57 @@
     "also": [
       "branch merged only locally",
       "remote default",
-      "moved remote tip"
+      "moved remote tip",
+      "--push"
     ]
   },
   "expected": [
     "Deletes only SAFE_CANDIDATE remote branches whose tip is an ancestor of the remote default or origin/<branch>.",
-    "Leaves PENDING_PUSH, KEPT_NOT_MERGED, STALE and protected branches alone.",
-    "Uses only the lease-guarded single-branch delete push and never pushes commits or force-pushes."
+    "Leaves PENDING_PUSH, KEPT_NOT_MERGED, STALE and protected branches alone; a branch merged only into the local <branch> is PUSH_THEN_DELETE while the publish is predicted to run, in the preview with or without --push, and is deleted only after --push has published <branch> in the same run (it becomes SAFE_CANDIDATE); without --push the apply leaves it and reports \"kept: --push not typed\"; it is PENDING_PUSH only when the publish is not predicted to run or was skipped, failed or unconfirmed.",
+    "Deletes with only the lease-guarded single-branch delete push and, only with --push, the one fast-forward push of <branch>; it never pushes other commits or tags and never force-pushes."
   ],
   "checks": [
     {
       "file": "references/commands.md",
       "contains": [
         "git push --force-with-lease=refs/heads/<name>:<sha> <remote> :refs/heads/<name>",
-        "never push commits or tags; never force-push",
+        "never push commits or tags except the one fast-forward push of `<branch>` that `--push` makes; never force-push",
         "PENDING_PUSH",
+        "Each `PUSH_THEN_DELETE` candidate whose tip is an ancestor of that tip becomes `SAFE_CANDIDATE`; when the push was skipped, failed or unconfirmed, it is reported as `PENDING_PUSH` with that reason.",
         "never run `git remote prune`, `git fetch --prune`, or `git branch -d -r`",
-        "never delete a remote branch when phase 1 stopped"
+        "never delete the remote default, `main`, the target's remote branch, a branch with a long-lived role",
+        "never delete a remote branch when phase 1 stopped",
+        "PUSH_THEN_DELETE     its tip is an ancestor of the converged target but not of any survivor, and the publish step is predicted to run",
+        "without `--push` the apply leaves it and reports \"kept: --push not typed\"",
+        "A `PUSH_THEN_DELETE` branch is listed with its two ways forward",
+        "Phase 2 is `UNKNOWN` when the live `HEAD` names a branch other than the remote default, when a survivor's live tip differs from its remote-tracking SHA, or when a survivor is missing."
       ]
     },
     {
       "file": "commands/GitSweep.md",
       "contains": [
         "disable-model-invocation: true",
-        "never push commits or tags, never force-push",
-        "Stop on a conflict and delete nothing, locally or remotely."
+        "guarded by `--force-with-lease` on its recorded SHA",
+        "Never push other commits or tags, never force-push",
+        "A remote branch is deleted only when its tip is already contained in the remote's own copy of `<branch>` or its default branch.",
+        "`PENDING_PUSH`",
+        "(rerun with `--push`, or push `<branch>` yourself and run `/GitSweep` again)",
+        "Stop on a conflict and delete nothing, locally or remotely.",
+        "A branch merged only into the local `<branch>` is `PUSH_THEN_DELETE` while the push is predicted to run, in the preview with or without `--push`: with `--push` the run publishes `<branch>` first and then deletes it, and without `--push` the run leaves it on the remote and reports \"kept: `--push` not typed\" (rerun with `--push`, or push `<branch>` yourself and run `/GitSweep` again).",
+        "It is `PENDING_PUSH` when the push is not predicted to run (for example `<branch>` is the remote default, or the remote's `<branch>` is not an ancestor of the local one) or when the run skipped the push, or the push failed or was not confirmed: clear the condition the report names, then rerun (with `--push`, except when `<branch>` is the remote default, which the command never pushes)."
       ]
     },
     {
       "file": "skills/git-sweep/SKILL.md",
       "contains": [
+        "guarded by `--force-with-lease` on its recorded SHA",
+        "Never push other commits or tags, never force-push",
+        "A remote branch is deleted only when its tip is already contained in the remote's own copy of `<branch>` or its default branch.",
+        "`PENDING_PUSH`",
+        "(rerun with `--push`, or push `<branch>` yourself and run `$git-sweep` again)",
         "Stop on a conflict and delete nothing, locally or remotely.",
-        "never push commits or tags, never force-push"
+        "A branch merged only into the local `<branch>` is `PUSH_THEN_DELETE` while the push is predicted to run, in the preview with or without `--push`: with `--push` the run publishes `<branch>` first and then deletes it, and without `--push` the run leaves it on the remote and reports \"kept: `--push` not typed\" (rerun with `--push`, or push `<branch>` yourself and run `$git-sweep` again).",
+        "It is `PENDING_PUSH` when the push is not predicted to run (for example `<branch>` is the remote default, or the remote's `<branch>` is not an ancestor of the local one) or when the run skipped the push, or the push failed or was not confirmed: clear the condition the report names, then rerun (with `--push`, except when `<branch>` is the remote default, which the command never pushes)."
       ]
     },
     {

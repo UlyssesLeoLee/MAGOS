@@ -145,7 +145,8 @@
     {
       "file": "skills/git-sweep/SKILL.md",
       "contains": [
-        "- Codex: `$git-sweep <branch> [--apply] [--discard-ignored] [--remote <name>] [--lang <language>] [--help]`",
+        "- Codex: `$git-sweep <branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]`",
+        "short-description: \"收敛并清远端分支；$git-sweep BRANCH [--apply] [--push] [--help].\"",
         "`--help`:",
         "Examples:"
       ]
@@ -154,6 +155,7 @@
       "file": "skills/git-sweep/agents/openai.yaml",
       "contains": [
         "$git-sweep",
+        "[--push]",
         "[--help]"
       ],
       "pattern": "^  short_description: \"([^\"]+)\"$",

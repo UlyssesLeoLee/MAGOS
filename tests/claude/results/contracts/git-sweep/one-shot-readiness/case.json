@@ -1,0 +1,218 @@
+{
+  "id": "git-sweep/one-shot-readiness",
+  "skill": "git-sweep",
+  "feature": "A preview ends with a readiness verdict, the recommended command and the remedy of every remaining item; an apply ends with its run state",
+  "invocations": {
+    "claude": "/GitSweep agent/release",
+    "codex": "$git-sweep agent/release"
+  },
+  "test_object": {
+    "arguments": [
+      "<branch>"
+    ],
+    "apply": false,
+    "verdicts": [
+      "ONE_SHOT",
+      "PARTIAL",
+      "BLOCKED"
+    ],
+    "run_states": [
+      "COMPLETE",
+      "PARTIAL"
+    ],
+    "also": [
+      "worktree whose only blocker is ignored files",
+      "remote branch merged only into the local branch",
+      "detached worktree or worktree holding a kept branch",
+      "several failed gates",
+      "--remote not listed by git remote",
+      "/GitConverge gate failures"
+    ]
+  },
+  "expected": [
+    "The preview ends with ONE_SHOT (one run of the recommended command reaches the end state), PARTIAL (something remains that no flag lifts) or BLOCKED (a gate fails and nothing can run); the verdict judges the recommended command, not the command as typed.",
+    "The end state is only main and <branch> as local branches, the worktrees of the deleted branches removed, and every remote branch deleted or NOT_TOUCHED; it leaves out a worktree the command never touches (a detached one, or one that holds main or another kept branch), and the report lists it.",
+    "The recommended command is the /GitSweep <branch> --apply line, with --remote and --lang as given, and exactly the flags that lift something: --discard-ignored with the ignored paths it deletes listed, --push (whether or not it was typed) when a remote branch is PUSH_THEN_DELETE, with the publish prediction; a flag that lifts nothing is never recommended and none is added silently.",
+    "Every failed gate is reported at once with its remedy, in /GitConverge and in /GitSweep (a --remote that git remote does not list included), and every blocker, UNKNOWN and PREDICTED_CONFLICT is followed by the action that lifts it.",
+    "A PUSH_THEN_DELETE branch kept for want of --push has the remedy rerun with --push (or push <branch> by hand); a PENDING_PUSH branch has the remedy clear the condition the report names (publish the remote default by hand, fetch and merge a newer remote tip, or the rows of an UNKNOWN phase 2).",
+    "The apply report ends with the run state COMPLETE or PARTIAL and, for PARTIAL, a Next command: line with the exact line to run after the remedies, carrying --remote and --lang as given and --push when a branch ended PUSH_THEN_DELETE or PENDING_PUSH because the publish was skipped, failed or unconfirmed (not when <branch> is the remote default); the flags of the recommended command and of that line come in the order --apply, --discard-ignored, --push, --remote, --lang, and the line is left out when no rerun would change anything."
+  ],
+  "checks": [
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "### One-shot readiness",
+        "A preview ends with a readiness verdict and a recommended command, and an apply report ends with the run state it reached",
+        "- `ONE_SHOT`: no gate fails; every source is `MERGE` or `CONTAINED` and its only delete blocker, if any, is `BLOCKED_IGNORED_FILES`, which `--discard-ignored` lifts; no source is `PREDICTED_CONFLICT`; phase 2 is not `UNKNOWN`; and every remote branch is `SAFE_CANDIDATE`, `PUSH_THEN_DELETE` or `NOT_TOUCHED`.",
+        "A worktree the command never touches (a detached one, or one that holds `main` or another kept branch) is not part of the end state; the report lists it.",
+        "so the user sees whether one run of the **recommended command** reaches the **end state**: only `main` and `<branch>` remain as local branches, the worktrees of the deleted branches are removed, and every remote branch is deleted or `NOT_TOUCHED`.",
+        "with the flags in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang`; it carries `--push` when `--push` was typed in this run, or some remote branch ended `PUSH_THEN_DELETE` or `PENDING_PUSH` for a reason the user can clear (the publish was skipped, failed or unconfirmed, or the remote tip needs a fetch and merge), and not when the only reason is that `<branch>` is the remote default; when phase 2 is `UNKNOWN` no remote branch is classified, the report shows the phase 2 rows, and `--push` is carried only when it was typed;",
+        "The verdict judges the recommended command, not the command as typed",
+        "- `PARTIAL`: no gate fails, but something remains that no flag lifts",
+        "a `PENDING_PUSH` whose publish step is not predicted to run",
+        "- `BLOCKED`: a gate fails, so nothing can run; the report lists every failed gate with its remedy.",
+        "A failed gate makes the readiness verdict `BLOCKED`.",
+        "**Recommended command.** For `ONE_SHOT` and `PARTIAL`, the full line `/GitSweep <branch> --apply` (with `--remote <name>` and `--lang <language>` as given, and the flags in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang`)",
+        "`--discard-ignored` only when a worktree's only delete blocker is `BLOCKED_IGNORED_FILES`, with every ignored path that it deletes listed next to the line",
+        "`--push` only when at least one remote branch is `PUSH_THEN_DELETE` (whether or not `--push` was typed), with the publish prediction (commit count, whether it creates the remote branch) next to the line",
+        "A flag that lifts nothing is never recommended, and a flag that discards files or publishes commits is never added silently.",
+        "**Run state (apply report).** `COMPLETE` when the end state was reached; otherwise `PARTIAL` with the same remaining items and, as the last line, `Next command:` with the exact line to run once the remedies are done",
+        "Readiness: ONE_SHOT / PARTIAL / BLOCKED, recommended command, remaining items + remedies",
+        "Run state: COMPLETE / PARTIAL, remaining items + remedies, Next command (only with --apply)",
+        "Gates (every failed gate with its remedy)",
+        "Blocked items + reasons + remedies",
+        "built by the rules above from the final survey"
+      ]
+    },
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "### Remedies",
+        "Every failed gate, delete blocker, `UNKNOWN` status, `PREDICTED_CONFLICT`, and stop of an apply (a conflict, a failed check) in a report is followed by the action that lifts it.",
+        "Every gate is evaluated, and the report names every failed gate with its remedy (**Remedies** below), so one run shows everything the user must clear before the next one.",
+        "| gate: target is `main` | name the integration branch instead of `main` |",
+        "| gate: invoking worktree dirty | commit the changes, or `git stash push --include-untracked`; `git status --short --untracked-files=all` lists what counts |",
+        "| `BLOCKED_IGNORED_FILES` | add `--discard-ignored` (the listed files are lost) or move the files out of the worktree |",
+        "| `BLOCKED_UPSTREAM_OF_KEPT` | `git branch --unset-upstream <x>` on the branch that tracks it, or retarget that branch |",
+        "| `PREDICTED_CONFLICT` | merge that source into the target by hand and resolve it (`git merge refs/heads/<source>`), then rerun; a conflict stops the apply |",
+        "| `UNKNOWN` | establish the fact its evidence names; for a case collision, the rename procedure |",
+        "A report with a failed gate has no plan: the rest of the preview is not made."
+      ]
+    },
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "**Remaining items.** For `PARTIAL`, every item that stays: the branch or worktree, its classification, its evidence, its remedy and whether the user must rerun afterwards.",
+        "| phase 2 `UNKNOWN`: remote default unknown | `git remote set-head <remote> --auto` |",
+        "| phase 2 `UNKNOWN`: no `refs/heads/*:refs/remotes/<remote>/*` mapping | `git config --add remote.<remote>.fetch '+refs/heads/*:refs/remotes/<remote>/*'`, then `git fetch <remote>` |",
+        "| phase 2 `UNKNOWN`: push URL differs from the fetch URL | make them the same (`git config --unset-all remote.<remote>.pushurl`) or sweep the remote that the push URL names |",
+        "| phase 2 `UNKNOWN` or `STALE` after the live check | `git fetch <remote>` (and `git remote set-head <remote> --auto` when the default changed), then rerun |",
+        "| gate: `--remote <name>` not listed by `git remote` | name a listed remote (`git remote -v`), or add it with `git remote add <name> <url>` |",
+        "| `PUSH_THEN_DELETE` (kept: `--push` not typed) | rerun with `--push`, or `git push <remote> refs/heads/<branch>:refs/heads/<branch>` yourself, then rerun |",
+        "| `PENDING_PUSH` | clear the condition the report names, then rerun: if `<branch>` is the remote default, publish it by hand or through your review process (the command never pushes the remote default); if the remote tip is not an ancestor, `git fetch <remote>` and merge it into `<branch>`, then rerun with `--push`; if the push failed or was refused, satisfy the host's rule (branch protection, a hook) and rerun with `--push`, or publish by hand; if phase 2 is `UNKNOWN`, see its rows |",
+        "| `PUSH_SKIPPED`, `PUSH_FAILED`, `PUSH_UNCONFIRMED` | clear the named condition: fetch and merge a newer remote tip; satisfy the host's branch protection or hook; fix the failed validation (see the failed-check row); for `<branch>` being `main` or the remote default, publish it by hand or through your review process; or publish by hand, then rerun |",
+        "| `KEPT_LOCAL` | clear the local blocker named for that branch |",
+        "| `BLOCKED_UPSTREAM` | `git branch --unset-upstream <x>` on the local branch that tracks it |",
+        "| `KEPT_NOT_MERGED` | review it and merge it into `<branch>`, or delete it on the host yourself; the command never deletes it |",
+        "| `BLOCKED_BAD_NAME` | delete or rename it on the host |"
+      ]
+    },
+    {
+      "file": "commands/GitSweep.md",
+      "contains": [
+        "then a readiness verdict (`ONE_SHOT`, `PARTIAL` or `BLOCKED`) with the recommended command and the remedy for everything that remains; nothing is changed and the network is not contacted.",
+        "A preview that is not `BLOCKED` ends with the recommended command, which carries exactly the flags that lift something (`--discard-ignored` when ignored files are the only blocker of a worktree, with the files it deletes listed, and `--push` when a branch is `PUSH_THEN_DELETE`, whether or not you typed it) and carries `--remote` and `--lang` as you gave them; the verdict judges that command, not the one you typed.",
+        "The end state is only `main` and `<branch>` as local branches, the worktrees of the deleted branches removed, and every remote branch deleted or `NOT_TOUCHED`; a worktree the command never touches (a detached one, or one that holds `main` or another kept branch) is listed in the report.",
+        "An apply report ends with the run state `COMPLETE` or `PARTIAL`, and for `PARTIAL` with a `Next command:` line, built the same way, with the flags in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang` (`--remote` and `--lang` as you gave them, `--push` when a branch ended `PUSH_THEN_DELETE`, or `PENDING_PUSH` because the push was skipped, failed or was not confirmed, but not when `<branch>` is the remote default); the line is left out when no rerun would change anything."
+      ]
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "then a readiness verdict (`ONE_SHOT`, `PARTIAL` or `BLOCKED`) with the recommended command and the remedy for everything that remains; nothing is changed and the network is not contacted.",
+        "A preview that is not `BLOCKED` ends with the recommended command, which carries exactly the flags that lift something (`--discard-ignored` when ignored files are the only blocker of a worktree, with the files it deletes listed, and `--push` when a branch is `PUSH_THEN_DELETE`, whether or not you typed it) and carries `--remote` and `--lang` as you gave them; the verdict judges that command, not the one you typed.",
+        "The end state is only `main` and `<branch>` as local branches, the worktrees of the deleted branches removed, and every remote branch deleted or `NOT_TOUCHED`; a worktree the command never touches (a detached one, or one that holds `main` or another kept branch) is listed in the report.",
+        "An apply report ends with the run state `COMPLETE` or `PARTIAL`, and for `PARTIAL` with a `Next command:` line, built the same way, with the flags in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang` (`--remote` and `--lang` as you gave them, `--push` when a branch ended `PUSH_THEN_DELETE`, or `PENDING_PUSH` because the push was skipped, failed or was not confirmed, but not when `<branch>` is the remote default); the line is left out when no rerun would change anything."
+      ]
+    },
+    {
+      "file": "SKILL.md",
+      "contains": [
+        "Its preview ends with a readiness verdict (`ONE_SHOT`, `PARTIAL` or `BLOCKED`), a recommended command that carries exactly the flags that lift something, and the remaining items with their remedies; its apply report ends with the run state `COMPLETE` or `PARTIAL` and, for `PARTIAL`, a `Next command:` line.",
+        "以一次完成就绪度（`ONE_SHOT` / `PARTIAL` / `BLOCKED`）与推荐命令收尾"
+      ]
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "contains": [
+        "## GitSweep pressure tests",
+        "### GitSweep readiness with ignored files and unpublished commits",
+        "### GitSweep with several failed gates",
+        "### GitSweep recommended command with --remote and --lang",
+        "### GitSweep end state with a worktree it never touches"
+      ]
+    },
+    {
+      "file": "README.md",
+      "contains": [
+        "/GitSweep agent/release --apply --push",
+        "`ONE_SHOT`",
+        "`PARTIAL`",
+        "`BLOCKED`",
+        "`COMPLETE`",
+        "`Next command:`",
+        "`PUSH_THEN_DELETE`",
+        "`PENDING_PUSH`",
+        "不属于这个状态，报告会把它列出来。",
+        "结论评判的是推荐命令（见下），而不是你敲的那条命令。",
+        "`git remote add <名字> <地址>`",
+        "没加 `--push`，执行时不动它，报告写明保留的原因是没写 `--push`。",
+        "开关按 `--apply`、`--discard-ignored`、`--push`、`--remote`、`--lang` 的顺序排列。",
+        "按推荐命令的同样规则和同样的开关顺序生成，所以",
+        "有远端分支停在 `PUSH_THEN_DELETE`，或因推送被跳过、失败、没能确认而停在 `PENDING_PUSH` 时，它带上 `--push`（`<branch>` 是远端默认分支时不带）"
+      ]
+    },
+    {
+      "file": "README.en.md",
+      "contains": [
+        "/GitSweep agent/release --apply --push",
+        "`ONE_SHOT`",
+        "`PARTIAL`",
+        "`BLOCKED`",
+        "`COMPLETE`",
+        "`Next command:`",
+        "`PUSH_THEN_DELETE`",
+        "`PENDING_PUSH`",
+        "A worktree the command never touches (a detached one, or one that holds `main` or another kept branch) is not part of that state; the report lists it.",
+        "The verdict judges the recommended command (below), not the command as you typed it.",
+        "`git remote add <name> <url>`",
+        "without `--push` the run leaves it, and the report says it was kept because `--push` was not typed.",
+        "The flags come in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang`.",
+        "built by the same rules as the recommended command and in the same flag order, so it carries",
+        "so it carries `--remote` and `--lang` as given, and `--push` when a remote branch ended `PUSH_THEN_DELETE`, or `PENDING_PUSH` because the push was skipped, failed or was not confirmed (not when `<branch>` is the remote default)"
+      ]
+    },
+    {
+      "file": "README.ja.md",
+      "contains": [
+        "/GitSweep agent/release --apply --push",
+        "`ONE_SHOT`",
+        "`PARTIAL`",
+        "`BLOCKED`",
+        "`COMPLETE`",
+        "`Next command:`",
+        "`PUSH_THEN_DELETE`",
+        "`PENDING_PUSH`",
+        "この状態に含まれず、レポートに列挙されます。",
+        "判定が評価するのは、あなたが入力したコマンドではなく、推奨コマンド（下記）です。",
+        "`git remote add <名前> <URL>`",
+        "`--push` なしの実行では、このブランチには手を付けず、レポートには `--push` を付けていないため残したと書かれます。",
+        "オプションは `--apply`、`--discard-ignored`、`--push`、`--remote`、`--lang` の順に並びます。",
+        "推奨コマンドと同じ規則とオプションの順序で作られるため、",
+        "リモートブランチが `PUSH_THEN_DELETE` のまま終わった場合、またはプッシュがスキップ・失敗・未確認になったために `PENDING_PUSH` で終わった場合は `--push` も付きます（`<branch>` がリモートのデフォルトブランチのときは付きません）。"
+      ]
+    },
+    {
+      "file": "CHANGELOG.md",
+      "contains": [
+        "`PUSH_THEN_DELETE` marks a branch whose deletion depends on the publish step, which is predicted to run (in a preview with or without `--push`; an apply without `--push` leaves it and reports \"kept: `--push` not typed\")",
+        "`PENDING_PUSH` marks a branch that no push of this run clears: the publish is not predicted to run (for example `<branch>` is the remote default), or the push was skipped, failed or unconfirmed.",
+        "The remedy of the first is to rerun with `--push` or to push `<branch>` by hand; the remedy of the second is to clear the condition the report names.",
+        "a worktree the command never touches (a detached one, or one that holds `main` or another kept branch) is listed in the report.",
+        "with `--remote` and `--lang` as given and with `--push` when a remote branch ended `PUSH_THEN_DELETE`, or `PENDING_PUSH` because the push was skipped, failed or unconfirmed (not when `<branch>` is the remote default).",
+        "among them the one for a `--remote` that `git remote` does not list, and separate remedies for `PUSH_THEN_DELETE` without `--push` and for `PENDING_PUSH`",
+        "with its flags in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang`, with `--remote` and `--lang` as given"
+      ]
+    },
+    {
+      "file": "RELEASE_NOTES_1.0.3.md",
+      "contains": [
+        "(an apply without `--push` leaves it and reports \"kept: `--push` not typed\")",
+        "The end state leaves out a worktree the command never touches (a detached one, or one that holds `main` or another kept branch); the report lists it.",
+        "目标状态里不含命令从不去碰的工作区，报告会把它们列出来。",
+        "有 `PUSH_THEN_DELETE` 的分支时不管有没有写 `--push` 都带上它",
+        "that lists its flags in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang` and carries `--remote` and `--lang` as given"
+      ]
+    }
+  ]
+}

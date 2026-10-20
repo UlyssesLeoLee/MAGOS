@@ -707,7 +707,8 @@
       {
         "file": "skills/git-sweep/SKILL.md",
         "contains": [
-          "- Codex: `$git-sweep <branch> [--apply] [--discard-ignored] [--remote <name>] [--lang <language>] [--help]`",
+          "- Codex: `$git-sweep <branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]`",
+          "short-description: \"收敛并清远端分支；$git-sweep BRANCH [--apply] [--push] [--help].\"",
           "`--help`:",
           "Examples:"
         ]
@@ -716,6 +717,7 @@
         "file": "skills/git-sweep/agents/openai.yaml",
         "contains": [
           "$git-sweep",
+          "[--push]",
           "[--help]"
         ],
         "pattern": "^  short_description: \"([^\"]+)\"$",
@@ -885,7 +887,8 @@
       "SKILL.md has a Branch Strategy section that is advisory (no rename, move, delete, or reconfigure) and links references/branch-strategy.md.",
       "SKILL.md hard stops forbid recommending a model without classifying the observed one, imposing a long-lived model, and asserting remote protection.",
       "references/branch-strategy.md defines observation, branch roles, model classification, the fit checklist, the default model, release/hotfix flow, protection, naming, strategy changes, and the report format; remote protection is reported unknown.",
-      "reconnaissance.md, decision-matrix.md, pressure-tests.md, design-rationale.md, and both READMEs reference the new guidance."
+      "reconnaissance.md, decision-matrix.md, pressure-tests.md, design-rationale.md, and both READMEs reference the new guidance.",
+      "The GitSweep sentence of references/branch-strategy.md says that it is the only command that deletes remote branches and, only with --push, the only command that pushes commits (one fast-forward push of <branch>), that it never deletes a branch with a long-lived role or one that no branch the remote keeps contains, and that a branch merged only locally qualifies only once <branch> has been published, by --push in the same run or by hand before a rerun."
     ],
     "checks": [
       {
@@ -932,7 +935,9 @@
           "%(*objectname:short)",
           "GitIntegrate",
           "GitCleanup",
-          "GitConverge"
+          "GitConverge",
+          "it is the only command that deletes remote branches and, only with `--push`, the only command that pushes commits (one fast-forward push of `<branch>`)",
+          "or one that no branch the remote keeps contains; a branch merged only locally qualifies only once `<branch>` has been published, by `--push` in the same run or by hand before a rerun."
         ]
       },
       {
@@ -1205,7 +1210,7 @@
         "GitIntegrate": "<lane|branch> [--strategy auto|merge|squash|cherry-pick] [--lang <language>] [--help]",
         "GitCleanup": "[--apply] [--lang <language>] [--help]",
         "GitConverge": "<branch> [--apply] [--discard-ignored] [--lang <language>] [--help]",
-        "GitSweep": "<branch> [--apply] [--discard-ignored] [--remote <name>] [--lang <language>] [--help]"
+        "GitSweep": "<branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]"
       }
     },
     "expected": [
@@ -1304,7 +1309,7 @@
       {
         "file": "commands/GitSweep.md",
         "contains": [
-          "argument-hint: \"<branch> [--apply] [--discard-ignored] [--remote <name>] [--lang <language>] [--help]\"",
+          "argument-hint: \"<branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]\"",
           "Handle `--help` first",
           "## Inline help",
           "Usage: `/GitSweep",
@@ -1405,7 +1410,9 @@
       },
       {
         "file": "skills/git-sweep/SKILL.md",
-        "contains": [],
+        "contains": [
+          "description: \"收敛并清除已合并远端分支（仅显式调用，写操作）；/git-sweep BRANCH [--apply] [--push] [--help].\""
+        ],
         "pattern": "^description: \"([^\"]+)\"$",
         "length": [
           1,

@@ -1,6 +1,6 @@
 # Explicit Command Contracts
 
-This reference defines the command-layer behavior for `multi-agent-git-orchestrator` v1.0.2.
+This reference defines the command-layer behavior for `multi-agent-git-orchestrator` v1.0.3.
 
 These are **semantic command intents**. Canonical names use a leading `/`. A host may expose them as slash commands, palette actions, prompt aliases, or plain-text invocations. If slash commands are unsupported, accept the same name without `/`. The behavior must remain the same.
 
@@ -397,11 +397,39 @@ BLOCKED_UPSTREAM_OF_KEPT      a branch that will remain tracks this branch (`bra
 
 A branch **will remain** when it is `main`, the target, a source whose merge status is not `MERGE` or `CONTAINED`, or a source with a delete blocker. Re-evaluate `BLOCKED_UPSTREAM_OF_KEPT` until nothing changes, so a chain `c -> b -> a` with `c` dirty keeps both `b` and `a`.
 
+### Remedies
+
+Every failed gate, delete blocker, `UNKNOWN` status, `PREDICTED_CONFLICT`, and stop of an apply (a conflict, a failed check) in a report is followed by the action that lifts it. The command never performs these actions; they are the user's, and the report writes each with the real path or name:
+
+| Finding | Remedy |
+|---|---|
+| gate: target missing locally | name an existing local branch (`git branch --list`), or create it deliberately with `git branch <name> <start>` |
+| gate: target is `main` | name the integration branch instead of `main` |
+| gate: local `main` missing | `git branch main <remote>/main` once the remote-tracking ref exists |
+| gate: a name equals another when case is ignored | make the names distinct with the procedure under **Case collisions** |
+| gate: prunable (missing-directory) worktree entry for the target or `main` | check `git worktree list --porcelain`, then `git worktree remove <path>` or restore the directory |
+| gate: target checked out in another worktree | run the command from that worktree (`cd <path>`) |
+| gate: invoking worktree detached | `git switch <target>` |
+| gate: invoking worktree dirty | commit the changes, or `git stash push --include-untracked`; `git status --short --untracked-files=all` lists what counts |
+| gate: invoking worktree or target in progress | finish or abort the merge, cherry-pick, revert, rebase, am or bisect in that worktree |
+| `BLOCKED_DIRTY` | commit, stash or discard the changes in the worktree, then rerun |
+| `BLOCKED_LOCKED` | `git worktree unlock <path>` once nobody uses it |
+| `BLOCKED_ACTIVE_OWNER` | let the owner finish, or release the lane's claim when its lane is merged or abandoned; for a branch checked out in the main worktree that is not the invoking one, switch that worktree to another branch (`git -C <path> switch <other>`) or run the command from it |
+| `BLOCKED_IGNORED_FILES` | add `--discard-ignored` (the listed files are lost) or move the files out of the worktree |
+| `BLOCKED_SUBMODULE` | deinitialize the submodules (`git -C <path> submodule deinit --all`), then rerun |
+| `BLOCKED_UPSTREAM_OF_KEPT` | `git branch --unset-upstream <x>` on the branch that tracks it, or retarget that branch |
+| `BLOCKED_IN_PROGRESS` | finish or abort the operation in its worktree |
+| `BLOCKED_UNRELATED_HISTORY` | none: the branch stays; merge it by hand only on purpose |
+| `PREDICTED_CONFLICT` | merge that source into the target by hand and resolve it (`git merge refs/heads/<source>`), then rerun; a conflict stops the apply |
+| `UNKNOWN` | establish the fact its evidence names; for a case collision, the rename procedure |
+| apply stopped by a conflict | the report names the failing source, the error text and the target's start SHA; merge that source into the target by hand and resolve it (`git merge refs/heads/<source>`), or restore the start SHA, then rerun; completed merges stay |
+| apply stopped by a failed check | fix what the check names (it ran on the merged result), then rerun; completed merges stay and nothing was deleted |
+
 ### Preview behavior (default, read-only)
 
 Collect and report:
 
-1. **Gates** (any failure stops the whole command, even for a preview): target missing locally; target is `main`; local `main` missing; the target or `main` equals another local branch name when case is ignored; target or `main` is checked out only in a prunable (missing-directory) worktree entry; target is checked out in a worktree other than the invoking one (run the command from that worktree); the invoking worktree is detached, dirty, or in progress; target is in progress anywhere.
+1. **Gates** (any failure stops the whole command, even for a preview, and nothing is written): target missing locally; target is `main`; local `main` missing; the target or `main` equals another local branch name when case is ignored; target or `main` is checked out only in a prunable (missing-directory) worktree entry; target is checked out in a worktree other than the invoking one (run the command from that worktree); the invoking worktree is detached, dirty (untracked files count), or in progress; target is in progress anywhere. Every gate is evaluated, and the report names every failed gate with its remedy (**Remedies** below), so one run shows everything the user must clear before the next one. A report with a failed gate has no plan: the rest of the preview is not made.
 2. **Plan header**: target and `main` with SHAs, the invoking worktree, and the recorded tip of every local branch. Report a same-named tag for any branch, the target included. Report `main` being behind or ahead of `origin/main` when the remote-tracking ref exists; remote freshness is local-only.
 3. **Sources to merge**, in merge order: `main` first, then the rest by descending unique-commit count (`git rev-list --count refs/heads/<target>..<sha>`), ties by refname. For each: SHA, exact unique-commit count, and its commit list. A commit list may be shortened only with an explicit "(N more)"; counts and branch sets are never truncated. When `git merge-tree --write-tree` exists, test each source against the current target tip and mark it `PREDICTED_CONFLICT` if it exits 1. This is a hint only: it cannot see a clash between two sources, which appears when the second one merges.
 4. **Contained sources**: delete only.
@@ -440,10 +468,10 @@ Never: move, reset, or delete `main`; push, force-push, or delete remote branche
 
 ```text
 Plan / Preview header (with --apply: the plan acted on)
-Gates
+Gates (every failed gate with its remedy)
 Sources to merge (ordered)
 Contained sources
-Blocked items + reasons
+Blocked items + reasons + remedies
 Expected final local branches
 Not touched
 Applied operations (only with --apply)
@@ -462,6 +490,8 @@ Remaining risks
 /GitSweep <branch>
 /GitSweep <branch> --apply
 /GitSweep <branch> --apply --discard-ignored
+/GitSweep <branch> --apply --push
+/GitSweep <branch> --apply --discard-ignored --push
 /GitSweep <branch> --apply --remote upstream
 /GitSweep <branch> --lang English
 /GitSweep --help
@@ -474,24 +504,26 @@ Remaining risks
 | `<branch>` | Yes | Local branch that receives everything; same rules as section 6. |
 | `--apply` | No | Run the section 6 apply procedure, then delete the merged remote branches below. Without it, only show a preview. |
 | `--discard-ignored` | No | Passed through to the section 6 phase unchanged. It has no effect on remote branches. |
+| `--push` | No | With `--apply`, after phase 1 and before the remote deletions, publish `<branch>` to the remote with one fast-forward push (**Publish step**), so that remote branches merged only into the local `<branch>` are deleted in the same run. Without `--apply` the preview only reports what the push would do. |
 | `--remote <name>` | No | The remote to sweep. Default: `origin`. It must be listed by `git remote`; the value is never used as a revision or a path. |
 | `--lang <language>` | No | Language of the reply, a name or code such as `English` or `ja`. Default: Chinese. See Argument and Help Behavior. |
 | `--help` | No | Show this command's usage and stop without inspecting or changing the repository. |
 
-Examples: `/GitSweep agent/release`, `/GitSweep agent/release --apply`, `/GitSweep --help`.
+Examples: `/GitSweep agent/release`, `/GitSweep agent/release --apply`, `/GitSweep agent/release --apply --push`, `/GitSweep --help`.
 
 ### 中文描述
 
-在 `/GitConverge` 的基础上多做一步：本地收敛完成后，再删除远端上已经合并的分支。第一阶段与 `/GitConverge` 完全相同（同样的门槛、分类、合并顺序和本地删除规则）；第二阶段只删除"提交已经被远端自己保留的分支包含"的远端分支。默认只预览；只有 `--apply` 才会合并、删除并推送删除。
+在 `/GitConverge` 的基础上多做一步：本地收敛完成后，再删除远端上已经合并的分支。第一阶段与 `/GitConverge` 完全相同（同样的门槛、分类、合并顺序和本地删除规则）；第二阶段只删除"提交已经被远端自己保留的分支包含"的远端分支。默认只预览；只有 `--apply` 才会合并、删除并推送删除。预览末尾给出"一次完成就绪度"：推荐命令、仍需用户处理的阻塞项及其处理办法；加上 `--push`（需要 `--apply`）时，收敛后把 `<branch>` 以一次快进推送发布到远端，只合并进本地 `<branch>` 的远端分支就能在同一次运行里清除，不需要手动推送再重跑。
 
 ### Phase 1: converge
 
-Run section 6 unchanged, with its Definitions, Acceptance rule, Classification, gates, apply steps 1-7, and Hard stop conditions, except for the four points below. `/GitSweep <branch> --apply` is the same explicit acceptance as `/GitConverge <branch> --apply`, and it also accepts the phase 2 deletions recorded in its plan.
+Run section 6 unchanged, with its Definitions, Acceptance rule, Classification, gates, apply steps 1-7, and Hard stop conditions, except for the points below. `/GitSweep <branch> --apply` is the same explicit acceptance as `/GitConverge <branch> --apply`, and it also accepts the phase 2 deletions recorded in its plan; `--push` also accepts the publish step (**Publish step**).
 
 - **Earlier plan.** In section 6 apply step 1 and its Acceptance rule, the most recent GitSweep or GitConverge preview or apply report for the same `<branch>` earlier in this conversation is the earlier plan. A source tip or `main` that differs from the GitSweep preview the user saw stops the run with a new preview.
-- **Remote writes.** Section 6 bans pushing and deleting remote branches or remote-tracking refs. That ban does not cover the lease-guarded deletions of phase 2; a successful deletion also removes the matching `refs/remotes/<remote>/<name>`, which is expected. Every other part of the ban stands.
+- **Remote writes.** Section 6 bans pushing and deleting remote branches or remote-tracking refs. That ban does not cover the lease-guarded deletions of phase 2, nor, only with `--push`, the one fast-forward push of `<branch>` (**Publish step**); a successful deletion also removes the matching `refs/remotes/<remote>/<name>`, which is expected, and the push moves `refs/remotes/<remote>/<branch>`. Every other part of the ban stands.
 - **Not touched.** Section 6 preview item 7 lists remote branches as not touched; here they appear in the remote classification table instead.
-- **Report.** The section 6 step 7 statement that remote branches still exist applies only to the remote branches phase 2 kept.
+- **Report.** The section 6 step 7 statement that remote branches still exist applies only to the remote branches phase 2 kept; the report also carries the run state (**One-shot readiness**).
+- **Gates.** Section 6 gates are evaluated all at once, as there, and the sweep adds one: `--remote <name>` not listed by `git remote`. A failed gate makes the readiness verdict `BLOCKED`.
 
 Phase 2 starts only after phase 1 finished without stopping: a gate failure, a conflict, a failed check, an `UNKNOWN` needed for a write, or a stale preview stops the whole command and no remote branch is touched. Branches that phase 1 kept (blocked, unrelated history, in progress) are not remote candidates either (`KEPT_LOCAL` below).
 
@@ -502,7 +534,8 @@ Phase 2 starts only after phase 1 finished without stopping: a gate failure, a c
 - **remote**: `--remote <name>` or `origin`. If it is not in `git remote`, stop before phase 1 (a gate failure).
 - **remote default**: the branch named by `git symbolic-ref refs/remotes/<remote>/HEAD`. That ref is written at clone time and can be stale (`references/branch-strategy.md`), so apply step 2 checks it against the live remote. If that ref is missing, or names a branch with no remote-tracking ref, the remote default is unknown and the whole phase 2 is `UNKNOWN`: report it and suggest `git remote set-head <remote> --auto`. Phase 1 still completes.
 - **mapping**: `git config --get-all remote.<remote>.fetch` must include `refs/heads/*:refs/remotes/<remote>/*` (with or without a leading `+`), so that `refs/remotes/<remote>/<name>` is the remote's `refs/heads/<name>`; without it, phase 2 is `UNKNOWN`. A remote-tracking ref that matches the destination of another fetch refspec (for example `refs/remotes/<remote>/pr/*` from `+refs/pull/*/head:refs/remotes/<remote>/pr/*`) is `NOT_TOUCHED`. If `git remote get-url --push <remote>` differs from `git remote get-url <remote>`, the deletions would go to another repository than the one checked, so phase 2 is `UNKNOWN`.
-- **survivors**: the remote branches the remote keeps, as the ancestry anchor for "merged": the remote default and `refs/remotes/<remote>/<target>` when it exists. A remote branch is **merged** only when its tip is an ancestor of a survivor tip (`git merge-base --is-ancestor <sha> <survivor-sha>`), never merely of the local target. Work that exists only in the local target is not on the remote, so deleting the remote branch would remove the last remote copy; such a branch is `PENDING_PUSH`.
+- **survivors**: the remote branches the remote keeps, as the ancestry anchor for "merged": the remote default and `refs/remotes/<remote>/<target>` when it exists. A remote branch is **merged** only when its tip is an ancestor of a survivor tip (`git merge-base --is-ancestor <sha> <survivor-sha>`), never merely of the local target. Work that exists only in the local target is not on the remote, so deleting the remote branch would remove the last remote copy; such a branch is `PENDING_PUSH` until the publish step has put that work on the remote.
+- **converged target**: what local `<branch>` holds once phase 1 has finished: in an apply after phase 1, its tip; in a preview, its current tip together with the tips of every source whose merge status is `MERGE` (a hint, as `PREDICTED_CONFLICT` is). Every test below that says "the converged target" uses it, in the preview and in the apply, so a preview and the apply after it classify a remote branch alike.
 - Resolve every remote branch through its full refname (`refs/remotes/<remote>/<name>`) and take SHAs from one `git for-each-ref --format='%(refname) %(objectname)' refs/remotes/<remote>` listing. **Names vs SHAs** and **Case collisions** from section 6 apply: two remote names equal ignoring case are both `UNKNOWN`.
 
 **Remote classification** (the first match wins; a case collision is decided before it, as in section 6, and makes both names `UNKNOWN` whatever else applies):
@@ -512,8 +545,9 @@ NOT_TOUCHED          the remote default, `main`, the target, `HEAD`, a ref writt
 BLOCKED_BAD_NAME     the name fails `git check-ref-format --branch` or starts with `-`; never passed to a command
 BLOCKED_UPSTREAM     a local branch that will remain tracks it (`branch.<x>.remote` is the remote and `branch.<x>.merge` is `refs/heads/<name>`)
 KEPT_LOCAL           the local branch of the same name remains after phase 1 (blocked, unrelated history, in progress, `UNKNOWN`, or appeared after preview)
-KEPT_NOT_MERGED      its tip is not an ancestor of any survivor and not of the local target; it holds work the remote does not have elsewhere
-PENDING_PUSH         its tip is an ancestor of the local target but not of any survivor; delete it after `<branch>` is pushed and GitSweep is run again
+KEPT_NOT_MERGED      its tip is not an ancestor of any survivor and not of the converged target; it holds work the remote does not have elsewhere
+PUSH_THEN_DELETE     its tip is an ancestor of the converged target but not of any survivor, and the publish step is predicted to run (its conditions that the local refs can show hold), whether or not `--push` was typed: with `--push` the apply publishes `<branch>` first and deletes this branch after it; without `--push` the apply leaves it and reports "kept: --push not typed"
+PENDING_PUSH         its tip is an ancestor of the converged target but not of any survivor, and the publish step is not predicted to run, or in an apply it was skipped, failed or was not confirmed (the report names the condition); delete it after `<branch>` is pushed and GitSweep is run again
 STALE                the live remote tip differs from the remote-tracking SHA (checked in apply only); skip it
 SAFE_CANDIDATE       merged into a survivor, and none of the above applies
 UNKNOWN              a needed fact could not be established
@@ -521,39 +555,80 @@ UNKNOWN              a needed fact could not be established
 
 A **long-lived role** is one of INTEGRATION, STAGING, RELEASE, or ARCHIVE in `references/branch-strategy.md` **Branch roles**. It needs recorded or observed evidence: a policy file, CI trigger filters, matching release tags, or repeated merges into or from the integration branch in its `--first-parent` history. A role inferred only from the name does not count; report the name as the evidence. Such a branch is often fully merged right after a sync, and deleting it on the remote also closes or retargets pull requests that use it as their base.
 
-**Preview (default, read-only).** After the section 6 preview, list every remote branch with its SHA and remote classification, the survivors with their SHAs, and the exact `git push` that would be run for each `SAFE_CANDIDATE`. The preview does not contact the network and does not fetch: remote freshness is local-only, so the report says that `refs/remotes/<remote>/*` may be behind the live remote and that `--apply` rechecks it.
+**Preview (default, read-only).** After the section 6 preview, list every remote branch with its SHA and remote classification, the survivors with their SHAs, and the exact `git push` that would be run for each `SAFE_CANDIDATE`. Also the **publish prediction**, from local refs only and with or without `--push`: the push would run when every condition of the **Publish step** that the local refs can show holds (`<branch>` is not `main` and not the remote default, phase 2 is not `UNKNOWN`, and `refs/remotes/<remote>/<branch>` is absent or a proper ancestor of the converged target), and the report then gives the exact push command, the commits it would publish (the commits of the converged target that `refs/remotes/<remote>/<branch>` lacks, the sources to merge among them, each commit list shortened only with an explicit "(N more)"), whether it creates the remote branch, and the `PUSH_THEN_DELETE` branches that depend on it; when it would not run, the report names the failed condition, or says that nothing needs publishing when the remote tip already equals the converged target. A `PUSH_THEN_DELETE` branch is listed with its two ways forward: run with `--push`, or push `<branch>` by hand (`git push <remote> refs/heads/<branch>:refs/heads/<branch>`) and rerun; a `PENDING_PUSH` branch is listed with the condition that keeps the publish from running. The preview does not contact the network and does not fetch: remote freshness is local-only, so the report says that `refs/remotes/<remote>/*` may be behind the live remote and that `--apply` rechecks it.
+
+**Publish step (`--push`).** It publishes the local `<branch>` and no other ref, with this one command and no variation:
+
+`git push --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`
+
+It is a fast-forward push: never `--force`, `-f`, a `+` refspec or `--force-with-lease`, never `--no-verify`, `--tags`, `--all`, `--mirror`, `--prune`, `--delete`, `--set-upstream` or a refspec pattern. A `pre-push` hook of the repository runs as git runs it. The push creates `refs/heads/<branch>` on the remote when it does not exist there; the plan and the report say so. It is the one push of commits that this command makes, and `--apply --push` is the user's acceptance of publishing the local `<branch>` as phase 1 leaves it: the commits the remote lacks (all of the branch when it is absent), which the preview listed as existing commits and sources to merge, and the report lists by range and count.
 
 **Apply.** After phase 1:
 
-1. Record the remote candidate list in the plan (included in the final report). Compare it with the most recent GitSweep preview or apply report for the same `<branch>` earlier in this conversation, if any. A candidate that was not a `SAFE_CANDIDATE` there, or whose SHA differs from the one shown there, is reported as "appeared after preview, untouched". Without an earlier GitSweep preview or report, the recorded list is the plan.
-2. Run `git ls-remote --symref <remote> HEAD 'refs/heads/*'` once. This is a network read and changes no refs; it is the only network read before the deletions. Phase 2 is `UNKNOWN` when the live `HEAD` names a branch other than the remote default, when a survivor's live tip differs from its remote-tracking SHA, or when a survivor is missing. A candidate whose live tip differs, or that is missing, is `STALE` and skipped. Do not fetch to resolve either. Tell the user to run `git fetch <remote>` (and `git remote set-head <remote> --auto` if the default changed), then rerun.
-3. For each remaining `SAFE_CANDIDATE`, one at a time, delete it with exactly:
+1. Record the remote candidate list in the plan (included in the final report), each candidate classified against the actual local `<branch>` tip. Compare it with the most recent GitSweep preview or apply report for the same `<branch>` earlier in this conversation, if any. A candidate that was neither a `SAFE_CANDIDATE` nor a `PUSH_THEN_DELETE` there, or whose SHA differs from the one shown there, is reported as "appeared after preview, untouched". Without an earlier GitSweep preview or report, the recorded list is the plan.
+2. Run `git ls-remote --symref <remote> HEAD 'refs/heads/*'` once. This is a network read and changes no refs; it is the only network read before the deletions. Phase 2 is `UNKNOWN` when the live `HEAD` names a branch other than the remote default, when a survivor's live tip differs from its remote-tracking SHA, or when a survivor is missing. A candidate whose live tip differs, or that is missing, is `STALE` and skipped. Do not fetch to resolve either. Tell the user to run `git fetch <remote>` (and `git remote set-head <remote> --auto` if the default changed), then rerun. Record the live tip of `refs/heads/<branch>` (or that it is absent) for the next step.
+3. **Publish** (only with `--push`; otherwise go to step 4, which leaves every `PUSH_THEN_DELETE` and `PENDING_PUSH` branch). Run the publish command above only when all of these hold: phase 1 finished and its validation did not fail (a validation that could not be identified does not stop the push; the report then says that the published merge is not validated); phase 2 is not `UNKNOWN`; `<branch>` is not `main` and not the remote default; and the live tip recorded in step 2 is absent or an ancestor of the local `<branch>` tip (`git merge-base --is-ancestor <live-sha> refs/heads/<branch>`; a live tip whose object the local repository lacks is not an ancestor: tell the user to `git fetch <remote>` and merge it). When the live tip equals the local tip there is nothing to publish: no push is made and the report says `PUBLISH_NOT_NEEDED`; the `PUSH_THEN_DELETE` candidates are then judged against that tip like any other. Otherwise the push runs even when no candidate depends on it, because `--push` is the user's request to publish `<branch>` and the preview listed the commits. If a condition fails, skip the push, report `PUSH_SKIPPED` with the failed condition, and go on to step 4 with the candidates as they are. On a non-zero exit (a protected branch, a hook, a rejection, the network), record the error text, do not retry and do not alter the command, report `PUSH_FAILED`, and go on to step 4. On success, `git rev-parse refs/remotes/<remote>/<branch>` must equal the local tip, which is then the survivor tip of `<branch>`; when it does not, report `PUSH_UNCONFIRMED` and treat the push as failed. Each `PUSH_THEN_DELETE` candidate whose tip is an ancestor of that tip becomes `SAFE_CANDIDATE`; when the push was skipped, failed or unconfirmed, it is reported as `PENDING_PUSH` with that reason. A live `<branch>` that moved or vanished since the remote-tracking ref was written makes phase 2 `UNKNOWN` in step 2, so the push is skipped for that reason; the ancestor condition catches a diverged branch whose live tip still equals the remote-tracking ref.
+4. For each remaining `SAFE_CANDIDATE`, one at a time, delete it with exactly:
    `git push --force-with-lease=refs/heads/<name>:<sha> <remote> :refs/heads/<name>`
    The lease is the per-branch recheck at the moment of deletion: the remote refuses the deletion if the branch moved since it was recorded. On a non-zero exit, record the error text, leave that branch, and continue with the next candidate.
-4. Report each deleted remote branch with its tip SHA (recreate with `git push <remote> <sha>:refs/heads/<name>`) and each skipped one with its classification. Say that a remote deletion also closes any open pull request that uses the branch as its head, and on some hosts closes or retargets pull requests that use it as their base.
+5. Report the publish result (the push, or `PUSH_SKIPPED`, `PUSH_FAILED` or `PUSH_UNCONFIRMED` with its reason; the remote tip before and after and the commit count; undoing a publish needs a force push, which this command never makes), each deleted remote branch with its tip SHA (recreate with `git push <remote> <sha>:refs/heads/<name>`) and each skipped one with its classification. Say that a remote deletion also closes any open pull request that uses the branch as its head, and on some hosts closes or retargets pull requests that use it as their base. Then the run state (**One-shot readiness**).
+
+### One-shot readiness
+
+A preview ends with a readiness verdict and a recommended command, and an apply report ends with the run state it reached, so the user sees whether one run of the **recommended command** reaches the **end state**: only `main` and `<branch>` remain as local branches, the worktrees of the deleted branches are removed, and every remote branch is deleted or `NOT_TOUCHED`. A worktree the command never touches (a detached one, or one that holds `main` or another kept branch) is not part of the end state; the report lists it. The verdict judges the recommended command, not the command as typed, and is one of:
+
+- `ONE_SHOT`: no gate fails; every source is `MERGE` or `CONTAINED` and its only delete blocker, if any, is `BLOCKED_IGNORED_FILES`, which `--discard-ignored` lifts; no source is `PREDICTED_CONFLICT`; phase 2 is not `UNKNOWN`; and every remote branch is `SAFE_CANDIDATE`, `PUSH_THEN_DELETE` or `NOT_TOUCHED`. One run of the recommended command then reaches the end state, as far as the local refs can show: the apply rechecks the live remote.
+- `PARTIAL`: no gate fails, but something remains that no flag lifts (any other delete blocker, `BLOCKED_IN_PROGRESS`, `BLOCKED_UNRELATED_HISTORY`, `UNKNOWN`, a `PREDICTED_CONFLICT`, `KEPT_NOT_MERGED`, `KEPT_LOCAL`, `BLOCKED_UPSTREAM`, a `PENDING_PUSH` whose publish step is not predicted to run, phase 2 `UNKNOWN`). The recommended command still does everything it can.
+- `BLOCKED`: a gate fails, so nothing can run; the report lists every failed gate with its remedy.
+
+**Recommended command.** For `ONE_SHOT` and `PARTIAL`, the full line `/GitSweep <branch> --apply` (with `--remote <name>` and `--lang <language>` as given, and the flags in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang`), with exactly the flags that lift something: `--discard-ignored` only when a worktree's only delete blocker is `BLOCKED_IGNORED_FILES`, with every ignored path that it deletes listed next to the line; `--push` only when at least one remote branch is `PUSH_THEN_DELETE` (whether or not `--push` was typed), with the publish prediction (commit count, whether it creates the remote branch) next to the line. A flag that lifts nothing is never recommended, and a flag that discards files or publishes commits is never added silently.
+
+**Remaining items.** For `PARTIAL`, every item that stays: the branch or worktree, its classification, its evidence, its remedy and whether the user must rerun afterwards. The remedies for local findings are the **Remedies** table of section 6. For remote findings:
+
+| Finding | Remedy |
+|---|---|
+| phase 2 `UNKNOWN`: remote default unknown | `git remote set-head <remote> --auto` |
+| phase 2 `UNKNOWN`: no `refs/heads/*:refs/remotes/<remote>/*` mapping | `git config --add remote.<remote>.fetch '+refs/heads/*:refs/remotes/<remote>/*'`, then `git fetch <remote>` |
+| phase 2 `UNKNOWN`: push URL differs from the fetch URL | make them the same (`git config --unset-all remote.<remote>.pushurl`) or sweep the remote that the push URL names |
+| phase 2 `UNKNOWN` or `STALE` after the live check | `git fetch <remote>` (and `git remote set-head <remote> --auto` when the default changed), then rerun |
+| gate: `--remote <name>` not listed by `git remote` | name a listed remote (`git remote -v`), or add it with `git remote add <name> <url>` |
+| `PUSH_THEN_DELETE` (kept: `--push` not typed) | rerun with `--push`, or `git push <remote> refs/heads/<branch>:refs/heads/<branch>` yourself, then rerun |
+| `PENDING_PUSH` | clear the condition the report names, then rerun: if `<branch>` is the remote default, publish it by hand or through your review process (the command never pushes the remote default); if the remote tip is not an ancestor, `git fetch <remote>` and merge it into `<branch>`, then rerun with `--push`; if the push failed or was refused, satisfy the host's rule (branch protection, a hook) and rerun with `--push`, or publish by hand; if phase 2 is `UNKNOWN`, see its rows |
+| `PUSH_SKIPPED`, `PUSH_FAILED`, `PUSH_UNCONFIRMED` | clear the named condition: fetch and merge a newer remote tip; satisfy the host's branch protection or hook; fix the failed validation (see the failed-check row); for `<branch>` being `main` or the remote default, publish it by hand or through your review process; or publish by hand, then rerun |
+| two remote names equal ignoring case (`UNKNOWN`) | rename or delete one of them on the host; the command leaves both untouched |
+| `KEPT_LOCAL` | clear the local blocker named for that branch |
+| `BLOCKED_UPSTREAM` | `git branch --unset-upstream <x>` on the local branch that tracks it |
+| `KEPT_NOT_MERGED` | review it and merge it into `<branch>`, or delete it on the host yourself; the command never deletes it |
+| `BLOCKED_BAD_NAME` | delete or rename it on the host |
+
+**Run state (apply report).** `COMPLETE` when the end state was reached; otherwise `PARTIAL` with the same remaining items and, as the last line, `Next command:` with the exact line to run once the remedies are done, built by the rules above from the final survey, with the flags in the order `--apply`, `--discard-ignored`, `--push`, `--remote`, `--lang`; it carries `--push` when `--push` was typed in this run, or some remote branch ended `PUSH_THEN_DELETE` or `PENDING_PUSH` for a reason the user can clear (the publish was skipped, failed or unconfirmed, or the remote tip needs a fetch and merge), and not when the only reason is that `<branch>` is the remote default; when phase 2 is `UNKNOWN` no remote branch is classified, the report shows the phase 2 rows, and `--push` is carried only when it was typed; the line is left out when no rerun would change anything.
 
 ### Hard stop conditions
 
-All of section 6, except that the lease-guarded deletion above replaces its ban on pushing and on deleting remote branches and remote-tracking refs. In addition: never push commits or tags; never force-push (the only push is the lease-guarded deletion above, one named branch per command); never use `--mirror`, `--prune`, `--all`, `--tags`, or a refspec pattern (in a push; the pattern in the step 2 `ls-remote` only selects what to read); never run `git remote prune`, `git fetch --prune`, or `git branch -d -r`; never delete the remote default, `main`, the target's remote branch, a branch with a long-lived role, a branch on any remote other than `--remote`, or a branch that is not merged into a survivor; never delete a remote branch when phase 1 stopped. Do not proceed when the skill or this reference could not be loaded; preview only.
+All of section 6, except that the lease-guarded deletion above and, only with `--push`, the publish step replace its ban on pushing and on deleting remote branches and remote-tracking refs. In addition: never push commits or tags except the one fast-forward push of `<branch>` that `--push` makes; never force-push (the only pushes are the lease-guarded deletion above, one named branch per command, and that publish command); never use `--mirror`, `--prune`, `--all`, `--tags`, `--no-verify`, or a refspec pattern (in a push; the pattern in the step 2 `ls-remote` only selects what to read); never publish without `--push`, publish when phase 1 stopped or its validation failed, publish `main` or the remote default, or retry a failed publish with another command; never run `git remote prune`, `git fetch --prune`, or `git branch -d -r`; never delete the remote default, `main`, the target's remote branch, a branch with a long-lived role, a branch on any remote other than `--remote`, or a branch that is not merged into a survivor; never delete a remote branch when phase 1 stopped. Do not proceed when the skill or this reference could not be loaded; preview only.
 
 ### Output
 
 ```text
 Plan / Preview header (section 6 output, plus remote and survivors)
-Gates
+Gates (every failed gate with its remedy)
 Sources to merge (ordered)
 Contained sources
-Blocked items + reasons
+Blocked items + reasons + remedies
 Expected final local branches
-Remote branches: classification table (SAFE_CANDIDATE / PENDING_PUSH / KEPT_NOT_MERGED / ...)
+Remote branches: classification table (SAFE_CANDIDATE / PUSH_THEN_DELETE / PENDING_PUSH / KEPT_NOT_MERGED / ...)
+Publish prediction (with or without --push)
 Not touched
+Readiness: ONE_SHOT / PARTIAL / BLOCKED, recommended command, remaining items + remedies
 Applied operations (only with --apply)
 Skipped items + reasons
 Target start SHA -> end SHA
+Published branch: remote tip before -> after, commit count (only with --push)
 Deleted local branches + tip SHAs
 Deleted remote branches + tip SHAs
 Validation
-Remaining risks (including: remote lacks the commits now only in local <branch> until you push)
+Run state: COMPLETE / PARTIAL, remaining items + remedies, Next command (only with --apply)
+Remaining risks (including: without a successful publish, the remote lacks the commits now only in local <branch>)
 ```
 
 ## Command Relationship
@@ -571,8 +646,8 @@ Remaining risks (including: remote lacks the commits now only in local <branch> 
    ↓ guarded lifecycle cleanup
 /GitConverge <branch> [--apply]
    ↓ guarded merge-everything-and-delete convergence
-/GitSweep <branch> [--apply]
+/GitSweep <branch> [--apply] [--push]
    ↓ GitConverge + guarded deletion of merged remote branches
 ```
 
-`/GitRecon`, `/GitAnalyze`, and `/GitRecommend` are observation/advice commands. `/GitIntegrate` is an integration write-intent. `/GitCleanup` is preview-only unless `--apply` is explicit. `/GitConverge` is preview-only unless `--apply` is explicit; it merges unreviewed local branches only on the user's acceptance of the plan it prints. `/GitSweep` runs the same convergence and is the only command that deletes remote branches, and only those already merged into a branch the remote keeps.
+`/GitRecon`, `/GitAnalyze`, and `/GitRecommend` are observation/advice commands. `/GitIntegrate` is an integration write-intent. `/GitCleanup` is preview-only unless `--apply` is explicit. `/GitConverge` is preview-only unless `--apply` is explicit; it merges unreviewed local branches only on the user's acceptance of the plan it prints. `/GitSweep` runs the same convergence and is the only command that deletes remote branches, and only those already merged into a branch the remote keeps; with `--push` it is also the only command that pushes commits, one fast-forward push of `<branch>`.

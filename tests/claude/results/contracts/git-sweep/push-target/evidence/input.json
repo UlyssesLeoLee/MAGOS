@@ -1,0 +1,18 @@
+{
+  "arguments": [
+    "<branch>",
+    "--apply",
+    "--push"
+  ],
+  "also": [
+    "remote branch that is not an ancestor of the local one",
+    "branch is the remote default",
+    "converge phase stopped or its validation failed",
+    "push exits non-zero",
+    "push exits zero but the remote-tracking ref does not equal the local tip",
+    "remote tip already equals the local tip",
+    "no remote branch depends on the push",
+    "--push without --apply",
+    "/GitConverge"
+  ]
+}

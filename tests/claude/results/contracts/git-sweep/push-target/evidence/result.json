@@ -1,0 +1,79 @@
+{
+  "case": "git-sweep/push-target",
+  "skill": "git-sweep",
+  "feature": "--push publishes the local branch with one fixed fast-forward push, only when every condition holds; nothing else ever pushes commits",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "commands/GitSweep.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "commands/GitConverge.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-converge/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.en.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.ja.md",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}

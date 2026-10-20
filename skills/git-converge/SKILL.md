@@ -20,7 +20,7 @@ Command adapter for the canonical `/GitConverge` command of the MAGOS (Multi-Age
 - `--discard-ignored`: With `--apply`, also allow removing worktrees that hold ignored files (for example `.env`). Without it those worktrees and their branches are kept.
 - `--lang <language>`: Language of the reply, as a name or code (for example `English`, `ja`); Chinese when absent. Command names, options, branch names, paths, SHAs, and status codes stay untranslated.
 - `--help`: Show this inline usage and argument description, then stop without inspecting or changing the repository.
-- Default: Preview the merge plan, blocked items, and the expected final branch list; nothing is changed.
+- Default: Preview the merge plan, blocked items, and the expected final branch list, with every failed gate and blocker followed by the action that lifts it; nothing is changed.
 
 Examples: `/git-converge agent/release`, `$git-converge agent/release --apply`, `$git-converge <branch> --lang English`, `$git-converge --help`.
 

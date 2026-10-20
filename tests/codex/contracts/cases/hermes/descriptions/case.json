@@ -85,7 +85,9 @@
     },
     {
       "file": "skills/git-sweep/SKILL.md",
-      "contains": [],
+      "contains": [
+        "description: \"收敛并清除已合并远端分支（仅显式调用，写操作）；/git-sweep BRANCH [--apply] [--push] [--help].\""
+      ],
       "pattern": "^description: \"([^\"]+)\"$",
       "length": [
         1,

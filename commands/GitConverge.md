@@ -15,7 +15,7 @@ Usage: `/GitConverge <branch> [--apply] [--discard-ignored] [--lang <language>] 
 - `--discard-ignored`: With `--apply`, also allow removing worktrees that hold ignored files (for example `.env`). Without it those worktrees and their branches are kept.
 - `--lang <language>`: Language of the reply, as a name or code (for example `English`, `ja`); Chinese when absent. Command names, options, branch names, paths, SHAs, and status codes stay untranslated.
 - `--help`: Show this help and stop without inspecting or changing the repository.
-- Default: Preview the merge plan, blocked items, and the expected final branch list; nothing is changed.
+- Default: Preview the merge plan, blocked items, and the expected final branch list, with every failed gate and blocker followed by the action that lifts it; nothing is changed.
 
 Examples: `/GitConverge agent/release`, `/GitConverge agent/release --apply`, `/GitConverge <branch> --lang English`, `/GitConverge --help`.
 
