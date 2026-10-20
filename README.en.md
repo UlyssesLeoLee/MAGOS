@@ -1,6 +1,6 @@
 # Multi-Agent Git Orchestrator Skills
 
-[English](README.en.md) | [中文](README.md)
+[English](README.en.md) | [中文](README.md) | [日本語](README.ja.md)
 
 > **Let multiple AI agents safely develop the same Git repository in parallel.**
 
@@ -34,7 +34,7 @@ It actively inspects the current repository's **branch / worktree / commit / ahe
 | remote | The copy stored online (for example on GitHub) | The company's shared-drive backup |
 | preview / apply | Look at the plan first, then decide to really do it | Read the renovation plan, then say "go" |
 
-**Every command follows one rule: look first, act only when told.** The four commands that can change your repository (`/GitIntegrate`, `/GitCleanup`, `/GitConverge`, `/GitSweep`) act only when you explicitly ask, and they stop and explain whenever they are unsure instead of pushing on.
+**Every command follows one rule: look first, act only when told.** The four commands that can change your repository (`/GitIntegrate`, `/GitCleanup`, `/GitConverge`, `/GitSweep`) act only when you explicitly ask: `/GitCleanup`, `/GitConverge` and `/GitSweep` only preview until you add `--apply`; `/GitIntegrate` has no preview mode, so typing it is the order to integrate, and it checks every gate first and writes only when all of them pass. They stop and explain whenever they are unsure instead of pushing on.
 
 ### How do I write a command?
 
@@ -50,6 +50,7 @@ Type the command in Claude Code, followed by optional "arguments" separated by s
 - If a value contains a space, put it in quotes: `--lang "Brazilian Portuguese"`.
 - The order of switches does not matter.
 - `--help` is always safe: it **only shows the instructions and never reads or changes your repository**.
+- This README writes every command as `/GitRecon`. The name you type depends on the host and the install: after a plugin-marketplace install, for example, it is `/magos:GitRecon` in Claude Code, `$magos:git-recon` in Codex and `/magos:git-recon` in Hermes. The "Install" section lists them all.
 
 ---
 
@@ -366,7 +367,7 @@ Write one of the four values after `--strategy`. Leaving it out is the same as `
 | Value | Plain meaning | Good for |
 |---|---|---|
 | `auto` (default) | Pick the best way from the repository's habits and your review | When you are not sure which to choose |
-| `merge` | Bring everything in and **keep** every change record, plus one extra "merge record" | You want the full history of how it was built |
+| `merge` | Bring everything in and **keep** every change record (whether an extra "merge record" is added follows the repository's own merge policy) | You want the full history of how it was built |
 | `squash` | Bring everything in as **one** combined record (only if the repository's rules allow it) | The changes are fiddly and you want a tidy main line |
 | `cherry-pick` | Bring in **only the changes already confirmed safe** and leave the rest | Only part of the work is acceptable |
 
@@ -393,7 +394,7 @@ cherry-pick    A──B──C'          only C is copied over; D does not enter
 
 #### What it checks before acting
 
-It checks, one by one: is there evidence that the work was reviewed and accepted, are there unfinished dependencies, did the main line change after your review, did this branch gain new changes after your review, and do the repository's rules allow it. **If any check fails it stops and tells you; it never forces it.** After integrating, it validates the main line again.
+It checks, one by one: is there evidence that the work was reviewed and accepted, are there unfinished dependencies, did the main line change after your review, did this branch gain new changes after your review, and do the repository's rules allow it. **If any check fails it stops and tells you; it never forces it.** After integrating, it validates the main line again and, when the lane guard is installed, releases the lane's registration (`magos_guard.py release --branch <branch> --reason integrated`).
 
 ```mermaid
 flowchart TD
@@ -434,7 +435,7 @@ Use it when finished branches have piled up and you want to tidy up without dele
 | If you leave it out | **Preview only**: lists the objects that can be cleaned and the ones that cannot (with reasons); deletes nothing |
 | What it does with it | For each object marked "can be cleaned", it **checks the current state again** and deletes only if it is still safe: first removes its worktree, then deletes the branch |
 | An object changed between preview and apply | For example the branch got a new change after the preview: it **skips** that one and tells you, rather than deleting from the old list |
-| What it never does | Force-delete; clean a worktree with unsaved edits, an operation half-way through, or ignored files; delete a branch that holds work found nowhere else; run a repository-wide `git worktree prune`; delete `main`, the target, or the worktree you are standing in; delete online (remote) branches unless you explicitly ask |
+| What it never does | Force-delete; clean a worktree with unsaved edits, an operation half-way through, or ignored files; delete a branch that holds work found nowhere else; run a repository-wide `git worktree prune`; delete `main`, the target, or the worktree you are standing in; delete online (remote) branches (only `/GitSweep` deletes remote branches) |
 
 Suggested habit: **read the list without `--apply` first; add it only when you are happy.**
 
@@ -447,7 +448,7 @@ Suggested habit: **read the list without `--apply` first; add it only when you a
 | `SAFE_CANDIDATE` | All seven conditions hold; safe to clean | Only with `--apply` |
 | `BLOCKED_DIRTY` | Its worktree has unsaved edits | No |
 | `BLOCKED_UNIQUE_WORK` | It holds work that exists nowhere else | No |
-| `BLOCKED_ACTIVE_OWNER` | Someone (or some agent) is using it right now | No |
+| `BLOCKED_ACTIVE_OWNER` | Someone (or some agent) is using it: its worktree is locked, lies under an agent tool's worktree directory (`.claude/worktrees/`, `~/.codex/worktrees/`, or a directory the repository documents), is recorded as belonging to someone else, or the lane has an open registration in the lane guard (`planned` or `active`); clean does not mean unused | No |
 | `BLOCKED_DEPENDENCY` | Another branch depends on it | No |
 | `BLOCKED_NOT_INTEGRATED` | Its content is not fully in the main line yet | No |
 | `BLOCKED_IN_PROGRESS` | Its worktree is half-way through an operation (for example a rebase stopped mid-way); it looks clean but is not | No |
@@ -466,7 +467,7 @@ A branch becomes a `SAFE_CANDIDATE` only when **all** seven hold:
 ✓ no unique unsaved work
 ```
 
-`main`, the target, and the worktree you are standing in (with its branch) never go on the list.
+`main`, the target, the remote default branch (the one `origin/HEAD` names), any branch the repository documents as long-lived or protected, and the worktree you are standing in (with its branch) never go on the list.
 
 **Note: "untouched for a long time" does not mean safe to delete.** Age alone never puts a branch on the cleanup list.
 
@@ -532,7 +533,7 @@ Untouched: online branches, tags, worktrees other people are using
 
 **Step 2: read the plan**
 
-Each branch in the preview has a status. In plain words:
+Each branch in the preview has one merge status (`MERGE`, `CONTAINED`, `BLOCKED_UNRELATED_HISTORY`, `BLOCKED_IN_PROGRESS`, `UNKNOWN`) and may carry any number of keep reasons (the six codes from `BLOCKED_DIRTY` to `BLOCKED_UPSTREAM_OF_KEPT`). In plain words:
 
 | Status | Plain meaning | Merged? | Deleted? |
 |---|---|---|---|
@@ -548,7 +549,13 @@ Each branch in the preview has a status. In plain words:
 | `BLOCKED_UPSTREAM_OF_KEPT` | Another branch that stays depends on it | Yes | Kept |
 | `UNKNOWN` | A key fact could not be established, or its name equals another branch's except for case (both stay untouched; the report says how to rename one safely) | Untouched | Untouched |
 
+Keep reasons only decide whether the branch is deleted; they never stop a merge. The "Merged?" column describes a branch that has new changes (`MERGE`); a `CONTAINED` branch has nothing to merge and is merely kept when it carries a reason.
+
+In the preview a `MERGE` branch may carry `PREDICTED_CONFLICT`: when Git supports a trial merge (`git merge-tree --write-tree`), each branch is trial-merged once, and a conflict adds this marker. It is only a hint and changes no branch and no worktree; a clash between two branches is not visible to the trial and appears when the second one merges.
+
 If any branch is kept, the plan says plainly that you will **not** end up with only `main` and the target, with the reason and the next step.
+
+A clean worktree that has no lock, lies outside the agent worktree roots (`.claude/worktrees/`, `~/.codex/worktrees/`, or a directory the repository documents), has no recorded owner, and has no open lane-guard registration is removed together with its branch even though no owner is recorded; the plan lists each such worktree as "owner: not recorded". This differs from `/GitCleanup`, which never touches a worktree whose owner is not recorded.
 
 **Step 3: happy with it? Run it**
 
@@ -556,7 +563,7 @@ If any branch is kept, the plan says plainly that you will **not** end up with o
 /GitConverge agent/release --apply
 ```
 
-It re-checks the current state, records the plan it will act on, merges the sources one by one, deletes the merged branches and their clean worktrees, and ends with a report. The report has: the plan it acted on, what it did, what it skipped (and why), the target's start and end IDs, and the original ID of every deleted branch.
+It re-checks the current state, records the plan it will act on, merges the sources one by one, deletes the merged branches and their clean worktrees, and ends with a report. The report has: the plan it acted on, what it did, what it skipped (and why), the target's start and end IDs, the branches that remain, the validation result, and the original ID of every deleted branch.
 
 #### The arguments in detail
 
@@ -579,6 +586,7 @@ It re-checks the current state, records the plan it will act on, merges the sour
 | What it does with it | Re-check the current state → record the plan → switch to the target branch (if you are not on it) → merge one by one in order → validate → delete one by one after re-checking → report |
 | Merge order | `main` first; then the others, the one with the most new changes first, ties by name. So if A contains B, merging A already brings B along, and B is not merged twice |
 | On a conflict | It undoes that merge right away and **stops completely, deleting nothing**; merges that already succeeded stay |
+| Validation | Runs the repository's own checks (for example tests) only when they can be identified; if they fail because of the merge it stops before any deletion and reports; if none can be identified the report says "not validated" and it continues, with each deletion still gated by its re-check |
 | Before each deletion | It re-confirms that the branch has no new changes, its content really is in the target, and its worktree is still clean |
 | You previewed earlier | In the same conversation, it compares with that preview: if any branch has moved, it stops and gives you a new preview; branches or worktrees that appeared since the preview are left alone |
 
@@ -594,7 +602,7 @@ What are "ignored files"? Some files (for example a `.env` holding passwords and
 | Useful on its own? | No. It only matters together with `--apply` |
 | When to use it | You have read the ignored files listed in the preview and none are needed (for example only temporary files that can be regenerated) |
 
-> It **never** overwrites ignored files that already sit in your current folder: if a branch would bring files that overwrite them, the whole command stops before merging and tells you. This has nothing to do with `--discard-ignored`.
+> It **never** overwrites ignored files that already sit in your current folder: if a branch would bring files that overwrite them, the command stops before merging that branch and tells you, and deletes no branch; merges that already finished stay. This has nothing to do with `--discard-ignored`.
 
 **`--lang <language>` (optional)**: reply language, Chinese by default. **`--help` (optional)**: instructions only.
 
@@ -688,13 +696,18 @@ Two phases, and nothing happens without `--apply`:
 |---|---|
 | `PENDING_PUSH` | Merged only locally; push `<branch>` and rerun to delete it |
 | `KEPT_NOT_MERGED` | Holds commits the remote does not keep elsewhere |
-| `KEPT_LOCAL` | The local branch of the same name was kept (blocked), so the remote one stays too |
-| `STALE` | The live remote branch moved since the plan; skipped |
-| Protected | The remote default, `main`, `<branch>`, and any branch with evidence of a long-lived role (integration, staging, release, archive) |
+| `KEPT_LOCAL` | The local branch of the same name is still kept after the local converge (blocked, unrelated history, in progress, `UNKNOWN`, or appeared after the preview), so the remote one stays too |
+| `STALE` | At apply time the remote branch has new commits or is gone from the remote; skipped |
+| `NOT_TOUCHED` (protected) | The remote default, `main`, `<branch>`, `HEAD`, refs written by another fetch refspec (for example `refs/remotes/<remote>/pr/*`), and branches the repository documents as long-lived or protected or that show evidence of a long-lived role (integration, staging, release, archive) |
+| `BLOCKED_UPSTREAM` | A local branch that stays tracks it |
+| `BLOCKED_BAD_NAME` | The name fails `git check-ref-format --branch` or starts with `-`; it is never passed to a command |
+| `UNKNOWN` | A key fact could not be established: two remote branches whose names differ only by case both stay; an unknown remote default (no `refs/remotes/<remote>/HEAD`; run `git remote set-head <remote> --auto`), a missing `refs/heads/*:refs/remotes/<remote>/*` fetch mapping, or a push URL different from the fetch URL makes the whole remote sweep `UNKNOWN` (the local converge still completes) |
 
-At apply time it first checks the live remote's default branch and branch tips and stops if they differ from what it recorded; run `git fetch` and retry.
+Only a `SAFE_CANDIDATE` (merged into a branch the remote keeps, and none of the above applies) is deleted.
 
-It never pushes commits or tags, never force-pushes, and never deletes the remote default branch, `main`, or `<branch>` itself. Each remote branch is deleted on its own with a lease on its recorded SHA, so the remote refuses if the branch moved meanwhile. Deleting a remote branch closes open pull requests that use it as their head. The report lists every deleted branch with its SHA (`git push <remote> <sha>:refs/heads/<name>` restores it).
+After the local converge phase, `--apply` checks the live remote once. If the remote's default branch or a branch it relies on (the remote default, the remote's `<branch>`) differs from what was recorded, the whole remote sweep is skipped and no remote branch is deleted (the local convergence stays); run `git fetch <remote>` (plus `git remote set-head <remote> --auto` if the default changed) and rerun. If only a candidate branch differs from the record or is gone from the remote, only that branch is skipped as `STALE`.
+
+It never pushes commits or tags, never force-pushes, and never deletes the remote default branch, `main`, or `<branch>` itself. Each remote branch is deleted on its own with a lease on its recorded SHA, so the remote refuses if the branch moved meanwhile. Deleting a remote branch closes open pull requests that use it as their head; on some hosts it also closes or retargets pull requests that use it as their base. The report lists every deleted branch with its SHA (`git push <remote> <sha>:refs/heads/<name>` restores it).
 
 ---
 
@@ -713,7 +726,7 @@ stateDiagram-v2
     READY --> REJECTED
 ```
 
-Every lane tracks: task, owner, branch, worktree, base branch, base SHA, current HEAD, dependencies, validation evidence, integration decision.
+Every lane tracks: task, owner, branch, worktree, base branch, base SHA, current HEAD, dependencies, acceptance criteria, validation evidence, integration decision.
 
 ---
 
@@ -771,19 +784,19 @@ Denied by default:
 
 MAGOS ships a lane guard (`scripts/magos_guard.py`). Before a branch or worktree is created, the files the new lane will change must be registered as a manifest (`plan`); a creation whose planned files overlap another branch, worktree or registered lane is denied, and every conflicting lane is named. Existing lanes are only read: no hook stops a write, commit or merge inside one. The contract agents follow is `references/lane-split.md`; installing, upgrading and the known limits are in `references/installation.md`.
 
-- **Where it runs.** The Claude Code plugin turns on PreToolUse hooks (`hooks/hooks.json`, which runs `hooks/run-guard.cmd`, which runs `scripts/magos_guard.py`) in every repository you open in Claude Code. The Codex and Hermes plugin installs do not: in your own terminal, run `py -3 scripts/magos_guard.py install --host codex` (or `--host hermes`; `python3` on macOS and Linux) and merge the entry it prints into the host's configuration. In one repository, `arm` adds a Git `reference-transaction` backstop that vetoes an unclaimed new branch whatever tool runs git.
-- **Modes.** AUTO (the default): a named worktree creation always needs a manifest, a branch-only creation only when another lane exists, so a repository with one worktree and nothing unmerged is unaffected. ARMED (after `arm`): every new branch needs one, in the hooks and in Git. OFF: `git config --local magos.guard off`.
-- **Opting out.** `git config --local magos.guard off` (one repository), `claude plugin disable magos` (the whole Claude Code plugin), or `MAGOS_GUARD=off` in the environment of the host process.
-- **Requirements.** Python 3.9+ (`py -3`, `python3` or `python`) and Git 2.36+ (the other MAGOS commands need Git 2.30+); `magos_guard.py doctor` checks both, and `magos_guard.py version` prints the running guard's version.
-- **Only you** run `override`, `arm`, `disarm` and `install`, from a real terminal; the hooks deny an agent that tries, and the hook launcher runs nothing but the hook. A command started in a new console window passes the console check, so neither that check nor an override is access control.
-- **After every upgrade.** Restart the running Claude Code sessions, and re-run `install` for Codex and Hermes (`doctor` prints the exact command; for a copy installed with `install --home <dir>`, run `doctor --home <dir>`).
-- **Limits.** The hooks read command text, and they let a call through when Python or the guard script is missing; the Git backstop does not see a branch rename or copy (`git branch -m/-c`), which the hooks deny in every option spelling. `references/lane-split.md` section 12 lists every limit.
+- **Where it runs.** The Claude Code plugin turns on PreToolUse hooks (`hooks/hooks.json`, which runs `hooks/run-guard.cmd`, which runs `scripts/magos_guard.py`) in every repository you open in Claude Code. The Codex and Hermes plugin installs do not: in your own terminal, run `py -3 scripts/magos_guard.py install --host codex` (or `--host hermes`; `python3` on macOS and Linux) and merge the entry it prints into the host's configuration (trust it in Codex's `/hooks`; approve it in Hermes on first use). In one repository, `arm` adds a Git `reference-transaction` backstop that vetoes an unclaimed new branch whatever tool runs git.
+- **Modes.** AUTO (the default): a named worktree creation always needs a manifest, a branch-only creation only when another lane exists, so in a repository with one worktree and nothing unmerged, branch-only creations are unaffected. ARMED (after `arm`): every new branch needs one, in the hooks and in Git. OFF: `git config --local magos.guard off`, which switches off the host hooks of that repository; in an armed repository the Git backstop is unaffected.
+- **Opting out.** `git config --local magos.guard off` (one repository), `claude plugin disable magos` (the whole Claude Code plugin), or `MAGOS_GUARD=off` in the environment of the host process. All three switch off the host hooks only and leave the Git backstop in place: in an armed repository, run `disarm` in your own terminal to remove it.
+- **Requirements.** Python 3.9+ (the hook launcher looks for `python3`, `py -3`, `python` in that order on POSIX and in Git Bash, and for `py -3`, `python`, `python.bat`, `python.cmd` in that order under Windows cmd) and Git 2.36+ (the other MAGOS commands need Git 2.30+); `magos_guard.py doctor` checks both, and `magos_guard.py version` prints the running guard's version.
+- **Only you** run `override`, `arm`, `disarm` and `install`, from a real terminal, and only you write `magos.*` git configuration (for example `magos.guard`); the hooks deny an agent that tries, and the hook launcher runs nothing but the hook. A command started in a new console window passes the console check, so neither that check nor an override is access control.
+- **After every upgrade.** Restart the running Claude Code sessions. Re-run `install` for each host `doctor` lists (`doctor` prints the exact command; for a copy installed with `install --home <dir>`, run `doctor --home <dir>`), and replace the entry merged into the host's configuration when the printed one differs (trust it again in Codex's `/hooks`; approve it again in Hermes). In an armed repository, run `doctor` and, when it prints an `arm` command, re-run that command in your own terminal.
+- **Limits.** The hooks read command text, and they let a call through when Python or the guard script is missing (Claude Code's `EnterWorktree` hook blocks the call instead); the Git backstop does not see a branch rename or copy (`git branch -m/-c`), which the hooks deny in every option spelling. `references/lane-split.md` section 12 lists every limit.
 
 ---
 
 ## Install
 
-Copy the directory into your agent's skills path:
+The repository is laid out as follows (only the main files; it also holds `tests/`, `.github/`, `.quality/`, and the documentation, license and configuration files at the root). A Claude Code clone install uses the whole directory; the sync script copies only `SKILL.md`, `references/` and the seven command skills from `skills/` to Codex and Hermes. The sections below give each host's install:
 
 ```text
 multi-agent-git-orchestrator/
@@ -816,14 +829,14 @@ multi-agent-git-orchestrator/
 
 The root skill triggers on its own through semantic matching. The seven commands are optional explicit entry points. Besides multi-agent coordination and symptoms such as agents overwriting each other or branch sprawl, it also triggers when you choose, audit, or change the branch strategy (分支策略, ブランチ戦略) of a specific repository, above all one that agents, worktrees, or several developers share. A pure concept question such as "gitflow vs trunk-based" does not trigger it. It only advises: execution still goes through the matching `/Git...` command with its gates, and **Strategy Changes** in `references/branch-strategy.md` says which command does what. No command renames a branch, so a rename stays a manual step after dependents are coordinated. Note that with the sync-script install Hermes shows only about the first 57 characters of a skill description in its index, so there load the skill by name (or use `/git-recommend`) for branch-strategy advice; the Hermes plugin install passes its own index line, which names branch strategy.
 
-### Cross-host install (recommended)
+### Install with the sync script (Codex and Hermes packages)
 
 ```bash
 python -X utf8 scripts/sync_hosts.py --host codex --host hermes --apply --create-roots
 python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
 ```
 
-`--verify` checks that every file the adapters reference actually exists, without starting an AI host. The script never deletes files.
+`--verify` compares every installed file with the repository and exits nonzero when one is missing or differs, without starting an AI host. The script never deletes files.
 
 ### Install from a plugin marketplace (recommended, all three hosts)
 
@@ -845,15 +858,16 @@ After a new session the names line up across hosts:
 | The orchestrator (triggers when you describe a problem) | `magos:git-orchestrator` | `magos:git-orchestrator` | `magos:git-orchestrator` (Hermes lists it in the system prompt's `<available_skills>`; the model loads it from the description) |
 
 - Claude Code also lists the seven lowercase `/magos:git-recon` and so on. They are the cross-host adapters and do the same as `/magos:GitXxx`; use the latter.
-- Plugin hosts load only the skills under `skills/`, never the root `SKILL.md`, so the plugin carries an entry skill, `git-orchestrator`, that reads the root `SKILL.md`. Skills-directory installs (the sync script, or a clone into a skills folder) do not need it, and the sync script does not copy it.
+- Plugin hosts load only the skills under `skills/`, never the root `SKILL.md`, so the plugin carries an entry skill, `git-orchestrator`, that reads the root `SKILL.md`. A clone into `~/.claude/skills/magos` loads it too; only the Codex and Hermes packages installed by the sync script do not need it, and the sync script does not copy it.
 - The manifests pin a version, so Claude Code updates an installed plugin only when the version changes. A running session keeps the hooks of the version it started with, so restart every session after an update.
 - The Claude Code install also turns on the lane guard hooks; the Codex and Hermes installs do not (see Lane guard). Upgrade details per host, including the guard copy and rollback, are in `references/installation.md`; what changed in each version is in `CHANGELOG.md`.
 - Hermes warns "custom (unreviewed) source": MAGOS is not in the official Hermes plugin catalog. Listing it takes a pull request to NousResearch/hermes-agent by the repository owner, pinned to a commit SHA; a listed plugin installs with `hermes plugins install magos`.
-- If you installed an older way, remove it first so each command exists once: `~/.claude/commands/Git*.md`, `~/.claude/skills/magos`, Codex `~/.agents/skills/MAGOS`, Hermes `skills/multi-agent-git-orchestrator`.
+- A machine can hold several Hermes installs, each with its own home (for example, another Hermes instance sits first on your PATH). The `hermes` command acts only on the one it resolves to: when `hermes plugins update magos` answers "No plugin named 'magos'", that install does not have magos. Check with `hermes plugins list`; on Windows `Get-Command hermes -All` lists every `hermes`, and the one that holds magos is run by its full path. Each install is installed and updated on its own.
+- If you installed an older way, remove it first so each command exists once: `~/.claude/commands/Git*.md`, `~/.claude/skills/magos`, Codex `~/.agents/skills/MAGOS` and the legacy `$CODEX_HOME/skills/MAGOS` (default `~/.codex/skills/MAGOS`), Hermes `<Hermes home>/skills/multi-agent-git-orchestrator` and `<Hermes home>/skills/MAGOS`.
 
 ### Pin a version
 
-Every release is tagged `v<version>` (`CHANGELOG.md`). The commands above follow the default branch; to stay on one release:
+Every release from 1.0.1 on is tagged `v<version>` (`CHANGELOG.md`); 1.0.0 has no tag, so do not install or pin it, and the tag `v1.0` is the skill release 3.4.0 from before the package became a plugin, not a plugin version, so do not pin it either. The commands above follow the default branch; to stay on one release:
 
 ```bash
 claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.2    # then: claude plugin install magos@magos
@@ -881,7 +895,7 @@ The repository root carries `.claude-plugin/plugin.json`, so Claude Code loads t
 - the orchestrator entry `magos:git-orchestrator`, which triggers on its own;
 - the seven cross-host adapters from `skills/`, listed as `/magos:git-recon` and so on. They do the same as the commands above; in Claude Code use `/magos:GitXxx`.
 
-To update, run `git pull` in that folder, then start new sessions; commands, rules and the lane guard update together. `claude plugin list` should show `magos@skills-dir` as loaded.
+To update, run `git pull` in that folder (a clone pinned to a tag runs `git fetch --tags` and `git checkout v<new version>` instead), then restart every running Claude Code session; commands, rules and the lane guard update together. `claude plugin list` should show `magos@skills-dir` as loaded.
 
 If you copied `~/.claude/commands/Git*.md` the old way, delete those seven files, or you keep a second, older set of `/GitXxx` commands.
 
@@ -906,16 +920,43 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 
 The copies do not follow later updates. After every `git pull` or new version, run the sync (or the copy) again; `--verify` reports copies that are missing or out of date. `--host claude` covers only `~/.claude/commands`; the skill the commands load (for example `~/.claude/skills/MAGOS`) must be updated separately. When the plugin is already installed, the sync script prints a `NOTE` and the copies are not needed. Start a new session, then type `/Git`.
 
+You can also call them explicitly:
+
+```text
+/GitRecon
+/GitAnalyze <branch>
+/GitRecommend [goal]
+/GitIntegrate <lane-or-branch>
+/GitCleanup
+/GitConverge <branch>
+/GitSweep <branch>
+```
+
 ### Codex
+
+The user-level install location is `~/.agents/skills/MAGOS`. If MAGOS is already installed at the old location `$CODEX_HOME/skills/MAGOS` (by default `~/.codex/skills/MAGOS`), the sync script keeps updating the old location; do not keep both, or Codex sees duplicate skills.
 
 ```bash
 python -X utf8 scripts/sync_hosts.py --host codex --apply --create-roots
 ```
 
+Or copy by hand. The last line of each snippet deletes the entry skill `git-orchestrator`: it is for plugin installs only and the sync script does not copy it, and keeping it adds a second skill with the root skill's description.
+
+Windows PowerShell:
+
 ```powershell
 $codexPackage = Join-Path $HOME ".agents\skills\MAGOS"
 New-Item -ItemType Directory -Force $codexPackage | Out-Null
 Copy-Item -Path .\SKILL.md, .\references, .\skills -Destination $codexPackage -Recurse -Force
+Remove-Item (Join-Path $codexPackage "skills\git-orchestrator") -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+macOS / Linux:
+
+```bash
+mkdir -p "$HOME/.agents/skills/MAGOS"
+cp -R SKILL.md references skills "$HOME/.agents/skills/MAGOS/"
+cd "$HOME/.agents/skills/MAGOS" && rm -r skills/git-orchestrator
 ```
 
 Restart Codex, press `$` to pick a command skill, or call `$git-recon`, `$git-analyze`, `$git-recommend`, `$git-integrate`, `$git-cleanup`, `$git-converge`, `$git-sweep` directly. `/skills` opens the skill browser. Arguments go after the skill name, e.g. `$git-analyze agent/auth --remote`; `--help` prints full usage.
@@ -924,13 +965,30 @@ Restart Codex, press `$` to pick a command skill, or call `$git-recon`, `$git-an
 
 ### Hermes
 
+Hermes's home directory is `HERMES_HOME`, else `%LOCALAPPDATA%\hermes` on Windows, else `~/.hermes`; when it does not come from `HERMES_HOME`, an `active_profile` that names a non-`default` profile whose directory exists selects `profiles/<name>`. Skills live in `<Hermes home>/skills/`. The sync script follows the same rules; the manual copy below does not handle `active_profile`, so with a non-default `active_profile` use the sync script. If `<Hermes home>/skills/MAGOS` already exists (for example from a direct `git clone`), the script keeps using it; if it is a git checkout, the script refuses to copy files, so update it with git instead.
+
 ```bash
 python -X utf8 scripts/sync_hosts.py --host hermes --apply --create-roots
 ```
 
+Or copy by hand. The last line of each snippet deletes the entry skill `git-orchestrator`: it is for plugin installs only and the sync script does not copy it, and keeping it adds a second skill with the root skill's description, plus `/git-orchestrator`.
+
+Windows PowerShell:
+
+```powershell
+$hermesHome = if ($env:HERMES_HOME) { $env:HERMES_HOME } else { Join-Path $env:LOCALAPPDATA "hermes" }
+$hermesSkills = Join-Path $hermesHome "skills\multi-agent-git-orchestrator"
+New-Item -ItemType Directory -Force $hermesSkills | Out-Null
+Copy-Item -Path .\SKILL.md, .\references, .\skills -Destination $hermesSkills -Recurse -Force
+Remove-Item (Join-Path $hermesSkills "skills\git-orchestrator") -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+macOS / Linux:
+
 ```bash
 mkdir -p "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator"
 cp -R SKILL.md references skills "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator/"
+cd "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator" && rm -r skills/git-orchestrator
 ```
 
 Restart Hermes, then `hermes skills list`, then `/git-recon`, `/git-analyze`, `/git-recommend`, `/git-integrate`, `/git-cleanup`, `/git-converge`, `/git-sweep`. Hermes has no per-skill auto-invoke switch, so the adapter layer specifies that `/git-integrate`, `/git-cleanup`, `/git-converge`, and `/git-sweep` never write to the repository unless you invoke them explicitly.
@@ -954,22 +1012,34 @@ GitRecommend
 | Which commands do I get? | The seven command skills under `skills/`: `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, plus the entry skill `git-orchestrator`. Some tools add the plugin name as a prefix; Codex shows `magos:git-recon`. |
 | What about the root `SKILL.md` (the shared rules)? | It is not a plugin skill, because the specification only looks inside `skills/`. That is why the plugin has the entry skill `git-orchestrator`: it carries the same description (so it triggers on its own) and reads the root `SKILL.md`; the seven commands read it and `references/` too. Verified in Claude Code, Codex, and Hermes: the plugin installs and enables, with the skill names in the table above; running each command end to end in each host has not been tested one by one. |
 | Does Claude Code use it? | No. Claude Code reads `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`; install it from the marketplace as described above. |
-| Which way for Hermes? | Either. `hermes plugins install UlyssesLeoLee/MAGOS --enable` reads the Hermes native manifest `plugin.yaml` (not this `plugin.json`), names the commands `/magos:git-recon` and so on, and passes the `[Skill directory: …]` path hint. Every plugin skill is listed in the system prompt's `<available_skills>` with the line from `INDEX_DESCRIPTIONS` in `__init__.py` (Hermes does not read a plugin skill's SKILL.md description, so without this line the model would see only the bare name): the orchestrator line names the situations that should trigger it, and the lines of the commands that write to a repository tell the model to leave them to the user. The four commands that modify the repository act only on an explicit `/magos:git-*`, `/git-*`, or `$git-*` invocation typed by the user. |
+| Which way for Hermes? | Either. `hermes plugins install UlyssesLeoLee/MAGOS --enable` reads the Hermes native manifest `plugin.yaml` (not this `plugin.json`), names the commands `/magos:git-recon` and so on, and passes the `[Skill directory: …]` path hint. Every plugin skill is listed in the system prompt's `<available_skills>` with the line from `INDEX_DESCRIPTIONS` in `__init__.py` (Hermes does not read a plugin skill's SKILL.md description, so without this line the model would see only the bare name): the orchestrator line names the situations that should trigger it, and the lines of the commands that write to a repository tell the model to leave them to the user. The four commands that modify the repository act only on an explicit `/magos:git-*`, `/git-*`, `$magos:git-*`, or `$git-*` invocation typed by the user (in Claude Code, the `/magos:Git*` command of the same name is one as well). |
 
-The repository root carries `.claude-plugin/` (the Claude Code `plugin.json` and the `marketplace.json` that Claude Code and Codex share) and the Hermes `plugin.yaml` and `__init__.py`, and deliberately no `.codex-plugin/` or `.cursor-plugin/`. Codex treats any of those folders as a plugin root and prefixes the skill names, so **a `git clone` straight into a Codex skills directory gives `$magos:git-recon` instead of `$git-recon`**. Install Codex and Hermes with the sync script: it copies only `SKILL.md`, `references/`, and `skills/`, never `.claude-plugin/`, so the names stay `$git-recon` and `/git-recon`. A root `plugin.json` alone does not trigger the prefix.
+The repository root carries `.claude-plugin/` (the Claude Code `plugin.json` and the `marketplace.json` that Claude Code and Codex share) and the Hermes `plugin.yaml` and `__init__.py`, and deliberately no `.codex-plugin/` or `.cursor-plugin/`. Codex treats `.claude-plugin/`, `.codex-plugin/` and `.cursor-plugin/` alike as a plugin root and prefixes the skill names; the repository carries `.claude-plugin/`, so **a `git clone` straight into a Codex skills directory gives `$magos:git-recon` instead of `$git-recon`**. Install Codex and Hermes with the sync script: it copies `SKILL.md`, `references/*.md`, and the seven command skills (each one's `SKILL.md` and `agents/openai.yaml`), never `.claude-plugin/` or the entry skill `git-orchestrator`, so the names stay `$git-recon` and `/git-recon`. A root `plugin.json` alone does not trigger the prefix.
 
 One known deviation: section 8 of the specification asks for files meant for a single tool to live in a reverse-domain folder (such as `com.example.client/`). `commands/` serves only Claude Code, and `plugin.yaml` and `__init__.py` only Hermes, but they sit at the top level. Plugin tools ignore them, so importing is unaffected; the install script and the tests address them at the top level.
 
-When you change the version, update together `version` in `plugin.json`, `.claude-plugin/plugin.json` and `plugin.yaml`, `metadata.version` in `SKILL.md` and `skills/git-orchestrator/SKILL.md`, `GUARD_VERSION` in `scripts/magos_guard.py`, and line 3 of `references/commands.md` (the source contracts and the guard suite check that they agree), and add the version's section to `CHANGELOG.md`. The release gate:
+When you change the version, update together `version` in `plugin.json`, `.claude-plugin/plugin.json` and `plugin.yaml`, `metadata.version` in `SKILL.md` and `skills/git-orchestrator/SKILL.md`, `GUARD_VERSION` in `scripts/magos_guard.py`, and line 3 of `references/commands.md` (the source contracts and the guard suite check that they agree), and add the version's section to `CHANGELOG.md`. The release gate needs pytest and PyYAML (the supply-chain checks fail without PyYAML): install them with `python -m pip install --require-hashes --only-binary :all: -r .github/requirements/tests-py314.txt` (Python 3.9 uses `.github/requirements-py39/tests-py39.txt`); the fifth command also needs `.github/requirements/coverage.txt`. Then run:
 
 ```bash
 python -X utf8 tests/codex/contracts/run_contract_cases.py --check
 python -X utf8 tests/claude/scripts/run_claude_contracts.py --check
 python -X utf8 tests/codex/contracts/test_agent_plugin.py
 python -m pytest tests/codex/guard -q -p no:cacheprovider
+python -X utf8 tests/codex/coverage_gate.py
 ```
 
-The first two run every source-contract case (including `package/agent-plugin`, the plugin format) and write nothing; they exit 1 on any failure. The third plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one. The fourth runs the lane guard suite. `.github/workflows/test.yml` runs all four on Windows and Linux with Python 3.9 and 3.14, runs the coverage commands of `.quality/qguard.json` on Windows with Python 3.14 and fails when a source file or the whole project has 90 percent line coverage or less, and checks that a release tag `v<version>` names the package version. `.github/workflows/security.yml` runs on pushes and pull requests to `main`, `develop_claude` and `develop_codex`, on `v*` tags, and weekly: on Windows and Linux with Python 3.14 it replays the confirmed findings of the 1.0.2 audit (`tests/codex/guard/data/security_regressions.jsonl`, each case with its verdict and, for a deny, its reason), runs the hardening and review suites and the supply-chain checks (actions pinned by commit SHA; read-only permissions for every job but CodeQL's upload of its results; installs pinned by version and sha256 and wheels only; no credential in a tracked file; no network module in the guard and the launcher, no program but git started by the guard, whose git runner refuses every subcommand but the local ones it uses; in a partial clone, git itself fetches missing objects from the promisor remote when the guard reads a diff), and a workflow may run only listed command lines and set only listed environment variables; zizmor audits the workflows and the Dependabot configuration with inline ignores and configuration files disabled and every input collected, failing on any finding or any file it cannot parse. Every CI install takes hash-pinned wheels from `.github/requirements` (Python 3.14, which Dependabot updates once a release is seven days old) or `.github/requirements-py39` (frozen at the last releases that support 3.9).
+The first two run every source-contract case (including `package/agent-plugin`, the plugin format) and write nothing; they exit 1 on any failure. The third plants many kinds of defects (a wrong manifest, mismatched versions, a stray link, and more) and confirms the checks catch each one. The fourth runs the lane guard suite; the fifth is the coverage gate, described under "Coverage gate" below.
+
+CI is made of three workflows and the Dependabot configuration, all under `.github/`:
+
+- `.github/workflows/test.yml`: runs the first four on Windows and Linux with Python 3.9 and 3.14, runs the fifth on Windows with Python 3.14, and checks that a release tag `v<version>` names the package version.
+- `.github/workflows/security.yml`: runs on pushes and pull requests to `main`, `develop_claude` and `develop_codex`, on `v*` tags, and weekly: on Windows and Linux with Python 3.14 it replays the confirmed findings of the 1.0.2 audit (`tests/codex/guard/data/security_regressions.jsonl`, each case with its verdict and, for a deny, its reason), runs the hardening and review suites and the supply-chain checks (actions pinned by commit SHA; read-only permissions for every job but CodeQL's upload of its results; installs pinned by version and sha256 and wheels only; no credential in a tracked file; no network module in the guard and the launcher, no program but git started by the guard, whose git runner refuses every subcommand but the local ones it uses; in a partial clone, git itself fetches missing objects from the promisor remote when the guard reads a diff), and a workflow may run only listed command lines and set only listed environment variables; zizmor audits the workflows and the Dependabot configuration with inline ignores and configuration files disabled and every input collected, failing on any finding or any file it cannot parse.
+- `.github/workflows/codeql.yml`: runs on pushes and pull requests to `main` and weekly, and analyses the Python sources and the workflows with CodeQL.
+- `.github/dependabot.yml`: opens weekly pull requests that move the actions pinned by commit SHA in `.github/workflows` and the hash-pinned packages in `.github/requirements` (Python 3.14) to their newest release, once that release is seven days old; `.github/requirements-py39` is not updated.
+
+**Hash-pinned installs.** Every CI install takes hash-pinned wheels from `.github/requirements` (Python 3.14) or `.github/requirements-py39` (frozen at the last releases that support 3.9).
+
+**Coverage gate.** The fifth command runs the coverage commands of `.quality/qguard.json` and exits 1 when a source file or the whole project has 90 percent line coverage or less.
 
 ---
 
@@ -989,7 +1059,7 @@ The first two run every source-contract case (including `package/agent-plugin`, 
 python -X utf8 tests/codex/contracts/run_contract_cases.py
 ```
 
-Runs the source contract checks and records each case's inputs and results in `tests/codex/contracts/cases/<group>/<case>/evidence/`; with `--check` it runs them without writing anything. No AI host is started. The `package/install-layout` case installs the Codex and Hermes packages into a temporary home and confirms every file the adapters reference exists, and that each skill is discovered exactly once under each host's discovery rules, also for a `git clone` straight into a skills directory. The `package/agent-plugin` case checks the Agent Plugins 1.0.0 package format (see Import as an Agent Plugin).
+Runs the source contract checks and records each case's inputs and results in `tests/codex/contracts/cases/<group>/<case>/evidence/`; with `--check` it runs them without writing anything. No AI host is started. The `package/install-layout` case installs the Codex and Hermes packages into a temporary home and confirms every file the adapters reference exists, and that each skill is discovered exactly once under a replica of the two hosts' discovery rules (not the real hosts), also for a `git clone` straight into a skills directory. The `package/agent-plugin` case checks the Agent Plugins 1.0.0 package format (see Import as an Agent Plugin).
 
 ---
 
