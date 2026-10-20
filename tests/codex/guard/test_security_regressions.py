@@ -1,6 +1,6 @@
-"""Replay of the confirmed high and medium findings of the 1.0.2 security audit, plus controls, against the hook entry run as its own
-process: one case per line of data/security_regressions.jsonl, each with the verdict the guard must give, for a deny the words its
-reason must hold (so a deny for another reason does not pass), and a wall-clock bound."""
+"""Replay of the confirmed high and medium findings of the 1.0.2 security audit and of the code review of release 1.0.2, plus controls,
+against the hook entry run as its own process: one case per line of data/security_regressions.jsonl, each with the verdict the guard must
+give, for a deny the words its reason must hold (so a deny for another reason does not pass), and a wall-clock bound."""
 from __future__ import annotations
 
 import json
@@ -19,7 +19,10 @@ CASES = [json.loads(line) for line in DATA.read_text(encoding="utf-8").splitline
 NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 NESTED = 2000000
 LAUNCHER = ROOT / "hooks" / "run-guard.cmd"
-GITCONFIG = "[user]\n  name = tester\n  email = t@example.invalid\n[init]\n  defaultBranch = main\n[core]\n  autocrlf = false\n  longpaths = true\n"
+GITCONFIG = ("[user]\n  name = tester\n  email = t@example.invalid\n[init]\n  defaultBranch = main\n[core]\n  autocrlf = false\n  longpaths = true\n"
+             "[alias]\n  nb = branch\n")  # the global alias `nb` is the subcommand `branch`
+# the claim of `rel.claim` as release 1.0.1 stored it (no `v=` line), under a name the Windows alias rule refuses: it ends in `.claim`
+CLAIM_1_0_1 = ("state=active\nbranch=rel.claim\nworktree=\ntarget=main\nbase={base}\ncreated=2026-01-01T00:00:00Z\nby=old\noverride=\nentry=docs/\n")
 
 
 def lab_env(home):
@@ -46,29 +49,41 @@ def make_repo(env, path, branch="main"):
     return path
 
 
+def make_lane_repo(env, path, lane):
+    """A repository holding main and the unmerged lane branch `lane`, with main checked out."""
+    make_repo(env, path)
+    git(env, path, "switch", "-q", "-c", lane)
+    (path / "a.txt").write_bytes(b"lane\n")
+    git(env, path, "commit", "-q", "-am", "lane")
+    git(env, path, "switch", "-q", "main")
+    return path
+
+
 def build_lab(root):
-    """E: a directory outside any repository holding L (main plus an unmerged lane branch), C (a single-lane repository) and four plain
-    repositories; T: a repository without main, master, develop or trunk; M: main plus 125 unmerged local branches."""
+    """E: a directory outside any repository holding L (main plus an unmerged lane branch), C (a single-lane repository), four plain
+    repositories and the script `mk` (`git switch -c zz33`); T: a repository without main, master, develop or trunk; M: main plus 125
+    unmerged local branches; R: main, an unmerged lane and the claim of `rel.claim` as release 1.0.1 stored it."""
     home = Path(os.path.realpath(str(root))) / "home"
     home.mkdir()
     (home / ".gitconfig").write_bytes(GITCONFIG.encode("utf-8"))
     env = lab_env(home)
     E = home / "E"
-    L = make_repo(env, E / "L")
-    git(env, L, "switch", "-q", "-c", "feat-x")
-    (L / "a.txt").write_bytes(b"lane\n")
-    git(env, L, "commit", "-q", "-am", "lane")
-    git(env, L, "switch", "-q", "main")
+    L = make_lane_repo(env, E / "L", "feat-x")
     C = make_repo(env, E / "C")
     for name in ("api", "web", "docs", "infra"):
         make_repo(env, E / name)
+    (E / "mk").write_bytes(b"git switch -c zz33\n")
     T = make_repo(env, home / "T", branch="work")
     M = make_repo(env, home / "M")
     head = git(env, M, "rev-parse", "HEAD")
     stream = "".join("commit refs/heads/many-%03d\ncommitter t <t@example.invalid> 1700000000 +0000\ndata %d\nb%03d\nfrom %s\n\n" % (i, 4, i, head)
                      for i in range(125))  # one commit ahead of main each, written by one fast-import run
     git(env, M, "fast-import", "--quiet", inp=stream.encode("ascii"))
-    return {"env": env, "home": home, "E": E, "L": L, "C": C, "T": T, "M": M}
+    R = make_lane_repo(env, home / "R", "feat-y")
+    claims = R / ".git" / "magos" / "claims"
+    claims.mkdir(parents=True)
+    (claims / "rel.claim.claim").write_bytes(CLAIM_1_0_1.format(base=git(env, R, "rev-parse", "main")).encode("utf-8"))
+    return {"env": env, "home": home, "E": E, "L": L, "C": C, "T": T, "M": M, "R": R}
 
 
 @pytest.fixture(scope="module")
@@ -122,12 +137,13 @@ def test_audit_finding_stays_fixed(case, lab):
 
 def test_the_cases_cover_every_replayed_finding():
     ids = [c["id"] for c in CASES]
-    assert len(ids) == len(set(ids)) == 33
+    assert len(ids) == len(set(ids)) == 49
     findings = {i.split("/")[0] for i in ids}
     assert findings == {"h-overdeny-01", "h-overdeny-03", "h-overdeny-04", "h-bypass-1", "h-bypass-2", "h-upgrade-02", "NF-bypass-01", "NF-bypass-02",
-                        "NF-state-1", "launcher-n1", "launcher-n7", "critic-new-01", "critic-new-02", "bypass-3", "dir-change", "control"}
+                        "NF-state-1", "launcher-n1", "launcher-n7", "critic-new-01", "critic-new-02", "bypass-3", "dir-change", "control",
+                        *("cr-%02d" % n for n in (*range(1, 14), 15))}  # cr-14 is a launcher case, which a hook payload cannot express
     for c in CASES:
-        assert c["expect"] in ("allow", "deny") and c["cwd"] in ("E", "L", "C", "T", "M"), c
+        assert c["expect"] in ("allow", "deny") and c["cwd"] in ("E", "L", "C", "T", "M", "R"), c
         assert set(c) <= {"id", "tool", "cwd", "command", "tool_input", "raw", "expect", "reason"}, c
         assert ("reason" in c) == (c["expect"] == "deny") and c.get("reason", "x").strip(), c  # every deny names the reason it must give
     assert {c["expect"] for c in CASES if c["id"].startswith("control/")} == {"allow", "deny"}

@@ -143,6 +143,19 @@ def test_a_claim_lets_the_creation_through(armed, guard):
     assert repo_git_raw(armed, "checkout", "--orphan", "unborn-one").returncode == 0
 
 
+def test_the_backstop_reads_refs_heads_in_any_case(armed, guard):
+    before = armed.git("for-each-ref")
+    msg = vetoed(armed, "update-ref", "refs/HEADS/y1", "HEAD")  # the case-insensitive file systems of Windows and macOS store it as the branch y1
+    assert "'y1' has no registered file manifest" in msg and "plan --branch y1" in msg
+    assert armed.git("for-each-ref") == before
+    assert guard(armed, "plan", "--branch", "y2", "--paths", "docs/").rc == 0
+    assert repo_git_raw(armed, "update-ref", "refs/HEADS/y2", "HEAD").returncode == 0
+    arm = "[Hh][Ee][Aa][Dd][Ss]"  # both case arms of the hook: a ref, and the ref HEAD points at
+    assert "\n  refs/%s/*) " % arm in G.HOOK_SH and "b=${ref#refs/%s/};" % arm in G.HOOK_SH
+    assert "case $new in ref:refs/%s/*) b=${new#ref:refs/%s/}" % (arm, arm) in G.HOOK_SH
+    assert "refs/heads/*)" not in G.HOOK_SH
+
+
 def test_everything_else_passes(armed):
     armed.write("docs/d.md", "edit\n")
     for args in (("add", "-A"), ("commit", "-q", "-m", "edit"), ("tag", "v1"), ("fetch", "--all"), ("gc", "-q"),

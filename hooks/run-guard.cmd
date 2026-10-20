@@ -28,6 +28,9 @@ set "PYEXE="
 for %%I in (py.exe) do set "PYEXE=%%~$PATH:I"
 if not defined WHY if defined PYEXE call "%PYEXE%" -3 -X utf8 -B "%GUARD%" %GARGS%
 if not defined WHY if defined PYEXE set "RC=%ERRORLEVEL%"
+REM py.exe exits 103 or 112 when the Python launcher finds no runtime (or none at the path it was given): it passes on like a missing one.
+if "%RC%"=="103" set "RC=9009"
+if "%RC%"=="112" set "RC=9009"
 set "PYEXE="
 if "%RC%"=="9009" for %%I in (python.exe) do set "PYEXE=%%~$PATH:I"
 if not defined WHY if defined PYEXE call "%PYEXE%" -X utf8 -B "%GUARD%" %GARGS%
@@ -53,8 +56,9 @@ CMDBLOCK
 # ---- POSIX part (Linux, macOS, and Git Bash when sh runs this file); cmd.exe never reaches it ----
 # Only shell builtins run before the guard, so a bare sh without coreutils on PATH works: ${0%/*} instead of dirname, read instead of
 # cat. The payload is read once and handed to each candidate interpreter; the next candidate is tried only when one is missing: exit
-# 127, or 9009 (the Windows "not found" code and the Microsoft Store stub's), which sh sees as 49. Each candidate's stdout is held back
-# until its exit code is known, so a stub's text never precedes the verdict.
+# 127, or 9009 (the Windows "not found" code and the Microsoft Store stub's), which sh sees as 49, or, for py -3 only, 103 or 112 (the
+# Python launcher found no runtime). Each candidate's stdout is held back until its exit code is known, so a stub's text never precedes
+# the verdict.
 [ "$MAGOS_GUARD" = "off" ] && exit 0
 STRICT=
 if [ "$1" = "--strict" ]; then STRICT=1; shift; fi
@@ -98,6 +102,7 @@ for cmd in python3 "py -3" python; do  # a Python 2 `python` is reached only whe
     rc="${out##*.}"
     out="${out%.*}"
     case "$rc" in 127|9009|49) continue ;; esac
+    if [ "$cmd" = "py -3" ]; then case "$rc" in 103|112) continue ;; esac; fi  # the Python launcher found no runtime
     printf '%s' "$out"
     [ "$rc" = 0 ] && exit 0
     fail "$rc"

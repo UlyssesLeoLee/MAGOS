@@ -352,6 +352,80 @@ def test_cmd_half_returns_from_a_bat_interpreter_shim(tmp_path, layout):
         assert r.returncode == rc and b"no Python 3 found" in r.stderr and b"exit code 1" not in r.stderr, (words, r)
 
 
+def _exit_exe(path, code):
+    """A py.exe that exits with `code`, built with the .NET Framework compiler."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    source = path.with_suffix(".cs")
+    source.write_text("class P { static int Main() { return %d; } }\n" % code, encoding="utf-8")
+    built = subprocess.run([_csc(), "/nologo", "/out:%s" % path, str(source)], capture_output=True, stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
+                           timeout=120)
+    assert built.returncode == 0, built.stdout
+    return path.parent
+
+
+def _py_without_a_runtime_in_cmd(tmp_path, layout):
+    """cmd half: py.exe exiting 103 or 112 (no Python runtime) passes on to the python.bat shim; exiting 1 is a guard failure."""
+    system32 = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")
+    shim_log = tmp_path / "bat" / "shim.log"
+    bat = _shim(tmp_path / "bat", "python.bat", 'echo ran>> "%%~dp0shim.log"& "%s" %%*' % sys.executable)
+
+    def on_path(*dirs):
+        return os.pathsep.join([str(d) for d in dirs] + [system32])
+    for code in (103, 112):
+        py = _exit_exe(tmp_path / ("py%d" % code) / "py.exe", code)
+        if shim_log.exists():
+            shim_log.unlink()
+        for strict in ((), ("--strict",)):
+            r = run_cmd(layout, *strict, "hook claude pre-tool", env={"STUB": "echo"}, stdin=b"payload", path=on_path(py, bat))
+            assert r.returncode == 0 and r.stdout == b"payload|hook claude pre-tool" and r.stderr == b"", (code, strict, r)  # the shim's guard ran
+        assert shim_log.read_text().count("ran") == 2, code
+        # Nothing after py.exe: the launcher reports that no Python was found, never the exit code of py.exe.
+        for words, rc in (("hook claude pre-tool", 0), ("--strict hook claude pre-tool", 2)):
+            r = run_cmd(layout, words, path=on_path(py))
+            assert r.returncode == rc and b"no Python 3 found" in r.stderr and b"exit code" not in r.stderr, (code, words, r)
+    shim_log.unlink()
+    py = _exit_exe(tmp_path / "py1" / "py.exe", 1)
+    soft = run_cmd(layout, "hook claude pre-tool", env={"STUB": "echo"}, path=on_path(py, bat))
+    strict = run_cmd(layout, "--strict hook claude pre-tool", env={"STUB": "echo"}, path=on_path(py, bat))
+    assert soft.returncode == 0 and strict.returncode == 2 and b"exit code 1" in soft.stderr and b"exit code 1" in strict.stderr, (soft, strict)
+    assert soft.stdout == b"" and not shim_log.exists()  # a guard failure starts no other interpreter
+
+
+def _py_without_a_runtime_in_sh(tmp_path, layout):
+    """sh half: py -3 exiting 103 or 112 passes on to `python`; exiting 1 is a guard failure. There is no python3."""
+    log, started = tmp_path / "runs.log", tmp_path / "python.log"
+    note = "echo started >> '%s'\n" % str(started).replace("\\", "/")
+    python = "#!/bin/sh\n%sexec '%s' \"$@\"\n" % (note, sys.executable.replace("\\", "/"))
+    for code in (103, 112):
+        stubs = _bin(tmp_path / ("sh%d" % code), {"py": "#!/bin/sh\nwhile IFS= read -r l; do :; done\nexit %d\n" % code, "python": python})
+        for strict in ((), ("--strict",)):
+            r = run_sh(layout, *strict, "hook", "claude", "pre-tool", env={"STUB": "echo", "STUB_LOG": str(log)}, stdin=b"payload", path=str(stubs))
+            assert r.returncode == 0 and r.stdout == b"payload|hook claude pre-tool" and r.stderr == b"", (code, strict, r)
+        assert started.read_text().count("started") == 2 and log.read_text().splitlines() == ["run", "run"], code
+        started.unlink()
+        log.unlink()
+        alone = _bin(tmp_path / ("alone%d" % code), {"py": "#!/bin/sh\nwhile IFS= read -r l; do :; done\nexit %d\n" % code})
+        for words, rc in (("hook", 0), ("--strict hook", 2)):
+            r = run_sh(layout, *words.split(), "claude", "pre-tool", stdin=b"payload", path=str(alone))
+            assert r.returncode == rc and b"no Python 3 found" in r.stderr and b"exit code" not in r.stderr, (code, words, r)
+    stubs = _bin(tmp_path / "sh1", {"py": "#!/bin/sh\nwhile IFS= read -r l; do :; done\nexit 1\n", "python": python})
+    soft = run_sh(layout, "hook", "claude", "pre-tool", env={"STUB": "echo"}, stdin=b"payload", path=str(stubs))
+    strict = run_sh(layout, "--strict", "hook", "claude", "pre-tool", env={"STUB": "echo"}, stdin=b"payload", path=str(stubs))
+    assert soft.returncode == 0 and strict.returncode == 2 and b"exit code 1" in soft.stderr and b"exit code 1" in strict.stderr, (soft, strict)
+    assert soft.stdout == b"" and not started.exists()  # a guard failure starts no other interpreter
+
+
+def test_py_without_a_runtime_passes_on_to_the_next_interpreter(tmp_path, layout):
+    # Each half needs its own prerequisites (cmd.exe and csc on Windows, sh): the parts that cannot run here are skipped.
+    parts = ([_py_without_a_runtime_in_cmd] if sys.platform == "win32" and _csc() else []) + ([_py_without_a_runtime_in_sh] if SH else [])
+    if not parts:
+        pytest.skip("neither cmd.exe with a C# compiler nor sh is available")
+    for part in parts:
+        base = tmp_path / part.__name__
+        base.mkdir()
+        part(base, layout)
+
+
 @needs_sh
 def test_sh_half_gives_python_a_windows_path_for_any_directory_name(tmp_path):
     names = ["s;c,o=m", "t`ick", "plain"] if sys.platform == "win32" else ["plain"]

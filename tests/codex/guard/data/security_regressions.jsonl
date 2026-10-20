@@ -31,3 +31,19 @@
 {"id": "control/read-only-git", "tool": "Bash", "cwd": "L", "command": "git status && git log -3 && git diff", "expect": "allow"}
 {"id": "control/no-git", "tool": "Bash", "cwd": "E", "command": "echo hello && ls", "expect": "allow"}
 {"id": "control/powershell-read-only", "tool": "PowerShell", "cwd": "L", "command": "Set-Location '{C_native}'; git status", "expect": "allow"}
+{"id": "cr-01/update-ref-z-stdin-create-with-nul-separators", "tool": "Bash", "cwd": "L", "command": "printf 'create refs/heads/x1\\0HEAD\\0' | git update-ref -z --stdin", "expect": "deny", "reason": "creating 'x1'"}
+{"id": "cr-01/update-ref-z-stdin-update-with-nul-separators", "tool": "Bash", "cwd": "L", "command": "printf 'update refs/heads/x2\\0HEAD\\0\\0' | git update-ref -z --stdin", "expect": "deny", "reason": "creating 'x2'"}
+{"id": "cr-02/backslash-program-word-in-an-mcp-terminal", "tool": "mcp__x__run_in_terminal", "cwd": "L", "command": "g\\it switch -c z2", "expect": "deny", "reason": "cannot tell which branch this creates"}
+{"id": "cr-03/rebase-exec-abbreviated-to-ex", "tool": "Bash", "cwd": "L", "command": "git rebase --ex 'git branch r1' HEAD~1", "expect": "deny", "reason": "creating 'r1'"}
+{"id": "cr-04/shallow-file-takes-a-value", "tool": "Bash", "cwd": "L", "command": "git --shallow-file v branch s1", "expect": "deny", "reason": "creating 's1'"}
+{"id": "cr-05/global-alias-after-the-C-option-value", "tool": "Bash", "cwd": "C", "command": "git -C ../L nb a1", "expect": "deny", "reason": "creating 'a1'"}
+{"id": "cr-06/refs-heads-in-capitals", "tool": "Bash", "cwd": "L", "command": "git update-ref refs/HEADS/h1 HEAD", "expect": "deny", "reason": "creating 'h1'"}
+{"id": "cr-07/update-ref-message-option-before-a-delete-flag", "tool": "Bash", "cwd": "L", "command": "git update-ref -m -d refs/heads/u1 HEAD", "expect": "deny", "reason": "creating 'u1'"}
+{"id": "cr-08/start-process-in-another-working-directory", "tool": "PowerShell", "cwd": "C", "command": "Start-Process git -ArgumentList 'switch -c w1' -WorkingDirectory '{L_native}'", "expect": "deny", "reason": "creating 'w1'"}
+{"id": "cr-09/powershell-encoded-command-abbreviated-to-ec", "tool": "Bash", "cwd": "L", "command": "powershell -ec ZwBpAHQAIABzAHcAaQB0AGMAaAAgAC0AYwAgAGUAMQA=", "expect": "deny", "reason": "creating 'e1'"}
+{"id": "cr-10/powershell-backtick-in-the-program-word", "tool": "PowerShell", "cwd": "L", "command": "g`it switch -c k1", "expect": "deny", "reason": "creating 'k1'"}
+{"id": "cr-11/empty-quotes-in-the-program-word", "tool": "Bash", "cwd": "L", "command": "g''it switch -c q1", "expect": "deny", "reason": "creating 'q1'"}
+{"id": "cr-12/command-substitution-sources-a-script", "tool": "Bash", "cwd": "L", "command": "echo $(. ../mk)", "expect": "deny", "reason": "creating 'zz33'"}
+{"id": "cr-13/missing-directory-before-a-creation-in-another-repository", "tool": "Bash", "cwd": "C", "command": "cd /nonexist; git switch -c m1; cd '{L}'; cd /nonexist; git switch -c m1", "expect": "deny", "reason": "cannot tell which branch this creates"}
+{"id": "cr-15/claim-stored-by-1.0.1-under-a-refused-name", "tool": "Bash", "cwd": "R", "command": "git switch -c rel.claim", "expect": "allow"}
+{"id": "cr-15/unclaimed-name-of-the-same-kind", "tool": "Bash", "cwd": "R", "command": "git switch -c other.claim", "expect": "deny", "reason": "creating 'other.claim'"}

@@ -59,9 +59,11 @@ The file holds seven cooperating parts.
    `CommandWithArgs` longer than `command` runs the words after it as PowerShell text, and one that is `-ec` or a
    prefix of `EncodedCommand` (`-e`, `-en`, `-enc`, `-EncodedC`) runs the base64 UTF-16LE text of the next word (an
    undecodable value counts as a dynamic creation); `-ex` (`ExecutionPolicy`) and `-encodeda` (`EncodedArguments`) are
-   neither. bash, sh, zsh, dash and ksh read `-c` and bundled short options ending in `c` (`-lc`, `-ec`); cmd reads
+   neither. bash, sh, zsh, dash and ksh read `-c` and bundled short options that hold a `c` (`-lc`, `-ec`, `-ce`); cmd reads
    `/c` and `/k`. `Start-Process` runs git with its `-ArgumentList` value in its `-WorkingDirectory`, each named in
-   full, by a unique prefix (`-a`, `-wo`) or in the colon form (`-WorkingDirectory:<dir>`); the directory is resolved
+   full, by a unique prefix (`-a`, `-wo`) or in the colon form (`-WorkingDirectory:<dir>`, and `-WorkingDirectory: <dir>`
+   with the value in the next word); a list written with commas
+   (`'switch', '-c', 'x'`) is one `-ArgumentList` value; the directory is resolved
    against the directory the shell is in, and a dynamic value makes the repository unknown (the session directory's
    repository decides, as for any computed directory). In PowerShell the command on the right of `$name =` runs (`$out = git switch -c x` is a creation), and the
    text of `( .. )` and `@( .. )` inside a command is judged like `$( .. )`; text inside a quoted string is not. Dynamic
@@ -87,17 +89,23 @@ The file holds seven cooperating parts.
      `git worktree add ../wt\q` creates `wtq`. A quoted backslash that survives (`"feat\ure"`) leaves a name git
      refuses, which is no creation. PowerShell and cmd text keep their backslashes, which are path separators there.
      In PowerShell text a backtick outside quotes is the escape character, read as PowerShell's tokenizer reads it: it
-     removes itself and makes the next character literal (``g`it`` is `git`, ``fe`at`` is `feat`, ``ma`gos`` is
-     `magos`), except that `` `0 ``, `` `a ``, `` `b ``, `` `e ``, `` `f ``, `` `n ``, `` `r ``, `` `t `` and `` `v ``
+     removes itself and makes the next character literal (``g`it`` is `git`, ``ma`gos`` is `magos`), except that
+     `` `0 ``, `` `a ``, `` `b ``, `` `e ``, `` `f ``, `` `n ``, `` `r ``, `` `t `` and `` `v ``
      stand for NUL, bell, backspace, escape, form feed, newline, carriage return, tab and vertical tab (``gi`t`` is `gi`
-     followed by a tab, which is no git). In cmd text a caret outside double quotes removes itself and makes the
+     followed by a tab, which is no git). A bell in a branch or worktree name is a character git refuses; a creation
+     named with one is judged under the name with the letter a in its place, the stricter reading (``git switch -c fe`at``
+     is judged as the creation of `feat`). In cmd text a caret outside double quotes removes itself and makes the
      next character literal, as cmd reads it (`git switch -c feat^ure` creates `feature`). In text whose shell is not
      known, a git subcommand or a branch name that holds a backslash is dynamic, because the shell may remove it;
      paths keep their backslashes there (a `cd` target, a `-C` value, a `--git-dir` value, a worktree directory),
      because a Windows shell reads them as separators. A program word there that holds a backslash, a backtick or a
      caret and is no program the detector knows, but names one once the backtick and caret, or all three characters,
      are removed (`g\it`, `g^it`, ``g`it``), is read as that program: every creation it makes is dynamic, and every
-     directory or redirect change it makes is possible, because the shell may or may not remove the escape. In text a POSIX shell runs, a backslash-newline is removed and
+     directory or redirect change it makes is possible (the commands after it are judged in the states before and after
+     it), because the shell may or may not remove the escape. The programs so read are those the detector reads, the
+     commands that change the directory or the environment (`cd`, `export`, `unset`, ...) and the wrappers (`env`,
+     `sudo`, ...), so `env g\it switch -c x` finds git behind the wrapper. A word that spells no such program is none.
+     In text a POSIX shell runs, a backslash-newline is removed and
      the words around it join, as the shell joins them (`git switch -c main\<newline>2` creates `main2`); a PowerShell
      backtick-newline, and a backslash-newline in text whose shell is not known, read as a space. A `#` that starts a
      word outside quotes starts a comment that runs to the end of the line in bash and PowerShell text (the newline
@@ -108,8 +116,15 @@ The file holds seven cooperating parts.
      every backslash, backtick, caret, `'` and `"` removed (`g''it`, `"g"it` and ``g`it`` read `git`), names `git`, `gh`,
      `gt`, `claude`, `eval`, `iex`, `Invoke-Expression`, `source`, `-enc`, `base64`, or a `.sh`, `.bash` or `.ps1`
      file, or holds a word that runs a script or a shell (`.`, `bash`, `sh`, `zsh`, `dash`, `ksh`, `powershell`,
-     `pwsh`, `cmd`, also with `.exe`) standing where a command may start. So `. ./mk`, `bash ./mk`, `$(. ./mk)`,
-     `$(bash ./mk)` and a here-document that runs `. ./mk` are walked, and the script they run is read.
+     `pwsh`, `cmd`, also with `.exe` and behind a path) standing where a command may start: first in a command, after
+     prefix assignments, keywords (`then`, `do`, ...) and a PowerShell `$name =`, or anywhere after a wrapper (`env`,
+     `sudo`, `timeout 5`, `xargs`, ...), whose program follows its options, or right after the `-exec` or `-execdir` of
+     `find`. A runner's name in the arguments of another
+     command (`ls .`, `echo sh`) is no gate. So `. ./mk`, `bash ./mk`, `$(. ./mk)`, `$(bash ./mk)` and a here-document
+     that runs `. ./mk` are walked, and the script they run is read. The words are found in one pass over the text
+     (a quoted string is one word, a quote that never closes belongs to no word) and in one more pass over the text with
+     its quotes removed, so that a quote the shell reads as a literal (`echo \"; bash ./mk`) hides no word; a text longer
+     than 200,000 characters is walked, and the walk refuses it as too long to inspect.
    - Git invocations. The global options of git that take a separate value (`-C`, `-c`, `--git-dir`, `--work-tree`,
      `--namespace`, `--exec-path`, `--config-env`, `--attr-source`, `--super-prefix`, `--list-cmds`, `--shallow-file`)
      are skipped together with their value, so the word after the value is the subcommand. Short options are read the way git
@@ -281,8 +296,10 @@ The file holds seven cooperating parts.
    `start_process`, `command`, `run_command`, `exec`, `execute`, `process`, `bash`, `powershell` and `cmd`. Every hooked
    tool and every MCP tool whose `tool_input.command` is a string is inspected as a command line. An argv list from
    Codex is turned into one command line: when its program is a shell (`bash`, `sh`, `zsh`, `dash`, `ksh`,
-   `powershell`, `pwsh`, `cmd`) and it carries a script after `-c`, `-Command` or `/c`, that script, read in that
-   shell's dialect; otherwise its words joined with POSIX quoting (a word holding a space, a quote, a backslash or a
+   `powershell`, `pwsh`, `cmd`) and it carries a script after `-c`, `-Command`, `-CommandWithArgs`, `-EncodedCommand`
+   or `/c` (in every spelling the shell reads), that script, read in that shell's dialect (the words after a PowerShell
+   or cmd option are joined with spaces into the text it runs, an encoded value is decoded, and one that does not
+   decode counts as a dynamic creation); otherwise its words joined with POSIX quoting (a word holding a space, a quote, a backslash or a
    shell character is quoted), read as bash. The `Bash` and `Monitor` tools run bash, the `PowerShell` tool runs
    PowerShell, and the shell of every other tool's string command is not known. The command line is judged in addition to, never instead of, the
    judgement the tool itself calls for: an `Agent`, `Task` or `Workflow` call with worktree isolation, an
@@ -635,8 +652,8 @@ Invariants:
    the platform folds), the absolute path of the guard home (`~/.magos` or `MAGOS_HOME`) and the Hermes plugin
    directory `<hermes home>/plugins/magos` when it holds a launcher. The writers include the PowerShell cmdlets
    `Rename-Item` (alias `rni`) and `Move-Item` (alias `mi`) and the `Remove-Item` alias `ri`, and the text of a child
-   shell (`bash -c`, `sh -c`, the other POSIX shells' `-c`, `cmd /c` and `/k`, `powershell` and `pwsh` `-Command` or
-   `-c`) is read with every check, to depth 3, as is a quoted word that names the guard script or its launcher (the
+   shell (`bash -c`, `sh -c`, the other POSIX shells' `-c`, `cmd /c` and `/k`, `powershell` and `pwsh` `-Command`,
+   `-CommandWithArgs` and `-EncodedCommand` in every spelling the shell reads) is read with every check, to depth 3, as is a quoted word that names the guard script or its launcher (the
    argument list of `Start-Process`); any other quoted word is not read as a command, so a commit message or a search
    pattern that names these words passes. Each keyword test and the
    state-path test read every word twice, as written and with every backslash, backtick, caret, `'` and `"` removed,
@@ -776,6 +793,9 @@ Known limits, stated in `references/lane-split.md` section 12:
   substituted text in every state.
 - PowerShell's typographic quotes (`‘ ’ ‚ ‛` and `“ ” „`), which PowerShell reads as quote characters, are read as
   ordinary characters of a word.
+- PowerShell's backtick escapes that differ between Windows PowerShell 5.1 and PowerShell 7 are read as PowerShell 7
+  reads `` `e `` (the escape character; Windows PowerShell 5.1 reads the letter e), and `` `u{<hex>} `` is read as the
+  letter u followed by its text (PowerShell 7 reads the character the number names).
 - `Start-Process` is recognised by that name only (not `saps` or `start`), its `-ArgumentList` only by that name, a
   prefix or the colon form (not the alias `-Args`, not as the second positional argument), and its program among its
   words; a creation written in another binding runs unjudged.

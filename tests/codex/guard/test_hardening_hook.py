@@ -1885,3 +1885,187 @@ def test_a_bash_backslash_newline_joins_the_words(target):
                             ("Bash", "git sw" + bs_nl + "itch -c feat2", "feat2"), ("PowerShell", "git switch -c `" + "\n" + "ps1", "ps1")):
         reason = verdict(hook(target.path, cmd, tool=tool))
         assert reason and NOMAN in reason and "'%s'" % name in reason, (tool, cmd, reason)
+
+
+# ---- hardening of the 1.0.3 release ------------------------------------------------------------------------------------------------------
+def test_update_ref_stdin_names_stop_at_a_backslash(target, guard):
+    first = r"printf 'create refs/heads/x1\0HEAD\0' | git update-ref -z --stdin"
+    for cmd, name in ((first, "x1"), (r"printf 'update refs/heads/x2\0HEAD\0\0' | git update-ref -z --stdin", "x2"),
+                      (r"printf 'create refs/heads/x3\nHEAD' | git update-ref --stdin", "x3")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    for cmd in (r"printf 'create refs/heads/a\x62c HEAD' | git update-ref --stdin", r"printf 'create refs/heads/\x61 HEAD' | git update-ref --stdin"):
+        reason = verdict(hook(target.path, cmd))  # printf turns the escape into another name: no name can be read
+        assert reason and UNPARSE in reason, (cmd, reason)
+    plan(guard, target, "x1", "docs/x1.md")
+    assert verdict(hook(target.path, first)) is None
+
+
+def test_an_escaped_program_word_in_an_unknown_shell_is_that_program(target, tmp_path):
+    for tool in ("terminal", "shell", "mcp__x__run_in_terminal"):  # the shell of these tools is not known
+        for cmd in (r"g\it switch -c x", "g^it switch -c x", "g`it switch -c x"):
+            reason = verdict(hook(target.path, cmd, tool=tool))
+            assert reason and UNPARSE in reason, (tool, cmd, reason)
+    reason = verdict(hook(target.path, r"env g\it switch -c x", tool="terminal"))
+    assert reason and UNPARSE in reason, reason
+    reason = verdict(hook(target.path, r"g\it switch -c b1"))  # bash removes the backslash: the name is known
+    assert reason and NOMAN in reason and "'b1'" in reason, reason
+    assert [(c["verb"], c["names"], c["dynamic"]) for c in G.interpret(r"g\it switch -c n1", str(target.path))] == [("switch", ["n1"], True)]
+    other = make(tmp_path, "other")  # a directory change it makes is possible: the commands after it run in both directories
+    assert where(r"c\d %s; git switch -c pc1" % P(other.path), target.path, tool="terminal", name="pc1") == sorted([(False, P(target.path).lower()),
+                                                                                                                  (False, P(other.path).lower())])
+    assert records("terminal", r"git status; c\at x", target.path) == []  # a word that spells no known program is no program
+
+
+def test_rebase_exec_is_read_by_its_unique_prefixes(target):
+    for cmd, name in (("git rebase --ex 'git branch r1' HEAD~1", "r1"), ("git rebase --exe='git branch r2' HEAD~1", "r2"),
+                      ("git rebase --exec 'git branch r3' HEAD~1", "r3")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    assert G._rebase_exec(["--e", "x"]) == []  # --e names several options of git rebase
+    assert G._rebase_exec(["--ex", "x", "--exe=y"]) == ["x", "y"]
+
+
+def test_shallow_file_takes_a_value(target):
+    for cmd, name in (("git --shallow-file v branch s1", "s1"), ("git --shallow-file v -C . switch -c s2", "s2")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+
+
+def test_the_alias_check_skips_global_option_values(target, tmp_path):
+    cwd, c = session("clean", tmp_path)
+    c.git("config", "--local", "alias.nb", "branch")
+    for cmd, name in (("git -C %s nb a1" % P(target.path), "a1"), ("g''it -C %s nb a2" % P(target.path), "a2")):
+        reason = verdict(hook(cwd, cmd))  # the alias of the session repository is expanded in the repository -C names
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    for cmd, subs in (("git -C ../B nb x", ["nb"]), ("git -c alias.x=y x", ["x"]), ("git --git-dir=d nb", ["nb"]), ("/usr/bin/git -C x status", ["status"])):
+        assert G._git_subcommands(cmd) == subs, cmd
+    start = time.monotonic()
+    assert G._git_subcommands("git -C " * 30000) == []
+    assert time.monotonic() - start < time_budget(2)
+
+
+def test_refs_heads_in_any_case_is_a_branch(target):
+    for cmd, name in (("git update-ref refs/HEADS/h1 HEAD", "h1"), ("git push . HEAD:refs/Heads/h2", "h2"), ("git fetch . main:refs/hEaDs/h3", "h3"),
+                      ("printf 'create refs/HEADS/h4 HEAD' | git update-ref --stdin", "h4"), ("git symbolic-ref HEAD refs/HEADS/h5", "h5")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+
+
+def test_update_ref_reads_its_options_as_git_does(target):
+    for cmd, name in (("git update-ref -m -d refs/heads/u1 HEAD", "u1"), ("git update-ref -mwhy refs/heads/u2 HEAD", "u2"),
+                      ("printf 'create refs/heads/u3 HEAD' | git update-ref --std", "u3"), ("printf 'create refs/heads/u4 HEAD' | git update-ref --s", "u4")):
+        reason = verdict(hook(target.path, cmd))  # -m takes the next word as its message, --std and --s are --stdin
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    for cmd in ("git update-ref -d refs/heads/agent/other", "git update-ref -zd refs/heads/agent/other", "git update-ref -dm why refs/heads/agent/other",
+                "git update-ref --no-deref HEAD refs/heads/u5"):  # deletes, and an update of HEAD itself
+        assert records("Bash", cmd, target.path) == [], cmd
+
+
+def test_start_process_runs_git_in_its_working_directory(target, tmp_path):
+    cwd, _c = session("clean", tmp_path)
+    li = P(target.path)
+    for cmd, name in (("Start-Process git -ArgumentList 'switch -c w1' -WorkingDirectory %s" % li, "w1"), ("Start-Process git -ArgumentList 'switch -c w2' -Wo:%s" % li, "w2"),
+                      ("Start-Process git -ArgumentList 'switch -c w3' -WorkingDirectory:%s" % li, "w3"), ("Start-Process git -a 'switch -c w4' -wo %s" % li, "w4"),
+                      ("Start-Process git -ArgumentList 'switch', '-c', 'w6' -WorkingDirectory %s" % li, "w6"),  # an array: the words go on after a comma
+                      ("Start-Process git -ArgumentList: 'switch -c w8' -WorkingDirectory: %s" % li, "w8")):  # a colon with nothing after it takes the next word
+        reason = verdict(hook(cwd, cmd, tool="PowerShell"))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+        assert where(cmd, cwd, tool="PowerShell", name=name) == [(False, li.lower())], cmd  # judged in L, not in the session directory
+    here = "Start-Process git -ArgumentList 'switch -c w5'"
+    assert verdict(hook(cwd, here, tool="PowerShell")) is None  # no -WorkingDirectory: it runs in C
+    assert where(here, cwd, tool="PowerShell", name="w5") == [(False, P(cwd).lower())]
+    reason = verdict(hook(target.path, "Start-Process git -ArgumentList 'switch -c w7' -WorkingDirectory $d", tool="PowerShell"))
+    assert reason and UNPARSE in reason, reason  # a computed directory: the repository is not known
+    assert G._start_process(["-Verb", "open", "-a", "x"], [False] * 4) is None  # no git among its words
+    start = time.monotonic()
+    G.interpret("Start-Process git -ArgumentList " + "a, " * 30000, str(cwd), sh="ps")  # a list of 30,000 words is read in linear time
+    assert time.monotonic() - start < time_budget(5)
+
+
+def test_powershell_options_are_read_in_every_spelling(target):
+    def enc(text):
+        return base64.b64encode(text.encode("utf-16-le")).decode("ascii")
+    b = enc("git switch -c e1")
+    lines = [("powershell -e %s" % b, "e1"), ("powershell -ec %s" % b, "e1"), ("pwsh -EncodedC %s" % b, "e1"), ("pwsh -en %s" % b, "e1"),
+             ("powershell -Comm 'git switch -c e2'", "e2"), ("pwsh -Co 'git switch -c e3'", "e3"), ("pwsh -cwa 'git switch -c e4'", "e4"),
+             ("bash -ec 'git switch -c e6'", "e6"), ("bash -ce 'git switch -c e7'", "e7")]  # any bundle of short options that holds a c
+    for cmd, name in lines:
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    for argv, name in ((["powershell", "-ec", b], "e1"), (["pwsh", "-Co", "git switch -c e3"], "e3"), (["powershell", "-Command", "git", "switch", "-c", "e5"], "e5")):
+        reason = verdict(hook(target.path, argv, host="codex"))  # the words after a PowerShell command option are one text
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (argv, reason)
+    assert G.shell_command(payload("Bash", ["powershell", "-Command", "git", "status"], target.path)) == ("git status", "ps")
+    assert G.shell_command(payload("Bash", ["cmd", "/c", "git", "status"], target.path)) == ("git status", "cmd")
+    assert G.shell_command(payload("Bash", ["pwsh", "-ec", b], target.path)) == ("git switch -c e1", "ps")
+    assert G.shell_command(payload("Bash", ["pwsh", "-ec", "ANg="], target.path)) == (G._OPAQUE, "ps")  # a lone UTF-16 surrogate: no text, a dynamic creation
+    assert G.shell_command(payload("Bash", [], target.path)) == ("", "bash")  # an empty argv runs nothing
+    assert verdict(hook(target.path, "powershell -ex Bypass -Command 'git status'")) is None  # -ex is ExecutionPolicy
+    assert [G._shell_flag("pwsh", w) for w in ("-ex", "-encodeda", "-NoProfile", "-File", "-", "-e", "--command", "/c", "-CommandWithArgs", "-commandw")] == \
+        [None, None, None, None, None, "encoded", "command", "command", "command", "command"]
+    assert G._shell_flag("bash", "-lc") == "command" and G._shell_flag("bash", "-ce") == "command" and G._shell_flag("bash", "-e") is None
+    assert G._shell_flag("cmd", "/k") == "command" and G._shell_flag("bash", "--norc") is None
+    for line in ("powershell -ec %s" % enc("magos_guard.py disarm"), "pwsh -Co 'magos_guard.py disarm'", "powershell -e %s" % enc("magos_guard.py install --host codex")):
+        found = G.protected(line)
+        assert found and found[0] == "always" and "user-only" in found[1], (line, found)
+    assert G.protected("powershell -ex Bypass -Command 'git status'") is None
+
+
+def test_the_powershell_backtick_is_the_escape_character(target):
+    for cmd, name in (("g`it switch -c k1", "k1"), ("git switch -c fe`at", "feat"), ("git sw`itch -c k3", "k3")):
+        reason = verdict(hook(target.path, cmd, tool="PowerShell"))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    assert verdict(hook(target.path, "gi`t switch -c k4", tool="PowerShell")) is None  # `t is a tab: the program is gi and a tab, no git
+    assert [[w for w, _ in seg] for seg in G._lex("a`0b`tc", "ps") if isinstance(seg, list)] == [["a\0b\tc"]]
+    assert [[w for w, _ in seg] for seg in G._lex("ma`gos.guard `$x `;", "ps") if isinstance(seg, list)] == [["magos.guard", "$x", ";"]]  # literal, never special
+    assert [[d for _, d in seg] for seg in G._lex("a`$b", "ps") if isinstance(seg, list)] == [[False]]  # an escaped $ is a letter of the word
+    assert [[w for w, _ in seg] for seg in G._lex("a`0b`tc", "bash") if isinstance(seg, list)] == [["a`0b`tc"]]  # the escape of another shell is no escape here
+
+
+def test_the_gate_reads_words_without_quotes(target):
+    for cmd, name in (("g''it switch -c q1", "q1"), ('"g"it switch -c q2', "q2"), ('g""it sw\'\'itch -c q3', "q3")):
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'%s'" % name in reason, (cmd, reason)
+    assert G._gated("g''it x") and G._gated('"g"it x') and G._gated("g\\it x") and G._gated("g^it x") and G._gated("g`it x")
+
+
+def test_text_that_runs_a_script_is_walked(target):
+    target.write("mk", "git switch -c fromscript\n")  # untracked
+    for cmd in ("echo $(. ./mk)", "echo $(bash ./mk)", "bash <<EOF\n. ./mk\nEOF", ". ./mk", "bash ./mk", "sh ./mk", "FOO=1 sudo -E sh ./mk", "if true; then bash ./mk; fi",
+                "find . -maxdepth 1 -exec sh ./mk {} \\;",  # find runs the command after its -exec
+                r'echo \"; bash ./mk; echo \"'):  # an escaped quote opens no string: bash runs the script between the two
+        reason = verdict(hook(target.path, cmd))
+        assert reason and NOMAN in reason and "'fromscript'" in reason, (cmd, reason)
+    target.write("harmless.txt", "ls\n")
+    for cmd in ("git status", "bash ./harmless.txt", "sh ./nonexistent", ". ./nonexistent", "cmd /c dir", "bash -lc 'ls -la'", "powershell -NoProfile -Command Get-Date"):
+        assert verdict(hook(target.path, cmd)) is None, cmd  # ordinary commands stay allowed
+    assert not G._gated("echo hi") and G._gated("run x.bash") and G._gated("x" * (G.MAX_TEXT + 1))
+    for text in ("ls .", "echo sh bash cmd", "cat ./bash", "grep -r foo . | wc -l", "ls -la; echo done", "find . -name sh"):
+        assert not G._gated(text), text  # a runner's name where no command starts is no gate
+    for text in ("cmd /c dir", r"C:\Git\bin\bash.exe x", '& "C:\\Program Files\\Git\\bin\\bash.exe" ./mk', "timeout 5 bash ./mk", "xargs sh", "time . ./mk", "$out = bash ./mk",
+                 "ls; (cd x && . ./mk)", "pwsh -File x", "find . -exec sh ./mk {} \\;"):
+        assert G._gated(text), text
+    start = time.monotonic()
+    for text in ("(" * 30000, "FOO=1 " * 30000, "env " * 30000, "'" * 30000, '"x ' * 30000, "a;" * 30000):
+        assert G._gated(text) in (True, False)
+    assert time.monotonic() - start < time_budget(5)
+
+
+def test_missing_directory_records_keep_their_prior_directory(target, tmp_path):
+    cwd, _c = session("clean", tmp_path)
+    li = P(target.path)
+    line = "cd /nonexist; git switch -c m1; cd %s; cd /nonexist; git switch -c m1" % li
+    reason = verdict(hook(cwd, line))
+    assert reason and UNPARSE in reason, reason  # the second creation runs in L, the shell having stayed there
+    inner = "cd /nonexist; echo $(git switch -c m2); cd %s; cd /nonexist; echo $(git switch -c m2)" % li
+    assert verdict(hook(cwd, inner))  # the substituted text runs in L as well
+    for cmd, name in ((line, "m1"), (inner, "m2")):
+        priors = sorted(P(c["cwd"].prior).lower() for c in G.interpret(cmd, str(cwd)) if c["names"] == [name] and isinstance(c["cwd"], G._Missing))
+        assert priors == sorted([P(cwd).lower(), li.lower()]), (cmd, priors)  # one record per prior directory
+    assert verdict(hook(cwd, "cd /nonexist; git switch -c m1")) is None  # the prior directory alone is the clean repository
+    chain = "git init nd && cd nd && git switch -c f1; cd nd; git switch -c f1"  # the chain follows its first cd into the new repository, the later cd stays in L
+    reason = verdict(hook(target.path, chain))
+    assert reason and UNPARSE in reason, reason
+    follows = [c["cwd"].follow for c in G.interpret(chain, str(target.path)) if c["names"] == ["f1"]]
+    assert sorted(f is None for f in follows) == [False, True]  # a record that follows the chain and one that does not stay two records

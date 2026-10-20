@@ -33,7 +33,7 @@ except ImportError:  # POSIX
 if sys.platform == "win32":  # CreateProcess searches the working directory before PATH unless this is set: a git.exe planted there never runs
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
 
-GUARD_VERSION = "1.0.2"  # the one version constant of the guard; equals the package version (plugin.json, plugin.yaml, SKILL.md)
+GUARD_VERSION = "1.0.3"  # the one version constant of the guard; equals the package version (plugin.json, .claude-plugin/plugin.json, plugin.yaml, SKILL.md)
 CLAIM_FORMAT = 1  # the claim file format this guard reads and writes (line `v=`); a claim of a newer format is never misread
 GS = "**"
 BUDGET_S, MAX_CLAIMANTS, MAX_REMOTES, MAX_ENTRIES, LOCK_S, MAX_TEXT = 18.0, 120, 300, 200, 30.0, 200000
@@ -332,6 +332,7 @@ _BAD_NAME = re.compile(r"[\s~^:?*\[\\\x00-\x1f]|\.\.|^-|^/|/$|\.lock$")
 _OPENERS = ("if", "while", "until", "for", "select", "case")  # POSIX-shell words that open a compound command: what runs inside may not run
 _CLOSERS = ("fi", "done", "esac")
 _CONT = re.compile(r"(?:\\|`)\r?\n[ \t]*")  # a line continuation
+_PS_ESCAPES = {"0": "\0", "a": "\a", "b": "\b", "e": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v"}  # PowerShell's `0 `a `b `e `f `n `r `t `v
 
 
 def _continued(cmd, sh):
@@ -360,12 +361,14 @@ def _lex(cmd, sh=None):
     closes that group after the segment.  Inside `case`, a pattern ends at its ')' and an arm at ';;', ';&' or ';;&'; pattern words are
     dropped.  Escapes follow the shell that runs the text: in bash (POSIX quoting) a backslash outside quotes removes itself and makes the
     next character a literal part of the word (`feat\\ure` is `feature`, `\\;` stays in the word), and inside double quotes it is removed
-    only before $, a backtick, '"', a backslash and a newline; in cmd a caret outside double quotes does the same; PowerShell and a shell
-    the hook cannot name keep their backslashes (path separators there)."""
+    only before $, a backtick, '"', a backslash and a newline; in cmd a caret outside double quotes does the same; in PowerShell a backtick
+    outside quotes removes itself and makes the next character literal, except that `0 `a `b `e `f `n `r `t `v stand for NUL, bell,
+    backspace, escape, form feed, newline, carriage return, tab and vertical tab (_PS_ESCAPES); PowerShell and a shell the hook cannot name
+    keep their backslashes (path separators there)."""
     segs, cur, parens, close, cases, at = [], [], [], [False], [], [0, False]  # at: offset of the segment's first word, and whether it is substituted
     st = {"w": [], "dyn": False, "has": False, "open": False, "q": False, "b": 0, "kw": True, "inword": 0}  # kw: cur holds reserved words only
     kw, ps, posix = sh not in ("ps", "cmd"), sh == "ps", sh == "bash"
-    escape = "\\" if posix else "^" if sh == "cmd" else None  # the character that quotes the next one outside quotes
+    escape = "\\" if posix else "^" if sh == "cmd" else "`" if ps else None  # the character that quotes the next one outside quotes
 
     def flush():
         if cur:
@@ -421,7 +424,7 @@ def _lex(cmd, sh=None):
         if c == escape and nxt:  # an escaped character: literal, part of the word, never special (an escaped word is no reserved word)
             if not st["has"] and not cur:
                 at[:] = [i, st["inword"] > 0]
-            st["w"].append(nxt)
+            st["w"].append(_PS_ESCAPES.get(nxt, nxt) if ps else nxt)
             st["has"], st["q"] = True, True
             i += 2
             continue
@@ -539,13 +542,42 @@ _KNOWN = ("git", "gh", "gt", "claude", "cd", "pushd", "chdir", "set-location", "
           "start-process", "set-alias", "sal", "find") + _SHELLS
 _ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")  # NAME=value, and NAME+=value (appends to a value the hook may not know)
 # The global options of git that take the next word as their value: the word after the value is the subcommand.
-_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env", "--attr-source", "--super-prefix", "--list-cmds"}
-# The words that decide whether a command line is walked at all, read on the text with every escape character removed (g\it is git).
-_GATE = re.compile(r"git|gh|gt|claude|eval|iex|invoke-expression|\.sh|\.ps1|source|-enc|base64", re.I)
+_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env", "--attr-source", "--super-prefix", "--list-cmds",
+               "--shallow-file"}
+# The words that decide whether a command line is walked at all, read on the text with every escape character and quote removed (g\it and g''it are git).
+_GATE = re.compile(r"git|gh|gt|claude|eval|iex|invoke-expression|\.sh|\.bash|\.ps1|source|-enc|base64", re.I)
+_RUNNERS = frozenset((".", "bash", "sh", "zsh", "dash", "ksh", "powershell", "pwsh", "cmd"))  # the words that run a script or a shell
+# A word of a command line (quotes kept in it) or a character that ends a command; a quote that never closes belongs to no word.
+_TOKEN = re.compile(r"""[;&|(){}`\n]|(?:[^\s;&|(){}`'"]|'[^']*'|"[^"]*")+""")
+
+
+def _runs_script(text):
+    """Does a command of `text` start with a word that runs a script or a shell (`. ./mk`, `bash ./mk`, `cmd /c ..`; also with .exe, behind a
+    path, prefix assignments, keywords and wrappers, and after the -exec of find)?  One pass over the words; a word that follows a wrapper may
+    be the program it starts."""
+    start, wrapped = True, False
+    for tok in _TOKEN.findall(text):
+        if len(tok) == 1 and tok in ";&|(){}`\n":
+            start, wrapped = True, False
+        elif _bare(tok).lower() in ("-exec", "-execdir"):  # find runs the command that follows
+            start = True
+        elif start:
+            names = {_exe(w) for w in (re.sub(r"[`^'\"]", "", tok), _bare(tok))}  # as written (a backslash is a separator), and unescaped
+            if not names.isdisjoint(_RUNNERS):
+                return True
+            if not names.isdisjoint(_WRAP):
+                wrapped = True
+            elif not (wrapped or _ASSIGN.match(tok) or tok[:1] == "$" or tok in ("=", "+=") or not names.isdisjoint(_KEYWORDS)):  # `$x = bash ./mk`
+                start = False
+    return False
 
 
 def _gated(text):
-    return _GATE.search(re.sub(r"[\\`^]", "", text)) is not None
+    """May the text create something?  Its words read without escapes and quotes name a command the detector knows, or a command of it starts
+    with a word that runs a script or a shell (the script it runs is read).  A text too long to inspect is walked, which refuses it.  The words
+    are also found with the quotes removed, so that a quote the shell reads as a literal (`echo \\"; bash ./mk`) hides none."""
+    plain = re.sub(r"['\"]", "", text)
+    return _GATE.search(re.sub(r"[\\`^]", "", plain)) is not None or len(text) > MAX_TEXT or _runs_script(text) or _runs_script(plain)
 
 
 # What may stand between a pipe and the shell that reads it: prefix assignments, wrappers and their options (an option may take one value).
@@ -581,8 +613,11 @@ class _Missing(str):
     while an earlier element of the same && chain creates the directory, so the later elements of that chain run inside it: (kind, data,
     token of the frame whose chain made it) with kind "new" after git init / git clone (a new repository holds no lane), "wt" after git
     worktree add (data: the directory it ran in) and "dir" after mkdir (data: the path; git finds the repository of its nearest existing
-    ancestor)."""
+    ancestor).  Its repr carries both, so two records that differ only in them are two records."""
     follow = None
+
+    def __repr__(self):
+        return "_Missing(%s, %r, %r)" % (str.__repr__(self), getattr(self, "prior", None), self.follow)
 
 
 def _missing(target, prior, follow=None):
@@ -736,11 +771,34 @@ def _expand(cr):
 
 def _cr(verb, names, cwd, dynamic, kind="branch", path=None, tool=False, commit=None):
     """A creation record.  kind: worktree (named worktree), branch (branch only) or auto (the tool names the worktree itself).
-    A name is dropped when git would refuse it anyway (spaces, '..', a leading dash, a backslash that quoting kept ...).
+    A name is dropped when git would refuse it anyway (spaces, '..', a leading dash, a backslash that quoting kept ...).  A bell in a name
+    (PowerShell's `a) is judged as the letter a: git refuses the bell, so the stricter reading only denies more (``fe`at`` is named feat).
     redirect: True when the record is judged in the git directory `gitdir` (--git-dir / GIT_DIR; None: it cannot be resolved)."""
-    names = [n for n in names if _BAD_NAME.search(n) is None or re.search(r"[$`%()]", n)]
+    names = [n for n in (n.replace("\a", "a") for n in names) if _BAD_NAME.search(n) is None or re.search(r"[$`%()]", n)]
     return {"verb": verb, "names": names, "cwd": cwd, "dynamic": dynamic or any(re.search(r"[$`%()]", n) for n in names), "kind": kind, "path": path, "tool": tool,
             "commit": commit, "redirect": False, "gitdir": None}
+
+
+_HEADS = re.compile(r"refs/(?i:heads)/")  # the case-insensitive file systems of Windows and macOS store refs/HEADS/x as the branch x
+_STDIN_REF = re.compile(r"(?:create|update)\s+refs/(?i:heads)/([^\s\"'\\]*)")
+_STDIN_OPT = re.compile(r"--s(?:t(?:d(?:in?)?)?)?(?![\w-])")  # --stdin and its unique prefixes
+
+
+def _stdin_refs(text):
+    """-> (names, dynamic) for the `create` and `update` instructions of an `update-ref --stdin` written in `text`.  A name ends at whitespace, a
+    quote or a backslash; a backslash right after it that is `\\0` not followed by an octal digit, `\\n`, `\\t` or `\\r` is the separator printf
+    writes.  Any other backslash after a name (printf turns `\\x62` into a letter), an empty name and a name git refuses make the creation
+    dynamic."""
+    names, dynamic = [], False
+    for m in _STDIN_REF.finditer(text):
+        name, esc = m.group(1), text[m.end():m.end() + 3]
+        if esc[:1] == "\\" and not (esc[1:2] in ("n", "t", "r") or (esc[1:2] == "0" and not re.match(r"[0-7]", esc[2:3]))):
+            dynamic = True
+        if not name or _BAD_NAME.search(name):
+            dynamic = True
+        if name:
+            names.append(name)
+    return names, dynamic
 
 
 def _short_value(tok, letters):
@@ -819,15 +877,18 @@ def _requote(words, dyn):
 
 
 def _rebase_exec(args):
-    """The command texts `git rebase` runs: the value of -x / --exec / --exec= (also bundled, -qx <cmd>, and attached, -x<cmd>)."""
+    """The command texts `git rebase` runs: the value of -x / --exec / --exec= (also bundled, -qx <cmd>, and attached, -x<cmd>), and of a
+    unique prefix of --exec of at least two letters (--ex, --exe=<cmd>; --e is ambiguous for git)."""
     out, k = [], 0
     while k < len(args):
         t = args[k]
-        if t == "--exec" and k + 1 < len(args):
-            out.append(args[k + 1])
-            k += 1
-        elif t.startswith("--exec="):
-            out.append(t[7:])
+        key = t[2:].split("=", 1)[0] if t.startswith("--") else None
+        if key is not None and len(key) >= 2 and "exec".startswith(key):
+            if "=" in t:
+                out.append(t.split("=", 1)[1])
+            elif k + 1 < len(args):
+                out.append(args[k + 1])
+                k += 1
         elif t.startswith("-") and not t.startswith("--"):
             for j in range(1, len(t)):
                 if t[j] == "x":
@@ -939,15 +1000,32 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
         return [C("stash branch", a[1:2], here, len(a) < 2 or ad[1])]
     if sub == "symbolic-ref":
         pos = [t for t in a if not t.startswith("-")]
-        return [C(sub, [pos[1][11:]], here, False)] if len(pos) >= 2 and pos[0] == "HEAD" and pos[1].startswith("refs/heads/") else \
-            [C(sub, [pos[0][11:]], here, False)] if pos and pos[0].startswith("refs/heads/") else []
-    if sub == "update-ref":
-        if "-d" in a:
-            return []
-        if "--stdin" in a:  # the instructions arrive on stdin: interpret() reads them from the command text
+        return [C(sub, [pos[1][11:]], here, False)] if len(pos) >= 2 and pos[0] == "HEAD" and _HEADS.match(pos[1]) else \
+            [C(sub, [pos[0][11:]], here, False)] if pos and _HEADS.match(pos[0]) else []
+    if sub == "update-ref":  # options as git reads them: -m takes the rest of its word or else the next word, a short word deletes with a d before any m
+        stdin = delete = False
+        pos, k = [], 0
+        while k < len(a):
+            t = a[k]
+            if t == "--":
+                pos += a[k + 1:]
+                break
+            if t.startswith("--"):
+                key = t[2:].split("=", 1)[0]
+                stdin = stdin or (key != "" and "stdin".startswith(key))  # --s, --std ...
+            elif t.startswith("-") and len(t) > 1:
+                for j in range(1, len(t)):
+                    if t[j] == "m":
+                        k += 0 if t[j + 1:] else 1
+                        break
+                    delete = delete or t[j] == "d"
+            else:
+                pos.append(t)
+            k += 1
+        if stdin:  # the instructions arrive on stdin: interpret() reads them from the command text
             return [dict(C(sub, [], here, False), stdin=True)]
-        names = [t[11:] for t in a if t.startswith("refs/heads/")]
-        return [C(sub, names, here, False)] if names else []
+        names = [t[11:] for t in pos[:1] if _HEADS.match(t)]  # the first positional word is the ref it writes
+        return [C(sub, names, here, False)] if names and not delete else []
     if sub in ("fetch", "pull", "push"):
         longs, shorts = (_PUSH_VALUED, ("-o",)) if sub == "push" else (_FETCH_VALUED, ("-o", "-j"))
         valued = {k + 1 for k, t in enumerate(a) if t in shorts or (t.startswith("--") and "=" not in t and len(t) >= 5
@@ -955,7 +1033,7 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
         pk = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and k not in valued]
         names, glob = [], False
         for t, _d in pk[1:]:  # the destinations of the refspecs, under refs/heads/ or bare
-            m = re.fullmatch(r"\+?[^:]*:(?:refs/heads/)?([^:]+)", t)
+            m = re.fullmatch(r"\+?[^:]*:(?:refs/(?i:heads)/)?([^:]+)", t)
             if m and not m.group(1).startswith("refs/"):
                 glob = glob or "*" in m.group(1)
                 names += [] if "*" in m.group(1) else [m.group(1)]
@@ -1010,14 +1088,18 @@ def _heredocs(cmd):
 
 
 def _git_subcommands(text):
-    """The subcommand after every `git` word (its first non-option word): one right-to-left pass, linear in the text."""
-    toks, nxt, subs = text.split(), None, []
-    for k in range(len(toks) - 1, -1, -1):
-        if nxt is not None and re.search(r"(?:^|\W)git$", toks[k]):
-            m = re.match(r"[A-Za-z][\w-]*", toks[nxt])
+    """The subcommand after every `git` word, in text order: its first word after the global options and the values of those that take one
+    (`git -C ../B nb x` names `nb`).  One right-to-left pass fills `first[p]`, the index of the first word from p on that is neither an option
+    nor an option value, so the text is read once whatever the number of git words."""
+    toks = text.split()
+    first = [None] * (len(toks) + 2)
+    for p in range(len(toks) - 1, -1, -1):
+        first[p] = p if not toks[p].startswith("-") else first[p + (2 if toks[p] in _VALUE_OPTS else 1)]
+    subs = []
+    for k, tok in enumerate(toks):
+        if first[k + 1] is not None and re.search(r"(?:^|\W)git$", tok):
+            m = re.match(r"[A-Za-z][\w-]*", toks[first[k + 1]])
             subs += [m.group(0)] if m else []
-        if not toks[k].startswith("-"):
-            nxt = k
     return subs
 
 
@@ -1026,6 +1108,77 @@ _ENV_PATH = re.compile(r"env:[\\/]?([A-Za-z_][A-Za-z0-9_]*)", re.I)
 _SET_ENV = re.compile(r"setenvironmentvariable\(([^)]*)", re.I)
 _TOOL_SHELL = {"Bash": "bash", "Monitor": "bash", "PowerShell": "ps"}  # the shell a hooked tool runs its command in (other tools: not known)
 _SHELL_OF = dict([(s, "bash") for s in _SHELLS] + [("powershell", "ps"), ("pwsh", "ps"), ("cmd", "cmd")])
+_OPAQUE = "git branch $opaque"  # the text of an encoded command that does not decode: a dynamic creation
+
+
+def _shell_flag(exe, word):
+    """How the shell `exe` reads the option word `word`: "command" (the words after it are the text it runs), "encoded" (the next word is
+    the base64 UTF-16LE text it runs) or None.  powershell and pwsh read an option written with -, -- or / by its name or a prefix of it:
+    -c, -co, -Comm ... -Command, -cwa and a prefix of -CommandWithArgs longer than -command run the words after them as text, -ec and a prefix
+    of -EncodedCommand (-e, -en, -enc, -EncodedC) run an encoded command; -ex (ExecutionPolicy) and -encodeda (EncodedArguments) are neither.
+    The POSIX shells read -c and the bundled short options that hold a c (-lc, -ec, -ce), cmd reads /c and /k."""
+    flag = _bare(word).lower()
+    if exe not in ("powershell", "pwsh"):
+        return "command" if re.fullmatch(r"-[a-z]*c[a-z]*|/c|/k|//c", flag) else None
+    m = re.fullmatch(r"(?:--?|/)([a-z]+)", flag)
+    name = m.group(1) if m else ""
+    if name == "ec" or (name and "encodedcommand".startswith(name)):
+        return "encoded"
+    if name and ("command".startswith(name) or name == "cwa" or (len(name) > 7 and "commandwithargs".startswith(name))):
+        return "command"
+    return None
+
+
+def _decoded(word):
+    """The text of a base64 UTF-16LE word (PowerShell's -EncodedCommand value), None when it is neither."""
+    try:
+        return base64.b64decode(word).decode("utf-16-le")
+    except ValueError:
+        return None
+
+
+def _child_script(exe, rest, opaque=None):
+    """The text the shell `exe` runs through the first command or encoded-command option among its arguments `rest` (a flag with no word
+    after it has no value): the script after -c of a POSIX shell, the words after the option joined by spaces for powershell, pwsh and cmd,
+    the decoded text of an encoded command (`opaque` when it does not decode); None when there is no such option."""
+    for k, w in enumerate(rest[:-1]):
+        kind = _shell_flag(exe, w)
+        if kind == "encoded":
+            text = _decoded(rest[k + 1])
+            return opaque if text is None else text
+        if kind:
+            return rest[k + 1] if exe in _SHELLS else " ".join(rest[k + 1:])
+    return None
+
+
+def _start_process(rest, rdyn):
+    """The git a PowerShell `Start-Process` starts, from the words after it: -> (the -ArgumentList text, (the -WorkingDirectory value, dynamic) or
+    None), None when no git program is among its words.  Each parameter takes its value from the next word or after a colon, and is read by its
+    full name or a prefix of it that names no other parameter (-a, -wo; -w would be Wait, WindowStyle or WorkingDirectory); a list written with
+    commas is one value."""
+    if not any(_exe(w) == "git" for w in rest):
+        return None
+    args, wd, k = "", None, 0
+    while k < len(rest):
+        word, k = rest[k], k + 1
+        name, colon, value = word[1:].partition(":") if word.startswith("-") and len(word) > 1 else ("", "", "")
+        name, dynamic = name.lower(), rdyn[k - 1]
+        full = "argumentlist" if name and "argumentlist".startswith(name) else "workingdirectory" if len(name) > 1 and "workingdirectory".startswith(name) else None
+        if full is None:
+            continue
+        if not value:  # `-ArgumentList 'x'`, and `-ArgumentList: 'x'` (a colon with nothing after it takes the next word)
+            value, dynamic = (rest[k], rdyn[k]) if k < len(rest) else ("", False)
+            k += 1
+        parts = [value]
+        while full == "argumentlist" and k < len(rest) and (parts[-1].endswith(",") or rest[k].startswith(",")):
+            parts.append(rest[k])
+            k += 1
+        value = " ".join(parts)
+        if full == "argumentlist":
+            args = value
+        else:
+            wd = (value, dynamic)
+    return args, wd
 
 
 def _ps_env_item(rest, rdyn):
@@ -1125,6 +1278,23 @@ _STATEFUL = frozenset(("cd", "pushd", "chdir", "set-location", "sl", "push-locat
                        "ni", "set-alias", "sal", "start-process", "find", "eval", "iex", "invoke-expression", "git", "gh", "gt", "claude", "source", ".",
                        "powershell", "pwsh", "cmd", "read", "readarray", "mapfile", "getopts", "let", "printf", "set-content", "sc", "add-content", "ac",
                        "mkdir", "md") + _SHELLS)  # the commands whose effect depends on, or changes, the directory and GIT_DIR state
+_PROGRAMS = frozenset(_KNOWN) | _STATEFUL | frozenset(_WRAP)
+
+
+def _spelled(word):
+    """The program a program word may name in a shell the hook cannot name, which may or may not remove a backslash, a backtick and a caret:
+    the lower-case name of a program the detector knows that the word spells once the backtick and caret, or all three characters, are
+    removed (`g\\it`, `g^it`, ``g`it``); None when the word as written names no other program than it reads as (a path keeps its backslashes)."""
+    if not re.search(r"[\\`^]", word):
+        return None
+    base = _exe(word)
+    for text in (re.sub(r"[`^]", "", word), re.sub(r"[\\`^]", "", word)):
+        name = _exe(text)
+        if name != base and name in _PROGRAMS:
+            return name
+    return None
+
+
 _OVER_WORK = "the command takes more walking through nested text and directory or GIT_DIR states than the hook does"
 _IN_PLACE = ("eval", "iex", "invoke-expression", "source", ".")  # text the current shell runs itself: its changes reach the commands after it
 _DIR_CMDS = ("cd", "pushd", "chdir", "set-location", "sl", "push-location")
@@ -1357,10 +1527,12 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         return [_anywhere("nested text", _OVER_WORK)]
     out, early, env, galias, whole, over = [], [], {}, {}, cmd, []
     states = [[cwd, _GitDirs(gitdir, sh), list(dirs)]]
-    contexts, bash = [], sh == "bash"
+    contexts, noted, bash = [], set(), sh == "bash"
 
-    def note(here, cands):
-        if len(contexts) <= MAX_CONTEXTS and (here, cands) not in contexts:
+    def note(here, cands):  # a missing directory counts with its prior directory and the && chain it follows
+        key = (here, getattr(here, "prior", None), getattr(here, "follow", None), cands)
+        if len(contexts) <= MAX_CONTEXTS and key not in noted:
+            noted.add(key)
             contexts.append((here, cands))
     note(cwd, states[0][1].cands())
     cmd, bodies = _heredocs(cmd)
@@ -1447,14 +1619,19 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                 if names:
                     return True, []
         i = 0
-        while i < len(words) and (_ASSIGN.match(words[i]) or words[i].lower() in _WRAP + _KEYWORDS or words[i] == "&" or (i == 0 and words[i].endswith(")"))):
-            wrapped, vals = words[i].lower() in _WRAP, _SU_VALUE if words[i].lower() in ("sudo", "doas") else _ENV_VALUE if words[i].lower() == "env" else ()
+        while i < len(words) and (_ASSIGN.match(words[i]) or words[i].lower() in _WRAP + _KEYWORDS or words[i] == "&" or (i == 0 and words[i].endswith(")")) or
+                                  (sh is None and _spelled(words[i]) in _WRAP)):  # a shell the hook cannot name may remove the escapes of en\v
+            name = words[i].lower() if words[i].lower() in _WRAP else _spelled(words[i]) if sh is None else None
+            wrapped, vals = name in _WRAP, _SU_VALUE if name in ("sudo", "doas") else _ENV_VALUE if name == "env" else ()
             i += 1
             if wrapped:  # the wrapped program is the next known one; the value of a wrapper option (-u git) is never the program
-                i = next((k for k in range(i, len(words)) if _exe(words[k]) in _KNOWN and words[k - 1] not in vals), len(words))
+                i = next((k for k in range(i, len(words)) if (_exe(words[k]) in _KNOWN or (sh is None and _spelled(words[k]) in _KNOWN)) and
+                          words[k - 1] not in vals), len(words))
         if i >= len(words):
             return False, []
         exe, rest = _exe(galias.get(words[i], words[i])), words[i + 1:]
+        spelled = _spelled(galias.get(words[i], words[i])) if sh is None and exe not in _KNOWN else None  # g\it, g^it, g`it: the shell may or may not remove them
+        exe = spelled or exe
         script = re.search(r"\.(sh|ps1|bash)$", words[i], re.I) is not None
         if not i and exe not in _STATEFUL and not script:  # neither depends on nor changes the state
             return False, []
@@ -1464,7 +1641,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         for k in range(i - 2, -1, -1):
             kept[k] = kept[k + 1] or words[k + 1] == "-E" or words[k + 1].startswith("--preserve-env")
         work[0] -= STEP_COST * (len(states) - 1)
-        finals = []
+        finals, n0, before = [], len(out), _snap(states) if spelled else None
         for st in states:
             here, gds, dirs = st
             run = here if chdir is None else None if chdir[1] else _join(here, chdir[0])  # where the invocation runs (None: unknown)
@@ -1527,29 +1704,18 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                 if len(pos) >= 2:
                     galias[pos[0]] = pos[1]
             elif exe == "start-process" and depth < 3:
-                k = [w.lower() for w in rest].index("-argumentlist") + 1 if "-argumentlist" in [w.lower() for w in rest] else len(rest)
-                args = rest[k] if k < len(rest) else ""
-                prog = next((w for w in rest if _exe(w) == "git"), None)
-                out.extend(interpret("git " + args.replace(",", " "), run, depth + 1, aliases, cands, "ps", work=work) if prog else [])
+                sp = _start_process(rest, dyn[i + 1:])
+                if sp:  # git runs in the -WorkingDirectory, resolved against the shell's directory (a dynamic value: the repository is unknown)
+                    at = run if sp[1] is None else None if sp[1][1] else _join(run, sp[1][0])
+                    out.extend(interpret("git " + sp[0].replace(",", " "), at, depth + 1, aliases, cands, "ps", work=work))
             elif exe == "find" and depth < 3 and any(w in ("-exec", "-execdir") for w in rest):
                 k = next(k for k, w in enumerate(rest) if w in ("-exec", "-execdir"))
                 out.extend(interpret(" ".join(rest[k + 1:]).replace("\\;", " "), run, depth + 1, aliases, cands, work=work))
             elif exe in _SHELLS + ("powershell", "pwsh", "cmd") and depth < 3:
-                handled = False
-                for k, w in enumerate(rest):
-                    if re.fullmatch(r"-(enc|encodedcommand)", w.lower()) and k + 1 < len(rest):
-                        try:
-                            text = base64.b64decode(rest[k + 1]).decode("utf-16-le")
-                        except ValueError:
-                            text = "git branch $opaque"  # an undecodable encoded command counts as a dynamic creation
-                        out.extend(interpret(text, run, depth + 1, aliases, cands, _SHELL_OF[exe], work=work))
-                        handled = True
-                        break
-                    if re.fullmatch(r"-[a-z]*c|-command|/c|/k|//c", w.lower()) and k + 1 < len(rest):
-                        out.extend(interpret(rest[k + 1] if exe in _SHELLS else " ".join(rest[k + 1:]), run, depth + 1, aliases, cands, _SHELL_OF[exe],
-                                             work=work))
-                        handled = True
-                        break
+                child = _child_script(exe, rest, _OPAQUE)  # -c / -Command / -EncodedCommand in every spelling the shell reads
+                handled = child is not None
+                if handled:
+                    out.extend(interpret(child, run, depth + 1, aliases, cands, _SHELL_OF[exe], work=work))
                 files = [w for k, w in enumerate(rest) if not w.startswith("-") and (k == 0 or rest[k - 1].lower() != "-command")]  # option values come first
                 for w in [] if handled else files[:4]:
                     relative(w)
@@ -1579,6 +1745,9 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                 in_place = (exe in _IN_PLACE or ps1) and not isolated  # PowerShell runs a script in the caller's process: its location and environment changes stay
                 out.extend(interpret(text, run, depth + 1, aliases, cands, "ps" if ps1 else "bash", dirs if in_place else (), finals if in_place else None,
                                      work) if text else [])
+        if spelled:  # the shell may or may not remove the escape: what the program creates is dynamic, what it changes is a possible change
+            out[n0:] = [dict(cr, dynamic=True) for cr in out[n0:]]
+            states[:] = _merge(before, states)
         return True, finals
 
     def substituted(states, text):
@@ -1663,13 +1832,14 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
     if final is not None:
         final.extend((h, g.cands(), tuple(d)) for h, g, d in states)
     if any(cr.get("stdin") for cr in out):  # update-ref --stdin: the instructions are in the text that feeds it, or nowhere the hook can see
-        named = _cr("update-ref", re.findall(r"(?:create|update)\s+refs/heads/([^\s\"']+)", whole), None, False)
+        found, odd = _stdin_refs(whole)
+        named = _cr("update-ref", found, None, odd)
         shown = bool(named["names"]) or re.search(r"\b(?:create|update|delete|verify|option|start|prepare|commit|abort)\s", whole) is not None
-        out = [dict(cr, names=named["names"], dynamic=named["dynamic"] or not shown) if cr.pop("stdin", False) else cr for cr in out]
+        out = [dict(cr, names=named["names"], dynamic=named["dynamic"] or not shown or cr["dynamic"]) if cr.pop("stdin", False) else cr for cr in out]
     elif depth < 3 and not any(cr["verb"] == "update-ref" for cr in out) and \
-            any("--stdin" in s.partition("update-ref")[2] for s in re.split(r"[\n|;&]", whole) if "update-ref" in s):  # fed to a git the walk did not see
-        names = re.findall(r"(?:create|update)\s+refs/heads/([^\s\"']+)", whole)
-        early += [_with_rds(_cr("update-ref", names, h, False), h, c) for h, c in contexts[:MAX_CONTEXTS]] if names else []
+            any(_STDIN_OPT.search(s.partition("update-ref")[2]) for s in re.split(r"[\n|;&]", whole) if "update-ref" in s):  # fed to a git the walk did not see
+        names, odd = _stdin_refs(whole)
+        early += [_with_rds(_cr("update-ref", names, h, odd), h, c) for h, c in contexts[:MAX_CONTEXTS]] if names or odd else []
     places = contexts
     if inner and len(contexts) > 1 and (len(contexts) > MAX_CONTEXTS or len(inner) * len(contexts) > 4096):  # too much to judge everywhere:
         early.append(dict(_anywhere("command substitution", "the command runs text from inside itself in more directory or GIT_DIR states than the hook judges"),
@@ -1700,7 +1870,6 @@ _READ_FLAGS = ("--get", "--get-all", "--get-regexp", "--list", "-l", "--show-ori
 _ENV_WRITE = re.compile(r"^(?:GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)=|\$env:GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)$)", re.I)
 _USER_MSG = "override / arm / disarm / install are user-only"
 _STATE_MSG = "the hooks, refs and claim store under .git and the guard home are the guard's state"
-_CHILD_FLAG = re.compile(r"-[a-z]*c|-command|/c|/k|//c")
 
 
 def _bare(word):
@@ -1740,23 +1909,12 @@ def _user_only(rest, launcher):
 
 
 def _child_text(words):
-    """The text the first child shell among `words` runs: bash / sh / zsh / dash / ksh -c, cmd /c and /k, powershell and pwsh -Command, -c
-    or -EncodedCommand."""
+    """The text the first child shell among `words` runs: bash / sh / zsh / dash / ksh -c, cmd /c and /k, powershell and pwsh -Command,
+    -CommandWithArgs or -EncodedCommand in every spelling the shell reads (_shell_flag)."""
     for i, w in enumerate(words):
         exe = _exe(_bare(w))
-        if exe not in _SHELLS + ("powershell", "pwsh", "cmd"):
-            continue
-        rest = words[i + 1:]
-        for k, r in enumerate(rest[:-1]):
-            flag = _bare(r).lower()
-            if re.fullmatch(r"-(enc|encodedcommand)", flag):
-                try:
-                    return base64.b64decode(rest[k + 1]).decode("utf-16-le")
-                except ValueError:
-                    return None
-            if _CHILD_FLAG.fullmatch(flag):
-                return rest[k + 1] if exe in _SHELLS else " ".join(rest[k + 1:])
-        return None
+        if exe in _SHELLS + ("powershell", "pwsh", "cmd"):
+            return _child_script(exe, words[i + 1:])
     return None
 
 
@@ -1907,17 +2065,19 @@ def shell_text(payload):
 
 
 def shell_command(payload):
-    """-> (command line or None, its shell dialect).  Codex passes argv: the script of a shell's -c / -Command / /c element is read in that
-    shell's dialect; the elements of any other argv are quoted back into a line (each holding a space, a quote, a backslash or a shell
-    character) read as bash.  A string command is read in the tool's shell (Monitor and MCP tools take a string only)."""
+    """-> (command line or None, its shell dialect).  Codex passes argv: the script of a shell's -c / -Command / -EncodedCommand / /c element
+    (_child_script: the words after a PowerShell or cmd option are joined into the text it runs) is read in that shell's dialect; the
+    elements of any other argv are quoted back into a line (each holding a space, a quote, a backslash or a shell character) read as bash.
+    A string command is read in the tool's shell (Monitor and MCP tools take a string only)."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     c, sh = ti.get("command"), _TOOL_SHELL.get(tool)
     if isinstance(c, list) and tool != "Monitor" and not tool.startswith("mcp__"):
         parts = [str(x) for x in c]
-        k = next((j for j in range(1, len(parts) - 1) if re.fullmatch(r"-[a-z]*c|-command|/c", parts[j].lower())), None)
-        if k is not None and _exe(parts[0]) in _SHELLS + ("powershell", "pwsh", "cmd"):
-            c, sh = parts[k + 1], _SHELL_OF[_exe(parts[0])]
+        exe = _exe(parts[0]) if parts else ""
+        script = _child_script(exe, parts[1:], _OPAQUE) if exe in _SHELL_OF else None
+        if script is not None:
+            c, sh = script, _SHELL_OF[exe]
         else:
             c, sh = " ".join(shlex.quote(x) if re.search(r"[\s'\"\\$`;&|<>()]", x) else x for x in parts), "bash"
     return (c if is_shell_tool(tool) and isinstance(c, str) else None), sh
@@ -2540,17 +2700,26 @@ def read_override(g, fp):
         return None
 
 
-def check_name(g, name, claims):
-    """-> reason the branch name cannot be a lane, or None."""
+def alias_problem(name):
+    """-> the Windows alias rule's reason when a claim file under `name` would alias another branch's claim file, or None."""
+    if any(c.endswith((".", " ")) or fold(c).endswith(".claim") for c in name.split("/")):
+        return ("a path component ends in '.', a space or '.claim', so its claim file would alias another branch's on Windows "
+                "(Windows alias rule: Windows drops trailing dots and spaces, and <x>.claim is the claim file of <x>)")
+    return None
+
+
+def check_name(g, name, claims, stored=False):
+    """-> reason the branch name cannot be a lane, or None.  `stored`: the name of a claim an earlier guard stored, which keeps allowing the
+    creation of its branch: only the Windows alias rule is not applied to it."""
     if name.startswith("-") or g.run("check-ref-format", "--branch", name, ok=(0, 1, 128))[0] != 0:
         return "not a valid git branch name"
     if len(name) > 100 or re.search(r'[<>|"]', name):
         return "longer than 100 characters or contains one of < > | \""
     if any(re.fullmatch(r"(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?", c.lower()) for c in name.split("/")):
         return "a path component is a Windows reserved device name"
-    if any(c.endswith((".", " ")) or fold(c).endswith(".claim") for c in name.split("/")):
-        return ("a path component ends in '.', a space or '.claim', so its claim file would alias another branch's on Windows "
-                "(Windows alias rule: Windows drops trailing dots and spaces, and <x>.claim is the claim file of <x>)")
+    problem = None if stored else alias_problem(name)
+    if problem:
+        return problem
     f = fold(name)
     for other in list(list_refs(g)[0]) + [d["branch"] for d in claims.values()]:
         o = fold(other)
@@ -2612,12 +2781,13 @@ def judge(snap, claims, bad_claims, name, entries, override):
     return v
 
 
-def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""):
-    """Judge `name` against every claimant; with write=True register the claim atomically.  Returns a verdict dict."""
+def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree="", stored=False):
+    """Judge `name` against every claimant; with write=True register the claim atomically.  Returns a verdict dict.  `stored`: `name` is the
+    branch of a claim that exists (the host hook judging its creation), so a name an earlier guard stored is not refused by the alias rule."""
     claims, bad_claims = read_claims(g)
     if worktree and _CTL.search(worktree):
         return deny("INVALID_MANIFEST", message=T(lang, "invalid", errors="  [WORKTREE] %r: the worktree path contains a control character" % worktree))
-    reason = check_name(g, name, {k: d for k, d in claims.items() if k != fold(name)})
+    reason = check_name(g, name, {k: d for k, d in claims.items() if k != fold(name)}, stored)
     if reason:
         return deny("INVALID_MANIFEST", message=T(lang, "invalid", errors="  [BRANCH_NAME] %s: %s" % (name, reason)))
     own_wt = os.path.abspath(worktree) if worktree else (claims.get(fold(name)) or {}).get("worktree", "")
@@ -2776,6 +2946,9 @@ def cmd_list(args):
     for doc in sorted(claims.values(), key=lambda d: d["created"]):
         st, in_wt = lane_state(doc, heads, merged, wts)
         row = {"branch": doc["branch"], "state": st, "entries": doc["entries"], "created": doc["created"], "by": doc["by"], "override": doc["override"] or None, "worktrees": in_wt}
+        refused = alias_problem(doc["branch"])
+        if refused:  # stored by an earlier guard: it still allows its branch, but plan refuses the name
+            row["refused_name"] = refused
         if args.drift:
             try:
                 ents = [parse_entry(r) for r in doc["entries"]]
@@ -2783,7 +2956,8 @@ def cmd_list(args):
                 ents = None  # an unparseable claim is reported by doctor; its drift cannot be computed
             row["drift"] = [] if ents is None else [p for p in drift.get(lane_key(doc["branch"]), []) if not any(path_hit(e, fpath(p)) for e in ents)]
         rows.append(row)
-    lines = ["%-8s %s  [%s]%s" % (r["state"], r["branch"], ", ".join(r["entries"]), "  drift: " + _few(r["drift"]) if r.get("drift") else "") for r in rows]
+    lines = ["%-8s %s  [%s]%s%s" % (r["state"], r["branch"], ", ".join(r["entries"]), "  drift: " + _few(r["drift"]) if r.get("drift") else "",
+                                  " (name refused by plan: %s)" % r["refused_name"] if r.get("refused_name") else "") for r in rows]
     for b in bad:  # claims the guard cannot use are shown too: they deny every creation, and this is where the user sees why
         path = b.replace(os.sep, "/")
         if b.code == "CLAIM_NEWER_FORMAT":
@@ -2988,7 +3162,7 @@ def check_creation(g, name, cr, lang, mode):
         entries = [parse_entry(r) for r in doc["entries"]]
     except ManifestError:
         return deny("UNKNOWN", unknowns=[{"code": "CLAIM_UNPARSEABLE", "text": name}])
-    v = plan_core(g, name, entries, False, False, lang)
+    v = plan_core(g, name, entries, False, False, lang, stored=True)  # the claim exists: a name the alias rule refuses still allows its branch
     if v["code"] == "BRANCH_EXISTS":
         return None
     return v if v["decision"] == "deny" and v.get("fingerprint") != doc["override"] else None
@@ -3130,7 +3304,7 @@ def decide(payload, lang):
         if not opened:
             opened.append(open_repo(cwd))
         return opened[0]
-    if text and any(s not in _BUILTINS for s in _git_subcommands(re.sub(r"[\\`^]", "", text))):  # a git alias may hide a creation anywhere
+    if text and any(s not in _BUILTINS for s in _git_subcommands(_bare(text))):  # a git alias may hide a creation anywhere (g''it, g\it)
         aliases = load_aliases(repo()) if repo() else {}
         crs = extract(payload, aliases)[0] if aliases else crs
     if not prot and text and len(text) <= MAX_TEXT and _WRITE_HINT.search(re.sub(r"[\\`^'\"]", "", text)):
@@ -3225,12 +3399,12 @@ exists() { [ -e "$CD/$1" ] || git rev-parse --verify -q "$1" >/dev/null; }
 in=$(cat)
 while read -r old new ref; do
   case $ref in
-  refs/heads/*) [ "$new" = $Z ] && continue
-    b=${ref#refs/heads/}; claim "$b" && continue
+  refs/[Hh][Ee][Aa][Dd][Ss]/*) [ "$new" = $Z ] && continue
+    b=${ref#refs/[Hh][Ee][Aa][Dd][Ss]/}; claim "$b" && continue
     if [ -f "$CD/$ref" ]; then read -r cur <"$CD/$ref"; else cur=$(git rev-parse --verify -q "$ref"); fi
     [ "$cur" = "$new" ] && continue
     [ -z "$cur" ] && need "$b" "creation / 新建分支";;
-  HEAD) case $new in ref:refs/heads/*) b=${new#ref:refs/heads/}
+  HEAD) case $new in ref:refs/[Hh][Ee][Aa][Dd][Ss]/*) b=${new#ref:refs/[Hh][Ee][Aa][Dd][Ss]/}
       exists "refs/heads/$b" || need "$b" "unborn or orphan branch / 孤儿分支";; esac;;
   esac
 done <<EOT
@@ -3790,6 +3964,9 @@ def cmd_doctor(args):
         out_text("  %s" % (b.text if b.code == "CLAIM_NEWER_FORMAT" else "unreadable claims/%s" % b.replace(os.sep, "/")))
     orphans = [d["branch"] for d in claims.values() if d["branch"] not in heads and not d["worktree"]]
     out_text("claims without a branch or planned worktree: %s" % (", ".join(orphans) or "none"))
+    refused = [d["branch"] for d in claims.values() if alias_problem(d["branch"])]
+    if refused:  # they keep allowing their branches; plan refuses the names, so the lanes can only be released and planned again
+        out_text("claims under a name plan refuses (Windows alias rule): %s; release them and plan the lanes under another name" % ", ".join(refused))
     wts = [w for w in worktrees(g) if not w["bare"] and not w["prunable"]]
     dirs = {pkey(hooks_dir(g, w["path"])) for w in wts}
     hook = os.path.join(hooks_dir(g), "reference-transaction")

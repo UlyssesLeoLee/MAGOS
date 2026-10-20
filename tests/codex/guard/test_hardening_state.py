@@ -1045,3 +1045,41 @@ def test_a_newer_format_claim_denial_says_upgrade_only(repo, guard):
     put_claim(repo, "broken", "garbage")
     rc, v = verdict(guard, repo, "check", "--branch", "agent/n", "--paths", "web/")
     assert rc == 11 and "Options:" in v["message"] and "[CLAIM_UNPARSEABLE]" in v["message"]
+
+
+# ---- a claim stored under a name the Windows alias rule refuses (cr-15) ------------------------------------------------------
+def test_a_stored_claim_under_a_refused_name_keeps_its_branch(repo, guard):
+    repo.branch_with("agent/other", "src/a.py")  # an unmerged lane: the repository is engaged in AUTO
+    assert guard(repo, "plan", "--branch", "agent/ok", "--paths", "web/").rc == 0
+    assert "plan refuses" not in guard(repo, "doctor").out  # a name plan accepts is not reported
+    g = G.open_repo(str(repo.path))
+    stored = {}
+    for name, entry in (("rel.claim", "docs/"), ("aux.claim", "README.md")):  # the second is also a Windows device name, which stays refused
+        body = ["state=active", "branch=" + name, "worktree=", "target=main", "base=" + repo.git("rev-parse", "main"),  # no v= line: stored by 1.0.1
+                "created=2026-01-01T00:00:00Z", "by=old", "override=", "entry=" + entry]
+        path = Path(G.claim_path(g, name))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(("\n".join(body) + "\n").encode("utf-8"))
+        stored[name] = path.read_bytes()
+    assert denied(hook(repo, command="git switch -c rel.claim")) is None  # the claim of its own branch allows the creation
+    assert denied(hook(repo, command="git worktree add ../w-rel -b rel.claim")) is None
+    reason = denied(hook(repo, command="git switch -c aux.claim"))
+    assert reason and "reserved device name" in reason, reason  # only the alias rule is skipped
+    reason = denied(hook(repo, command="git switch -c other.claim"))  # no claim: planned like any other branch
+    assert reason and "creating 'other.claim'" in reason and "a planned file manifest must be registered" in reason, reason
+    for extra in ((), ("--amend",)):
+        r = guard(repo, "plan", "--branch", "rel.claim", "--paths", "docs/", "src/", *extra)
+        assert r.rc == 12 and "[BRANCH_NAME]" in r.out and "Windows alias rule" in r.out, (extra, r)
+    assert guard(repo, "check", "--branch", "rel.claim", "--paths", "docs/").rc == 12
+    assert Path(G.claim_path(g, "rel.claim")).read_bytes() == stored["rel.claim"]  # nothing was rewritten
+    rows = {r["branch"]: r for r in json.loads(guard(repo, "list", "--json").out)}
+    assert rows["rel.claim"]["state"] == "planned" and "Windows alias rule" in rows["rel.claim"]["refused_name"], rows["rel.claim"]
+    assert "refused_name" not in rows["agent/ok"]
+    shown = guard(repo, "list").out
+    lines = {ln.split()[1]: ln for ln in shown.splitlines()}
+    assert "(name refused by plan: " in lines["rel.claim"] and "Windows alias rule" in lines["rel.claim"] and "refused" not in lines["agent/ok"], shown
+    doctor = [ln for ln in guard(repo, "doctor").out.splitlines() if "plan refuses" in ln]
+    assert len(doctor) == 1 and "rel.claim" in doctor[0] and "aux.claim" in doctor[0] and "agent/ok" not in doctor[0], doctor
+    assert guard(repo, "release", "--branch", "rel.claim").rc == 0  # the way out: release it and plan the lane under another name
+    assert guard(repo, "plan", "--branch", "rel-claim", "--paths", "docs/").rc == 0
+    assert denied(hook(repo, command="git switch -c rel.claim")) is not None
