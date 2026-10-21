@@ -18,7 +18,7 @@ separate project test worktree described in `AGENTS.md`). Three levels:
    locked and prunable worktree, remote-tracking branch ahead of the target, bare repository, case collision, unborn
    repository) and drive the CLI in process (`main(argv)`) and as a subprocess. Git runs with an isolated `HOME`,
    `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_NOSYSTEM`, and the isolated gitconfig sets `core.longpaths=true` so deep
-   temporary paths work on Windows. The sets (`test_gitplan_sets.py`, TC-253 to TC-297 and TC-310 to TC-324) use the same
+   temporary paths work on Windows. The sets (`test_gitplan_sets.py`, TC-253 to TC-297 and TC-310 to TC-324, whose specs name their lanes by topic) use the same
    repositories with several lane branches and worktrees, a moved or replaced target, claims of other planners, a
    remote-tracking copy of the target, specs written outside the repository, failures injected into `os.replace` and
    `Git.run`, and concurrent processes. Every spec they build carries `requirements`, per lane `serves` and `outcome`, topic ids, the branch

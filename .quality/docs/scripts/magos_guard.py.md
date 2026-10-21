@@ -834,7 +834,7 @@ Invariants:
 
 ## Sets (version 1.0.4)
 
-A set is one task divided into lanes (sub-agent worktrees) that are merged back as one whole. `/GitPlan`
+A set is one task divided into lanes (sub-agent worktrees), named by the topic of their change, that are merged back as one whole. `/GitPlan`
 (`references/commands.md` section 8) investigates the repository and the code before any sub-agent starts, divides the
 work with exclusive file ownership and registers the division through the four set subcommands; the guard proves every
 rule that the spec and the repository allow it to prove, registers the claims of all lanes and the plan record as one
