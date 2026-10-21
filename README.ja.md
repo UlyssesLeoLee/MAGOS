@@ -33,7 +33,7 @@
 | リモート（remote） | ネット上（たとえば GitHub）に置かれているリポジトリ | 会社の共有ドライブにあるバックアップ |
 | プレビュー / 実行 | まず「どうするつもりか」だけを見て、納得してから実際に行う | まず改装プランを確認し、了承してから工事を始める |
 
-**このコマンド群には共通のルールがあります：まず見て、あなたが指示したときだけ動く。** リポジトリを実際に変更する 4 つのコマンド（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`、`/GitSweep`）は、あなたが明確に指示したときにだけ動きます。`/GitCleanup`、`/GitConverge`、`/GitSweep` はデフォルトではプレビューのみで、`--apply` を付けたときに初めて実行します。`/GitIntegrate` にはプレビューモードがなく、入力すること自体が統合の指示になります。このコマンドは、まず項目ごとにチェックを行い、すべて通過した場合にだけ書き込みます。確信が持てないときは、いずれのコマンドも、無理に進めずに停止して理由を伝えます。
+**このコマンド群には共通のルールがあります：まず見て、あなたが指示したときだけ動く。** リポジトリを実際に変更する 5 つのコマンド（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`、`/GitSweep`、`/GitPlan`）は、あなたが明確に指示したときにだけ動きます。`/GitCleanup`、`/GitConverge`、`/GitSweep`、`/GitPlan` はデフォルトではプレビューのみで、`--apply` を付けたときに初めて実行します（`/GitPlan` の締めくくりに使う `--release` も書き込みます）。`/GitIntegrate` にはプレビューモードがなく、入力すること自体が統合の指示になります。このコマンドは、まず項目ごとにチェックを行い、すべて通過した場合にだけ書き込みます。確信が持てないときは、いずれのコマンドも、無理に進めずに停止して理由を伝えます。
 
 ### コマンドの書き方は？
 
@@ -72,7 +72,7 @@ Claude Code にコマンドを直接入力します。後ろに「引数」を�
 | 何をするか | 次の内容を表示します：このコマンドの書き方、各引数の意味、引数を書かなかったときのデフォルトの動作、いくつかの例。表示したあと、すぐに停止します |
 | 何をしないか | リポジトリを読み取らず、Git コマンドを一切実行せず、何も変更しません |
 | どんなときに使うか | 書き方を忘れたとき、ある引数の意味に自信がないとき、あるコマンドを初めて使うとき |
-| 対応するコマンド | 7 つのコマンドすべてが対応しています |
+| 対応するコマンド | 8 つのコマンドすべてが対応しています |
 
 > 覚えておいてください：**迷ったときは、まずコマンドの後ろに `--help` を付けましょう。完全に安全です。**
 
@@ -138,7 +138,7 @@ Claude Code にコマンドを直接入力します。後ろに「引数」を�
 | 置く場所 | コマンドの後ろならどこでもかまいません。`/GitRecommend どのブランチを先にマージすべきか --lang English` では、先に `--lang English` が取り除かれるので、質問は「どのブランチを先にマージすべきか」になります |
 | 書き間違えた場合 | `--lang` の後ろに何も書かなかった場合や、言語ではないものを書いた場合（たとえば `--lang xyz123`）は、どこが間違っているかを中国語で伝えて使い方を表示し、**コマンドの実行には進みません** |
 | チェック結果に影響しますか？ | いいえ。変わるのは返信の言語だけで、チェックと判断の方法はまったく同じです |
-| 対応するコマンド | 7 つのコマンドすべてが対応しています |
+| 対応するコマンド | 8 つのコマンドすべてが対応しています |
 
 ---
 
@@ -188,10 +188,11 @@ flowchart LR
 | Safe Cleanup | 完了済みのブランチ / ワークツリーを安全に見分けます |
 | Safe Rollback | 自分専用の履歴にはリセットを使い、共有されている履歴ではリバートを優先します |
 | Branch Strategy | リポジトリが実際に従っているブランチモデル（分支策略 / ブランチ戦略）を見分け、「マルチエージェントの並行作業は安全か」のチェックリストに沿って監査し、最小限の変更だけを提案します。あなたに代わってブランチを変更することは決してありません |
+| Lane Planning | 作業を始める前にタスクをファイルが重ならない lane に分けて楽観ロックで登録し、完了後に依存関係の順で 1 つの全体にまとめます |
 
 ---
 
-## 7 つのコアコマンド
+## 8 つのコアコマンド
 
 | コマンド | ひとことで言うと | リポジトリを変更しますか？ |
 |---|---|---|
@@ -202,6 +203,7 @@ flowchart LR
 | `/GitCleanup` | 完了済みの古いブランチとワークツリーをクリーンアップします | デフォルトでは変更しません。`--apply` を付けたときだけ変更します |
 | `/GitConverge` | すべてのブランチの成果を 1 つのブランチにまとめ、`main` とそのブランチだけを残します | デフォルトでは変更しません。`--apply` を付けたときだけ変更します |
 | `/GitSweep` | まず `/GitConverge` を行い、そのあと、リモートでマージ済みのブランチもまとめて削除します | デフォルトでは変更しません。`--apply` を付けたときだけ変更します（リモートブランチの削除を含みます）。さらに `--push` を付けたときだけ、`<branch>` を一度プッシュします |
+| `/GitPlan` | 作業を始める前に Git とコードを調べ、タスクをファイルが重ならないレーンに分けてチェックリストを出し、そのあと依存関係の順に 1 つの全体へまとめます | デフォルトでは変更しません。`--apply`（または締めくくりの `--release`）を付けたときだけ変更します：計画を登録し、さらに `--create` でレーンのブランチとワークツリーを作成し、`--converge --apply` でマージし、`--land` で一度だけ早送りします。プッシュも、ブランチやワークツリーの削除もしません |
 
 どのコマンドにも `--lang <言語>`（返信の言語。省略すると中国語になります）と `--help`（説明だけを表示）を付けられます。見るだけの 3 つのコマンドには `--remote` もあります（`/GitSweep` の `--remote <名前>` は別の引数です。そのコマンド自身の説明をご覧ください）。これらの詳しい使い方は上の「3 つの共通引数」にあります。以下の各コマンドの節には、**そのコマンド固有の**引数だけを載せます。
 
@@ -736,6 +738,188 @@ flowchart TD
 
 ---
 
+### `/GitPlan`
+
+**サブエージェントが作業を始める前に、Git とコードを調べ、タスクをファイルが重ならない「レーン」（lane）に分けて、簡潔なチェックリストを出します。作業が終わったら、依存関係の順にそれらを 1 つの全体にまとめます。**
+
+向いている場面：複数の AI に同じタスクを並行して進めさせたいとき。「誰がどのファイルを変更するか」を先にはっきりさせ、最後のマージで TODO として照らし合わせられるチェックリストが欲しいとき。
+
+このチェックリストには 2 つの役割があります。作業を始める前は、**あなたがレビューする計画**です。作業が終わったあとは、**マージするときの TODO の手引き**になります：`--status` と `--converge` は、記録からもう一度これを表示し、各レーンの進み具合にチェックを付け、「あと何が残っているか」を並べます。デフォルトではプレビューのみで、`--apply`（と、締めくくりの `--release`）を付けたときだけ書き込みます。書き込みはレーンガード `magos_guard.py` の `set-plan`、`set-update`、`set-release` だけを経由します。プッシュも強制プッシュもせず、ブランチやワークツリーも削除せず、`main` にも触れません。
+
+まず、いくつかの用語を押さえましょう：
+
+| 用語 | 平たく言うと |
+|---|---|
+| set（計画） | 1 回のタスク分割につける名前。例えば `feat-x`。書式は `[a-z0-9][a-z0-9-]{0,23}` で、大文字と小文字は区別され、Windows のデバイス名（`con`、`nul`、`com1` など）も使えません。計画の記録と各レーンの登録は、この名前を使います |
+| lane（レーン） | 1 つのサブエージェントが使うブランチとワークツリーに、「どのファイルを変更してよいか」の一覧（マニフェスト、manifest）を組み合わせたもの。各レーンのマニフェストは互いに重ならないので、上書きし合うことがありません |
+| チェックリスト（sheet） | 4096 文字以内の簡潔な一覧：レーンごとに 1 行（ブランチ、担当するファイル、依存、受け入れ基準）。そのほかに、マージの 1 行、共有ファイルの担当、最大 5 件のリスクが付きます |
+| 統合ブランチ | `agent/<set>/integration`。各レーンをマージしたあとの「全体」が置かれます |
+| revision と base | 計画のバージョン番号と、計画の元になったターゲットブランチのコミット。古くなった計画を見つけるために使います（下の「楽観ロック」を参照） |
+
+#### 使い方：四つのステップ
+
+**ステップ 1：まずプレビュー（何も変更されません）**
+
+```text
+/GitPlan feat-x --into develop
+```
+
+まず Git（ブランチ、ワークツリー、既存のレーンの登録、ターゲットブランチの最新コミット。リモートの新しさはローカルの記録だけで判断し、ネットワークには接続しません）とコード（ディレクトリ構成、エントリポイント、ビルドとテストのコマンド、共有ファイル、変更の多いファイル、ファイル同士の参照）を調べます。そのうえでタスクを分け、`magos_guard.py set-plan --dry-run` で各レーンのファイル一覧が互いに重ならないことを証明します。最後に、チェックリスト、レーンの表、`READY` か `BLOCKED` の結論を出し、通らなかったゲートにはそれぞれ対処法が付きます。プレビューで唯一書き込まれるのは、すべてのワークツリーの外に置かれる一時的な spec ファイルです。チェックリストはこのような見た目です：
+
+```text
+# Plan feat-x -> develop  rev 1  base 3fa9c21
+- [ ] L1 データ層 | branch agent/feat-x/l1 | owns src/db/, tests/db/ | needs - | accept マイグレーションを戻せる
+- [ ] L2 API | branch agent/feat-x/l2 | owns src/api/ | needs L1 | accept API のテストが通る
+- [ ] merge L1 -> L2 into agent/feat-x/integration; run pytest -q; land on develop
+Shared: pyproject.toml -> L1 ; post-merge: update CHANGELOG.md -> merge step
+Risks: src/api は src/db の型を参照するため、L2 は L1 に依存する
+```
+
+**ステップ 2：登録**
+
+```text
+/GitPlan feat-x --into develop --apply
+/GitPlan feat-x --into develop --apply --create
+```
+
+登録されるのは、さきほどプレビューした spec そのものです。1 バイトも違いません。プレビューしていない、プレビューのあとにあなたが変更を求めた、またはターゲットブランチが進んだ場合は、改めてプレビューして停止し、そのまま登録することはありません。登録では、各レーンの登録、統合ブランチの登録（ファイルを一切占有せず、どのレーンのマニフェストも制限せず、通常の `git switch -c` でそのブランチを作ることをガードに許可させるだけのもの）、計画の記録を一度に書き込みます：すべて書き込まれるか、何も残らないかのどちらかです。`--create` を付けたときだけ、各レーンのブランチとワークツリーを作成します（記録された `base` から、登録されたパスに作ります）。付けない場合は、ご自身で実行する `git worktree add` コマンドが表示されます。各レーンには引き継ぎのメモも付きます：ブランチ、ワークツリー、マニフェスト、依存、受け入れ基準、そして担当者が進み具合を記録する 2 行のコマンドです。
+
+**ステップ 3：作業と進み具合の記録**
+
+各レーンの担当者（サブエージェント）は、自分のマニフェストにあるファイルだけを変更します。開始時に `active` を記録し、コミットしたら `ready` と最新のコミットを記録します：
+
+```text
+magos_guard.py set-update --set feat-x --expect-revision <rev> --lane L1 --state active
+magos_guard.py set-update --set feat-x --expect-revision <rev> --lane L1 --state ready --head <tip>
+```
+
+`<rev>` は `magos_guard.py set-show --set feat-x --json` の `record.revision` から取ります。終了コード 19 は、それが変わったことを示すので、もう一度読み直します。`ready` を記録するとき、ガードは次の点を確認します：そのコミットがブランチの最新のコミットであること、そしてこのレーンが変更したすべてのファイルがマニフェストの中にあること（範囲外なら終了コード 22 で、ファイルが列挙されます）。進み具合は `--status` でいつでも確認できます：
+
+```text
+/GitPlan feat-x --status
+```
+
+記録からチェックリストをもう一度表示します：`ready` または `integrated` のレーンにはチェックが付き、記録されたコミットが添えられます。最後が「残りの作業」です。
+
+```text
+# Plan feat-x -> develop  rev 9  base 3fa9c21
+- [x] L1 データ層 | integrated | head 8b1d4e0 | branch agent/feat-x/l1
+- [x] L2 API | ready | head c04a7f2 | branch agent/feat-x/l2
+- [ ] L3 画面 | active | head - | branch agent/feat-x/l3
+- [ ] merge L1 -> L2 -> L3 into agent/feat-x/integration; run pytest -q; land on develop
+
+Remaining TODO
+1. finish L3: active; accept 画面が開ける
+2. merge L2 c04a7f2
+3. run the repository checks on agent/feat-x/integration
+4. post-merge: update CHANGELOG.md
+```
+
+計画を変えるときは `--amend` を使います：`/GitPlan feat-x --amend --expect-revision 9` は、もう一度調査して、変更後の計画をプレビューします（残るレーンはブランチ、ワークツリー、状態を保ち、`base` はターゲットブランチの現在の位置へ移ります）。問題なければ `--apply` を付けます。まだマージされていないコミットを持つレーンは削除できず、そのマニフェストも、すでに変更したファイルより小さくはできません（ガードが拒否し、終了コードは 16 です）。
+
+**ステップ 4：マージ、反映、締めくくり**
+
+```text
+/GitPlan feat-x --converge
+/GitPlan feat-x --converge --apply --expect-revision 9
+/GitPlan feat-x --converge --apply --land
+/GitPlan feat-x --release
+```
+
+まずマージをプレビューします。結論は `READY`（すべてのレーンがすでに `READY` か `INTEGRATED` で、1 回の実行ですべてマージでき、続けて `--land` もできる）、`PARTIAL`（まだ終わっていないレーンがあり、今回は `READY` のものだけをマージし、終わっていない各レーンに何が足りないかを書く）、`BLOCKED`（通らなかったゲートがある）のどれかです。次に実行するコマンドの推奨は `/GitPlan <set> --converge --apply --expect-revision <プレビューに表示された revision>` です。`--land` は文章で勧めるだけで、その行には含めません。
+
+`--converge --apply` は、レポートにあるその計画をあなたが受け入れる、という意味です：まず改めて調査し、今回の計画（レーンの順序、各レーンに登録されたコミット、ターゲットブランチのコミット、revision）を記録します。以前にあなたがプレビューしたものと違っていれば、停止して新しいプレビューを出します。そのあと次のように進みます：
+
+1. `--include-active` を付けたときだけ、コミットのある `active` のレーンを現在のコミットで `ready` と記録します（これが、そのコミットをあなたが受け入れるということです）。このとき、ガードはそのレーンが変更したファイルがすべてマニフェストの中にあることも確認します。
+2. 統合ブランチがなければ、コマンドを実行しているワークツリー（ターゲットブランチにいて、クリーンである必要があります）で、通常の `git switch -c agent/<set>/integration <ターゲットブランチの現在のコミット>` で作成します。
+3. 依存関係の順に、`READY` のレーンに登録されたコミットを 1 つずつ `git merge --no-ff` でマージし、マージするたびに `set-update` で `integrated` と記録します。
+4. 統合ブランチ上で、リポジトリ自身のチェック（ビルド、テスト、lint）を実行します。チェックが失敗したら、反映の前に停止します。チェックを特定できない場合は「未検証」とレポートに書いて続行します。
+5. `--land` を付けたときだけ：すべてのレーンが `integrated` で、ターゲットブランチがまだ統合ブランチの起点にあるとき、`git merge --ff-only` を 1 回行って、ターゲットブランチを統合ブランチまで早送りします。そうでなければ `LAND_REFUSED` と報告して停止し、それ以上は何もしません。
+
+`--release` は、まず最終的なチェックリストを表示してから、各レーンの登録と計画の記録を取り除きます。レーンのブランチ、ワークツリー、統合ブランチには手を付けません。登録がなくなれば、`/GitCleanup` はそれらを使用中とは見なさなくなり、マージ済みのものをクリーンアップできます。レーンがまだマージされていない、ターゲットブランチに入っていない、またはワークツリーに未保存の変更がある場合、ガードは拒否し（終了コード 16）、どのレーンかを示します。
+
+#### 引数の詳細
+
+| 書き方 | 働き |
+|---|---|
+| `<set>`（必須。`--help` のときを除く） | 計画の名前。書式は上の「用語」の表を参照 |
+| `--into <branch>` | 計画を立てるときは必須：計画の対象となるローカルブランチで、あとで `--land` が早送りするブランチでもあります。完全に同じ綴りで書く必要があり（大文字と小文字を区別します）、`main` は使えません。ほかの形式は、計画の記録からこれを読みます |
+| `--apply` | `--into` と一緒：プレビューした計画を登録します。`--amend` と一緒：変更後の計画を登録します。`--converge` と一緒：各レーンをマージします。付けなければプレビューだけです |
+| `--create` | 計画または変更の `--apply` と一緒：登録済みでまだ存在しないレーンのブランチとワークツリーも作成します。付けなければ `git worktree add` コマンドを表示します |
+| `--status` | 見るだけ：チェックリスト、各レーンの状態、残りの作業 |
+| `--amend` | 登録済みの計画を立て直します。`--expect-revision` が必須で、`--apply [--create]` を付けたときだけ登録します |
+| `--expect-revision <n>` | あなたが読んだ計画の記録の revision（正の整数）：`--amend` では必須、`--converge --apply` では任意です。記録がすでに別の revision なら停止します |
+| `--converge` | 各レーンを依存関係の順に `agent/<set>/integration` へマージする様子をプレビューします。`--apply` を付けたときだけ実行します |
+| `--include-active` | `--converge` と一緒：コミットのある `active` のレーンを、現在のコミットで `ready` と見なします。実行では、これがそれらのコミットをあなたが受け入れるということです |
+| `--land` | `--converge --apply` と一緒：マージとチェックのあとで、`<branch>` を統合ブランチまで早送りします |
+| `--release` | すべてのレーンがマージされたあとの締めくくり：それらの登録と計画の記録を取り除きます |
+| `--lang <言語>`、`--help` | 返信の言語（省略すると中国語）。説明だけを表示 |
+
+「形式を選ぶ」オプション（`--into`、`--status`、`--amend`、`--converge`、`--release`）が、今回何をするかを決めます。2 つ同時に書いたとき、またはその形式が認めないオプションを書いたときは、使い方の誤りとして扱われます：理由を説明し、使い方を表示して、何も実行しません。
+
+例：
+
+```text
+/GitPlan feat-x --into develop                              計画を見るだけ
+/GitPlan feat-x --into develop --apply --create             登録し、すべてのレーンのブランチとワークツリーを作成
+/GitPlan feat-x --status                                    進み具合と残りの作業を見る
+/GitPlan feat-x --converge --apply --land --lang English    マージして develop へ反映し、英語で返信
+/GitPlan --help                                             説明だけを見る
+```
+
+#### マージ時の各レーンの状態
+
+| 状態 | 平たく言うと | 今回マージされるか |
+|---|---|---|
+| `INTEGRATED` | 記録ではすでに `integrated` で、そのコミットはマージ済み | 完了済み。再びマージされることはありません |
+| `READY` | 担当者が `ready` を記録し、すべてが一貫している | はい、依存関係の順に |
+| `NOT_READY`、`BLOCKED`、`WAITING` | 記録がまだ `planned` か `active`。記録が `blocked`。依存するレーンがマージ済みでも `READY` でもない | いいえ。このレーンが今回加わらないだけで、ほかのレーンは止めません（`--include-active` を付けたときは、コミットのある `active` のレーンが現在のコミットで加わります） |
+| `MISSING_BRANCH`、`DIRTY`、`IN_PROGRESS`、`NO_MERGE_BASE` | ブランチがない。ワークツリーに未保存の変更がある。ワークツリーにマージやリベースなどのやりかけの操作がある。ブランチがターゲットブランチと共通の履歴を持たない | 失敗。コマンド全体が停止します |
+| `OUT_OF_LANE`、`SHARED_CHANGE`、`MOVED`、`CLAIM_DRIFT` | マニフェストの外のファイルを変更した。2 つのレーンが同じファイルを変更した。`ready` を記録したあとに新しいコミットが増えた。レーンの登録が計画の記録と合わない | 失敗。コマンド全体が停止します |
+| `STALE_PLAN` | ターゲットブランチが進み、それが変更したファイルがあるレーンのマニフェストと重なる。各レーンは、すでに入った内容から独立していなくなった | 失敗。コマンド全体が停止します |
+| `PREDICTED_CONFLICT` | 試しマージ（`git merge-tree --write-tree`）でコンフリクトが予測される。ヒントにすぎず、2 つのレーンの間のコンフリクトは見つけられない | ヒント。それでも試みます |
+
+待機の状態は、そのレーンを今回だけ加えないだけです。失敗の状態はコマンド全体を停止させます。すでに `ready` なのに一貫していないレーンを、避けて通ってマージしてはならないからです。どの項目にも対処法が付きます。コマンド自身はそれを実行しません：レーンの担当者（またはあなた）が行い、終わったらもう一度実行します。
+
+#### 楽観ロック：誰もロックを持たず、古くなった計画は見つかるだけ
+
+登録された計画には revision と、元になったターゲットブランチのコミット（`base`）が付いています。レーンの作業中に、誰もロックを持ちません。変更のたびに、あなたが読んだ revision と突き合わせ、合わなければ停止します。そのため、古くなった計画は見つかるだけで、上書きされることはありません。
+
+| 表示されるもの | 平たく言うと | どうすればよいか |
+|---|---|---|
+| 終了コード 19、`kind` が `base` | プレビューのあとにターゲットブランチが進み、計画の元になったコミットが現在の位置ではない | もう一度実行します：新しいプレビューが新しい位置を調べます |
+| 終了コード 19、`kind` が `revision`、または `--expect-revision` が合わない | あなたが読んだあとに計画の記録が変更された。たとえば、あるレーンの担当者が進み具合を記録した | まず `--status` を実行し、表示された revision でやり直します |
+| `STALE_PLAN` | 上の表を参照：ターゲットブランチに入った内容が、あるレーンのマニフェストと重なる | `--amend --expect-revision <n>`：新しいプレビューは新しい位置を基にし、変更で `base` がそこへ移ります。重なったレーンの担当者は、ターゲットブランチのコミットを自分のブランチにマージし、もう一度 `ready` を記録します |
+| 終了コード 20、21 | その名前の計画がすでにある。またはその名前の計画がない | `--status` で見る、`--amend` で変える、`--release` で締めくくる、または別の名前にします。名前を確認するか、先に `--into` で計画を立てます |
+| 終了コード 22、`OUT_OF_LANE` | あるレーンがマニフェストの外のファイルを変更したため、ガードが `ready` の記録を拒否した | 担当者がその変更を元に戻すか、`--amend` でそれらのファイルを設計上持つべき 1 つのレーンに割り当て直し、もう一度 `ready` を記録します |
+| 終了コード 23 | 計画の記録が、より新しいバージョンの MAGOS によって書かれている | ガードをアップグレードします（「レーンガード」を参照）。それまでこの記録は読まれず、変更もされません |
+| 終了コード 24 または 12 | 計画が無効：フィールドの誤り、またはリポジトリにすでにあるブランチやパスとの衝突。メッセージがどのフィールドかを示します | そのフィールドを直し、もう一度証明します。レーンが 12 を超える計画や、チェックリストが 4096 文字を超える計画は、小さくします |
+
+計画が存在する間は、終わっていないレーンの登録（`planned` か `active`）があるたびに、`/GitCleanup`、`/GitConverge`、`/GitSweep` がそのレーンを `BLOCKED_ACTIVE_OWNER` と報告します：これは意図したもので、`--release` のあとに解除されます。
+
+#### コマンドが必ず守るルール
+
+```text
+✓ デフォルトはプレビューのみ。--apply（または --release）がなければ、何も登録・作成・マージせず、ネットワークにも接続しない
+✓ 登録されるのはプレビューした計画そのもの。プレビューしていなければ、先にプレビューして停止する
+✓ 登録と進み具合の記録は、レーンガードの set-plan、set-update、set-release だけを経由する。.git/magos は手で編集せず、override も使わない
+✓ マージするのはレーンに登録されたコミットだけで、マージ先は統合ブランチだけ。--land を付けたときだけ --ff-only の早送りがもう 1 回あり、それもターゲットブランチが統合ブランチの起点にあるときに限る
+✓ コンフリクトが起きたら git merge --abort をして停止する。ours や theirs は使わず、手作業でも解決しない。完了したマージは統合ブランチにだけ残る
+✓ プッシュも強制プッシュもネットワーク接続もしない。ブランチもワークツリーも削除せず、git worktree prune も実行しない
+✓ main には触れず、main をターゲットにもしない。リベース、スカッシュ、cherry-pick、リセットもしない
+✓ レーンのワークツリーには何も書き込まない。--create が作るのは登録されたレーンだけ（登録されたパスに、記録された base から）
+```
+
+#### よくある疑問
+
+- **ガードのバージョンが足りないときは？** `/GitPlan` は最初にガードのバージョンを確認し、1.0.4 以降が必要です。古いガードには `set-*` サブコマンドがないため、コマンドは停止して、ガードのコピーを更新するよう案内します（`doctor` を実行し、それが表示する `install --host <host>` コマンドを実行します）。
+- **ファイル同士の意味的な結合は見つけられますか？** いいえ。ガードが証明するのはファイル一覧が重ならないことだけで、コード同士の依存は分かりません。参照し合うファイルは、計画の段階で同じレーンに入れてください。
+- **計画の記録はどこにありますか？** このクローン自身の git ディレクトリの中（`<git-common-dir>/magos/sets/<set>.json`）にあり、ガードを経由してしか読み書きできません。fetch や push で他のクローンに同期されることはありません。
+- **マージの途中で止まったら？** 同じコマンドをもう一度実行します。改めて調査し、同じ統合ブランチの続きから進めます。すでに `integrated` のレーンは飛ばされます。
+- **返信を英語にしたいときは？** コマンドの最後に `--lang English` を付けます。
+
+---
+
 ## マルチエージェントのライフサイクル
 
 ```mermaid
@@ -827,15 +1011,16 @@ MAGOS にはレーンガード（`scripts/magos_guard.py`）が付属してい�
 - **モード**。AUTO（デフォルト）：名前付きワークツリーの作成には常にマニフェストが必要で、ブランチだけの作成は、他のレーンがすでにある場合にのみ必要です。そのため、ワークツリーが 1 つだけで未マージのブランチがないリポジトリでは、ブランチだけの作成は影響を受けません。ARMED（`arm` の後）：新しいブランチはすべてマニフェストが必要で、フックと Git の両方がチェックします。OFF：`git config --local magos.guard off` で、そのリポジトリのホストのフックを無効にします。`arm` 済みのリポジトリでは、Git のバックストップは影響を受けません。
 - **無効化**。`git config --local magos.guard off`（単一のリポジトリ）、`claude plugin disable magos`（Claude Code プラグイン全体）、またはホストプロセスの環境に `MAGOS_GUARD=off` を設定します。この 3 つはいずれもホストのフックを無効にするだけで、Git のバックストップには手を付けません：`arm` 済みのリポジトリでは、自分のターミナルで `disarm` を実行して取り除いてください。
 - **要件**。Python 3.9+（フックのランチャーは、POSIX と Git Bash では `python3`、`py -3`、`python` の順に、Windows の cmd では `py -3`、`python`、`python.bat`、`python.cmd` の順に探します）と Git 2.36+（その他の MAGOS コマンドには Git 2.30+ が必要です）。`magos_guard.py doctor` が両方をチェックし、`magos_guard.py version` が実行中のガードのバージョンを出力します。
+- **Set サブコマンド**。`/GitPlan` は、ガードの 4 つのサブコマンドで計画を登録し、維持します：`set-plan`（各レーンのファイル一覧が互いに重ならないことを証明して登録）、`set-show`（読み取り専用）、`set-update`（レーンの担当者が進み具合を記録）、`set-release`（締めくくり）。いずれもあなただけが実行できるコマンドではなく、`plan`、`release` と同じようにホストのフックを通ります。登録では、各レーンの登録（`set=` と `lane=` 付き）、統合ブランチ `agent/<set>/integration` の登録（ファイルを一切占有しません）、計画の記録（`<git-common-dir>/magos/sets/<set>.json`）が書き込まれます。終了コード 19 から 24 はこれらのサブコマンドのものです（古い、すでにある、存在しない、範囲外、より新しいバージョンが書いた記録、無効な計画）。計画が存在する間は、通常の `plan --amend` と `release` はその登録を拒否します：計画は `/GitPlan` からしか変更できません。
 - **あなただけ**が、実際のターミナルで `override`、`arm`、`disarm`、`install` を実行でき、`magos.*` の git 設定（例：`magos.guard`）を書き込めるのもあなただけです。エージェントが試みると、フックに拒否されます。フックのランチャーもフックしか実行しません。新しいコンソールウィンドウで起動したコマンドもコンソールチェックを通過できるため、コンソールチェックもオーバーライドも、アクセス制御ではありません。
-- **アップグレード後は毎回**。実行中の Claude Code セッションを再起動します。`doctor` が列挙するホストごとに `install` を再実行し（`doctor` が正確なコマンドを表示します。`install --home <ディレクトリ>` でインストールしたコピーは、`doctor --home <ディレクトリ>` を実行します）、表示されたエントリがホストの設定にマージ済みのエントリと異なる場合は、マージ済みのエントリを表示されたものに置き換えます（Codex では `/hooks` で信頼し直し、Hermes では承認し直します）。`arm` 済みのリポジトリでは `doctor` を実行し、`arm` コマンドが表示されたら、そのコマンドを自分のターミナルで再実行します。
+- **アップグレード後は毎回**。実行中の Claude Code セッションを再起動します。`doctor` が列挙するホストごとに `install` を再実行し（`doctor` が正確なコマンドを表示します。`install --home <ディレクトリ>` でインストールしたコピーは、`doctor --home <ディレクトリ>` を実行します）、表示されたエントリがホストの設定にマージ済みのエントリと異なる場合は、マージ済みのエントリを表示されたものに置き換えます（Codex では `/hooks` で信頼し直し、Hermes では承認し直します）。`arm` 済みのリポジトリでは `doctor` を実行し、`arm` コマンドが表示されたら、そのコマンドを自分のターミナルで再実行します。1.0.4 から、`/GitPlan` はガードの `set-*` サブコマンドを必要とし、古いガードのコピーにはそれがありません：`doctor` を実行し、それが表示する `install --host <host>` コマンドを実行してコピーを更新してください。そうしないと、`/GitPlan` は最初にバージョンを確認して停止します。
 - **制限**。フックが読み取るのはコマンドのテキストです。Python やガードのスクリプトが見つからない場合は呼び出しを通します（Claude Code の `EnterWorktree` フックは例外で、呼び出しを拒否します）。Git のバックストップはブランチの名前変更とコピー（`git branch -m/-c`）を検知できませんが、フックはどのオプションの書き方でもそれらを拒否します。すべての制限は `references/lane-split.md` の第 12 節を参照してください。
 
 ---
 
 ## インストール
 
-リポジトリのディレクトリ構成は次のとおりです（主なファイルのみを掲載しています。ほかに `tests/`、`.github/`、`.quality/` と、ルートにあるドキュメント、ライセンス、設定ファイルがあります）。Claude Code のクローンインストールではディレクトリ全体を使い、同期スクリプトは Codex と Hermes に `SKILL.md`、`references/`、`skills/` 配下の 7 つのコマンドスキルだけをコピーします。各プラットフォームのインストール方法は、以下の各節にあります：
+リポジトリのディレクトリ構成は次のとおりです（主なファイルのみを掲載しています。ほかに `tests/`、`.github/`、`.quality/` と、ルートにあるドキュメント、ライセンス、設定ファイルがあります）。Claude Code のクローンインストールではディレクトリ全体を使い、同期スクリプトは Codex と Hermes に `SKILL.md`、`references/`、`skills/` 配下の 8 つのコマンドスキルだけをコピーします。各プラットフォームのインストール方法は、以下の各節にあります：
 
 ```text
 multi-agent-git-orchestrator/
@@ -884,10 +1069,10 @@ Claude Code ではターミナルからも実行できます：`claude plugin ma
 
 | 用途 | Claude Code | Codex | Hermes |
 |---|---|---|---|
-| 七つのコマンド | `/magos:GitRecon` … `/magos:GitSweep` | `$magos:git-recon` … `$magos:git-sweep` | `/magos:git-recon` … `/magos:git-sweep` |
+| 八つのコマンド | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |
 | 全体ルール（問題を説明すると自動的にトリガー） | `magos:git-orchestrator` | `magos:git-orchestrator` | `magos:git-orchestrator`（Hermes はこれをシステムプロンプトの `<available_skills>` に載せ、モデルが説明文を見て自分で読み込みます） |
 
-- Claude Code では、小文字の `/magos:git-recon` なども七つ表示されます。これらはプラットフォーム共通のアダプター層で、`/magos:GitXxx` と同等なので、大文字の方を使えば十分です。
+- Claude Code では、小文字の `/magos:git-recon` なども八つ表示されます。これらはプラットフォーム共通のアダプター層で、`/magos:GitXxx` と同等なので、大文字の方を使えば十分です。
 - プラグインのホストは `skills/` 配下のスキルだけを読み込み、ルートの `SKILL.md` は読み込みません。そのため、プラグインにはエントリースキル `git-orchestrator` が一つ追加されていて、これがルートの `SKILL.md` を読みに行きます。`~/.claude/skills/magos` に clone した場合にも、このエントリースキルは読み込まれます。同期スクリプトでインストールした Codex と Hermes のパッケージだけはこれを必要とせず、同期スクリプトもコピーしません。
 - バージョン番号はマニフェストに書かれていて、Claude Code はバージョン番号が変わったときにだけ、インストール済みのプラグインを更新します。実行中のセッションは、起動した時点のバージョンのフックを使い続けるので、更新後はすべてのセッションを再起動してください。
 - Claude Code にプラグインをインストールすると、レーンガードのフックも同時に有効になります。Codex や Hermes にプラグインをインストールしても、有効にはなりません（「レーンガード」を参照）。各プラットフォームのアップグレードの詳細（ガードのコピーとロールバックを含む）は `references/installation.md`、各バージョンの変更点は `CHANGELOG.md` を参照してください。
@@ -900,12 +1085,12 @@ Claude Code ではターミナルからも実行できます：`claude plugin ma
 1.0.1 以降、すべてのリリースにタグ `v<バージョン番号>` が付いています（`CHANGELOG.md` を参照）。1.0.0 にはタグがないので、インストールも固定もしないでください。タグ `v1.0` はプラグイン化とバージョン番号の変更より前の 3.4.0 版のスキルで、プラグインのバージョンではないので、これにも固定しないでください。上のコマンドはデフォルトブランチに追従します。特定のバージョンにとどまるには：
 
 ```bash
-claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.3    # 然后：claude plugin install magos@magos
-git clone --branch v1.0.3 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.3 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
+claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.4    # 然后：claude plugin install magos@magos
+git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.4 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
 ```
 
-バージョンを固定すると、その後の修正（ガードのセキュリティ修正も含む）は届きません。`CHANGELOG.md` を確認して、固定先を移してください。タグの commit SHA は、`git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.3 "refs/tags/v1.0.3^{}"` の出力のうち `refs/tags/v1.0.3^{}` の行にある SHA です（この行がない場合は `refs/tags/v1.0.3` の行を使います）。Hermes は `--ref` 付きのインストールを固定として記録します。`hermes plugins update magos` はそれを拒否し、`--ref` なしの `hermes plugins install UlyssesLeoLee/MAGOS --force` は、もともと固定していたコミットを再インストールします。固定先を移すには `--ref <新しい SHA> --force --enable` を使います。デフォルトブランチへの追従に戻すには、先に `hermes plugins remove magos` を実行し、続けて `hermes plugins install UlyssesLeoLee/MAGOS --enable` を実行します。詳細と、Codex および同期スクリプトでインストールしたものの固定方法は、`references/installation.md` を参照してください。
+バージョンを固定すると、その後の修正（ガードのセキュリティ修正も含む）は届きません。`CHANGELOG.md` を確認して、固定先を移してください。タグの commit SHA は、`git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.4 "refs/tags/v1.0.4^{}"` の出力のうち `refs/tags/v1.0.4^{}` の行にある SHA です（この行がない場合は `refs/tags/v1.0.4` の行を使います）。Hermes は `--ref` 付きのインストールを固定として記録します。`hermes plugins update magos` はそれを拒否し、`--ref` なしの `hermes plugins install UlyssesLeoLee/MAGOS --force` は、もともと固定していたコミットを再インストールします。固定先を移すには `--ref <新しい SHA> --force --enable` を使います。デフォルトブランチへの追従に戻すには、先に `hermes plugins remove magos` を実行し、続けて `hermes plugins install UlyssesLeoLee/MAGOS --enable` を実行します。詳細と、Codex および同期スクリプトでインストールしたものの固定方法は、`references/installation.md` を参照してください。
 
 ### Claude Code：スキルディレクトリへの clone
 
@@ -921,13 +1106,13 @@ git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
 
 リポジトリのルートに `.claude-plugin/plugin.json` があるので、Claude Code はこのフォルダーをプラグイン `magos@skills-dir` として読み込み、セッションのたびに自動で有効になります。`/plugin install` は不要です。セッションを開き直すと、次のものが使えます：
 
-- 七つのコマンド：`/magos:GitRecon`、`/magos:GitAnalyze`、`/magos:GitRecommend`、`/magos:GitIntegrate`、`/magos:GitCleanup`、`/magos:GitConverge`、`/magos:GitSweep`（`/magos:` と入力すると補完されます）。
+- 八つのコマンド：`/magos:GitRecon`、`/magos:GitAnalyze`、`/magos:GitRecommend`、`/magos:GitIntegrate`、`/magos:GitCleanup`、`/magos:GitConverge`、`/magos:GitSweep`、`/magos:GitPlan`（`/magos:` と入力すると補完されます）。
 - 全体ルールの入口 `magos:git-orchestrator`。問題を説明すると自動的にトリガーされます。
-- `skills/` 配下にあるツール共通のアダプター層（七つ）も、`/magos:git-recon` などの名前で表示されます。上のコマンドと同等なので、Claude Code では `/magos:GitXxx` を使えば十分です。
+- `skills/` 配下にあるツール共通のアダプター層（八つ）も、`/magos:git-recon` などの名前で表示されます。上のコマンドと同等なので、Claude Code では `/magos:GitXxx` を使えば十分です。
 
 以後の更新は、そのディレクトリで `git pull` を実行するだけです（「バージョンの固定」に従ってタグ上に clone したものは、代わりに `git fetch --tags` と `git checkout v<新しいバージョン>` を実行します）。そのうえで実行中のすべての Claude Code セッションを再起動すると、コマンド、ルール、レーンガードがまとめて更新されます。`claude plugin list` を実行すると、`magos@skills-dir` がステータス loaded で表示されていることを確認できます。
 
-以前、下の古い方法で `~/.claude/commands/Git*.md` をコピーしていた場合は、この七つのファイルを削除してください。削除しないと、古い `/GitXxx` コマンドが別にもう一式表示されます。
+以前、下の古い方法で `~/.claude/commands/Git*.md` をコピーしていた場合は、この八つのファイルを削除してください。削除しないと、古い `/GitXxx` コマンドが別にもう一式表示されます。
 
 ### Claude Code：古い方法（コマンドファイルのコピー）
 
@@ -941,7 +1126,8 @@ commands/
 ├── GitIntegrate.md
 ├── GitCleanup.md
 ├── GitConverge.md
-└── GitSweep.md
+├── GitSweep.md
+└── GitPlan.md
 ```
 
 同期スクリプトを使うのがおすすめです：
@@ -961,7 +1147,7 @@ mkdir -p ~/.claude/commands && cp commands/Git*.md ~/.claude/commands/
 New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands\Git*.md "$HOME\.claude\commands\"
 ```
 
-コピーしたコマンドファイルは**リポジトリの更新に追従しません**。`git pull` やバージョンのアップグレードのたびに、同期し直す（またはコピーし直す）必要があります。`--verify` は、不足しているコマンドファイルや古くなったコマンドファイルを一覧表示します。`--host claude` が管理するのは `~/.claude/commands` だけなので、コマンドの実行時に読み込まれるスキル本体（例えば `~/.claude/skills/MAGOS`）は別に更新してください。すでにプラグインでインストール済みの場合、同期スクリプトは `NOTE` を表示するので、コピーし直す必要はありません。インストール後は**セッションを開き直し**、`/Git` と入力すると七つのコマンドが表示されます。
+コピーしたコマンドファイルは**リポジトリの更新に追従しません**。`git pull` やバージョンのアップグレードのたびに、同期し直す（またはコピーし直す）必要があります。`--verify` は、不足しているコマンドファイルや古くなったコマンドファイルを一覧表示します。`--host claude` が管理するのは `~/.claude/commands` だけなので、コマンドの実行時に読み込まれるスキル本体（例えば `~/.claude/skills/MAGOS`）は別に更新してください。すでにプラグインでインストール済みの場合、同期スクリプトは `NOTE` を表示するので、コピーし直す必要はありません。インストール後は**セッションを開き直し**、`/Git` と入力すると八つのコマンドが表示されます。
 
 明示的に呼び出すこともできます：
 
@@ -973,9 +1159,10 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 /GitCleanup
 /GitConverge <branch>
 /GitSweep <branch>
+/GitPlan <set> --into <branch>
 ```
 
-七つのコマンドの、ホストごとの名前と説明：
+八つのコマンドの、ホストごとの名前と説明：
 
 | コマンド | Claude Code | Hermes | Codex | 説明 |
 |---|---|---|---|---|
@@ -986,13 +1173,14 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 | GitCleanup | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` | デフォルトはクリーンアップ対象のプレビュー。`--apply` を付けたときだけ削除を許可 |
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | すべてのローカルブランチを指定したブランチにマージし、`main` とそのブランチだけを残す。デフォルトはプレビューで、`--apply` を付けたときだけ実行 |
 | GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge` の後で、リモートのマージ済みブランチを削除する。デフォルトはプレビューのみでネットワークには接続せず、`--apply` を付けたときだけ実行し、`--push`（`--apply` と一緒に）を付けたときだけ `<branch>` を一度プッシュする |
+| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` | 先に調査してタスクをファイルが重ならないレーンに分け、計画を登録し、そのあと依存関係の順にマージする。デフォルトはプレビューで、`--apply`（または `--release`）を付けたときだけ書き込む |
 
 スラッシュ入口の説明：
 
 | ホスト | `/` からの入り方 | 前提条件 |
 |---|---|---|
-| Claude Code | `/GitRecon` など七つのコマンドを直接入力 | `~/.claude/commands/Git*.md` がインストール済み（`sync_hosts.py --host claude`）で、新しいセッションを開始している |
-| Hermes | `/git-recon` など七つのコマンドを直接入力 | パッケージが `<Hermes home>/skills/` にインストール済みで、新しいセッションを開始している、または `/reload-skills` を実行した |
+| Claude Code | `/GitRecon` など八つのコマンドを直接入力 | `~/.claude/commands/Git*.md` がインストール済み（`sync_hosts.py --host claude`）で、新しいセッションを開始している |
+| Hermes | `/git-recon` など八つのコマンドを直接入力 | パッケージが `<Hermes home>/skills/` にインストール済みで、新しいセッションを開始している、または `/reload-skills` を実行した |
 | Codex | `/skills` と入力してスキルの一覧を開き、`git-*` を選択する。`$git-recon` を直接入力してもよい | パッケージが `~/.agents/skills/MAGOS` にインストール済み（`sync_hosts.py --host codex`）で、Codex を再起動している |
 
 Codex の `/` メニューには組み込みコマンドしかなく（ソースコード `codex-rs/tui/src/bottom_pane/command_popup.rs` には `Builtin` と `ServiceTier` の二種類のエントリしかありません）、カスタムの `/git-*` は登録できません。そのため、Codex でのスラッシュ入口は組み込みの `/skills` です。
@@ -1021,7 +1209,7 @@ Codex と Hermes には、どちらも同じホスト中立のパッケージを
 MAGOS/                       # Codex のパッケージルート。Hermes は multi-agent-git-orchestrator/ を使用
 ├── SKILL.md                 # ルートスキル：multi-agent-git-orchestrator（意味に基づく自動トリガー）
 ├── references/*.md          # すべての参考ドキュメント
-└── skills/git-*/            # 七つのコマンドアダプター層
+└── skills/git-*/            # 八つのコマンドアダプター層
     ├── SKILL.md
     └── agents/openai.yaml   # Codex：表示用の説明 + allow_implicit_invocation: false
 ```
@@ -1035,7 +1223,7 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
 
 ### Codex：コマンドスキルを有効にする
 
-Codex でカスタムの入口になるのは、スキルセレクター（`$`）です。任意の名前の `/Git...` スラッシュコマンドではありません。Codex はスキルのルートディレクトリを再帰的にスキャンするため、ルートスキルと `skills/` 配下の七つのコマンドスキルを同時に読み込みます。`agents/openai.yaml` にある短い説明は、スキル一覧に表示されます。七つのコマンドスキルにはすべて `policy.allow_implicit_invocation: false` が設定されており、明示的に選択したときだけ実行されます。意味に基づく自動トリガーはルートスキルが担当します。
+Codex でカスタムの入口になるのは、スキルセレクター（`$`）です。任意の名前の `/Git...` スラッシュコマンドではありません。Codex はスキルのルートディレクトリを再帰的にスキャンするため、ルートスキルと `skills/` 配下の八つのコマンドスキルを同時に読み込みます。`agents/openai.yaml` にある短い説明は、スキル一覧に表示されます。八つのコマンドスキルにはすべて `policy.allow_implicit_invocation: false` が設定されており、明示的に選択したときだけ実行されます。意味に基づく自動トリガーはルートスキルが担当します。
 
 ユーザーレベルのインストール先は `~/.agents/skills/MAGOS` です。すでに以前の場所 `$CODEX_HOME/skills/MAGOS`（デフォルトは `~/.codex/skills/MAGOS`）にインストールしている場合、同期スクリプトはその場所を引き続き更新します。ただし、二つの場所を同時に残さないでください。残すと、Codex には同じスキルが重複して見えます。手動でコピーしたパッケージからは、エントリースキル `git-orchestrator` を削除してください。これはプラグインのインストール専用で、同期スクリプトもコピーしません。残しておくと、Codex にはルートスキルと同じ説明のスキルがもう一つ余分に見えてしまいます。以下の各コードブロックの最後の行が、この削除を行うコマンドです。手動インストール（Windows PowerShell）：
 
@@ -1054,11 +1242,11 @@ cp -R SKILL.md references skills "$HOME/.agents/skills/MAGOS/"
 cd "$HOME/.agents/skills/MAGOS" && rm -r skills/git-orchestrator
 ```
 
-Codex を再起動したら、`$` を入力してコマンドスキルを選ぶか、`$git-recon`、`$git-analyze`、`$git-recommend`、`$git-integrate`、`$git-cleanup`、`$git-converge`、`$git-sweep` を直接呼び出します。`/skills` でスキルブラウザーを開けます。引数はスキル名の後ろに書きます。例えば `$git-analyze agent/auth --remote` のようにします。`--help` を付けると、引数の詳しい説明を確認できます。
+Codex を再起動したら、`$` を入力してコマンドスキルを選ぶか、`$git-recon`、`$git-analyze`、`$git-recommend`、`$git-integrate`、`$git-cleanup`、`$git-converge`、`$git-sweep`、`$git-plan` を直接呼び出します。`/skills` でスキルブラウザーを開けます。引数はスキル名の後ろに書きます。例えば `$git-analyze agent/auth --remote` のようにします。`--help` を付けると、引数の詳しい説明を確認できます。
 
 ### Hermes：スラッシュスキルを有効にする
 
-Hermes は、インストール済みの各スキルをスラッシュコマンドとして自動的に登録します（名前はフロントマターの `name` から取ります）。また、`description` はコマンドの説明として使われます。インストールすると、`/multi-agent-git-orchestrator` と七つの `/git-*` コマンドが現れます。
+Hermes は、インストール済みの各スキルをスラッシュコマンドとして自動的に登録します（名前はフロントマターの `name` から取ります）。また、`description` はコマンドの説明として使われます。インストールすると、`/multi-agent-git-orchestrator` と八つの `/git-*` コマンドが現れます。
 
 Hermes の home ディレクトリは、`HERMES_HOME` が設定されていればそれを使い、なければ Windows では `%LOCALAPPDATA%\hermes`、それ以外の OS では `~/.hermes` を使います。home が `HERMES_HOME` から決まったものでない場合、その中の `active_profile` が `default` 以外で、かつディレクトリが存在するプロファイルを指定していると、代わりに `profiles/<name>` が使われます。スキルは home 配下の `skills/` に置きます。同期スクリプトも同じルールで場所を決めます。以下の手動インストールは `active_profile` を処理しないので、デフォルト以外の `active_profile` があるときは同期スクリプトを使ってください。すでに `<Hermes home>/skills/MAGOS` がある場合（例えば直接 `git clone` したインストール）、スクリプトはそれを引き続き使います。それが git のチェックアウトである場合、スクリプトはファイルのコピーを拒否するので、git での更新に切り替えてください。手動でコピーしたパッケージからは、エントリースキル `git-orchestrator` を削除してください。これはプラグインのインストール専用で、同期スクリプトもコピーしません。残しておくと、ルートスキルと同じ説明のスキルがもう一つ増え、Hermes では `/git-orchestrator` も増えてしまいます。以下の各コードブロックの最後の行が、この削除を行うコマンドです。手動インストール（Windows PowerShell）：
 
@@ -1078,7 +1266,7 @@ cp -R SKILL.md references skills "${HERMES_HOME:-$HOME/.hermes}/skills/multi-age
 cd "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator" && rm -r skills/git-orchestrator
 ```
 
-Hermes を再起動したら、`hermes skills list` を実行して各コマンドの説明を確認し、`/git-recon`、`/git-analyze`、`/git-recommend`、`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep` のいずれかを呼び出せます。引数はコマンドの後ろにそのまま続けます。例えば `/git-analyze main --remote` のようにします。`/git-analyze --help` でも詳しい説明を確認できます。Hermes のスキル表示ツールは `..` を含むパスを受け付けないため、アダプター層は代わりに `[Skill directory: ...]` で示される絶対パスから共有ファイルを読み込みます。Hermes にはスキルごとに自動呼び出しを無効にするスイッチがないため、`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep` については、ユーザーが明示的に呼び出さない限りリポジトリに書き込まないことを、アダプター層で規定しています。
+Hermes を再起動したら、`hermes skills list` を実行して各コマンドの説明を確認し、`/git-recon`、`/git-analyze`、`/git-recommend`、`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep`、`/git-plan` のいずれかを呼び出せます。引数はコマンドの後ろにそのまま続けます。例えば `/git-analyze main --remote` のようにします。`/git-analyze --help` でも詳しい説明を確認できます。Hermes のスキル表示ツールは `..` を含むパスを受け付けないため、アダプター層は代わりに `[Skill directory: ...]` で示される絶対パスから共有ファイルを読み込みます。Hermes にはスキルごとに自動呼び出しを無効にするスイッチがないため、`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep`、`/git-plan` については、ユーザーが明示的に呼び出さない限りリポジトリに書き込まないことを、アダプター層で規定しています。
 
 ホストがカスタムのスラッシュコマンドに対応していない場合は、直接次のように入力することもできます：
 
@@ -1096,12 +1284,12 @@ GitRecommend
 
 | 気になること | 答え |
 |---|---|
-| 使えるコマンドは？ | `skills/` 配下の七つのコマンドスキル：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`。これに加えて、エントリースキル `git-orchestrator` があります。ツールによってはプラグイン名がプレフィックスとして付き、例えば Codex では `magos:git-recon` と表示されます。 |
-| ルートの `SKILL.md`（全体ルール）は？ | これはプラグインのスキルには数えられません。仕様が認識するのは `skills/` 配下のフォルダーだけだからです。そのため、プラグインにはエントリースキル `git-orchestrator` が含まれています。これは同じ説明を持ち（自動でトリガーされます）、ルートの `SKILL.md` を読みに行く内容になっています。七つのコマンドも、ルートの `SKILL.md` と `references/` にあるルールを読みに行きます。Claude Code、Codex、Hermes で実際に動作を確認済みです：プラグインのインストールと有効化ができ、スキル名は上の表のとおりです。各コマンドを最初から最後まで実行する確認は、まだ一つずつ行っていません。 |
+| 使えるコマンドは？ | `skills/` 配下の八つのコマンドスキル：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`、`git-plan`。これに加えて、エントリースキル `git-orchestrator` があります。ツールによってはプラグイン名がプレフィックスとして付き、例えば Codex では `magos:git-recon` と表示されます。 |
+| ルートの `SKILL.md`（全体ルール）は？ | これはプラグインのスキルには数えられません。仕様が認識するのは `skills/` 配下のフォルダーだけだからです。そのため、プラグインにはエントリースキル `git-orchestrator` が含まれています。これは同じ説明を持ち（自動でトリガーされます）、ルートの `SKILL.md` を読みに行く内容になっています。八つのコマンドも、ルートの `SKILL.md` と `references/` にあるルールを読みに行きます。Claude Code、Codex、Hermes で実際に動作を確認済みです：プラグインのインストールと有効化ができ、スキル名は上の表のとおりです。各コマンドを最初から最後まで実行する確認は、まだ一つずつ行っていません。 |
 | Claude Code でも使えますか？ | Claude Code はこのファイルを読みません。読むのは `.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` です。上の「プラグインマーケットプレースからインストール」の方法でインストールしてください。 |
-| Hermes ではどちらの方法を使いますか？ | どちらでも使えます。`hermes plugins install UlyssesLeoLee/MAGOS --enable` が読むのは、Hermes ネイティブのマニフェスト `plugin.yaml` です（この `plugin.json` ではありません）。コマンドは `/magos:git-recon` のような名前になり、`[Skill directory: …]` のパスのヒントが付きます。プラグイン内の各スキルはシステムプロンプトの `<available_skills>` に一覧表示され、説明は `__init__.py` の `INDEX_DESCRIPTIONS` から取られます（Hermes はプラグインスキルの SKILL.md の説明を読まないので、この行を渡さないと、モデルには名前しか見えません）：全体ルールの行にはトリガーとなる場面が、リポジトリを変更するコマンドの行には「ユーザーが明示的に入力したときだけ実行し、自分で読み込まないこと」が書かれています。リポジトリを変更する四つのコマンドは、ユーザーが明示的に入力した `/magos:git-*`、`/git-*`、`$magos:git-*`、`$git-*` のいずれかの呼び出しにしか応じません（Claude Code の同名の `/magos:Git*` コマンドも明示的な呼び出しです）。 |
+| Hermes ではどちらの方法を使いますか？ | どちらでも使えます。`hermes plugins install UlyssesLeoLee/MAGOS --enable` が読むのは、Hermes ネイティブのマニフェスト `plugin.yaml` です（この `plugin.json` ではありません）。コマンドは `/magos:git-recon` のような名前になり、`[Skill directory: …]` のパスのヒントが付きます。プラグイン内の各スキルはシステムプロンプトの `<available_skills>` に一覧表示され、説明は `__init__.py` の `INDEX_DESCRIPTIONS` から取られます（Hermes はプラグインスキルの SKILL.md の説明を読まないので、この行を渡さないと、モデルには名前しか見えません）：全体ルールの行にはトリガーとなる場面が、リポジトリを変更するコマンドの行には「ユーザーが明示的に入力したときだけ実行し、自分で読み込まないこと」が書かれています。リポジトリを変更する五つのコマンドは、ユーザーが明示的に入力した `/magos:git-*`、`/git-*`、`$magos:git-*`、`$git-*` のいずれかの呼び出しにしか応じません（Claude Code の同名の `/magos:Git*` コマンドも明示的な呼び出しです）。 |
 
-リポジトリのルートには、`.claude-plugin/`（Claude Code 用の `plugin.json` と、Claude Code と Codex が共用する `marketplace.json`）と、Hermes 用の `plugin.yaml`、`__init__.py` があります。`.codex-plugin/` と `.cursor-plugin/` は、意図的に置いていません。Codex は `.claude-plugin/`、`.codex-plugin/`、`.cursor-plugin/` のいずれかを見つけると、スキルにプラグイン名のプレフィックスを付けます。このリポジトリには `.claude-plugin/` があるため、**リポジトリを Codex のスキルディレクトリに直接 `git clone` すると、コマンドが `$magos:git-recon` のような名前になります**。Codex と Hermes は、同期スクリプトでインストールしてください。同期スクリプトは `SKILL.md`、`references/*.md`、七つのコマンドスキル（それぞれの `SKILL.md` と `agents/openai.yaml`）をコピーし、`.claude-plugin/` とエントリースキル `git-orchestrator` は含めないので、コマンド名は引き続き `$git-recon`、`/git-recon` です。ルートの `plugin.json` だけなら、名前は変わりません。
+リポジトリのルートには、`.claude-plugin/`（Claude Code 用の `plugin.json` と、Claude Code と Codex が共用する `marketplace.json`）と、Hermes 用の `plugin.yaml`、`__init__.py` があります。`.codex-plugin/` と `.cursor-plugin/` は、意図的に置いていません。Codex は `.claude-plugin/`、`.codex-plugin/`、`.cursor-plugin/` のいずれかを見つけると、スキルにプラグイン名のプレフィックスを付けます。このリポジトリには `.claude-plugin/` があるため、**リポジトリを Codex のスキルディレクトリに直接 `git clone` すると、コマンドが `$magos:git-recon` のような名前になります**。Codex と Hermes は、同期スクリプトでインストールしてください。同期スクリプトは `SKILL.md`、`references/*.md`、八つのコマンドスキル（それぞれの `SKILL.md` と `agents/openai.yaml`）をコピーし、`.claude-plugin/` とエントリースキル `git-orchestrator` は含めないので、コマンド名は引き続き `$git-recon`、`/git-recon` です。ルートの `plugin.json` だけなら、名前は変わりません。
 
 既知の逸脱が一つあります：仕様の第 8 節は、「特定の一つのツールだけが使うファイル」を、逆ドメイン形式の名前を付けたフォルダー（例えば `com.example.client/`）に入れるよう求めています。`commands/` は Claude Code だけが使い、`plugin.yaml` と `__init__.py` は Hermes だけが使うのに、すべて最上位に置かれています。プラグインを扱うツールは、それらを無視するだけなので、インポートには影響しません。インストールスクリプトとテストは、最上位のパスでそれらを使っています。
 

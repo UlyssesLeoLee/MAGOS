@@ -6,6 +6,7 @@
     "git-integrate",
     "git-cleanup",
     "git-converge",
-    "git-sweep"
+    "git-sweep",
+    "git-plan"
   ]
 }

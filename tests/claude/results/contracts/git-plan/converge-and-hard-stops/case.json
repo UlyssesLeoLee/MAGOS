@@ -1,0 +1,221 @@
+{
+  "id": "git-plan/converge-and-hard-stops",
+  "skill": "git-plan",
+  "feature": "--converge merges the recorded lane heads in dependency order into one integration branch, stops on a conflict, lands only by one fast-forward and never pushes, deletes or overrides",
+  "invocations": {
+    "claude": "/GitPlan feat-x --converge --apply --land",
+    "codex": "$git-plan feat-x --converge --apply --land",
+    "hermes": "/git-plan feat-x --converge --apply --land"
+  },
+  "test_object": {
+    "arguments": [
+      "<set>",
+      "--converge",
+      "--apply"
+    ],
+    "also": [
+      "--include-active",
+      "--land",
+      "--expect-revision <n>",
+      "--release",
+      "ready lane that is inconsistent",
+      "merge conflict",
+      "failed repository check",
+      "target moved after the integration branch was cut",
+      "integration branch created with a plain git switch -c",
+      "interrupted run resumed",
+      "main as the target"
+    ]
+  },
+  "expected": [
+    "A converge preview evaluates every lane (INTEGRATED, READY, the pending BLOCKED, NOT_READY and WAITING, the failing MISSING_BRANCH, DIRTY, IN_PROGRESS, NO_MERGE_BASE, OUT_OF_LANE, SHARED_CHANGE, MOVED, CLAIM_DRIFT and STALE_PLAN, and the hint PREDICTED_CONFLICT); a failing finding stops the whole command so that a ready lane that is inconsistent is never merged around, and the readiness is READY, PARTIAL or BLOCKED with the next command and the remedy of every failed gate.",
+    "--converge --apply is the user's acceptance of the recorded lane heads it puts in its report: it re-surveys, stops when a lane head, the target tip or the revision differs from the earlier preview, creates agent/<set>/integration with a plain git switch -c from the current target tip in the invoking worktree, merges each READY lane's recorded head with git merge --no-ff in dependency order, records each with set-update, and runs the repository checks before any land.",
+    "A conflict lists the unmerged paths, runs git merge --abort and stops; it is never resolved with ours, theirs or by hand, the completed merges stay on the integration branch only, and the report names the lane, the files, the error text and the integration start SHA.",
+    "--land adds one git merge --ff-only of the integration branch into the target, only while every lane is integrated and the target still sits at the integration start SHA (otherwise LAND_REFUSED with both SHAs and nothing else); --release prints the final checklist and then removes only the claims and the record.",
+    "The hard stops: never push, fetch, force, delete a branch or a worktree, touch main, use override, arm, disarm or install, edit .git/magos or write the record other than through set-plan, set-update and set-release, rebase, squash, cherry-pick, reset, resolve a conflict with ours or theirs, write inside a lane worktree, or merge anything but a recorded lane head; every git and guard command is an argument list.",
+    "Every gate, finding, guard exit code and stop of an apply is followed by its remedy, which the command never performs; a rerun after an interruption resumes on the same integration branch and skips the lanes that are already integrated."
+  ],
+  "checks": [
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "Never: push, force-push or touch a remote or remote-tracking ref, and never fetch or use the network; move, reset, merge into or delete `main`, or take `main` as the target; delete a branch or a worktree, or run `git worktree prune`;",
+        "use `override`, `arm`, `disarm` or `install`, run the guard's plain `plan` or `release` on a claim of a set, or edit `.git/magos`; write the claim store or the set record other than through `magos_guard.py set-plan`, `set-update` and `set-release`; rebase, squash, cherry-pick or reset;",
+        "merge anything except a recorded lane head into the integration branch, and (with `--land`) the integration branch into the target by one `--ff-only` merge; resolve a conflict with ours or theirs, or by hand; pass `--no-verify`, `-X ours`, `-X theirs` or `--allow-unrelated-histories` to a merge;",
+        "create any branch or worktree other than a registered lane (at its registered path, from the recorded `base`) and the integration branch (from the target tip, in the invoking worktree); register a plan that no preview of this conversation showed, or any other spec than the previewed one;",
+        "write inside a lane worktree (a lane is only read, and merged from its recorded head in the invoking worktree); shrink, amend or release the claim of a lane to make a conflict disappear; run a git or guard command as a shell string (section 6 **Argument safety**).",
+        "A lane recorded `integrated` is `INTEGRATED` and has no findings.",
+        "**Pending** findings leave the lane out of this run and stop nothing; a **failing** finding stops the whole command, in the preview as a failed gate, so a ready lane that is inconsistent is never merged around.",
+        "BLOCKED             pending   the recorded state is blocked",
+        "WAITING             pending   a dependency is neither INTEGRATED nor READY in this run",
+        "MISSING_BRANCH      failing   branch_exists is false",
+        "NO_MERGE_BASE       failing   the branch exists and changed is null",
+        "OUT_OF_LANE         failing   out_of_lane is not empty (the files are listed)",
+        "SHARED_CHANGE       failing   the lane is named in an entry of drift.shared_changes (both lanes and the files are listed)",
+        "CLAIM_DRIFT         failing   claim is missing or mismatch",
+        "PREDICTED_CONFLICT  hint      git merge-tree --write-tree exits 1 for its tip against the current target tip",
+        "### Converge preview (`--converge [--include-active]`, read-only)",
+        "4. **Readiness**: `READY` when no gate fails and every lane is `READY` or `INTEGRATED`: one run of the next command merges all of them, and `--land` can follow in the same run. `PARTIAL` when no gate fails but some lane is pending: the next command merges the `READY` lanes and the report lists what each pending lane needs. `BLOCKED` when a gate fails.",
+        "`--land` is only suggested in words, never added to the line.",
+        "### Converge apply (`--converge --apply [--include-active] [--land] [--expect-revision <n>]`)",
+        "- **Convergence.** `--converge --apply` is the user's acceptance of the lane heads listed in the plan that the run records and puts in its report, or in a converge preview of the same set earlier in this conversation, and with `--land` of one fast-forward of `<branch>` to the integration branch. It permits no write to any branch except the integration branch and, with `--land`, the target, and never to `main`.",
+        "2. **Include active lanes** (only with `--include-active`): for each such lane run `<guard> set-update --set <set> --expect-revision <rev> --lane <id> --state ready --head '<tip>'`",
+        "run `git -C <top> switch -c 'agent/<set>/integration' '<target sha>'` (the CURRENT target tip; that SHA is the integration start SHA).",
+        "`git -C <top> merge --no-ff -m 'Merge lane <id> of plan <set> into agent/<set>/integration' '<recorded head>'`. Never `--no-verify`, `-X ours`, `-X theirs`, `--allow-unrelated-histories`, squash or rebase.",
+        "5. Record it: `<guard> set-update --set <set> --expect-revision <rev> --lane <id> --state integrated --head '<recorded head>' --integration 'agent/<set>/integration'`.",
+        "On a conflict list the unmerged paths (`git -C <top> diff --name-only --diff-filter=U`), run `git -C <top> merge --abort`, and stop; never resolve it with ours or theirs, and never by hand. Completed merges stay on the integration branch only.",
+        "5. **Validate** with the repository normal checks in the invoking worktree, on the integration branch, once at least one lane was merged or recorded, or `--land` was typed. A failed check stops the run before any land",
+        "6. **Land** (only with `--land`, after step 5 did not fail)",
+        "`git -C <top> merge --ff-only '<integration tip sha>'`, and confirm that `git rev-parse refs/heads/<target>` equals that SHA. When a condition fails, report `LAND_REFUSED` with the failed condition and both SHAs and do nothing else (**Remedies**); the invoking worktree stays on the integration branch.",
+        "A rerun after an interruption or a conflict starts from a fresh survey and resumes on the same integration branch: lanes already `integrated` are skipped",
+        "2. Run `<guard> set-release --set <set> --reason integrated`. Exit 0 removes the lane claims, the integration claim and the record and appends to the guard's audit log; exit 16 means a lane is not integrated, is not yet in the target or has a dirty worktree, and the guard names it (**Remedies**).",
+        "3. Report the released claims (`released`), and that the lane branches, their worktrees and the integration branch are not touched",
+        "| apply stopped by a conflict | the report names the lane, the files, the error text and the integration start SHA; completed merges stay on the integration branch and their lanes stay `integrated`.",
+        "| apply stopped because a `set-update` failed after a merge |",
+        "| apply stopped by a failed check | fix what it names, on the integration branch by a commit of your own or in the lane (then record the lane `ready` again), then rerun; the check ran on the merged result; completed merges stay and nothing was landed |",
+        "| `LAND_REFUSED`: the target moved since the integration start SHA",
+        "| creation stopped: a lane's worktree path or branch exists",
+        "Converge preview (`--converge`):",
+        "Readiness: READY / PARTIAL / BLOCKED, failures + remedies, next command",
+        "Stopped at (only when the run stopped: lane, files, error text, integration start SHA, the row of Remedies)",
+        "Land result (only with --land)",
+        "Final checklist and Remaining TODO (printed before the record is removed)",
+        "`/GitPlan` is preview-only unless `--apply` (or `--release`) is explicit.",
+        "it never pushes and never deletes a branch or a worktree."
+      ]
+    },
+    {
+      "file": "commands/GitPlan.md",
+      "contains": [
+        "Stop on a conflict: run `git merge --abort`, never resolve it with ours or theirs, and keep the completed merges on the integration branch only. Write the claim store and the set record only through `magos_guard.py set-plan`, `set-update` and `set-release`.",
+        "Never push, force-push, fetch or use the network; never move, merge into or delete `main`, and never take `main` as the target; never delete a branch or a worktree and never run `git worktree prune`; never use `override`, `arm`, `disarm` or `install`, never run the guard's plain `plan` or `release` on a claim of a set and never edit `.git/magos`; never rebase, squash, cherry-pick or reset; never pass `--no-verify`, `-X ours`, `-X theirs` or `--allow-unrelated-histories` to a merge; never write inside a lane worktree.",
+        "Merge nothing but a recorded lane head into the integration branch (and, with `--land`, the integration branch into `<branch>` by one `--ff-only` merge); create no branch or worktree other than a registered lane (at its registered path, from the recorded `base`) and the integration branch; never shrink, amend or release the claim of a lane to make a conflict disappear. Git and guard commands run as argument lists, never as shell strings.",
+        "With `--converge --apply`, record the plan first (lane order, recorded heads, target tip, revision) and include it in the final report, create the integration branch `agent/<set>/integration` from the current target tip in the invoking worktree when it is absent (that worktree must be on the target and clean), merge each ready lane's recorded head into it with `git merge --no-ff`, record each merge through `magos_guard.py set-update`, run the repository checks, and only with `--land` fast-forward `<branch>` once with `git merge --ff-only`",
+        "With `--release`, print the final checklist first, then remove the claims and the record through `magos_guard.py set-release`; no branch, worktree or integration branch is touched.",
+        "Safety default: preview only unless `--apply` (or `--release`) is present.",
+        "- `--converge`: Preview the merge of the lanes, in dependency order, into one integration branch `agent/<set>/integration`; with `--apply`, run it: each ready lane's recorded head is merged with `git merge --no-ff` and recorded `integrated`, and the repository checks run on the result. A conflict aborts that merge and stops the run; it is never resolved with ours or theirs.",
+        "After the lanes finish, `--status` and `--converge` print the checklist again from the record with every lane ticked, followed by Remaining TODO (the lanes still to finish, the merges, the repository checks, the post-merge tasks, the land and the release), so the sheet is the TODO reference for the merge.",
+        "The command never pushes, never forces, never deletes a branch or a worktree, never touches `main`, never uses `override`, never rebases or squashes, and never resolves a conflict with ours or theirs",
+        "if the skill could not be loaded, preview only."
+      ]
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
+      "contains": [
+        "Stop on a conflict: run `git merge --abort`, never resolve it with ours or theirs, and keep the completed merges on the integration branch only. Write the claim store and the set record only through `magos_guard.py set-plan`, `set-update` and `set-release`.",
+        "Never push, force-push, fetch or use the network; never move, merge into or delete `main`, and never take `main` as the target; never delete a branch or a worktree and never run `git worktree prune`; never use `override`, `arm`, `disarm` or `install`, never run the guard's plain `plan` or `release` on a claim of a set and never edit `.git/magos`; never rebase, squash, cherry-pick or reset; never pass `--no-verify`, `-X ours`, `-X theirs` or `--allow-unrelated-histories` to a merge; never write inside a lane worktree.",
+        "Merge nothing but a recorded lane head into the integration branch (and, with `--land`, the integration branch into `<branch>` by one `--ff-only` merge); create no branch or worktree other than a registered lane (at its registered path, from the recorded `base`) and the integration branch; never shrink, amend or release the claim of a lane to make a conflict disappear. Git and guard commands run as argument lists, never as shell strings.",
+        "With `--converge --apply`, record the plan first (lane order, recorded heads, target tip, revision) and include it in the final report, create the integration branch `agent/<set>/integration` from the current target tip in the invoking worktree when it is absent (that worktree must be on the target and clean), merge each ready lane's recorded head into it with `git merge --no-ff`, record each merge through `magos_guard.py set-update`, run the repository checks, and only with `--land` fast-forward `<branch>` once with `git merge --ff-only`",
+        "With `--release`, print the final checklist first, then remove the claims and the record through `magos_guard.py set-release`; no branch, worktree or integration branch is touched.",
+        "Preview by default; write only when the explicit command includes `--apply` (or is `--release`) and every gate still passes.",
+        "- `--converge`: Preview the merge of the lanes, in dependency order, into one integration branch `agent/<set>/integration`; with `--apply`, run it: each ready lane's recorded head is merged with `git merge --no-ff` and recorded `integrated`, and the repository checks run on the result. A conflict aborts that merge and stops the run; it is never resolved with ours or theirs.",
+        "After the lanes finish, `--status` and `--converge` print the checklist again from the record with every lane ticked, followed by Remaining TODO (the lanes still to finish, the merges, the repository checks, the post-merge tasks, the land and the release), so the sheet is the TODO reference for the merge.",
+        "A semantic match or automatic skill selection is not authorization to write.",
+        "If this adapter was selected without such an invocation, preview at most and register, create, merge, and release nothing.",
+        "do not register, create, merge, switch, delete, or push anything; a read-only preview is still allowed."
+      ]
+    },
+    {
+      "file": "skills/git-plan/agents/openai.yaml",
+      "contains": [
+        "allow_implicit_invocation: false"
+      ]
+    },
+    {
+      "file": "SKILL.md",
+      "contains": [
+        "`/GitPlan <set> --converge --apply` is the user's acceptance of the recorded lane heads: it merges them in dependency order into `agent/<set>/integration` only (created with `git switch -c` from the current target tip; a denial of that creation is quoted and stops the run), records each with `set-update`, stops on a conflict, runs the repository's normal checks, and with `--land` makes one `--ff-only` merge of that branch into `<branch>` while `<branch>` still sits at the integration start; `--release` removes the claims and the record through `set-release`.",
+        "It never pushes, force-pushes, deletes a branch or worktree, touches `main`, uses `override`, rebases, squashes, or resolves a conflict by ours/theirs, and runs every git and guard command as an argument list. See `references/commands.md` section 8."
+      ]
+    },
+    {
+      "file": "README.md",
+      "contains": [
+        "先预览合并：结论 `READY`（每个车道都已经 `READY` 或 `INTEGRATED`，一次运行就能全部合并，`--land` 可以接着做）、`PARTIAL`（有车道还没好，这次只合并 `READY` 的，并写明每个没好的车道还缺什么）或 `BLOCKED`（有门槛没通过）。",
+        "`--land` 只在文字里建议，不写进那一行。",
+        "`--converge --apply` 是你对报告里那份计划的接受",
+        "否则报告 `LAND_REFUSED` 并停下，什么也不再做。",
+        "| `STALE_PLAN` | 目标分支前进了，而且它改动的文件与某个车道的清单有交集，各车道不再独立于已经落下的内容 | 失败，整个命令停下 |",
+        "| `PREDICTED_CONFLICT` | 预演合并（`git merge-tree --write-tree`）预计会冲突；只是提示，看不出两个车道之间的冲突 | 提示，仍会尝试 |",
+        "`--release` 先打印最终清单，再移除各车道的登记和计划记录；车道分支、工作区和集成分支都不动。",
+        "✓ 默认只预览。不加 --apply（也不是 --release）就不会登记、创建或合并任何东西，也不联网",
+        "✓ 登记和进度只经过车道守卫的 set-plan、set-update、set-release；从不手改 .git/magos，从不用 override",
+        "✓ 只合并车道登记的那个提交，只合并进集成分支；加 --land 才再多一次 --ff-only 快进，而且只在目标分支还停在集成分支起点时",
+        "✓ 遇到冲突就 git merge --abort 并停下；从不用 ours 或 theirs，也不手工解决；已经完成的合并只留在集成分支上",
+        "✓ 从不推送，从不强推，从不联网；从不删除分支或工作区，从不 git worktree prune",
+        "✓ 从不动 main，也不能把 main 当目标；从不变基、压缩、cherry-pick 或 reset",
+        "✓ 从不往车道的工作区里写任何东西；--create 只创建登记过的车道（在登记的路径，从记录的 base 出发）",
+        "- **合并到一半断了怎么办？** 重新运行同一条命令：它重新调查，在同一条集成分支上接着做，已经 `integrated` 的车道会跳过。"
+      ]
+    },
+    {
+      "file": "README.en.md",
+      "contains": [
+        "Preview the merge first. The verdict is `READY` (every lane is already `READY` or `INTEGRATED`, so one run merges them all and `--land` can follow), `PARTIAL` (some lane is not done: this run merges only the `READY` ones and says what each of the others still needs) or `BLOCKED` (a gate fails).",
+        "`--land` is only suggested in words and never put on that line.",
+        "`--converge --apply` is your acceptance of the plan the report shows",
+        "otherwise it reports `LAND_REFUSED` and stops, doing nothing more.",
+        "| `STALE_PLAN` | The target branch moved on, and the files it changed overlap a lane's manifest, so the lanes are no longer independent of what landed | Fails: the whole command stops |",
+        "| `PREDICTED_CONFLICT` | The trial merge (`git merge-tree --write-tree`) predicts a conflict; only a hint, and it cannot see a conflict between two lanes | A hint; it still tries |",
+        "`--release` prints the final checklist first, then removes the claims of the lanes and the plan record; the lane branches, the worktrees and the integration branch are not touched.",
+        "✓ Preview by default. Without --apply (or --release) nothing is registered, created or merged, and the network is not used",
+        "✓ Registration and progress go only through the guard's set-plan, set-update and set-release; .git/magos is never edited by hand and override is never used",
+        "✓ Only the commit registered for a lane is merged, and only into the integration branch; --land adds one --ff-only fast-forward, and only when the target branch still sits where the integration branch was cut from",
+        "✓ On a conflict it runs git merge --abort and stops; it never uses ours or theirs and never resolves by hand; the merges already made stay on the integration branch only",
+        "✓ Never pushes, never force-pushes, never uses the network; never deletes a branch or a worktree, never runs git worktree prune",
+        "✓ Never touches main and never takes main as the target; never rebases, squashes, cherry-picks or resets",
+        "✓ Never writes inside a lane's worktree; --create creates only registered lanes (at the registered path, from the recorded base)",
+        "- **What if the merge stopped half-way?** Run the same command again: it investigates afresh and carries on on the same integration branch, and the lanes that are already `integrated` are skipped."
+      ]
+    },
+    {
+      "file": "README.ja.md",
+      "contains": [
+        "まずマージをプレビューします。結論は `READY`（すべてのレーンがすでに `READY` か `INTEGRATED` で、1 回の実行ですべてマージでき、続けて `--land` もできる）、`PARTIAL`（まだ終わっていないレーンがあり、今回は `READY` のものだけをマージし、終わっていない各レーンに何が足りないかを書く）、`BLOCKED`（通らなかったゲートがある）のどれかです。",
+        "`--land` は文章で勧めるだけで、その行には含めません。",
+        "`--converge --apply` は、レポートにあるその計画をあなたが受け入れる、という意味です",
+        "そうでなければ `LAND_REFUSED` と報告して停止し、それ以上は何もしません。",
+        "| `STALE_PLAN` | ターゲットブランチが進み、それが変更したファイルがあるレーンのマニフェストと重なる。各レーンは、すでに入った内容から独立していなくなった | 失敗。コマンド全体が停止します |",
+        "| `PREDICTED_CONFLICT` | 試しマージ（`git merge-tree --write-tree`）でコンフリクトが予測される。ヒントにすぎず、2 つのレーンの間のコンフリクトは見つけられない | ヒント。それでも試みます |",
+        "`--release` は、まず最終的なチェックリストを表示してから、各レーンの登録と計画の記録を取り除きます。レーンのブランチ、ワークツリー、統合ブランチには手を付けません。",
+        "✓ デフォルトはプレビューのみ。--apply（または --release）がなければ、何も登録・作成・マージせず、ネットワークにも接続しない",
+        "✓ 登録と進み具合の記録は、レーンガードの set-plan、set-update、set-release だけを経由する。.git/magos は手で編集せず、override も使わない",
+        "✓ マージするのはレーンに登録されたコミットだけで、マージ先は統合ブランチだけ。--land を付けたときだけ --ff-only の早送りがもう 1 回あり、それもターゲットブランチが統合ブランチの起点にあるときに限る",
+        "✓ コンフリクトが起きたら git merge --abort をして停止する。ours や theirs は使わず、手作業でも解決しない。完了したマージは統合ブランチにだけ残る",
+        "✓ プッシュも強制プッシュもネットワーク接続もしない。ブランチもワークツリーも削除せず、git worktree prune も実行しない",
+        "✓ main には触れず、main をターゲットにもしない。リベース、スカッシュ、cherry-pick、リセットもしない",
+        "✓ レーンのワークツリーには何も書き込まない。--create が作るのは登録されたレーンだけ（登録されたパスに、記録された base から）",
+        "- **マージの途中で止まったら？** 同じコマンドをもう一度実行します。改めて調査し、同じ統合ブランチの続きから進めます。すでに `integrated` のレーンは飛ばされます。"
+      ]
+    },
+    {
+      "file": "CHANGELOG.md",
+      "contains": [
+        "- **Convergence.** `--converge` previews, and `--converge --apply` merges, the `READY` lanes in dependency order into one integration branch `agent/<set>/integration`",
+        "A conflict runs `git merge --abort` and stops the run, never resolved with ours, theirs or by hand; the completed merges stay on the integration branch only, and the report names the lane, the files, the error text and the integration start SHA.",
+        "`--land` adds one `git merge --ff-only` of the integration branch into `<branch>`, only while `<branch>` still sits where the integration branch was cut from (otherwise `LAND_REFUSED`).",
+        "The command never pushes, never deletes a branch or a worktree, never touches `main`, never uses `override`, and merges nothing but a recorded lane head into the integration branch.",
+        "- **Lane findings and remedies.**"
+      ]
+    },
+    {
+      "file": "RELEASE_NOTES_1.0.4.md",
+      "contains": [
+        "- **Convergence in dependency order.** `--converge --apply` merges each recorded lane head with `git merge --no-ff` into `agent/<set>/integration`, records each lane `integrated`, runs the repository's checks, and with `--land` fast-forwards `<branch>` once, only while it still sits where the integration branch was cut from.",
+        "- **Remedies for everything.**"
+      ]
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "contains": [
+        "## GitPlan pressure tests (v1.0.4)",
+        "### GitPlan converge with a conflict",
+        "### GitPlan --land after the target moved",
+        "### GitPlan --create with an existing worktree path",
+        "### GitPlan with a user asking to override a claim",
+        "### GitPlan with an agent asked to write the set record by hand",
+        "### GitPlan --release before the lanes are integrated"
+      ]
+    }
+  ]
+}

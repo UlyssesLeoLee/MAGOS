@@ -13,7 +13,8 @@
       "git-integrate",
       "git-cleanup",
       "git-converge",
-      "git-sweep"
+      "git-sweep",
+      "git-plan"
     ],
     "max_description_chars": 77,
     "source": "Hermes acp_adapter/commands.py truncates command descriptions to 77 chars + '...'"
@@ -96,6 +97,18 @@
       "ends_with": "."
     },
     {
+      "file": "skills/git-plan/SKILL.md",
+      "contains": [
+        "description: \"规划并收敛多车道任务（仅显式调用，写操作）；/git-plan SET --into BRANCH [--help].\""
+      ],
+      "pattern": "^description: \"([^\"]+)\"$",
+      "length": [
+        1,
+        77
+      ],
+      "ends_with": "."
+    },
+    {
       "file": "skills/git-integrate/SKILL.md",
       "contains": [
         "An explicit invocation is the user's",
@@ -118,6 +131,13 @@
     },
     {
       "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "An explicit invocation is the user's",
+        "Hermes renders it as"
+      ]
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
       "contains": [
         "An explicit invocation is the user's",
         "Hermes renders it as"

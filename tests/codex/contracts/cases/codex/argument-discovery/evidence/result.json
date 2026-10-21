@@ -1,7 +1,7 @@
 {
   "case": "codex/argument-discovery",
   "skill": "all",
-  "feature": "Codex exposes all seven skills with compact usage hints",
+  "feature": "Codex exposes all eight skills with compact usage hints",
   "passed": true,
   "scope": "source-contract; AI host runtime is not invoked",
   "checks": [
@@ -72,6 +72,16 @@
     },
     {
       "file": "skills/git-sweep/agents/openai.yaml",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-plan/agents/openai.yaml",
       "passed": true,
       "missing": []
     }

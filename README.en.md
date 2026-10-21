@@ -34,7 +34,7 @@ It actively inspects the current repository's **branch / worktree / commit / ahe
 | remote | The copy stored online (for example on GitHub) | The company's shared-drive backup |
 | preview / apply | Look at the plan first, then decide to really do it | Read the renovation plan, then say "go" |
 
-**Every command follows one rule: look first, act only when told.** The four commands that can change your repository (`/GitIntegrate`, `/GitCleanup`, `/GitConverge`, `/GitSweep`) act only when you explicitly ask: `/GitCleanup`, `/GitConverge` and `/GitSweep` only preview until you add `--apply`; `/GitIntegrate` has no preview mode, so typing it is the order to integrate, and it checks every gate first and writes only when all of them pass. They stop and explain whenever they are unsure instead of pushing on.
+**Every command follows one rule: look first, act only when told.** The five commands that can change your repository (`/GitIntegrate`, `/GitCleanup`, `/GitConverge`, `/GitSweep`, `/GitPlan`) act only when you explicitly ask: `/GitCleanup`, `/GitConverge`, `/GitSweep` and `/GitPlan` only preview until you add `--apply` (the closing `--release` of `/GitPlan` writes too); `/GitIntegrate` has no preview mode, so typing it is the order to integrate, and it checks every gate first and writes only when all of them pass. They stop and explain whenever they are unsure instead of pushing on.
 
 ### How do I write a command?
 
@@ -73,7 +73,7 @@ These three work the same way in every command that supports them. Learn them on
 | What it does | Shows how to write the command, what every argument means, what happens when you leave them out, and a few examples, then stops |
 | What it never does | Never reads your repository, never runs Git, never changes anything |
 | When to use it | You forgot the syntax, you are unsure what an argument means, or it is your first time with a command |
-| Which commands | All seven |
+| Which commands | All eight |
 
 > **When in doubt, add `--help` first. It is completely safe.**
 
@@ -139,7 +139,7 @@ These three work the same way in every command that supports them. Learn them on
 | Where to put it | Anywhere after the command. In `/GitRecommend which branches should merge first --lang English`, `--lang English` is taken out first, so your question is "which branches should merge first" |
 | If you write it wrongly | If nothing follows `--lang`, or what follows is not a language (for example `--lang xyz123`), it tells you what is wrong in Chinese and shows the usage, **without running the command** |
 | Does it change the result? | No. Only the language of the reply changes; the checks and judgments are identical |
-| Which commands | All seven |
+| Which commands | All eight |
 
 ---
 
@@ -189,10 +189,11 @@ The core principle:
 | Safe Cleanup | Identifies completed branches and worktrees safely |
 | Safe Rollback | `reset` for private history, `revert` for shared history |
 | Branch Strategy | Identifies the branching model a repository actually follows, audits it against a parallel-agent safety checklist, proposes only the smallest change, and never edits branches as advice |
+| Lane Planning | Before work starts, divides a task into lanes that own different files and registers the plan with an optimistic lock; when the work is done, merges the lanes into one whole in dependency order |
 
 ---
 
-## The seven commands
+## The eight commands
 
 | Command | In one sentence | Does it change your repository? |
 |---|---|---|
@@ -203,6 +204,7 @@ The core principle:
 | `/GitCleanup` | Removes finished branches and worktrees | Not by default; only with `--apply` |
 | `/GitConverge` | Folds every branch into one and keeps only `main` and it | Not by default; only with `--apply` |
 | `/GitSweep` | Runs `/GitConverge`, then also deletes merged remote branches | Not by default; only with `--apply` (includes remote deletion); `<branch>` is pushed once only when you also add `--push` |
+| `/GitPlan` | Before any sub-agent starts, investigates Git and the code, divides the task into lanes that own different files and prints a checklist; afterwards merges the lanes into one whole in dependency order | Not by default; only with `--apply` (or the closing `--release`): registers the plan, with `--create` also creates the lane branches and worktrees, `--converge --apply` merges, `--land` adds one fast-forward; it never pushes and never deletes a branch or a worktree |
 
 Every command accepts `--lang <language>` (reply language, Chinese by default) and `--help` (instructions only); the three read-only commands also accept `--remote` (`/GitSweep`'s `--remote <name>` is a different option; see its section). Their details are in "Three arguments that work everywhere" above, so each command below describes only the arguments **it alone** has.
 
@@ -731,6 +733,188 @@ It never pushes commits or tags (the one exception is the fast-forward push of `
 
 ---
 
+### `/GitPlan <set>` — plan the lanes, then converge them
+
+**Before any sub-agent starts, investigate Git and the code, divide one task into lanes that own different files, and give you a short checklist; when the work is done, merge the lanes back into one whole in dependency order.**
+
+Use it when: you want several AIs to work on one task in parallel, you want "who changes which files" settled first, and you want a checklist to merge against at the end.
+
+The checklist does two jobs. Before work starts it is **the plan you review**; after the work is done it is **the TODO reference for the merge**: `--status` and `--converge` print it again from the record, tick the progress of every lane and list what remains. It only previews by default; only `--apply` (and the closing `--release`) writes, and the writes go only through the lane guard's `set-plan`, `set-update` and `set-release` (`magos_guard.py`). It never pushes, never force-pushes, never deletes a branch or a worktree, and never touches `main`.
+
+A few words first:
+
+| Word | In plain words |
+|---|---|
+| set | The name of one task division, for example `feat-x`: `[a-z0-9][a-z0-9-]{0,23}`, case-sensitive, and not a Windows device name (`con`, `nul`, `com1`, ...). The plan record and the claims of its lanes carry this name |
+| lane | The branch and worktree of one sub-agent, plus a list of the files it may change (its manifest). The manifests of the lanes never overlap, so the lanes cannot overwrite each other |
+| sheet | The checklist, at most 4096 characters: one line per lane (branch, the files it owns, dependencies, acceptance), then one merge line, the owner of each shared file and at most 5 risks |
+| integration branch | `agent/<set>/integration`, where the whole lands after the lanes are merged |
+| revision and base | The version number of the plan and the target-branch commit it was made against; they are how a stale plan is detected (see "The optimistic lock" below) |
+
+#### How to use it: four steps
+
+**Step 1: preview first (nothing is changed)**
+
+```text
+/GitPlan feat-x --into develop
+```
+
+It investigates Git (branches, worktrees, open lane claims, the tip of the target branch; remote freshness only as the local records show it, with no network) and the code (layout, entry points, build and test commands, shared files, the files that change most, imports across boundaries), divides the task, and proves with `magos_guard.py set-plan --dry-run` that the file lists of the lanes are pairwise disjoint. It ends with the checklist, a lane table and the verdict `READY` or `BLOCKED`, and every gate that fails comes with its remedy. The preview's only write is a scratch spec file outside every worktree. The checklist looks like this:
+
+```text
+# Plan feat-x -> develop  rev 1  base 3fa9c21
+- [ ] L1 data layer | branch agent/feat-x/l1 | owns src/db/, tests/db/ | needs - | accept migrations roll back
+- [ ] L2 API | branch agent/feat-x/l2 | owns src/api/ | needs L1 | accept API tests pass
+- [ ] merge L1 -> L2 into agent/feat-x/integration; run pytest -q; land on develop
+Shared: pyproject.toml -> L1 ; post-merge: update CHANGELOG.md -> merge step
+Risks: src/api imports types from src/db, so L2 depends on L1
+```
+
+**Step 2: register**
+
+```text
+/GitPlan feat-x --into develop --apply
+/GitPlan feat-x --into develop --apply --create
+```
+
+What is registered is the spec the preview just showed, byte for byte; when there was no preview, when you asked for a change after it, or when the target branch has moved on, it previews again and stops instead of registering. Registering writes the claim of every lane, the claim of the integration branch (it holds no files and limits no lane's manifest; it only lets the guard allow a plain `git switch -c` to create that branch) and the plan record, all or nothing. With `--create` it also creates the branches and worktrees of the lanes (from the recorded `base`, at the registered paths); without it, it prints the `git worktree add` commands for you to run. Every lane comes with a handoff: branch, worktree, manifest, dependencies, acceptance, and the two commands its owner uses to record progress.
+
+**Step 3: work, and record progress**
+
+The owner of each lane (a sub-agent) changes only the files in its own manifest. It records `active` when it starts, and `ready` with its latest commit when it has committed:
+
+```text
+magos_guard.py set-update --set feat-x --expect-revision <rev> --lane L1 --state active
+magos_guard.py set-update --set feat-x --expect-revision <rev> --lane L1 --state ready --head <tip>
+```
+
+`<rev>` is `record.revision` of `magos_guard.py set-show --set feat-x --json`; exit code 19 means it has changed, so read it again. When `ready` is recorded the guard checks that the commit really is the tip of the branch and that every file the lane changed lies inside its manifest (a file outside is exit code 22, with the files listed). You can look at the progress at any time with `--status`:
+
+```text
+/GitPlan feat-x --status
+```
+
+It prints the checklist again from the record: lanes that are `ready` or `integrated` are ticked and show their recorded commit, and at the end comes what remains.
+
+```text
+# Plan feat-x -> develop  rev 9  base 3fa9c21
+- [x] L1 data layer | integrated | head 8b1d4e0 | branch agent/feat-x/l1
+- [x] L2 API | ready | head c04a7f2 | branch agent/feat-x/l2
+- [ ] L3 pages | active | head - | branch agent/feat-x/l3
+- [ ] merge L1 -> L2 -> L3 into agent/feat-x/integration; run pytest -q; land on develop
+
+Remaining TODO
+1. finish L3: active; accept pages open
+2. merge L2 c04a7f2
+3. run the repository checks on agent/feat-x/integration
+4. post-merge: update CHANGELOG.md
+```
+
+To change the plan, use `--amend`: `/GitPlan feat-x --amend --expect-revision 9` investigates again and previews the amended plan (lanes that remain keep their branch, worktree and state, and `base` moves to the current tip of the target branch); add `--apply` when you are satisfied. A lane that holds commits that are not merged cannot be removed, and its manifest cannot shrink below the files it has already changed (the guard refuses, exit code 16).
+
+**Step 4: merge, land, close**
+
+```text
+/GitPlan feat-x --converge
+/GitPlan feat-x --converge --apply --expect-revision 9
+/GitPlan feat-x --converge --apply --land
+/GitPlan feat-x --release
+```
+
+Preview the merge first. The verdict is `READY` (every lane is already `READY` or `INTEGRATED`, so one run merges them all and `--land` can follow), `PARTIAL` (some lane is not done: this run merges only the `READY` ones and says what each of the others still needs) or `BLOCKED` (a gate fails). The next command it recommends is `/GitPlan <set> --converge --apply --expect-revision <the revision the preview shows>`; `--land` is only suggested in words and never put on that line.
+
+`--converge --apply` is your acceptance of the plan the report shows: it first investigates again and records this run's plan (the lane order, the commit each lane registered, the tip of the target branch, the revision); when that differs from a preview you saw earlier it stops and gives you a new one. Then:
+
+1. Only with `--include-active` does it record an `active` lane that holds commits as `ready` at its current commit (that is your acceptance of those commits), and the guard checks that every file the lane changed lies inside its manifest.
+2. When the integration branch does not exist, it creates it with a plain `git switch -c agent/<set>/integration <current commit of the target branch>` in the worktree you ran the command in (which must be on the target branch and clean).
+3. In dependency order, it merges the commit registered for each `READY` lane with `git merge --no-ff`, and records each lane `integrated` with `set-update` as it goes.
+4. On the integration branch it runs the repository's own checks (build, test, lint); a failed check stops the run before any land, and when the checks cannot be identified the report says "not validated" and the run goes on.
+5. Only with `--land`: when every lane is `integrated` and the target branch still sits where the integration branch was cut from, one `git merge --ff-only` fast-forwards the target branch to the integration branch; otherwise it reports `LAND_REFUSED` and stops, doing nothing more.
+
+`--release` prints the final checklist first, then removes the claims of the lanes and the plan record; the lane branches, the worktrees and the integration branch are not touched. With the claims gone, `/GitCleanup` no longer sees them as in use and can clean up the merged ones. When a lane is not merged, is not in the target branch yet, or its worktree has unsaved changes, the guard refuses (exit code 16) and names the lane.
+
+#### The arguments in detail
+
+| Form | What it does |
+|---|---|
+| `<set>` (required, except with `--help`) | The name of the plan; its format is in the table of words above |
+| `--into <branch>` | Required to plan: the local branch the plan is made against and that `--land` fast-forwards later. Write it exactly (case-sensitive); it must not be `main`. The other forms read it from the plan record |
+| `--apply` | With `--into`: register the plan the preview showed. With `--amend`: register the amended plan. With `--converge`: merge the lanes. Without it, only a preview |
+| `--create` | With the `--apply` of a plan or an amendment: also create the branches and worktrees of the registered lanes that do not exist yet. Without it, the `git worktree add` commands are printed |
+| `--status` | Read-only: the checklist, the state of every lane, what remains |
+| `--amend` | Re-plan a registered set; needs `--expect-revision`, and registers only with `--apply [--create]` |
+| `--expect-revision <n>` | The revision of the plan record that you read (a positive integer): required with `--amend`, optional with `--converge --apply`; a record at another revision stops the command |
+| `--converge` | Preview the merge of the lanes, in dependency order, into `agent/<set>/integration`; runs only with `--apply` |
+| `--include-active` | With `--converge`: treat an `active` lane that holds commits as `ready` at its current commit; in an apply, that is your acceptance of those commits |
+| `--land` | With `--converge --apply`: after the merges and the checks, fast-forward `<branch>` to the integration branch |
+| `--release` | Close the set once its lanes are merged: remove their claims and the plan record |
+| `--lang <language>`, `--help` | The language of the reply (Chinese by default); show the instructions only |
+
+The "selecting" option (`--into`, `--status`, `--amend`, `--converge` or `--release`) decides what this run does. Two of them together, or an option the form does not take, is a usage error: it explains, shows the usage and runs nothing.
+
+Examples:
+
+```text
+/GitPlan feat-x --into develop                              just the plan
+/GitPlan feat-x --into develop --apply --create             register, and create the branches and worktrees of every lane
+/GitPlan feat-x --status                                    progress, and what remains
+/GitPlan feat-x --converge --apply --land --lang English    merge, land on develop, reply in English
+/GitPlan --help                                             instructions only
+```
+
+#### The state of each lane at merge time
+
+| Status | In plain words | Merged this time? |
+|---|---|---|
+| `INTEGRATED` | The record already says `integrated`: its commit was merged | Done; never merged again |
+| `READY` | The owner recorded `ready`, and everything is consistent | Yes, in dependency order |
+| `NOT_READY`, `BLOCKED`, `WAITING` | The record still says `planned` or `active`; the record says `blocked`; a lane it depends on is neither merged nor `READY` | No: only this lane sits this run out, and the others are not held back (with `--include-active`, an `active` lane that holds commits takes part at its current commit) |
+| `MISSING_BRANCH`, `DIRTY`, `IN_PROGRESS`, `NO_MERGE_BASE` | The branch is gone; the worktree has unsaved changes; the worktree has a merge, rebase or similar operation half-way; the branch shares no history with the target branch | Fails: the whole command stops |
+| `OUT_OF_LANE`, `SHARED_CHANGE`, `MOVED`, `CLAIM_DRIFT` | A file outside the manifest was changed; two lanes changed the same file; new commits arrived after `ready` was recorded; the claim of the lane does not match the plan record | Fails: the whole command stops |
+| `STALE_PLAN` | The target branch moved on, and the files it changed overlap a lane's manifest, so the lanes are no longer independent of what landed | Fails: the whole command stops |
+| `PREDICTED_CONFLICT` | The trial merge (`git merge-tree --write-tree`) predicts a conflict; only a hint, and it cannot see a conflict between two lanes | A hint; it still tries |
+
+A waiting status only makes that one lane sit this run out; a failing status stops the whole command, because a lane that is `ready` but inconsistent must never be merged around. Every item comes with its remedy, which the command never performs itself: the lane owner (or you) does it, then you run again.
+
+#### The optimistic lock: nobody holds a lock, a stale plan is only detected
+
+A registered plan carries a revision and the commit of the target branch it was made against (`base`), and nobody holds a lock while the lanes work. Every change is compared with the revision you read and stops when it does not match, so a stale plan is only detected and never overwritten.
+
+| You see | In plain words | What to do |
+|---|---|---|
+| Exit code 19, `kind` is `base` | The target branch moved on after the preview, so the commit the plan was made against is not where it is now | Run again: the new preview investigates the new position |
+| Exit code 19, `kind` is `revision`, or `--expect-revision` does not match | The plan record changed after you read it, for example because a lane owner recorded progress | Run `--status` first, then redo with the revision it shows |
+| `STALE_PLAN` | See the table above: what landed on the target branch overlaps a lane's manifest | `--amend --expect-revision <n>`: the new preview is based on the new position, and the amendment moves `base` there; the owner of an overlapping lane merges the target branch's commit into its own branch and records `ready` again |
+| Exit code 20 or 21 | A plan of that name already exists; or there is no plan of that name | Look with `--status`, change with `--amend`, close with `--release`, or pick another name; check the name, or plan first with `--into` |
+| Exit code 22, `OUT_OF_LANE` | A lane changed files outside its manifest, so the guard refuses to record it `ready` | The owner reverts those changes, or `--amend` gives the files to the one lane that should own them by design, and then `ready` is recorded again |
+| Exit code 23 | The plan record was written by a newer MAGOS | Upgrade the guard (see "Lane guard"); until then the record is neither read nor changed |
+| Exit code 24 or 12 | The plan is invalid: a wrong field, or a clash with a branch or path that already exists in the repository; the message names the field | Fix that field and prove it again; a plan of more than 12 lanes or a sheet over 4096 characters must be made smaller |
+
+While the plan exists, every open lane claim (`planned` or `active`) makes `/GitCleanup`, `/GitConverge` and `/GitSweep` report that lane as `BLOCKED_ACTIVE_OWNER`: that is intended, and `--release` lifts it.
+
+#### Rules it always follows
+
+```text
+✓ Preview by default. Without --apply (or --release) nothing is registered, created or merged, and the network is not used
+✓ What is registered is the plan the preview showed; when there was no preview, it previews first and stops
+✓ Registration and progress go only through the guard's set-plan, set-update and set-release; .git/magos is never edited by hand and override is never used
+✓ Only the commit registered for a lane is merged, and only into the integration branch; --land adds one --ff-only fast-forward, and only when the target branch still sits where the integration branch was cut from
+✓ On a conflict it runs git merge --abort and stops; it never uses ours or theirs and never resolves by hand; the merges already made stay on the integration branch only
+✓ Never pushes, never force-pushes, never uses the network; never deletes a branch or a worktree, never runs git worktree prune
+✓ Never touches main and never takes main as the target; never rebases, squashes, cherry-picks or resets
+✓ Never writes inside a lane's worktree; --create creates only registered lanes (at the registered path, from the recorded base)
+```
+
+#### FAQ
+
+- **What if the guard is too old?** `/GitPlan` checks the version of the guard first and needs 1.0.4 or later; an older guard has no `set-*` subcommands, so the command stops and tells you to refresh the guard copy (run `doctor`, then the `install --host <host>` commands it prints).
+- **Does it detect semantic coupling between files?** No. The guard only proves that the file lists do not overlap and knows nothing of the dependencies between pieces of code; files that refer to each other should go into the same lane when the plan is made.
+- **Where does the plan record live?** In the git directory of this clone (`<git-common-dir>/magos/sets/<set>.json`), readable and writable only through the guard; it is not synchronized to other clones by fetch or push.
+- **What if the merge stopped half-way?** Run the same command again: it investigates afresh and carries on on the same integration branch, and the lanes that are already `integrated` are skipped.
+- **I want the reply in English.** Add `--lang English` at the end of the command.
+
+---
+
 ## Agent lane lifecycle
 
 ```mermaid
@@ -808,15 +992,16 @@ MAGOS ships a lane guard (`scripts/magos_guard.py`). Before a branch or worktree
 - **Modes.** AUTO (the default): a named worktree creation always needs a manifest, a branch-only creation only when another lane exists, so in a repository with one worktree and nothing unmerged, branch-only creations are unaffected. ARMED (after `arm`): every new branch needs one, in the hooks and in Git. OFF: `git config --local magos.guard off`, which switches off the host hooks of that repository; in an armed repository the Git backstop is unaffected.
 - **Opting out.** `git config --local magos.guard off` (one repository), `claude plugin disable magos` (the whole Claude Code plugin), or `MAGOS_GUARD=off` in the environment of the host process. All three switch off the host hooks only and leave the Git backstop in place: in an armed repository, run `disarm` in your own terminal to remove it.
 - **Requirements.** Python 3.9+ (the hook launcher looks for `python3`, `py -3`, `python` in that order on POSIX and in Git Bash, and for `py -3`, `python`, `python.bat`, `python.cmd` in that order under Windows cmd) and Git 2.36+ (the other MAGOS commands need Git 2.30+); `magos_guard.py doctor` checks both, and `magos_guard.py version` prints the running guard's version.
+- **Set subcommands.** `/GitPlan` registers and maintains its plans through four subcommands of the guard: `set-plan` (proves that the file lists of the lanes are pairwise disjoint, then registers), `set-show` (read-only), `set-update` (a lane's owner records progress) and `set-release` (closes the set). None of them is user-only: like `plan` and `release` they pass through the host hooks. Registering writes the claim of every lane (with `set=` and `lane=`), the claim of the integration branch `agent/<set>/integration` (it holds no files) and the plan record (`<git-common-dir>/magos/sets/<set>.json`); exit codes 19 to 24 belong to these subcommands (stale, exists, unknown, out of lane, written by a newer version, invalid plan). While a set exists, a plain `plan --amend` or `release` refuses its claims: a set is changed only through `/GitPlan`.
 - **Only you** run `override`, `arm`, `disarm` and `install`, from a real terminal, and only you write `magos.*` git configuration (for example `magos.guard`); the hooks deny an agent that tries, and the hook launcher runs nothing but the hook. A command started in a new console window passes the console check, so neither that check nor an override is access control.
-- **After every upgrade.** Restart the running Claude Code sessions. Re-run `install` for each host `doctor` lists (`doctor` prints the exact command; for a copy installed with `install --home <dir>`, run `doctor --home <dir>`), and replace the entry merged into the host's configuration when the printed one differs (trust it again in Codex's `/hooks`; approve it again in Hermes). In an armed repository, run `doctor` and, when it prints an `arm` command, re-run that command in your own terminal.
+- **After every upgrade.** Restart the running Claude Code sessions. Re-run `install` for each host `doctor` lists (`doctor` prints the exact command; for a copy installed with `install --home <dir>`, run `doctor --home <dir>`), and replace the entry merged into the host's configuration when the printed one differs (trust it again in Codex's `/hooks`; approve it again in Hermes). In an armed repository, run `doctor` and, when it prints an `arm` command, re-run that command in your own terminal. From 1.0.4 on, `/GitPlan` needs the guard's `set-*` subcommands, which an older guard copy lacks: run `doctor`, then the `install --host <host>` commands it prints, to refresh the copy; otherwise `/GitPlan` checks the version first and stops.
 - **Limits.** The hooks read command text, and they let a call through when Python or the guard script is missing (Claude Code's `EnterWorktree` hook blocks the call instead); the Git backstop does not see a branch rename or copy (`git branch -m/-c`), which the hooks deny in every option spelling. `references/lane-split.md` section 12 lists every limit.
 
 ---
 
 ## Install
 
-The repository is laid out as follows (only the main files; it also holds `tests/`, `.github/`, `.quality/`, and the documentation, license and configuration files at the root). A Claude Code clone install uses the whole directory; the sync script copies only `SKILL.md`, `references/` and the seven command skills from `skills/` to Codex and Hermes. The sections below give each host's install:
+The repository is laid out as follows (only the main files; it also holds `tests/`, `.github/`, `.quality/`, and the documentation, license and configuration files at the root). A Claude Code clone install uses the whole directory; the sync script copies only `SKILL.md`, `references/` and the eight command skills from `skills/` to Codex and Hermes. The sections below give each host's install:
 
 ```text
 multi-agent-git-orchestrator/
@@ -847,7 +1032,7 @@ multi-agent-git-orchestrator/
     └── installation.md   # install, pin, upgrade and roll back per host; the lane guard
 ```
 
-The root skill triggers on its own through semantic matching. The seven commands are optional explicit entry points. Besides multi-agent coordination and symptoms such as agents overwriting each other or branch sprawl, it also triggers when you choose, audit, or change the branch strategy (分支策略, ブランチ戦略) of a specific repository, above all one that agents, worktrees, or several developers share. A pure concept question such as "gitflow vs trunk-based" does not trigger it. It only advises: execution still goes through the matching `/Git...` command with its gates, and **Strategy Changes** in `references/branch-strategy.md` says which command does what. No command renames a branch, so a rename stays a manual step after dependents are coordinated. Note that with the sync-script install Hermes shows only about the first 57 characters of a skill description in its index, so there load the skill by name (or use `/git-recommend`) for branch-strategy advice; the Hermes plugin install passes its own index line, which names branch strategy.
+The root skill triggers on its own through semantic matching. The eight commands are optional explicit entry points. Besides multi-agent coordination and symptoms such as agents overwriting each other or branch sprawl, it also triggers when you choose, audit, or change the branch strategy (分支策略, ブランチ戦略) of a specific repository, above all one that agents, worktrees, or several developers share. A pure concept question such as "gitflow vs trunk-based" does not trigger it. It only advises: execution still goes through the matching `/Git...` command with its gates, and **Strategy Changes** in `references/branch-strategy.md` says which command does what. No command renames a branch, so a rename stays a manual step after dependents are coordinated. Note that with the sync-script install Hermes shows only about the first 57 characters of a skill description in its index, so there load the skill by name (or use `/git-recommend`) for branch-strategy advice; the Hermes plugin install passes its own index line, which names branch strategy.
 
 ### Install with the sync script (Codex and Hermes packages)
 
@@ -874,10 +1059,10 @@ After a new session the names line up across hosts:
 
 | Purpose | Claude Code | Codex | Hermes |
 |---|---|---|---|
-| The seven commands | `/magos:GitRecon` … `/magos:GitSweep` | `$magos:git-recon` … `$magos:git-sweep` | `/magos:git-recon` … `/magos:git-sweep` |
+| The eight commands | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |
 | The orchestrator (triggers when you describe a problem) | `magos:git-orchestrator` | `magos:git-orchestrator` | `magos:git-orchestrator` (Hermes lists it in the system prompt's `<available_skills>`; the model loads it from the description) |
 
-- Claude Code also lists the seven lowercase `/magos:git-recon` and so on. They are the cross-host adapters and do the same as `/magos:GitXxx`; use the latter.
+- Claude Code also lists the eight lowercase `/magos:git-recon` and so on. They are the cross-host adapters and do the same as `/magos:GitXxx`; use the latter.
 - Plugin hosts load only the skills under `skills/`, never the root `SKILL.md`, so the plugin carries an entry skill, `git-orchestrator`, that reads the root `SKILL.md`. A clone into `~/.claude/skills/magos` loads it too; only the Codex and Hermes packages installed by the sync script do not need it, and the sync script does not copy it.
 - The manifests pin a version, so Claude Code updates an installed plugin only when the version changes. A running session keeps the hooks of the version it started with, so restart every session after an update.
 - The Claude Code install also turns on the lane guard hooks; the Codex and Hermes installs do not (see Lane guard). Upgrade details per host, including the guard copy and rollback, are in `references/installation.md`; what changed in each version is in `CHANGELOG.md`.
@@ -890,12 +1075,12 @@ After a new session the names line up across hosts:
 Every release from 1.0.1 on is tagged `v<version>` (`CHANGELOG.md`); 1.0.0 has no tag, so do not install or pin it, and the tag `v1.0` is the skill release 3.4.0 from before the package became a plugin, not a plugin version, so do not pin it either. The commands above follow the default branch; to stay on one release:
 
 ```bash
-claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.3    # then: claude plugin install magos@magos
-git clone --branch v1.0.3 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character commit SHA of v1.0.3> --enable    # add --force when MAGOS is already installed
+claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.4    # then: claude plugin install magos@magos
+git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character commit SHA of v1.0.4> --enable    # add --force when MAGOS is already installed
 ```
 
-A pinned install receives no later fixes, guard security fixes included: follow `CHANGELOG.md` and move the pin. The commit SHA of a tag is the `refs/tags/v1.0.3^{}` line of `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.3 "refs/tags/v1.0.3^{}"` (the `refs/tags/v1.0.3` line when there is no `^{}` line). Hermes records a `--ref` install as pinned: `hermes plugins update magos` refuses it, and `hermes plugins install UlyssesLeoLee/MAGOS --force` without `--ref` reinstalls the pinned commit. Move the pin with `--ref <new SHA> --force --enable`; to follow the default branch again, run `hermes plugins remove magos` and then `hermes plugins install UlyssesLeoLee/MAGOS --enable`. `references/installation.md` has the details, including how to pin Codex and the sync-script installs.
+A pinned install receives no later fixes, guard security fixes included: follow `CHANGELOG.md` and move the pin. The commit SHA of a tag is the `refs/tags/v1.0.4^{}` line of `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.4 "refs/tags/v1.0.4^{}"` (the `refs/tags/v1.0.4` line when there is no `^{}` line). Hermes records a `--ref` install as pinned: `hermes plugins update magos` refuses it, and `hermes plugins install UlyssesLeoLee/MAGOS --force` without `--ref` reinstalls the pinned commit. Move the pin with `--ref <new SHA> --force --enable`; to follow the default branch again, run `hermes plugins remove magos` and then `hermes plugins install UlyssesLeoLee/MAGOS --enable`. `references/installation.md` has the details, including how to pin Codex and the sync-script installs.
 
 ### Claude Code (clone into the skills folder)
 
@@ -911,13 +1096,13 @@ git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
 
 The repository root carries `.claude-plugin/plugin.json`, so Claude Code loads the folder as the plugin `magos@skills-dir` in every session, with no `/plugin install` step. Start a new session and you get:
 
-- the seven commands `/magos:GitRecon`, `/magos:GitAnalyze`, `/magos:GitRecommend`, `/magos:GitIntegrate`, `/magos:GitCleanup`, `/magos:GitConverge`, `/magos:GitSweep` (type `/magos:` to complete);
+- the eight commands `/magos:GitRecon`, `/magos:GitAnalyze`, `/magos:GitRecommend`, `/magos:GitIntegrate`, `/magos:GitCleanup`, `/magos:GitConverge`, `/magos:GitSweep`, `/magos:GitPlan` (type `/magos:` to complete);
 - the orchestrator entry `magos:git-orchestrator`, which triggers on its own;
-- the seven cross-host adapters from `skills/`, listed as `/magos:git-recon` and so on. They do the same as the commands above; in Claude Code use `/magos:GitXxx`.
+- the eight cross-host adapters from `skills/`, listed as `/magos:git-recon` and so on. They do the same as the commands above; in Claude Code use `/magos:GitXxx`.
 
 To update, run `git pull` in that folder (a clone pinned to a tag runs `git fetch --tags` and `git checkout v<new version>` instead), then restart every running Claude Code session; commands, rules and the lane guard update together. `claude plugin list` should show `magos@skills-dir` as loaded.
 
-If you copied `~/.claude/commands/Git*.md` the old way, delete those seven files, or you keep a second, older set of `/GitXxx` commands.
+If you copied `~/.claude/commands/Git*.md` the old way, delete those eight files, or you keep a second, older set of `/GitXxx` commands.
 
 ### Claude Code (copied commands, older way)
 
@@ -950,6 +1135,7 @@ You can also call them explicitly:
 /GitCleanup
 /GitConverge <branch>
 /GitSweep <branch>
+/GitPlan <set> --into <branch>
 ```
 
 ### Codex
@@ -979,7 +1165,7 @@ cp -R SKILL.md references skills "$HOME/.agents/skills/MAGOS/"
 cd "$HOME/.agents/skills/MAGOS" && rm -r skills/git-orchestrator
 ```
 
-Restart Codex, press `$` to pick a command skill, or call `$git-recon`, `$git-analyze`, `$git-recommend`, `$git-integrate`, `$git-cleanup`, `$git-converge`, `$git-sweep` directly. `/skills` opens the skill browser. Arguments go after the skill name, e.g. `$git-analyze agent/auth --remote`; `--help` prints full usage.
+Restart Codex, press `$` to pick a command skill, or call `$git-recon`, `$git-analyze`, `$git-recommend`, `$git-integrate`, `$git-cleanup`, `$git-converge`, `$git-sweep`, `$git-plan` directly. `/skills` opens the skill browser. Arguments go after the skill name, e.g. `$git-analyze agent/auth --remote`; `--help` prints full usage.
 
 > Codex's `/` menu only contains built-in commands, so custom `/git-*` slash commands cannot be registered. The skill selector (`$` / `/skills`) is the entry point on Codex.
 
@@ -1011,7 +1197,7 @@ cp -R SKILL.md references skills "${HERMES_HOME:-$HOME/.hermes}/skills/multi-age
 cd "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator" && rm -r skills/git-orchestrator
 ```
 
-Restart Hermes, then `hermes skills list`, then `/git-recon`, `/git-analyze`, `/git-recommend`, `/git-integrate`, `/git-cleanup`, `/git-converge`, `/git-sweep`. Hermes has no per-skill auto-invoke switch, so the adapter layer specifies that `/git-integrate`, `/git-cleanup`, `/git-converge`, and `/git-sweep` never write to the repository unless you invoke them explicitly.
+Restart Hermes, then `hermes skills list`, then `/git-recon`, `/git-analyze`, `/git-recommend`, `/git-integrate`, `/git-cleanup`, `/git-converge`, `/git-sweep`, `/git-plan`. Hermes has no per-skill auto-invoke switch, so the adapter layer specifies that `/git-integrate`, `/git-cleanup`, `/git-converge`, `/git-sweep`, and `/git-plan` never write to the repository unless you invoke them explicitly.
 
 ### Hosts without custom slash commands
 
@@ -1029,12 +1215,12 @@ GitRecommend
 
 | Question | Answer |
 |---|---|
-| Which commands do I get? | The seven command skills under `skills/`: `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, plus the entry skill `git-orchestrator`. Some tools add the plugin name as a prefix; Codex shows `magos:git-recon`. |
-| What about the root `SKILL.md` (the shared rules)? | It is not a plugin skill, because the specification only looks inside `skills/`. That is why the plugin has the entry skill `git-orchestrator`: it carries the same description (so it triggers on its own) and reads the root `SKILL.md`; the seven commands read it and `references/` too. Verified in Claude Code, Codex, and Hermes: the plugin installs and enables, with the skill names in the table above; running each command end to end in each host has not been tested one by one. |
+| Which commands do I get? | The eight command skills under `skills/`: `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`, plus the entry skill `git-orchestrator`. Some tools add the plugin name as a prefix; Codex shows `magos:git-recon`. |
+| What about the root `SKILL.md` (the shared rules)? | It is not a plugin skill, because the specification only looks inside `skills/`. That is why the plugin has the entry skill `git-orchestrator`: it carries the same description (so it triggers on its own) and reads the root `SKILL.md`; the eight commands read it and `references/` too. Verified in Claude Code, Codex, and Hermes: the plugin installs and enables, with the skill names in the table above; running each command end to end in each host has not been tested one by one. |
 | Does Claude Code use it? | No. Claude Code reads `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`; install it from the marketplace as described above. |
-| Which way for Hermes? | Either. `hermes plugins install UlyssesLeoLee/MAGOS --enable` reads the Hermes native manifest `plugin.yaml` (not this `plugin.json`), names the commands `/magos:git-recon` and so on, and passes the `[Skill directory: …]` path hint. Every plugin skill is listed in the system prompt's `<available_skills>` with the line from `INDEX_DESCRIPTIONS` in `__init__.py` (Hermes does not read a plugin skill's SKILL.md description, so without this line the model would see only the bare name): the orchestrator line names the situations that should trigger it, and the lines of the commands that write to a repository tell the model to leave them to the user. The four commands that modify the repository act only on an explicit `/magos:git-*`, `/git-*`, `$magos:git-*`, or `$git-*` invocation typed by the user (in Claude Code, the `/magos:Git*` command of the same name is one as well). |
+| Which way for Hermes? | Either. `hermes plugins install UlyssesLeoLee/MAGOS --enable` reads the Hermes native manifest `plugin.yaml` (not this `plugin.json`), names the commands `/magos:git-recon` and so on, and passes the `[Skill directory: …]` path hint. Every plugin skill is listed in the system prompt's `<available_skills>` with the line from `INDEX_DESCRIPTIONS` in `__init__.py` (Hermes does not read a plugin skill's SKILL.md description, so without this line the model would see only the bare name): the orchestrator line names the situations that should trigger it, and the lines of the commands that write to a repository tell the model to leave them to the user. The five commands that modify the repository act only on an explicit `/magos:git-*`, `/git-*`, `$magos:git-*`, or `$git-*` invocation typed by the user (in Claude Code, the `/magos:Git*` command of the same name is one as well). |
 
-The repository root carries `.claude-plugin/` (the Claude Code `plugin.json` and the `marketplace.json` that Claude Code and Codex share) and the Hermes `plugin.yaml` and `__init__.py`, and deliberately no `.codex-plugin/` or `.cursor-plugin/`. Codex treats `.claude-plugin/`, `.codex-plugin/` and `.cursor-plugin/` alike as a plugin root and prefixes the skill names; the repository carries `.claude-plugin/`, so **a `git clone` straight into a Codex skills directory gives `$magos:git-recon` instead of `$git-recon`**. Install Codex and Hermes with the sync script: it copies `SKILL.md`, `references/*.md`, and the seven command skills (each one's `SKILL.md` and `agents/openai.yaml`), never `.claude-plugin/` or the entry skill `git-orchestrator`, so the names stay `$git-recon` and `/git-recon`. A root `plugin.json` alone does not trigger the prefix.
+The repository root carries `.claude-plugin/` (the Claude Code `plugin.json` and the `marketplace.json` that Claude Code and Codex share) and the Hermes `plugin.yaml` and `__init__.py`, and deliberately no `.codex-plugin/` or `.cursor-plugin/`. Codex treats `.claude-plugin/`, `.codex-plugin/` and `.cursor-plugin/` alike as a plugin root and prefixes the skill names; the repository carries `.claude-plugin/`, so **a `git clone` straight into a Codex skills directory gives `$magos:git-recon` instead of `$git-recon`**. Install Codex and Hermes with the sync script: it copies `SKILL.md`, `references/*.md`, and the eight command skills (each one's `SKILL.md` and `agents/openai.yaml`), never `.claude-plugin/` or the entry skill `git-orchestrator`, so the names stay `$git-recon` and `/git-recon`. A root `plugin.json` alone does not trigger the prefix.
 
 One known deviation: section 8 of the specification asks for files meant for a single tool to live in a reverse-domain folder (such as `com.example.client/`). `commands/` serves only Claude Code, and `plugin.yaml` and `__init__.py` only Hermes, but they sit at the top level. Plugin tools ignore them, so importing is unaffected; the install script and the tests address them at the top level.
 
@@ -1074,6 +1260,7 @@ CI is made of three workflows and the Dependabot configuration, all under `.gith
 | GitCleanup | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` | Preview cleanups; `--apply` required to delete |
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | Merge every local branch into one and keep only `main` and it; preview by default, `--apply` to run |
 | GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge`, then delete merged remote branches; preview by default (no network), `--apply` to run, `--push` (with `--apply`) to push `<branch>` once |
+| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` | Investigate first and divide a task into lanes that own different files, register the plan, then merge the lanes in dependency order; preview by default, `--apply` (or `--release`) to write |
 
 ```bash
 python -X utf8 tests/codex/contracts/run_contract_cases.py

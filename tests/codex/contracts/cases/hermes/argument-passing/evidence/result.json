@@ -39,6 +39,11 @@
       "file": "skills/git-sweep/SKILL.md",
       "passed": true,
       "missing": []
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
+      "passed": true,
+      "missing": []
     }
   ]
 }

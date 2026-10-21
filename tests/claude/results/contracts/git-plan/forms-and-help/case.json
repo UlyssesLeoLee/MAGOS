@@ -1,0 +1,171 @@
+{
+  "id": "git-plan/forms-and-help",
+  "skill": "git-plan",
+  "feature": "The nine forms of /GitPlan are chosen by one selecting option; help stops before any inspection and a wrong combination executes nothing",
+  "invocations": {
+    "claude": "/GitPlan feat-x --into develop",
+    "codex": "$git-plan feat-x --into develop",
+    "hermes": "/git-plan feat-x --into develop"
+  },
+  "test_object": {
+    "arguments": [
+      "<set>",
+      "--into <branch>"
+    ],
+    "also": [
+      "--apply",
+      "--create",
+      "--status",
+      "--amend --expect-revision <n>",
+      "--converge [--include-active]",
+      "--converge --apply [--land] [--expect-revision <n>]",
+      "--release",
+      "--help",
+      "--lang <language>",
+      "two selecting options together",
+      "an option the form does not list",
+      "set name outside [a-z0-9][a-z0-9-]{0,23}"
+    ]
+  },
+  "expected": [
+    "The usage line and the argument hint list every option, and the nine forms are chosen by exactly one selecting option: --into, --status, --amend, --converge or --release.",
+    "The set name is [a-z0-9][a-z0-9-]{0,23}, matched case-sensitively and never a Windows device name; --into names a local branch that is not main; --amend needs --expect-revision.",
+    "--help (and --lang) is handled first: the command shows its inline help and stops before any tool call, file read, skill load or repository inspection; a missing set name is asked for, and an unknown option, two selecting options or an option the form does not list is a usage error that executes nothing.",
+    "Without --apply (and without --release) the command only previews: nothing is registered, created or merged, nothing is fetched, and the only write is a scratch spec file outside every worktree.",
+    "The hosts spell the same forms (/GitPlan in Claude Code, /git-plan in Hermes, $git-plan in Codex) and the three READMEs show the same examples."
+  ],
+  "checks": [
+    {
+      "file": "commands/GitPlan.md",
+      "contains": [
+        "argument-hint: \"<set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]\"",
+        "Handle `--help` first, even if other arguments are present.",
+        "Answer solely from the inline help below, then stop before any tool call, file read, skill load, or repository inspection.",
+        "If the set name is missing, show this help and ask for it before proceeding.",
+        "For an unknown option, or an option the form does not list, explain the error, show this help, and stop.",
+        "Usage: `/GitPlan <set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]`",
+        "Forms (the selecting option `--into`, `--status`, `--amend`, `--converge` or `--release` chooses the form; two selecting options together, or an option the form does not list, is a usage error; `--lang <language>` and `--help` go with every form):",
+        "- `/GitPlan <set> --into <branch>`: preview the plan: investigate Git and the code, divide the task into lanes with exclusive file ownership, prove it and print the checklist (read-only).",
+        "- `/GitPlan <set> --into <branch> --apply`: register the plan the preview showed.",
+        "- `/GitPlan <set> --into <branch> --apply --create`: register it and also create the lane branches and worktrees.",
+        "- `/GitPlan <set> --status`: the checklist with the state of every lane and what remains (read-only).",
+        "- `/GitPlan <set> --amend --expect-revision <n>`: preview the re-plan of a registered set (read-only).",
+        "- `/GitPlan <set> --amend --expect-revision <n> --apply [--create]`: register the amended plan.",
+        "- `/GitPlan <set> --converge [--include-active]`: preview the convergence (read-only).",
+        "- `/GitPlan <set> --converge --apply [--include-active] [--land] [--expect-revision <n>]`: merge the lanes into the integration branch; `--land` also fast-forwards `<branch>`.",
+        "- `/GitPlan <set> --release`: retire the set after its lanes are integrated.",
+        "- `<set>`: Required (except with `--help`). Name of the plan: `[a-z0-9][a-z0-9-]{0,23}`, matched case-sensitively, and not a Windows device name (`con`, `nul`, `com1`, ...). It names the set record and the claims of its lanes.",
+        "- `--into <branch>`: Required to plan. Local branch the plan is made against and that `--land` later fast-forwards. Matched exactly (case-sensitive); it must not be `main`. The other forms read it from the set record.",
+        "- `--create`: With `--apply` of a plan or an amendment: also create the branches and worktrees of the registered lanes that do not exist yet. Without it the apply prints the `git worktree add` lines for you to run.",
+        "- `--status`: Read-only checklist: the sheet with the state of every lane and what remains.",
+        "- `--amend`: Re-plan a registered set. Needs `--expect-revision`.",
+        "- `--expect-revision <n>`: The record revision (a positive integer) the amendment, or with `--converge --apply` the previewed convergence, was made against; a record at another revision stops the command.",
+        "- `--include-active`: With `--converge`: treat a lane in state `active` that holds commits as ready at its current tip. In an apply this is your acceptance of those tips.",
+        "- `--release`: Retire the set once its lanes are integrated: remove its claims and its record. The lane branches, their worktrees and the integration branch are not touched.",
+        "- `--lang <language>`: Language of the reply, as a name or code (for example `English`, `ja`); Chinese when absent. Command names, options, branch names, paths, SHAs, and status codes stay untranslated.",
+        "- `--apply`: With `--into`: register the plan the preview showed (the lane claims, the claim of the integration branch and the set record, written only through `magos_guard.py`). With `--amend`: register the amended plan. With `--converge`: merge the lanes into the integration branch. Without it, only a preview is shown.",
+        "- `--land`: With `--converge --apply`: after the merges and the checks, fast-forward `<branch>` to the integration branch with `git merge --ff-only`, only when `<branch>` still sits where the integration branch was cut from; otherwise it stops and says to rerun. It is refused, before any merge, while a lane is not ready or integrated (run without `--land` first).",
+        "- `--help`: Show this help and stop without inspecting or changing the repository.",
+        "Examples: `/GitPlan feat-x --into develop`, `/GitPlan feat-x --into develop --apply --create`, `/GitPlan feat-x --status`, `/GitPlan feat-x --converge --apply --land`, `/GitPlan --help`."
+      ]
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
+      "contains": [
+        "- Hermes: `/git-plan <set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]`",
+        "- Codex: `$git-plan <set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]`",
+        "Forms (the selecting option `--into`, `--status`, `--amend`, `--converge` or `--release` chooses the form; two selecting options together, or an option the form does not list, is a usage error; `--lang <language>` and `--help` go with every form; written for Hermes, Codex uses `$git-plan` in place of `/git-plan`):",
+        "If `--help` is present, even with other arguments, answer from the inline Usage section above and stop before any tool call, file read, or repository inspection.",
+        "If the set name is missing, show this help and ask for it; for an unknown option, or an option the form does not list, explain the error and show this help. Do not inspect or change the repository in these error cases.",
+        "- `--help`: Show this inline usage and argument description, then stop without inspecting or changing the repository.",
+        "Examples: `/git-plan feat-x --into develop`, `$git-plan feat-x --into develop --apply --create`, `$git-plan feat-x --status`, `$git-plan feat-x --converge --apply --land`, `$git-plan --help`.",
+        "- `/git-plan <set> --into <branch>`: preview the plan: investigate Git and the code, divide the task into lanes with exclusive file ownership, prove it and print the checklist (read-only).",
+        "- `/git-plan <set> --into <branch> --apply`: register the plan the preview showed.",
+        "- `/git-plan <set> --into <branch> --apply --create`: register it and also create the lane branches and worktrees.",
+        "- `/git-plan <set> --status`: the checklist with the state of every lane and what remains (read-only).",
+        "- `/git-plan <set> --amend --expect-revision <n>`: preview the re-plan of a registered set (read-only).",
+        "- `/git-plan <set> --amend --expect-revision <n> --apply [--create]`: register the amended plan.",
+        "- `/git-plan <set> --converge [--include-active]`: preview the convergence (read-only).",
+        "- `/git-plan <set> --converge --apply [--include-active] [--land] [--expect-revision <n>]`: merge the lanes into the integration branch; `--land` also fast-forwards `<branch>`.",
+        "- `/git-plan <set> --release`: retire the set after its lanes are integrated.",
+        "- `<set>`: Required (except with `--help`). Name of the plan: `[a-z0-9][a-z0-9-]{0,23}`, matched case-sensitively, and not a Windows device name (`con`, `nul`, `com1`, ...). It names the set record and the claims of its lanes.",
+        "- `--into <branch>`: Required to plan. Local branch the plan is made against and that `--land` later fast-forwards. Matched exactly (case-sensitive); it must not be `main`. The other forms read it from the set record.",
+        "- `--create`: With `--apply` of a plan or an amendment: also create the branches and worktrees of the registered lanes that do not exist yet. Without it the apply prints the `git worktree add` lines for you to run.",
+        "- `--status`: Read-only checklist: the sheet with the state of every lane and what remains.",
+        "- `--amend`: Re-plan a registered set. Needs `--expect-revision`.",
+        "- `--expect-revision <n>`: The record revision (a positive integer) the amendment, or with `--converge --apply` the previewed convergence, was made against; a record at another revision stops the command.",
+        "- `--include-active`: With `--converge`: treat a lane in state `active` that holds commits as ready at its current tip. In an apply this is your acceptance of those tips.",
+        "- `--release`: Retire the set once its lanes are integrated: remove its claims and its record. The lane branches, their worktrees and the integration branch are not touched.",
+        "- `--lang <language>`: Language of the reply, as a name or code (for example `English`, `ja`); Chinese when absent. Command names, options, branch names, paths, SHAs, and status codes stay untranslated."
+      ]
+    },
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "/GitPlan <set> --into <branch>\n/GitPlan <set> --into <branch> --apply\n/GitPlan <set> --into <branch> --apply --create\n/GitPlan <set> --status\n",
+        "/GitPlan <set> --amend --expect-revision <n>\n/GitPlan <set> --amend --expect-revision <n> --apply [--create]\n/GitPlan <set> --converge [--include-active]\n",
+        "/GitPlan <set> --converge --apply [--include-active] [--land] [--expect-revision <n>]\n/GitPlan <set> --release\n/GitPlan <set> --into <branch> --lang English\n/GitPlan --help\n",
+        "The selecting option (`--into`, `--status`, `--amend`, `--converge`, `--release`) chooses the form. Two selecting options together, or an option the form does not list in **Invocation** (`--lang` and `--help` are handled first, as in Argument and Help Behavior), is a usage error: explain it, show the usage, and execute nothing.",
+        "Examples: `/GitPlan feat-x --into develop`, `/GitPlan feat-x --into develop --apply --create`, `/GitPlan feat-x --status`, `/GitPlan feat-x --converge --apply --land`, `/GitPlan --help`.",
+        "| `<set>` | Yes | Name of the plan: `[a-z0-9][a-z0-9-]{0,23}`, matched case-sensitively, and not a Windows device name (`con`, `nul`, `com1`, ...). It names the set record and the claims of its lanes. |",
+        "| `--into <branch>` | Yes, to plan | Local branch the plan is made against and that `--land` later fast-forwards. Same rules as the section 6 `<branch>` (matched exactly in `refs/heads/`, not `main`). The other forms read it from the set record. |",
+        "| `--apply` | No | With `--into`: register the plan the preview showed. With `--amend`: register the amended plan. With `--converge`: merge the lanes into the integration branch. Without it, only show a preview. |",
+        "| `--create` | No | With `--apply` of a plan or an amendment: also create the branches and worktrees of the registered lanes that do not exist yet. |",
+        "| `--status` | No | Read-only checklist: the sheet with the state of every lane and what remains. |",
+        "| `--expect-revision <n>` | With `--amend` | The record revision (a positive integer) the amendment, or with `--converge --apply` the previewed convergence, was made against; a record at another revision stops the command. |",
+        "| `--include-active` | No | With `--converge`: treat a lane in state `active` that holds commits as ready at its current tip. In an apply this is the user's acceptance of those tips. |",
+        "| `--land` | No | With `--converge --apply`: after the merges and the checks, fast-forward `<branch>` to the integration branch. |",
+        "| `--release` | No | Retire the set once its lanes are integrated: remove its claims and its record. |",
+        "| `--expect-revision <n>` | With `--amend` |",
+        "Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other seven)."
+      ]
+    },
+    {
+      "file": "SKILL.md",
+      "contains": [
+        "| `/GitPlan <set> --into <branch> [--apply] [--create]`; `--status`; `--amend --expect-revision <n>`; `--converge [--apply] [--land]`; `--release` |",
+        "| `/GitPlan` | `/GitPlan` | `/git-plan` | `$git-plan` |",
+        "- `/GitPlan` without `--apply` (and without `--release`) MUST NOT register, create, merge, switch, fetch, or contact the network: it reads the repository, runs only the guard's read-only calls (`version`, `list`, `set-show`, `set-plan --dry-run`), and writes only a scratch spec file outside every worktree."
+      ]
+    },
+    {
+      "file": "README.md",
+      "contains": [
+        "/GitPlan feat-x --into develop                              只看计划",
+        "/GitPlan feat-x --into develop --apply --create             登记，并创建所有车道的分支和工作区",
+        "/GitPlan feat-x --status                                    看进度和还剩什么",
+        "/GitPlan feat-x --converge --apply --land --lang English    合并、落到 develop，用英文回复",
+        "/GitPlan --help                                             只看说明",
+        "| `--expect-revision <n>` | 你读到的计划记录的 revision（正整数）：配合 `--amend` 必填，配合 `--converge --apply` 可选；记录已经是别的 revision 就停下 |",
+        "同时写两个，或写了这一形式不认的选项，都算用法错误：它说明原因、显示用法，什么也不执行。",
+        "| `--create` | 配合计划或修改的 `--apply`：同时创建登记过、但还不存在的车道分支和工作区。不写就打印 `git worktree add` 命令 |"
+      ]
+    },
+    {
+      "file": "README.en.md",
+      "contains": [
+        "/GitPlan feat-x --into develop                              just the plan",
+        "/GitPlan feat-x --into develop --apply --create             register, and create the branches and worktrees of every lane",
+        "/GitPlan feat-x --status                                    progress, and what remains",
+        "/GitPlan feat-x --converge --apply --land --lang English    merge, land on develop, reply in English",
+        "/GitPlan --help                                             instructions only",
+        "| `--expect-revision <n>` | The revision of the plan record that you read (a positive integer): required with `--amend`, optional with `--converge --apply`; a record at another revision stops the command |",
+        "Two of them together, or an option the form does not take, is a usage error: it explains, shows the usage and runs nothing.",
+        "| `--create` | With the `--apply` of a plan or an amendment: also create the branches and worktrees of the registered lanes that do not exist yet. Without it, the `git worktree add` commands are printed |"
+      ]
+    },
+    {
+      "file": "README.ja.md",
+      "contains": [
+        "/GitPlan feat-x --into develop                              計画を見るだけ",
+        "/GitPlan feat-x --into develop --apply --create             登録し、すべてのレーンのブランチとワークツリーを作成",
+        "/GitPlan feat-x --status                                    進み具合と残りの作業を見る",
+        "/GitPlan feat-x --converge --apply --land --lang English    マージして develop へ反映し、英語で返信",
+        "/GitPlan --help                                             説明だけを見る",
+        "| `--expect-revision <n>` | あなたが読んだ計画の記録の revision（正の整数）：`--amend` では必須、`--converge --apply` では任意です。記録がすでに別の revision なら停止します |",
+        "2 つ同時に書いたとき、またはその形式が認めないオプションを書いたときは、使い方の誤りとして扱われます：理由を説明し、使い方を表示して、何も実行しません。",
+        "| `--create` | 計画または変更の `--apply` と一緒：登録済みでまだ存在しないレーンのブランチとワークツリーも作成します。付けなければ `git worktree add` コマンドを表示します |"
+      ]
+    }
+  ]
+}

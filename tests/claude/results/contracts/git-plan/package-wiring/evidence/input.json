@@ -1,0 +1,18 @@
+{
+  "files": [
+    "scripts/sync_hosts.py",
+    "__init__.py",
+    "commands/GitPlan.md",
+    "skills/git-plan/SKILL.md",
+    "skills/git-plan/agents/openai.yaml",
+    "SKILL.md",
+    "references/commands.md",
+    "references/installation.md",
+    "references/pressure-tests.md",
+    "README.md",
+    "README.en.md",
+    "README.ja.md",
+    "CHANGELOG.md",
+    "RELEASE_NOTES_1.0.4.md"
+  ]
+}

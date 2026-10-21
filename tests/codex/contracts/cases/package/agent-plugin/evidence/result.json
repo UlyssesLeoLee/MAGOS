@@ -21,7 +21,7 @@
       "missing": []
     },
     {
-      "file": "plugin: skills/ discovery (§7.1) finds exactly the seven command adapters and git-orchestrator",
+      "file": "plugin: skills/ discovery (§7.1) finds exactly the eight command adapters and git-orchestrator",
       "passed": true,
       "missing": []
     },
@@ -36,7 +36,7 @@
       "missing": []
     },
     {
-      "file": "plugin: only the write adapters (git-integrate, git-cleanup, git-converge, git-sweep) set disable-model-invocation: true (Claude Code host key)",
+      "file": "plugin: only the write adapters (git-integrate, git-cleanup, git-converge, git-sweep, git-plan) set disable-model-invocation: true (Claude Code host key)",
       "passed": true,
       "missing": []
     },

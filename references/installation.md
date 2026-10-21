@@ -6,30 +6,30 @@
 
 | 平台 | 安装 | 读取的清单 | 命令名 |
 | --- | --- | --- | --- |
-| Claude Code | `/plugin marketplace add UlyssesLeoLee/MAGOS`，然后 `/plugin install magos@magos` | `.claude-plugin/marketplace.json` → `.claude-plugin/plugin.json` | `/magos:GitRecon` … `/magos:GitSweep` |
-| Codex | `codex plugin marketplace add UlyssesLeoLee/MAGOS`，然后 `codex plugin add magos@magos` | `.claude-plugin/marketplace.json`（Codex 也读这个路径）→ 根目录 `plugin.json`（Agent Plugins） | `$magos:git-recon` … `$magos:git-sweep` |
-| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `plugin.yaml` + `__init__.py`（原生插件，优先于 `plugin.json`） | `/magos:git-recon` … `/magos:git-sweep` |
+| Claude Code | `/plugin marketplace add UlyssesLeoLee/MAGOS`，然后 `/plugin install magos@magos` | `.claude-plugin/marketplace.json` → `.claude-plugin/plugin.json` | `/magos:GitRecon` … `/magos:GitPlan` |
+| Codex | `codex plugin marketplace add UlyssesLeoLee/MAGOS`，然后 `codex plugin add magos@magos` | `.claude-plugin/marketplace.json`（Codex 也读这个路径）→ 根目录 `plugin.json`（Agent Plugins） | `$magos:git-recon` … `$magos:git-plan` |
+| Hermes | `hermes plugins install UlyssesLeoLee/MAGOS --enable` | `plugin.yaml` + `__init__.py`（原生插件，优先于 `plugin.json`） | `/magos:git-recon` … `/magos:git-plan` |
 
 - 市场清单只列一个插件 `magos`，来源是仓库根目录 `./`，Claude Code 与 Codex 都接受这个写法。
 - 插件宿主只加载 `skills/<name>/SKILL.md`，不加载根目录 `SKILL.md`，所以插件里带有入口 Skill `skills/git-orchestrator`（描述与根 Skill 相同，内容是读取 `../../SKILL.md`）。同步脚本的 `PLUGIN_ONLY_SKILLS` 会把它排除在 Codex / Hermes 包之外，因为这两种安装已经有根 Skill。
 - Hermes 的可移植 Agent Plugin 会把命令命名为 `/agent-plugin-magos-<hash>:git-recon`；`plugin.yaml` 与 `__init__.py`（只调用 `ctx.register_skill()`）让 Hermes 改按原生插件加载，命令名才是 `/magos:git-*`。Hermes 会把插件里每个 Skill 列进系统提示的 `<available_skills>`；描述取自 `__init__.py` 的 `INDEX_DESCRIPTIONS`（SKILL.md 里的描述会被 Hermes 截成 60 个字符，不传的话模型只看到名字）。总规则那行写触发场景，会写仓库的命令那几行写“不要自己加载”。
-- Claude Code 里，四个会写仓库的适配层（`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`）设置了 `disable-model-invocation: true`：只有用户输入的斜杠命令能运行它们，模型不能自己调用。
+- Claude Code 里，五个会写仓库的适配层（`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`、`git-plan`）设置了 `disable-model-invocation: true`：只有用户输入的斜杠命令能运行它们，模型不能自己调用。
 - Hermes 官方插件目录（`hermes plugins install magos`）需要仓库所有者向 NousResearch/hermes-agent 提交 `plugin-catalog/magos.yaml`，并固定一个 40 位 commit SHA。
 - 车道守卫：Claude Code 的插件安装同时启用守卫钩子（`hooks/hooks.json`，作用于在 Claude Code 里打开的每个仓库）；Codex 与 Hermes 的插件安装不启用钩子，需要另外运行 `install --host codex|hermes` 并自己合并生成的配置（见“车道守卫”）。
 - 以上安装流程以本机的仓库副本作为插件来源实测过：Claude Code 2.1.296、Codex CLI 0.162.1、Hermes（2026.9.24）都能安装并启用，命令名与上表一致。从 GitHub 来源安装或更新时，Hermes 还会先扫描插件目录（见“升级”）。
 
 ## 固定版本
 
-每个版本的发布提交带有标签 `v<版本号>`（例如 `v1.0.3`），各版本的变化、安全说明与升级步骤见仓库根目录的 `CHANGELOG.md`。上面的安装命令跟随默认分支；要停留在某个版本，用下面的写法安装：
+每个版本的发布提交带有标签 `v<版本号>`（例如 `v1.0.4`），各版本的变化、安全说明与升级步骤见仓库根目录的 `CHANGELOG.md`。上面的安装命令跟随默认分支；要停留在某个版本，用下面的写法安装：
 
-| 安装方式 | 固定到 `v1.0.3` |
+| 安装方式 | 固定到 `v1.0.4` |
 | --- | --- |
-| Claude Code 插件市场 | `claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.3`，然后 `claude plugin install magos@magos` |
-| Claude Code clone 到 Skill 目录 | `git clone --branch v1.0.3 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos` |
-| Hermes 插件 | `hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.3 的 40 位 commit SHA> --enable`；已经安装过 MAGOS 时加 `--force` |
-| Codex 与同步脚本 | 在 `git clone --branch v1.0.3 https://github.com/UlyssesLeoLee/MAGOS` 得到的目录里运行同步脚本与 `install --host codex` |
+| Claude Code 插件市场 | `claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.4`，然后 `claude plugin install magos@magos` |
+| Claude Code clone 到 Skill 目录 | `git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos` |
+| Hermes 插件 | `hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.4 的 40 位 commit SHA> --enable`；已经安装过 MAGOS 时加 `--force` |
+| Codex 与同步脚本 | 在 `git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS` 得到的目录里运行同步脚本与 `install --host codex` |
 
-- Hermes 只接受 40 位 commit SHA。`git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.3 "refs/tags/v1.0.3^{}"` 只列出这一个标签：有 `refs/tags/v1.0.3^{}` 一行时取那一行的 SHA（它是标签指向的提交），否则取 `refs/tags/v1.0.3` 一行的 SHA。其他版本把两处 `v1.0.3` 换成那个标签；不要用 `refs/tags/v1.0.3*` 这样的通配写法，它也会列出 `v1.0.30` 等其他标签。
+- Hermes 只接受 40 位 commit SHA。`git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.4 "refs/tags/v1.0.4^{}"` 只列出这一个标签：有 `refs/tags/v1.0.4^{}` 一行时取那一行的 SHA（它是标签指向的提交），否则取 `refs/tags/v1.0.4` 一行的 SHA。其他版本把两处 `v1.0.4` 换成那个标签；不要用 `refs/tags/v1.0.4*` 这样的通配写法，它也会列出 `v1.0.40` 等其他标签。
 - Hermes 把带 `--ref` 的安装记为固定（pinned）。对固定的安装，`hermes plugins update magos` 会拒绝并提示带 `--ref` 的重装命令；不带 `--ref` 的 `hermes plugins install UlyssesLeoLee/MAGOS --force --enable` 会重新安装原来固定的那个提交，而不是最新版本。
 - 移动固定点（包括回滚之后重新升级）：`hermes plugins install UlyssesLeoLee/MAGOS --ref <新标签的 40 位 commit SHA> --force --enable`，安装仍然是固定的。
 - 回到跟随默认分支：`hermes plugins remove magos`，然后 `hermes plugins install UlyssesLeoLee/MAGOS --enable`。两条命令之间插件目录不存在，指向 `<Hermes home>/plugins/magos/hooks/run-guard.cmd` 的 Hermes 钩子条目找不到启动器，`fail_closed: true` 会拒绝每一次 terminal 调用，所以两条命令要紧接着运行。
@@ -98,7 +98,7 @@ python -X utf8 scripts/sync_hosts.py --verify
 
 | 目标 | 安装根目录 | 同步文件 |
 | --- | --- | --- |
-| Claude | `~/.claude/commands` | 仓库 `commands/Git*.md`，共 7 个（旧方式；推荐改用下面的 Claude Code 插件安装，不需要同步） |
+| Claude | `~/.claude/commands` | 仓库 `commands/Git*.md`，共 8 个（旧方式；推荐改用下面的 Claude Code 插件安装，不需要同步） |
 | Codex | `~/.agents/skills/MAGOS`。如果已有旧位置 `$CODEX_HOME/skills/MAGOS`（默认 `~/.codex/skills/MAGOS`）且新位置不存在，则继续使用旧位置 | 宿主中立包：`SKILL.md`、`references/*.md` 全部、每个 `skills/git-*/SKILL.md` 与 `agents/openai.yaml` |
 | Hermes | `<Hermes home>/skills/multi-agent-git-orchestrator`。Hermes home 依次取 `HERMES_HOME`、Windows 的 `%LOCALAPPDATA%\hermes`、其他系统的 `~/.hermes`，有非默认的 `active_profile` 时取其 `profiles/<name>`；已有 `<Hermes home>/skills/MAGOS` 时沿用它 | 与 Codex 相同的宿主中立包 |
 
@@ -123,13 +123,13 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --home C:\temp\m
 - 适配层中的每个 `../../` 引用都能解析；
 - 根 `SKILL.md` 引用的 `references/` 文件都存在；
 - 适配层不经由 `commands/`；
-- 七个 `agents/openai.yaml` 都设置了 `allow_implicit_invocation: false`；
+- 八个 `agents/openai.yaml` 都设置了 `allow_implicit_invocation: false`；
 - 按 Codex 与 Hermes 的发现规则（复刻版，并非真实宿主），每个 Skill 只出现一次；对提交后会进入仓库的文件（已跟踪文件，加上未被忽略的未跟踪文件；相当于直接 git clone 到 Skill 目录）也做同样检查；
 - 每个 SKILL.md 的 frontmatter 都在严格 YAML 子集内（无 flow 写法、普通值不含 `: `、metadata 只有字符串），装了 PyYAML 时还会交叉核对；
 - 仓库里的宿主插件清单只有 `.claude-plugin/plugin.json` 与 `.claude-plugin/marketplace.json`（没有 `.codex-plugin/`、`.cursor-plugin/`）；Claude 清单的 `name`、`version` 与 `plugin.json` 一致、只含元数据字段；市场清单只列一个来源为 `./` 的插件 `magos`；`plugin.yaml` 的 `name`、`version` 与 `plugin.json` 一致，`__init__.py` 只注册 Skill；
 - 同步出去的 Codex 与 Hermes 包里没有任何宿主插件清单。
 
-源码契约用例 `package/agent-plugin` 检查 Agent Plugins 1.0.0 格式：`plugin.json` 符合封闭的清单 schema；版本号与 `SKILL.md`、`references/commands.md`、入口 Skill `skills/git-orchestrator/SKILL.md`（写有版本号时）和守卫的 `GUARD_VERSION` 一致；`skills/` 下恰好发现七个命令适配层与入口 Skill `git-orchestrator`，且都符合 Agent Skills 规则；只有四个会写仓库的适配层设置 `disable-model-invocation: true`；路径不越出插件根目录、没有链接。`python -X utf8 tests/codex/contracts/test_agent_plugin.py` 逐一植入各种缺陷（清单字段错误、版本号漂移、多余的链接、frontmatter 写法不合规等），确认每种都会被对应的检查发现；它还单独测试严格 frontmatter 读取器，并在 git 仓库里检查未暂存的新文件。
+源码契约用例 `package/agent-plugin` 检查 Agent Plugins 1.0.0 格式：`plugin.json` 符合封闭的清单 schema；版本号与 `SKILL.md`、`references/commands.md`、入口 Skill `skills/git-orchestrator/SKILL.md`（写有版本号时）和守卫的 `GUARD_VERSION` 一致；`skills/` 下恰好发现八个命令适配层与入口 Skill `git-orchestrator`，且都符合 Agent Skills 规则；只有五个会写仓库的适配层设置 `disable-model-invocation: true`；路径不越出插件根目录、没有链接。`python -X utf8 tests/codex/contracts/test_agent_plugin.py` 逐一植入各种缺陷（清单字段错误、版本号漂移、多余的链接、frontmatter 写法不合规等），确认每种都会被对应的检查发现；它还单独测试严格 frontmatter 读取器，并在 git 仓库里检查未暂存的新文件。
 
 ## 车道守卫（强约束钩子）
 

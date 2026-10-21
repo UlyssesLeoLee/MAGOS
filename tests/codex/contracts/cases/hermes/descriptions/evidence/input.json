@@ -6,7 +6,8 @@
     "git-integrate",
     "git-cleanup",
     "git-converge",
-    "git-sweep"
+    "git-sweep",
+    "git-plan"
   ],
   "max_description_chars": 77,
   "source": "Hermes acp_adapter/commands.py truncates command descriptions to 77 chars + '...'"

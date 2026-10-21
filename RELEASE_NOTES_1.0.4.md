@@ -1,0 +1,47 @@
+# MAGOS 1.0.4 — /GitPlan 版 / The /GitPlan release
+
+A feature release: the new command `/GitPlan`, which plans, before any sub-agent starts, how one task is divided into lanes that own different files and are merged back as one whole, and later converges them. It is backed by four new subcommands of the lane guard (`scripts/magos_guard.py`): `set-plan`, `set-show`, `set-update` and `set-release`. **Every install should upgrade and refresh its guard copy**, including the copies under `~/.magos/guard` that the Codex and Hermes hooks run: a guard of 1.0.3 has no set subcommand, and `/GitPlan` stops at its version check. Full detail and upgrade steps: [CHANGELOG.md, section 1.0.4](https://github.com/UlyssesLeoLee/MAGOS/blob/v1.0.4/CHANGELOG.md).
+
+## 版本概述
+
+1.0.4 新增第八个命令 `/GitPlan`：在子 Agent 开工之前，先调查 Git 与代码，把任务拆成文件互斥的若干 lane（子 Agent 的 worktree），给出一份简明清单（sheet）。这份清单既是你审阅的计划，也是任务完成后合并时的 TODO 参考：`--status` 与 `--converge` 会按记录重新打印它，勾上每个 lane 的进度，并列出“还剩什么”。车道守卫证明各 lane 的文件清单两两不相交（`set-plan`），并以乐观锁登记：没有人持锁，记录带着 `revision` 与计划所依据的目标分支提交（`base`），过期的计划只会被发现，不会被覆盖。登记同时为集成分支 `agent/<set>/integration` 登记一份不占用任何文件的 claim，使守卫允许用普通的 `git switch -c` 创建它。之后 `--converge --apply` 按依赖顺序把 `READY` 的 lane 合并进集成分支（每个 lane 只合并它登记的那个提交，遇到冲突就 `git merge --abort` 并停下，从不用 ours 或 theirs），运行仓库自己的检查；`--land` 再以一次 `--ff-only` 快进把它落到 `<branch>`；`--release` 收尾。默认只预览，只有 `--apply`（以及 `--release`）才写入，写入只经过守卫的 `set-*` 子命令；从不推送、从不强推、从不删除分支或工作区、从不动 `main`。守卫新增退出码 19 到 24（过期、已存在、不存在、越界、记录来自更新版本、规划无效）；计划存在期间，普通的 `plan --amend` 与 `release` 会拒绝它的登记。
+
+## Highlights
+
+- **A plan that is also the merge TODO.** The sheet (at most 4096 characters) has one line per lane (branch, owned paths, dependencies, acceptance), a merge line, the owner of every shared file and at most five risks; `--status` and `--converge` regenerate it from the record with the state of every lane and a **Remaining TODO** list.
+- **Exclusive file ownership, proved.** `set-plan` checks that the manifests of the lanes are pairwise disjoint (exact glob intersection), that `depends_on` forms a DAG, that every shared file lies inside exactly one lane, and that each lane is judged against the other claimants; it registers every lane claim, the integration claim and the record in one atomic write, or nothing.
+- **Optimistic lock.** The record carries a `revision` and a `base`; a stale plan (exit 19 `STALE`, or the finding `STALE_PLAN`) is detected and never overwritten, and `--amend` and `--converge --apply` take `--expect-revision <n>`.
+- **Convergence in dependency order.** `--converge --apply` merges each recorded lane head with `git merge --no-ff` into `agent/<set>/integration`, records each lane `integrated`, runs the repository's checks, and with `--land` fast-forwards `<branch>` once, only while it still sits where the integration branch was cut from.
+- **Remedies for everything.** Every failed gate, failing lane finding, guard exit code and stop of an apply is followed by the action that lifts it; the command never performs these actions itself.
+- **Read-only by default.** The preview fetches nothing, registers nothing and writes only a scratch spec file outside every worktree; `--apply` registers exactly the spec of the latest preview.
+
+## New
+
+- `/GitPlan <set> --into <branch>` with `--apply [--create]`, `--status`, `--amend --expect-revision <n> [--apply [--create]]`, `--converge [--include-active]`, `--converge --apply [--include-active] [--land] [--expect-revision <n>]` and `--release`; the adapters `commands/GitPlan.md` and `skills/git-plan/`; the contract `references/commands.md` section 8.
+- The guard subcommands `set-plan`, `set-show`, `set-update` and `set-release`, the set record `<git-common-dir>/magos/sets/<set>.json`, the integration claim of a set, the exit codes 19 `STALE`, 20 `SET_EXISTS`, 21 `SET_UNKNOWN`, 22 `OUT_OF_LANE`, 23 `SET_NEWER_FORMAT` and 24 `INVALID_SPEC`, and the `set` and `lane` (or `role`) of a claim in `list`.
+- `doctor` reports sets: `sets: <n>, unreadable: <n>, newer-format: <n>`, a lane claim that is missing or differs from the record, an `active` or `ready` lane whose branch vanished, a set whose target is gone, claims without a record, and an unreadable or newer-format record.
+- The lane findings `INTEGRATED`, `READY`, `BLOCKED`, `NOT_READY`, `WAITING`, `MISSING_BRANCH`, `DIRTY`, `IN_PROGRESS`, `NO_MERGE_BASE`, `OUT_OF_LANE`, `SHARED_CHANGE`, `MOVED`, `CLAIM_DRIFT`, `STALE_PLAN` and `PREDICTED_CONFLICT`, the converge readiness `READY` / `PARTIAL` / `BLOCKED` and `LAND_REFUSED`.
+- Documentation: `/GitPlan` in the three READMEs, the **GitPlan pressure tests (v1.0.4)** in `references/pressure-tests.md`, and the source-contract cases `git-plan/forms-and-help`, `git-plan/exclusive-lanes-and-optimistic-lock`, `git-plan/converge-and-hard-stops` and `git-plan/package-wiring`.
+
+## Changed
+
+- While the record of a set exists, a plain `plan --amend` of one of its lane claims is refused (exit 14, `lane_in_set`) and so is a plain `release` of any claim of the set (exit 16, `blocked_set`): a set is changed only through `/GitPlan`.
+- The open lane claims of a set make `/GitCleanup`, `/GitConverge` and `/GitSweep` report their branches as `BLOCKED_ACTIVE_OWNER` while the set is open; `--release` lifts it.
+- `GUARD_VERSION` is 1.0.4, and `/GitPlan` stops when the guard is older.
+- Every text that enumerates the commands says eight; the five write adapters (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`) set `disable-model-invocation: true` in Claude Code.
+
+## 升级 / Upgrade
+
+1. Upgrade the plugin on each host (`references/installation.md`) and **restart every running Claude Code session**. A Hermes install pinned with `--ref` must move its pin: `hermes plugins install UlyssesLeoLee/MAGOS --ref <40-char SHA of v1.0.4> --force --enable`.
+2. Run `doctor` from the new version, then the `install --host <host>` commands it prints in your own terminal; compare each printed snippet with your host config and replace the entry if it differs.
+3. Nothing else changes for scripts.
+
+Claim files of 1.0.0 to 1.0.3 are read unchanged; a claim of a set carries the extra keys `set=` and `lane=` (the integration claim `set=` and `role=integration`), which older guards ignore.
+
+## Known issues
+
+- Sets live in one clone: the set record and the claims of its lanes are in the git directory that registered them, and fetch and push do not share them.
+- Semantic coupling between files is not detected: the guard proves that the file lists are disjoint, not that the code of two lanes is independent, so files that import each other belong in one lane.
+- A guard of 1.0.3 cannot see the set record: it has no `set-*` subcommand, does not show sets in `list` or `doctor`, judges the marker entry of the integration claim as a lane manifest, and cannot refuse `release` or `plan --amend` of a claim of a set. Refresh the guard copy.
+- Every host receives the whole repository (including `tests/`, `.quality/`, `.github/`) because the marketplace source is the repo root; a slim runtime payload is not part of 1.0.4.
+- The lane guard's own limits, unchanged since 1.0.3, are listed in `references/lane-split.md`, section 12.

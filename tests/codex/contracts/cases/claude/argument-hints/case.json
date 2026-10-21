@@ -13,7 +13,8 @@
       "GitIntegrate",
       "GitCleanup",
       "GitConverge",
-      "GitSweep"
+      "GitSweep",
+      "GitPlan"
     ],
     "argument_hints": {
       "GitRecon": "[--remote] [--lang <language>] [--help]",
@@ -22,13 +23,14 @@
       "GitIntegrate": "<lane|branch> [--strategy auto|merge|squash|cherry-pick] [--lang <language>] [--help]",
       "GitCleanup": "[--apply] [--lang <language>] [--help]",
       "GitConverge": "<branch> [--apply] [--discard-ignored] [--lang <language>] [--help]",
-      "GitSweep": "<branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]"
+      "GitSweep": "<branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]",
+      "GitPlan": "<set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]"
     }
   },
   "expected": [
     "Each commands/Git*.md has a description and the exact argument-hint shown in the Claude Code / menu.",
     "Each command handles --help from its inline help before loading the skill.",
-    "GitIntegrate, GitCleanup, GitConverge, and GitSweep set disable-model-invocation: true so only the user can run them."
+    "GitIntegrate, GitCleanup, GitConverge, GitSweep and GitPlan set disable-model-invocation: true so only the user can run them."
   ],
   "checks": [
     {
@@ -125,6 +127,21 @@
         "Handle `--help` first",
         "## Inline help",
         "Usage: `/GitSweep",
+        "disable-model-invocation: true"
+      ],
+      "pattern": "^description: (.+)$",
+      "length": [
+        1,
+        120
+      ]
+    },
+    {
+      "file": "commands/GitPlan.md",
+      "contains": [
+        "argument-hint: \"<set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]\"",
+        "Handle `--help` first",
+        "## Inline help",
+        "Usage: `/GitPlan",
         "disable-model-invocation: true"
       ],
       "pattern": "^description: (.+)$",

@@ -33,7 +33,7 @@
 | 远端（remote） | 放在网上（比如 GitHub）的那份仓库 | 公司共享网盘上的备份 |
 | 预览 / 执行 | 先只看“打算怎么做”，满意了再真正去做 | 先看装修方案，点头之后才开工 |
 
-**这套命令有一个统一的约定：先看，只在你下令时才动手。** 会真正改动仓库的四个命令（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`、`/GitSweep`）必须由你明确下令才会动手：`/GitCleanup`、`/GitConverge`、`/GitSweep` 默认只预览，加 `--apply` 才执行；`/GitIntegrate` 没有预览模式，输入它就是下令集成，它先逐项过检查，全部通过才写入。只要遇到没把握的情况，它们会停下来告诉你原因，而不是硬做。
+**这套命令有一个统一的约定：先看，只在你下令时才动手。** 会真正改动仓库的五个命令（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`、`/GitSweep`、`/GitPlan`）必须由你明确下令才会动手：`/GitCleanup`、`/GitConverge`、`/GitSweep`、`/GitPlan` 默认只预览，加 `--apply` 才执行（`/GitPlan` 收尾用的 `--release` 也会写入）；`/GitIntegrate` 没有预览模式，输入它就是下令集成，它先逐项过检查，全部通过才写入。只要遇到没把握的情况，它们会停下来告诉你原因，而不是硬做。
 
 ### 命令怎么写？
 
@@ -72,7 +72,7 @@
 | 它会做什么 | 显示：这个命令怎么写、每个参数是什么意思、不写参数时的默认行为、几个例子；然后立刻停止 |
 | 它不会做什么 | 不读取你的仓库、不运行任何 Git 命令、不改动任何东西 |
 | 什么时候用 | 忘了怎么写；不确定某个参数的意思；第一次用某个命令 |
-| 哪些命令有 | 七个命令都有 |
+| 哪些命令有 | 八个命令都有 |
 
 > 记住：**拿不准的时候，先在命令后面加 `--help`，它是完全安全的。**
 
@@ -138,7 +138,7 @@
 | 放在哪里 | 命令后面的任何位置。`/GitRecommend 哪些分支应该先合并 --lang English` 里，`--lang English` 会被先摘掉，你的问题就是“哪些分支应该先合并” |
 | 写错了会怎样 | `--lang` 后面什么都没写，或写的不是一种语言（比如 `--lang xyz123`），它会用中文告诉你哪里不对并显示用法，**不会继续执行命令** |
 | 会影响检查结果吗 | 不会。只换回复的语言，检查和判断的方式完全一样 |
-| 哪些命令有 | 七个命令都有 |
+| 哪些命令有 | 八个命令都有 |
 
 ---
 
@@ -188,10 +188,11 @@ flowchart LR
 | Safe Cleanup | 安全识别已完成 Branch / Worktree |
 | Safe Rollback | 私有历史用 Reset，共享历史优先 Revert |
 | Branch Strategy | 识别仓库实际遵循的分支模型（分支策略 / ブランチ戦略），按“多 Agent 并行是否安全”的清单审计，只给最小改动建议，从不替你改分支 |
+| Lane Planning | 开工前把任务拆成文件互斥的 lane，用乐观锁登记；完成后按依赖顺序合并成一个整体 |
 
 ---
 
-## 七个核心命令
+## 八个核心命令
 
 | 命令 | 一句话 | 会改动你的仓库吗？ |
 |---|---|---|
@@ -202,6 +203,7 @@ flowchart LR
 | `/GitCleanup` | 清理已经完成的旧分支和工作区 | 默认不会；加 `--apply` 才会 |
 | `/GitConverge` | 把所有分支的成果汇总到一条分支，只留 `main` 和它 | 默认不会；加 `--apply` 才会 |
 | `/GitSweep` | 先做 `/GitConverge`，再一并清除远端已合并的分支 | 默认不会；加 `--apply` 才会（含删除远端分支）；再加 `--push` 才会把 `<branch>` 推送一次 |
+| `/GitPlan` | 开工前先调查 Git 与代码，把任务拆成文件互斥的车道并给出清单，之后按依赖顺序合并成一个整体 | 默认不会；加 `--apply`（或收尾的 `--release`）才会：登记计划，再加 `--create` 才建车道的分支和工作区，`--converge --apply` 才合并，`--land` 再快进落地一次；从不推送、从不删除分支或工作区 |
 
 每个命令都可以加 `--lang <语言>`（回复语言，不写就是中文）和 `--help`（只看说明）；三个只看的命令还有 `--remote`（`/GitSweep` 的 `--remote <名字>` 是另一个参数，见它自己的说明）。它们的详细用法见上面的“三个通用参数”，下面每个命令只写它**自己独有**的参数。
 
@@ -736,6 +738,188 @@ flowchart TD
 
 ---
 
+### `/GitPlan`
+
+**在子 Agent 开工之前，先调查 Git 与代码，把任务拆成文件互斥的几条“车道”（lane），给你一份简明清单；任务做完后，再按依赖顺序把它们合并成一个整体。**
+
+适合：你要让几个 AI 并行完成同一个任务，想先把“谁改哪些文件”说清楚，并且在最后合并时有一份清单当 TODO 对照。
+
+这份清单有两个用途：开工前，它是**你审阅的计划**；任务做完后，它是**合并时的 TODO 参考**：`--status` 和 `--converge` 会按记录重新打印它，勾上每个车道的进度，再列出“还剩什么”。默认只预览，只有 `--apply`（以及收尾的 `--release`）才写入；写入只经过车道守卫 `magos_guard.py` 的 `set-plan`、`set-update`、`set-release`。它从不推送、从不强推、从不删除分支或工作区，也从不动 `main`。
+
+先认几个词：
+
+| 词 | 用人话说 |
+|---|---|
+| set（计划） | 一次任务拆分的名字，例如 `feat-x`，写法是 `[a-z0-9][a-z0-9-]{0,23}`，区分大小写，也不能是 Windows 的设备名（`con`、`nul`、`com1` 等）。计划记录和各车道的登记都用这个名字 |
+| lane（车道） | 一个子 Agent 用的分支加工作区，外加一份“它能改哪些文件”的清单（manifest）。各车道的清单两两不相交，所以不会互相覆盖 |
+| 清单（sheet） | 不超过 4096 个字符的简明列表：每个车道一行（分支、负责的文件、依赖、验收标准），再加一行合并、共享文件的归属和最多 5 条风险 |
+| 集成分支 | `agent/<set>/integration`，各车道合并之后的“整体”落在这里 |
+| revision 与 base | 计划的版本号，以及计划所依据的目标分支提交；用来发现过期的计划（见下面的“乐观锁”） |
+
+#### 用法：四步走
+
+**第 1 步：先预览（什么都不会改）**
+
+```text
+/GitPlan feat-x --into develop
+```
+
+它先调查 Git（分支、工作区、已有的车道登记、目标分支的最新提交；远端新旧只按本地记录判断，不联网）和代码（目录结构、入口、构建与测试命令、共享文件、最常被改动的文件、文件之间的引用），再拆分任务，并用 `magos_guard.py set-plan --dry-run` 证明各车道的文件清单两两不相交；最后给出清单、车道表和结论 `READY` 或 `BLOCKED`，每个没通过的门槛都附带处理办法。预览唯一的写入，是放在所有工作区之外的一个临时 spec 文件。清单长这样：
+
+```text
+# Plan feat-x -> develop  rev 1  base 3fa9c21
+- [ ] L1 数据层 | branch agent/feat-x/l1 | owns src/db/, tests/db/ | needs - | accept 迁移可回滚
+- [ ] L2 接口 | branch agent/feat-x/l2 | owns src/api/ | needs L1 | accept 接口测试通过
+- [ ] merge L1 -> L2 into agent/feat-x/integration; run pytest -q; land on develop
+Shared: pyproject.toml -> L1 ; post-merge: update CHANGELOG.md -> merge step
+Risks: src/api 引用 src/db 的类型，所以 L2 依赖 L1
+```
+
+**第 2 步：登记**
+
+```text
+/GitPlan feat-x --into develop --apply
+/GitPlan feat-x --into develop --apply --create
+```
+
+登记的就是刚才预览的那一份 spec，一个字节都不差；没有预览过、预览之后你要求改过、或目标分支已经前进时，它会重新预览并停下，不会直接登记。登记一次写入每个车道的登记、集成分支的登记（它不占用任何文件，也不限制任何车道的清单，只是让守卫允许用普通的 `git switch -c` 创建那条分支）和计划记录：要么全部写入，要么什么都不留。加 `--create` 才会替你创建各车道的分支和工作区（从记录里的 `base` 出发，建在登记的路径）；不加，它把要你自己运行的 `git worktree add` 命令打印出来。每个车道还会带一段交接说明：分支、工作区、清单、依赖、验收标准，以及负责人记录进度的两行命令。
+
+**第 3 步：开工、记进度**
+
+各车道的负责人（子 Agent）只改自己清单里的文件。开始时记 `active`，提交之后记 `ready` 并附上它的最新提交：
+
+```text
+magos_guard.py set-update --set feat-x --expect-revision <rev> --lane L1 --state active
+magos_guard.py set-update --set feat-x --expect-revision <rev> --lane L1 --state ready --head <tip>
+```
+
+`<rev>` 取自 `magos_guard.py set-show --set feat-x --json` 里的 `record.revision`；退出码 19 表示它已经变了，重新读一次。记 `ready` 时守卫会核对：这个提交确实是分支的最新提交，而且这个车道改过的每一个文件都在它的清单里（越界就是退出码 22，并列出文件）。随时可以用 `--status` 看进度：
+
+```text
+/GitPlan feat-x --status
+```
+
+它按记录重新打印清单：`ready` 或 `integrated` 的车道打勾并附上记录的提交，最后是“还剩什么”。
+
+```text
+# Plan feat-x -> develop  rev 9  base 3fa9c21
+- [x] L1 数据层 | integrated | head 8b1d4e0 | branch agent/feat-x/l1
+- [x] L2 接口 | ready | head c04a7f2 | branch agent/feat-x/l2
+- [ ] L3 页面 | active | head - | branch agent/feat-x/l3
+- [ ] merge L1 -> L2 -> L3 into agent/feat-x/integration; run pytest -q; land on develop
+
+Remaining TODO
+1. finish L3: active; accept 页面可以打开
+2. merge L2 c04a7f2
+3. run the repository checks on agent/feat-x/integration
+4. post-merge: update CHANGELOG.md
+```
+
+计划要改，就用 `--amend`：`/GitPlan feat-x --amend --expect-revision 9` 重新调查并预览修改后的计划（还在的车道保留分支、工作区和状态，`base` 移到目标分支的当前位置），满意再加 `--apply`。已经有未合并提交的车道不能被删掉，它的清单也不能缩小到少于它已经改过的文件（守卫会拒绝，退出码 16）。
+
+**第 4 步：合并、落地、收尾**
+
+```text
+/GitPlan feat-x --converge
+/GitPlan feat-x --converge --apply --expect-revision 9
+/GitPlan feat-x --converge --apply --land
+/GitPlan feat-x --release
+```
+
+先预览合并：结论 `READY`（每个车道都已经 `READY` 或 `INTEGRATED`，一次运行就能全部合并，`--land` 可以接着做）、`PARTIAL`（有车道还没好，这次只合并 `READY` 的，并写明每个没好的车道还缺什么）或 `BLOCKED`（有门槛没通过）。推荐的下一条命令是 `/GitPlan <set> --converge --apply --expect-revision <预览里显示的 revision>`；`--land` 只在文字里建议，不写进那一行。
+
+`--converge --apply` 是你对报告里那份计划的接受：先重新调查，记下这次的计划（车道顺序、各车道登记的提交、目标分支的提交、revision）；和你之前预览过的不一样就停下，给你新的预览。然后：
+
+1. 只有写了 `--include-active`，才把有提交的 `active` 车道按当前提交记成 `ready`（这就是你对这些提交的接受），守卫同时核对它改过的文件都在清单里。
+2. 集成分支不存在时，在你运行命令的工作区（必须停在目标分支上，且是干净的）用普通的 `git switch -c agent/<set>/integration <目标分支的当前提交>` 创建它。
+3. 按依赖顺序，逐个用 `git merge --no-ff` 合并 `READY` 车道登记的那个提交，每合并一个就用 `set-update` 记成 `integrated`。
+4. 在集成分支上运行仓库自己的检查（构建、测试、lint）；检查失败就在落地之前停下，认不出检查时报告“未校验”并继续。
+5. 只有写了 `--land`：每个车道都已 `integrated`、而目标分支还停在集成分支的起点时，用一次 `git merge --ff-only` 把目标分支快进到集成分支；否则报告 `LAND_REFUSED` 并停下，什么也不再做。
+
+`--release` 先打印最终清单，再移除各车道的登记和计划记录；车道分支、工作区和集成分支都不动。登记没了，`/GitCleanup` 就不再把它们看作有人在用，可以去清理已经合并的那些。车道还没合并、还没进入目标分支，或工作区有未保存的修改时，守卫会拒绝（退出码 16），并指出是哪个车道。
+
+#### 参数详解
+
+| 写法 | 作用 |
+|---|---|
+| `<set>`（必填，`--help` 除外） | 计划的名字，写法见上面的“词”表 |
+| `--into <branch>` | 规划时必填：计划针对的本地分支，也是 `--land` 以后要快进的分支。要写得完全一样（区分大小写），不能是 `main`；其他形式从计划记录里读它 |
+| `--apply` | 配合 `--into`：登记预览过的那份计划；配合 `--amend`：登记修改后的计划；配合 `--converge`：合并各车道。不写就只预览 |
+| `--create` | 配合计划或修改的 `--apply`：同时创建登记过、但还不存在的车道分支和工作区。不写就打印 `git worktree add` 命令 |
+| `--status` | 只看：清单、各车道的状态、还剩什么 |
+| `--amend` | 重新规划已登记的计划，必须写 `--expect-revision`；加 `--apply [--create]` 才登记 |
+| `--expect-revision <n>` | 你读到的计划记录的 revision（正整数）：配合 `--amend` 必填，配合 `--converge --apply` 可选；记录已经是别的 revision 就停下 |
+| `--converge` | 预览把各车道按依赖顺序合并进 `agent/<set>/integration`；加 `--apply` 才执行 |
+| `--include-active` | 配合 `--converge`：把有提交的 `active` 车道按当前提交当作 `ready`；执行时这就是你对这些提交的接受 |
+| `--land` | 配合 `--converge --apply`：合并并检查之后，把 `<branch>` 快进到集成分支 |
+| `--release` | 各车道都已合并之后收尾：移除它们的登记和计划记录 |
+| `--lang <语言>`、`--help` | 回复语言（默认中文）；只看说明 |
+
+“选形式”的选项（`--into`、`--status`、`--amend`、`--converge`、`--release`）决定这次做哪一件事。同时写两个，或写了这一形式不认的选项，都算用法错误：它说明原因、显示用法，什么也不执行。
+
+示例：
+
+```text
+/GitPlan feat-x --into develop                              只看计划
+/GitPlan feat-x --into develop --apply --create             登记，并创建所有车道的分支和工作区
+/GitPlan feat-x --status                                    看进度和还剩什么
+/GitPlan feat-x --converge --apply --land --lang English    合并、落到 develop，用英文回复
+/GitPlan --help                                             只看说明
+```
+
+#### 合并时每个车道的状态
+
+| 状态 | 白话意思 | 这次会合并吗 |
+|---|---|---|
+| `INTEGRATED` | 记录里已经是 `integrated`，它的提交已经合并过 | 已完成，不会再合并 |
+| `READY` | 负责人记了 `ready`，而且一切一致 | 会，按依赖顺序 |
+| `NOT_READY`、`BLOCKED`、`WAITING` | 记录里还是 `planned` 或 `active`；记录里是 `blocked`；它依赖的车道既没有合并、也不是 `READY` | 不会，只是这个车道不参加这一次，不拦别的车道（写了 `--include-active` 时，有提交的 `active` 车道按当前提交参加） |
+| `MISSING_BRANCH`、`DIRTY`、`IN_PROGRESS`、`NO_MERGE_BASE` | 分支不见了；工作区有未保存的修改；工作区里有做到一半的合并、变基等操作；分支与目标分支没有共同历史 | 失败，整个命令停下 |
+| `OUT_OF_LANE`、`SHARED_CHANGE`、`MOVED`、`CLAIM_DRIFT` | 改了清单之外的文件；两个车道改了同一个文件；记 `ready` 之后又有了新提交；车道的登记与计划记录对不上 | 失败，整个命令停下 |
+| `STALE_PLAN` | 目标分支前进了，而且它改动的文件与某个车道的清单有交集，各车道不再独立于已经落下的内容 | 失败，整个命令停下 |
+| `PREDICTED_CONFLICT` | 预演合并（`git merge-tree --write-tree`）预计会冲突；只是提示，看不出两个车道之间的冲突 | 提示，仍会尝试 |
+
+排队的状态只让那个车道这一次不参加；失败的状态会让整个命令停下，因为一个已经 `ready` 却不一致的车道不能被绕过去合并。每一项都附带处理办法，命令自己从不去做：车道的负责人（或你）去做，处理完重新运行。
+
+#### 乐观锁：没有人持锁，过期的计划只会被发现
+
+登记的计划带着一个 revision 和它依据的目标分支提交（`base`），没有任何人在车道工作期间持有锁。每次改动都要拿着你读到的 revision 来比对，对不上就停下，所以过期的计划只会被发现，不会被覆盖。
+
+| 你会看到 | 白话意思 | 你该怎么办 |
+|---|---|---|
+| 退出码 19，`kind` 是 `base` | 预览之后目标分支前进了，计划依据的提交不是它现在的位置 | 重新运行：新的预览会调查新的位置 |
+| 退出码 19，`kind` 是 `revision`，或 `--expect-revision` 对不上 | 计划记录在你读取之后被改过，比如某个车道的负责人记录了进度 | 先运行 `--status`，按它显示的 revision 重做 |
+| `STALE_PLAN` | 见上表：目标分支上落下的内容与某个车道的清单有交集 | `--amend --expect-revision <n>`：新的预览基于新的位置，修改会把 `base` 移过去；有交集的车道由负责人把目标分支的提交合并进自己的分支，再记一次 `ready` |
+| 退出码 20、21 | 这个名字的计划已经存在；或者不存在这个名字的计划 | 用 `--status` 看，用 `--amend` 改，用 `--release` 收尾，或换个名字；检查名字，或先用 `--into` 规划 |
+| 退出码 22，`OUT_OF_LANE` | 某个车道改了清单之外的文件，守卫拒绝把它记成 `ready` | 负责人撤销这些改动，或用 `--amend` 把这些文件划给设计上拥有它们的那一个车道，然后重新记 `ready` |
+| 退出码 23 | 计划记录由更新版本的 MAGOS 写入 | 升级守卫（见“车道守卫”）；在此之前这份记录不会被读取或修改 |
+| 退出码 24 或 12 | 计划无效：字段写错，或与仓库里已有的分支、路径冲突；提示会指出是哪个字段 | 改掉那个字段，重新证明；车道超过 12 个、清单超过 4096 个字符的计划要缩小 |
+
+计划存在期间，每个未结束的车道登记（`planned` 或 `active`）都会让 `/GitCleanup`、`/GitConverge`、`/GitSweep` 把这个车道报告为 `BLOCKED_ACTIVE_OWNER`：这是有意的，`--release` 之后解除。
+
+#### 它一定遵守的规则
+
+```text
+✓ 默认只预览。不加 --apply（也不是 --release）就不会登记、创建或合并任何东西，也不联网
+✓ 登记的就是预览过的那份计划；没有预览过，就先预览、然后停下
+✓ 登记和进度只经过车道守卫的 set-plan、set-update、set-release；从不手改 .git/magos，从不用 override
+✓ 只合并车道登记的那个提交，只合并进集成分支；加 --land 才再多一次 --ff-only 快进，而且只在目标分支还停在集成分支起点时
+✓ 遇到冲突就 git merge --abort 并停下；从不用 ours 或 theirs，也不手工解决；已经完成的合并只留在集成分支上
+✓ 从不推送，从不强推，从不联网；从不删除分支或工作区，从不 git worktree prune
+✓ 从不动 main，也不能把 main 当目标；从不变基、压缩、cherry-pick 或 reset
+✓ 从不往车道的工作区里写任何东西；--create 只创建登记过的车道（在登记的路径，从记录的 base 出发）
+```
+
+#### 常见疑问
+
+- **守卫版本不够怎么办？** `/GitPlan` 一开始就检查守卫的版本，需要 1.0.4 或更新；较老的守卫没有 `set-*` 子命令，命令会停下并让你刷新守卫副本（运行 `doctor`，再运行它打印的 `install --host <host>` 命令）。
+- **能发现文件之间语义上的耦合吗？** 不能。守卫只证明文件清单不相交，不懂代码之间的依赖；有引用关系的文件，规划时应该放进同一个车道。
+- **计划记录放在哪里？** 放在这个克隆自己的 git 目录里（`<git-common-dir>/magos/sets/<set>.json`），只能经守卫读写，不会随 fetch 或 push 同步给别的克隆。
+- **合并到一半断了怎么办？** 重新运行同一条命令：它重新调查，在同一条集成分支上接着做，已经 `integrated` 的车道会跳过。
+- **我想让回复是英文？** 在命令最后加 `--lang English`。
+
+---
+
 ## 多 Agent 生命周期
 
 ```mermaid
@@ -827,15 +1011,16 @@ MAGOS 带有车道守卫（`scripts/magos_guard.py`）：创建分支或工作�
 - **模式。**AUTO（默认）：命名的工作树创建总是需要清单，只建分支的创建仅在已有其他车道时需要，所以在只有一个工作树、没有未合并分支的仓库里，只建分支的创建不受影响。ARMED（`arm` 之后）：每个新分支都需要清单，钩子与 Git 都检查。OFF：`git config --local magos.guard off`，关闭该仓库的宿主钩子；已 `arm` 的仓库里 Git 兜底不受影响。
 - **关闭。**`git config --local magos.guard off`（单个仓库），`claude plugin disable magos`（整个 Claude Code 插件），或在宿主进程的环境里设置 `MAGOS_GUARD=off`。这三种都只关闭宿主钩子，不动 Git 兜底：已 `arm` 的仓库，请在自己的终端里运行 `disarm` 把它撤掉。
 - **要求。**Python 3.9+（钩子启动器在 POSIX 与 Git Bash 上依次找 `python3`、`py -3`、`python`；在 Windows 的 cmd 上依次找 `py -3`、`python`、`python.bat`、`python.cmd`）与 Git 2.36+（其他 MAGOS 命令需要 Git 2.30+）；`magos_guard.py doctor` 会检查两者，`magos_guard.py version` 输出正在运行的守卫版本。
+- **Set 子命令。**`/GitPlan` 通过守卫的四个子命令登记并维护计划：`set-plan`（证明各车道的文件清单两两不相交并登记）、`set-show`（只读）、`set-update`（车道负责人记录进度）和 `set-release`（收尾）。它们都不是只有你能运行的命令，和 `plan`、`release` 一样经过宿主钩子。登记会写入每个车道的登记（带 `set=` 与 `lane=`）、集成分支 `agent/<set>/integration` 的登记（不占用任何文件）和计划记录（`<git-common-dir>/magos/sets/<set>.json`）；退出码 19 到 24 属于这些子命令（过期、已存在、不存在、越界、记录来自更新版本、规划无效）。计划存在期间，普通的 `plan --amend` 和 `release` 会拒绝它的登记：计划只能经 `/GitPlan` 修改。
 - **只有你**能在真实终端里运行 `override`、`arm`、`disarm`、`install`，也只有你能写 `magos.*` 的 git 配置（例如 `magos.guard`）；代理尝试时会被钩子拒绝，钩子启动器也只运行钩子。在新控制台窗口里启动的命令也能通过控制台检查，所以控制台检查与覆盖都不是访问控制。
-- **每次升级之后。**重启正在运行的 Claude Code 会话；为 `doctor` 列出的每个宿主重新运行 `install`（`doctor` 会打印确切的命令；用 `install --home <目录>` 装的副本，运行 `doctor --home <目录>`），打印的条目与宿主配置里已合并的条目不同时替换它（Codex 要在 `/hooks` 里重新信任，Hermes 要重新批准）；在已 `arm` 的仓库里运行 `doctor`，它打印 `arm` 命令时，在自己的终端里重新运行该命令。
+- **每次升级之后。**重启正在运行的 Claude Code 会话；为 `doctor` 列出的每个宿主重新运行 `install`（`doctor` 会打印确切的命令；用 `install --home <目录>` 装的副本，运行 `doctor --home <目录>`），打印的条目与宿主配置里已合并的条目不同时替换它（Codex 要在 `/hooks` 里重新信任，Hermes 要重新批准）；在已 `arm` 的仓库里运行 `doctor`，它打印 `arm` 命令时，在自己的终端里重新运行该命令。1.0.4 起，`/GitPlan` 需要守卫的 `set-*` 子命令，较老的守卫副本没有它们：运行 `doctor`，再运行它打印的 `install --host <host>` 命令刷新副本，否则 `/GitPlan` 会在开头检查版本并停下。
 - **限制。**钩子读的是命令文本；找不到 Python 或守卫脚本时放行调用（Claude Code 的 `EnterWorktree` 钩子除外，它拒绝调用）；Git 兜底看不到分支改名与复制（`git branch -m/-c`），钩子则在任何选项写法下都拒绝它们。全部限制见 `references/lane-split.md` 第 12 节。
 
 ---
 
 ## 安装
 
-仓库的目录结构如下（只列主要文件；另有 `tests/`、`.github/`、`.quality/`，以及根目录的文档、许可证与配置文件）。Claude Code 的 clone 安装使用整个目录；同步脚本给 Codex 与 Hermes 只复制 `SKILL.md`、`references/` 和 `skills/` 下的七个命令 Skill。各平台的安装方式见下面各节：
+仓库的目录结构如下（只列主要文件；另有 `tests/`、`.github/`、`.quality/`，以及根目录的文档、许可证与配置文件）。Claude Code 的 clone 安装使用整个目录；同步脚本给 Codex 与 Hermes 只复制 `SKILL.md`、`references/` 和 `skills/` 下的八个命令 Skill。各平台的安装方式见下面各节：
 
 ```text
 multi-agent-git-orchestrator/
@@ -884,10 +1069,10 @@ Claude Code 也可以在终端里执行：`claude plugin marketplace add Ulysses
 
 | 用途 | Claude Code | Codex | Hermes |
 |---|---|---|---|
-| 七个命令 | `/magos:GitRecon` … `/magos:GitSweep` | `$magos:git-recon` … `$magos:git-sweep` | `/magos:git-recon` … `/magos:git-sweep` |
+| 八个命令 | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |
 | 总规则（描述问题时自动触发） | `magos:git-orchestrator` | `magos:git-orchestrator` | `magos:git-orchestrator`（Hermes 把它列进系统提示的 `<available_skills>`，模型按描述自行加载） |
 
-- Claude Code 里还会看到七个小写的 `/magos:git-recon` 等，它们是跨平台适配层，和 `/magos:GitXxx` 等价，用大写那套即可。
+- Claude Code 里还会看到八个小写的 `/magos:git-recon` 等，它们是跨平台适配层，和 `/magos:GitXxx` 等价，用大写那套即可。
 - 插件宿主只加载 `skills/` 下的 Skill，不加载根目录的 `SKILL.md`，所以插件里多了一个入口 Skill `git-orchestrator`，它会去读根目录的 `SKILL.md`。clone 到 `~/.claude/skills/magos` 时它同样会加载；只有用同步脚本安装的 Codex 与 Hermes 包不需要它，同步脚本也不会复制它。
 - 版本号写在清单里，Claude Code 只有在版本号变化时才会更新已安装的插件。正在运行的会话继续使用它启动时那个版本的钩子，所以更新后要重启每一个会话。
 - Claude Code 的插件安装会同时启用车道守卫钩子，Codex 与 Hermes 的插件安装不会（见“车道守卫”）。各平台的升级细节（包括守卫副本与回滚）见 `references/installation.md`，每个版本的变化见 `CHANGELOG.md`。
@@ -900,12 +1085,12 @@ Claude Code 也可以在终端里执行：`claude plugin marketplace add Ulysses
 从 1.0.1 起，每个发布都有标签 `v<版本号>`（见 `CHANGELOG.md`）；1.0.0 没有标签，不要安装或固定它；标签 `v1.0` 是插件化与改号之前的 3.4.0 版 Skill，不是插件版本，也不要固定到它。上面的命令跟随默认分支；要停留在某个版本：
 
 ```bash
-claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.3    # 然后：claude plugin install magos@magos
-git clone --branch v1.0.3 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.3 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
+claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.4    # 然后：claude plugin install magos@magos
+git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.4 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
 ```
 
-固定版本收不到之后的修复，包括守卫的安全修复：请关注 `CHANGELOG.md` 并移动固定点。标签的 commit SHA 是 `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.3 "refs/tags/v1.0.3^{}"` 输出里 `refs/tags/v1.0.3^{}` 那一行的 SHA（没有这一行时取 `refs/tags/v1.0.3` 那一行）。Hermes 把带 `--ref` 的安装记为固定：`hermes plugins update magos` 会拒绝它，不带 `--ref` 的 `hermes plugins install UlyssesLeoLee/MAGOS --force` 会重装原来固定的提交。移动固定点用 `--ref <新的 SHA> --force --enable`；要重新跟随默认分支，先 `hermes plugins remove magos`，再 `hermes plugins install UlyssesLeoLee/MAGOS --enable`。细节以及如何固定 Codex 与同步脚本安装，见 `references/installation.md`。
+固定版本收不到之后的修复，包括守卫的安全修复：请关注 `CHANGELOG.md` 并移动固定点。标签的 commit SHA 是 `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.4 "refs/tags/v1.0.4^{}"` 输出里 `refs/tags/v1.0.4^{}` 那一行的 SHA（没有这一行时取 `refs/tags/v1.0.4` 那一行）。Hermes 把带 `--ref` 的安装记为固定：`hermes plugins update magos` 会拒绝它，不带 `--ref` 的 `hermes plugins install UlyssesLeoLee/MAGOS --force` 会重装原来固定的提交。移动固定点用 `--ref <新的 SHA> --force --enable`；要重新跟随默认分支，先 `hermes plugins remove magos`，再 `hermes plugins install UlyssesLeoLee/MAGOS --enable`。细节以及如何固定 Codex 与同步脚本安装，见 `references/installation.md`。
 
 ### Claude Code：clone 到 Skill 目录
 
@@ -921,13 +1106,13 @@ git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
 
 仓库根目录有 `.claude-plugin/plugin.json`，Claude Code 会把这个文件夹当作插件 `magos@skills-dir` 加载，每次会话都自动生效，不需要 `/plugin install`。重新开启会话后可以用：
 
-- 七个命令：`/magos:GitRecon`、`/magos:GitAnalyze`、`/magos:GitRecommend`、`/magos:GitIntegrate`、`/magos:GitCleanup`、`/magos:GitConverge`、`/magos:GitSweep`（输入 `/magos:` 即可补全）；
+- 八个命令：`/magos:GitRecon`、`/magos:GitAnalyze`、`/magos:GitRecommend`、`/magos:GitIntegrate`、`/magos:GitCleanup`、`/magos:GitConverge`、`/magos:GitSweep`、`/magos:GitPlan`（输入 `/magos:` 即可补全）；
 - 总规则入口 `magos:git-orchestrator`，描述问题时会自动触发；
-- `skills/` 下的七个跨工具适配层也会以 `/magos:git-recon` 等名字出现，它们和上面的命令等价，Claude Code 里用 `/magos:GitXxx` 即可。
+- `skills/` 下的八个跨工具适配层也会以 `/magos:git-recon` 等名字出现，它们和上面的命令等价，Claude Code 里用 `/magos:GitXxx` 即可。
 
 以后更新只要在该目录执行 `git pull`（按“固定版本”克隆在标签上的，改为执行 `git fetch --tags` 与 `git checkout v<新版本>`），再重启所有正在运行的 Claude Code 会话，命令、规则和车道守卫会一起更新。用 `claude plugin list` 可以确认它显示为 `magos@skills-dir` 且状态为 loaded。
 
-如果之前按下面的旧方式复制过 `~/.claude/commands/Git*.md`，请删掉这七个文件，否则会同时出现一套旧的 `/GitXxx` 命令。
+如果之前按下面的旧方式复制过 `~/.claude/commands/Git*.md`，请删掉这八个文件，否则会同时出现一套旧的 `/GitXxx` 命令。
 
 ### Claude Code：旧方式（复制命令文件）
 
@@ -941,7 +1126,8 @@ commands/
 ├── GitIntegrate.md
 ├── GitCleanup.md
 ├── GitConverge.md
-└── GitSweep.md
+├── GitSweep.md
+└── GitPlan.md
 ```
 
 推荐用同步脚本：
@@ -961,7 +1147,7 @@ mkdir -p ~/.claude/commands && cp commands/Git*.md ~/.claude/commands/
 New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands\Git*.md "$HOME\.claude\commands\"
 ```
 
-复制出去的命令文件**不会随仓库更新**。每次 `git pull` 或升级版本后都要重新同步（或重新复制）；`--verify` 会列出缺失或过期的命令文件。`--host claude` 只管 `~/.claude/commands`，命令运行时读取的 Skill 本身（例如 `~/.claude/skills/MAGOS`）要另外更新。已经按插件方式装好时，同步脚本会提示 `NOTE`，不必再复制。安装后**重新开启会话**，输入 `/Git` 即可看到七个命令。
+复制出去的命令文件**不会随仓库更新**。每次 `git pull` 或升级版本后都要重新同步（或重新复制）；`--verify` 会列出缺失或过期的命令文件。`--host claude` 只管 `~/.claude/commands`，命令运行时读取的 Skill 本身（例如 `~/.claude/skills/MAGOS`）要另外更新。已经按插件方式装好时，同步脚本会提示 `NOTE`，不必再复制。安装后**重新开启会话**，输入 `/Git` 即可看到八个命令。
 
 也可以显式调用：
 
@@ -973,9 +1159,10 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 /GitCleanup
 /GitConverge <branch>
 /GitSweep <branch>
+/GitPlan <set> --into <branch>
 ```
 
-七个命令的跨宿主名称和说明：
+八个命令的跨宿主名称和说明：
 
 | 命令 | Claude Code | Hermes | Codex | 说明 |
 |---|---|---|---|---|
@@ -986,13 +1173,14 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 | GitCleanup | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` | 默认预览可清理项；`--apply` 才允许删除 |
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | 把所有本地分支合并进指定分支并只保留 `main` 和它；默认预览，`--apply` 才执行 |
 | GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge` 之后再删除远端已合并分支；默认预览且不联网，`--apply` 才执行，`--push`（需要 `--apply`）才把 `<branch>` 推送一次 |
+| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` | 先调查并把任务拆成文件互斥的车道，登记计划，之后按依赖顺序合并；默认预览，`--apply`（或 `--release`）才写入 |
 
 斜杠入口说明：
 
 | 宿主 | 从 `/` 进入 | 前提条件 |
 |---|---|---|
-| Claude Code | 直接输入 `/GitRecon` 等七个命令 | `~/.claude/commands/Git*.md` 已安装（`sync_hosts.py --host claude`），并已新开会话 |
-| Hermes | 直接输入 `/git-recon` 等七个命令 | 包已安装到 `<Hermes home>/skills/`，并已新开会话或执行 `/reload-skills` |
+| Claude Code | 直接输入 `/GitRecon` 等八个命令 | `~/.claude/commands/Git*.md` 已安装（`sync_hosts.py --host claude`），并已新开会话 |
+| Hermes | 直接输入 `/git-recon` 等八个命令 | 包已安装到 `<Hermes home>/skills/`，并已新开会话或执行 `/reload-skills` |
 | Codex | 输入 `/skills`，打开 Skill 列表后选择 `git-*`；也可以直接输入 `$git-recon` | 包已安装到 `~/.agents/skills/MAGOS`（`sync_hosts.py --host codex`），并已重启 Codex |
 
 Codex 的 `/` 菜单只包含内置命令（源码 `codex-rs/tui/src/bottom_pane/command_popup.rs` 中只有 `Builtin` 与 `ServiceTier` 两类条目），无法注册自定义的 `/git-*`。因此在 Codex 中，斜杠入口是内置的 `/skills`。
@@ -1021,7 +1209,7 @@ Codex 和 Hermes 都安装同一个宿主中立的包，目录结构必须与仓
 MAGOS/                       # Codex 包根；Hermes 使用 multi-agent-git-orchestrator/
 ├── SKILL.md                 # 根 Skill：multi-agent-git-orchestrator（语义自动触发）
 ├── references/*.md          # 全部参考文档
-└── skills/git-*/            # 七个命令适配层
+└── skills/git-*/            # 八个命令适配层
     ├── SKILL.md
     └── agents/openai.yaml   # Codex：显示说明 + allow_implicit_invocation: false
 ```
@@ -1035,7 +1223,7 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
 
 ### Codex：启用命令 Skill
 
-Codex 的自定义入口是 Skill 选择器（`$`），不是任意命名的 `/Git...` Slash Command。Codex 递归扫描 Skill 根目录，因此会同时加载根 Skill 和 `skills/` 下的七个命令 Skill；`agents/openai.yaml` 中的简短说明会显示在 Skill 列表里。七个命令 Skill 都设置了 `policy.allow_implicit_invocation: false`，只在显式选择时运行，语义自动触发由根 Skill 负责。
+Codex 的自定义入口是 Skill 选择器（`$`），不是任意命名的 `/Git...` Slash Command。Codex 递归扫描 Skill 根目录，因此会同时加载根 Skill 和 `skills/` 下的八个命令 Skill；`agents/openai.yaml` 中的简短说明会显示在 Skill 列表里。八个命令 Skill 都设置了 `policy.allow_implicit_invocation: false`，只在显式选择时运行，语义自动触发由根 Skill 负责。
 
 用户级安装位置是 `~/.agents/skills/MAGOS`。已经安装在旧位置 `$CODEX_HOME/skills/MAGOS`（默认 `~/.codex/skills/MAGOS`）的，同步脚本会继续更新旧位置；两个位置不要同时保留，否则 Codex 会看到重复的 Skill。手动复制出来的包里要删掉入口 Skill `git-orchestrator`：它只供插件安装使用，同步脚本也不复制它；留着它，Codex 会多看到一个与根 Skill 描述相同的 Skill。下面每段命令的最后一行就是做这件事。手动安装（Windows PowerShell）：
 
@@ -1054,11 +1242,11 @@ cp -R SKILL.md references skills "$HOME/.agents/skills/MAGOS/"
 cd "$HOME/.agents/skills/MAGOS" && rm -r skills/git-orchestrator
 ```
 
-重新启动 Codex 后，输入 `$` 选择命令 Skill，或直接调用 `$git-recon`、`$git-analyze`、`$git-recommend`、`$git-integrate`、`$git-cleanup`、`$git-converge`、`$git-sweep`。`/skills` 可打开 Skill 浏览入口。参数写在 Skill 名后面，例如 `$git-analyze agent/auth --remote`；加 `--help` 可查看完整参数说明。
+重新启动 Codex 后，输入 `$` 选择命令 Skill，或直接调用 `$git-recon`、`$git-analyze`、`$git-recommend`、`$git-integrate`、`$git-cleanup`、`$git-converge`、`$git-sweep`、`$git-plan`。`/skills` 可打开 Skill 浏览入口。参数写在 Skill 名后面，例如 `$git-analyze agent/auth --remote`；加 `--help` 可查看完整参数说明。
 
 ### Hermes：启用 Slash Skill
 
-Hermes 会把已安装的每个 Skill 自动注册成一个 Slash Command（名称取自 frontmatter 的 `name`），并将 `description` 用作命令说明。安装后会出现 `/multi-agent-git-orchestrator` 和七个 `/git-*` 命令。
+Hermes 会把已安装的每个 Skill 自动注册成一个 Slash Command（名称取自 frontmatter 的 `name`），并将 `description` 用作命令说明。安装后会出现 `/multi-agent-git-orchestrator` 和八个 `/git-*` 命令。
 
 Hermes 的 home 目录依次取 `HERMES_HOME`、Windows 上的 `%LOCALAPPDATA%\hermes`、其他系统上的 `~/.hermes`；home 不是来自 `HERMES_HOME` 时，如果其中的 `active_profile` 指定了非 `default` 且目录存在的 profile，则改用 `profiles/<name>`。Skill 放在 home 下的 `skills/`。同步脚本按同样规则定位；下面的手动安装不处理 `active_profile`，有非默认的 `active_profile` 时请用同步脚本。如果已有 `<Hermes home>/skills/MAGOS`（例如直接 `git clone` 的安装），脚本会沿用它；如果它是 git checkout，脚本会拒绝复制文件，请改用 git 更新。手动复制出来的包里要删掉入口 Skill `git-orchestrator`：它只供插件安装使用，同步脚本也不复制它；留着它，会多出一个与根 Skill 描述相同的 Skill，Hermes 里还会多出 `/git-orchestrator`。下面每段命令的最后一行就是做这件事。手动安装（Windows PowerShell）：
 
@@ -1078,7 +1266,7 @@ cp -R SKILL.md references skills "${HERMES_HOME:-$HOME/.hermes}/skills/multi-age
 cd "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator" && rm -r skills/git-orchestrator
 ```
 
-重新启动 Hermes 后，可运行 `hermes skills list` 查看各命令说明，并调用 `/git-recon`、`/git-analyze`、`/git-recommend`、`/git-integrate`、`/git-cleanup`、`/git-converge` 或 `/git-sweep`。参数直接跟在命令后面，例如 `/git-analyze main --remote`，也可用 `/git-analyze --help` 查看完整说明。Hermes 的 Skill 查看工具不接受含 `..` 的路径，适配层会改用 `[Skill directory: ...]` 给出的绝对路径读取共享文件。Hermes 没有按 Skill 关闭自动调用的开关，因此 `/git-integrate`、`/git-cleanup`、`/git-converge` 与 `/git-sweep` 在适配层中规定：未经用户显式调用时不写入仓库。
+重新启动 Hermes 后，可运行 `hermes skills list` 查看各命令说明，并调用 `/git-recon`、`/git-analyze`、`/git-recommend`、`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep` 或 `/git-plan`。参数直接跟在命令后面，例如 `/git-analyze main --remote`，也可用 `/git-analyze --help` 查看完整说明。Hermes 的 Skill 查看工具不接受含 `..` 的路径，适配层会改用 `[Skill directory: ...]` 给出的绝对路径读取共享文件。Hermes 没有按 Skill 关闭自动调用的开关，因此 `/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep` 与 `/git-plan` 在适配层中规定：未经用户显式调用时不写入仓库。
 
 如果宿主不支持自定义 Slash Command，也可以直接输入：
 
@@ -1096,12 +1284,12 @@ GitRecommend
 
 | 你关心的问题 | 答案 |
 |---|---|
-| 能用哪些命令？ | `skills/` 下的七个命令 Skill：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`，外加入口 Skill `git-orchestrator`。有的工具会加上插件名前缀，例如 Codex 显示为 `magos:git-recon`。 |
-| 根目录的 `SKILL.md`（总规则）呢？ | 它不算插件 Skill，因为规范只认 `skills/` 下面的文件夹。所以插件里有入口 Skill `git-orchestrator`，它带着同样的描述（会自动触发），内容是去读根目录的 `SKILL.md`；七个命令也会去读它和 `references/` 里的规则。已在 Claude Code、Codex、Hermes 里实测：插件能安装、启用，Skill 名字如上表；各命令完整跑一遍还没有逐一实测。 |
+| 能用哪些命令？ | `skills/` 下的八个命令 Skill：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`、`git-plan`，外加入口 Skill `git-orchestrator`。有的工具会加上插件名前缀，例如 Codex 显示为 `magos:git-recon`。 |
+| 根目录的 `SKILL.md`（总规则）呢？ | 它不算插件 Skill，因为规范只认 `skills/` 下面的文件夹。所以插件里有入口 Skill `git-orchestrator`，它带着同样的描述（会自动触发），内容是去读根目录的 `SKILL.md`；八个命令也会去读它和 `references/` 里的规则。已在 Claude Code、Codex、Hermes 里实测：插件能安装、启用，Skill 名字如上表；各命令完整跑一遍还没有逐一实测。 |
 | Claude Code 能用吗？ | Claude Code 不读这个文件，它读的是 `.claude-plugin/plugin.json` 和 `.claude-plugin/marketplace.json`。请按上面“从插件市场安装”的方法安装。 |
-| Hermes 用哪种方式？ | 两种都行。`hermes plugins install UlyssesLeoLee/MAGOS --enable` 读的是 Hermes 原生清单 `plugin.yaml`（不是这个 `plugin.json`），命令是 `/magos:git-recon` 这样的名字，带 `[Skill directory: …]` 路径提示；插件里的每个 Skill 都会列进系统提示的 `<available_skills>`，描述取自 `__init__.py` 里的 `INDEX_DESCRIPTIONS`（Hermes 不读插件 Skill 的 SKILL.md 描述，不传这一行的话模型只看到名字）：总规则那行写明触发场景，会修改仓库的命令那几行写明“只在用户明确输入时运行，不要自己加载”。四个会修改仓库的命令只认用户明确输入的 `/magos:git-*`、`/git-*`、`$magos:git-*` 或 `$git-*` 调用（Claude Code 里同名的 `/magos:Git*` 命令也是明确调用）。 |
+| Hermes 用哪种方式？ | 两种都行。`hermes plugins install UlyssesLeoLee/MAGOS --enable` 读的是 Hermes 原生清单 `plugin.yaml`（不是这个 `plugin.json`），命令是 `/magos:git-recon` 这样的名字，带 `[Skill directory: …]` 路径提示；插件里的每个 Skill 都会列进系统提示的 `<available_skills>`，描述取自 `__init__.py` 里的 `INDEX_DESCRIPTIONS`（Hermes 不读插件 Skill 的 SKILL.md 描述，不传这一行的话模型只看到名字）：总规则那行写明触发场景，会修改仓库的命令那几行写明“只在用户明确输入时运行，不要自己加载”。五个会修改仓库的命令只认用户明确输入的 `/magos:git-*`、`/git-*`、`$magos:git-*` 或 `$git-*` 调用（Claude Code 里同名的 `/magos:Git*` 命令也是明确调用）。 |
 
-仓库根目录有 `.claude-plugin/`（Claude Code 的 `plugin.json` 和 Claude Code、Codex 共用的 `marketplace.json`）和 Hermes 的 `plugin.yaml`、`__init__.py`，故意没有 `.codex-plugin/` 或 `.cursor-plugin/`。Codex 一看到 `.claude-plugin/`、`.codex-plugin/` 或 `.cursor-plugin/` 就会给 Skill 加上插件名前缀，仓库带着其中的 `.claude-plugin/`，所以**把仓库直接 `git clone` 到 Codex 的 Skill 目录时，命令会变成 `$magos:git-recon` 这样的名字**。Codex 和 Hermes 请用同步脚本安装：它复制 `SKILL.md`、`references/*.md` 和七个命令 Skill（各自的 `SKILL.md` 与 `agents/openai.yaml`），不会带上 `.claude-plugin/` 和入口 Skill `git-orchestrator`，命令名仍是 `$git-recon`、`/git-recon`。只有根目录的 `plugin.json` 不会触发改名。
+仓库根目录有 `.claude-plugin/`（Claude Code 的 `plugin.json` 和 Claude Code、Codex 共用的 `marketplace.json`）和 Hermes 的 `plugin.yaml`、`__init__.py`，故意没有 `.codex-plugin/` 或 `.cursor-plugin/`。Codex 一看到 `.claude-plugin/`、`.codex-plugin/` 或 `.cursor-plugin/` 就会给 Skill 加上插件名前缀，仓库带着其中的 `.claude-plugin/`，所以**把仓库直接 `git clone` 到 Codex 的 Skill 目录时，命令会变成 `$magos:git-recon` 这样的名字**。Codex 和 Hermes 请用同步脚本安装：它复制 `SKILL.md`、`references/*.md` 和八个命令 Skill（各自的 `SKILL.md` 与 `agents/openai.yaml`），不会带上 `.claude-plugin/` 和入口 Skill `git-orchestrator`，命令名仍是 `$git-recon`、`/git-recon`。只有根目录的 `plugin.json` 不会触发改名。
 
 一处已知的偏差：规范第 8 节要求“只给某一个工具用的文件”放进以反向域名命名的文件夹（例如 `com.example.client/`）。`commands/` 只给 Claude Code 用，`plugin.yaml` 和 `__init__.py` 只给 Hermes 用，却都放在顶层。插件工具会直接忽略它们，不影响导入；安装脚本和测试都按顶层路径使用它们。
 

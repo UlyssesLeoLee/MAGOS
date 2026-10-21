@@ -1,9 +1,9 @@
 {
   "id": "codex/argument-discovery",
   "skill": "all",
-  "feature": "Codex exposes all seven skills with compact usage hints",
+  "feature": "Codex exposes all eight skills with compact usage hints",
   "invocations": {
-    "codex": "$git-recon, $git-analyze, $git-recommend, $git-integrate, $git-cleanup, $git-converge, $git-sweep"
+    "codex": "$git-recon, $git-analyze, $git-recommend, $git-integrate, $git-cleanup, $git-converge, $git-sweep, $git-plan"
   },
   "test_object": {
     "host": "Codex CLI",
@@ -14,11 +14,12 @@
       "git-integrate",
       "git-cleanup",
       "git-converge",
-      "git-sweep"
+      "git-sweep",
+      "git-plan"
     ]
   },
   "expected": [
-    "All seven skill directories have Codex-recognized names and invocation syntax.",
+    "All eight skill directories have Codex-recognized names and invocation syntax.",
     "Each openai.yaml short description includes its $skill selector and --help."
   ],
   "checks": [
@@ -156,6 +157,28 @@
       "contains": [
         "$git-sweep",
         "[--push]",
+        "[--help]"
+      ],
+      "pattern": "^  short_description: \"([^\"]+)\"$",
+      "length": [
+        25,
+        64
+      ]
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
+      "contains": [
+        "- Codex: `$git-plan <set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]`",
+        "short-description: \"规划并收敛车道；$git-plan SET --into BRANCH [--apply] [--help].\"",
+        "`--help`:",
+        "Examples:"
+      ]
+    },
+    {
+      "file": "skills/git-plan/agents/openai.yaml",
+      "contains": [
+        "$git-plan",
+        "[--apply]",
         "[--help]"
       ],
       "pattern": "^  short_description: \"([^\"]+)\"$",

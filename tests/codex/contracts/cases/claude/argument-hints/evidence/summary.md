@@ -8,7 +8,7 @@
 
 - Each commands/Git*.md has a description and the exact argument-hint shown in the Claude Code / menu.
 - Each command handles --help from its inline help before loading the skill.
-- GitIntegrate, GitCleanup, GitConverge, and GitSweep set disable-model-invocation: true so only the user can run them.
+- GitIntegrate, GitCleanup, GitConverge, GitSweep and GitPlan set disable-model-invocation: true so only the user can run them.
 
 ## Contract checks
 
@@ -19,5 +19,6 @@
 - PASS `commands/GitCleanup.md`
 - PASS `commands/GitConverge.md`
 - PASS `commands/GitSweep.md`
+- PASS `commands/GitPlan.md`
 
 Evidence scope: source-contract check; no AI host CLI is invoked.

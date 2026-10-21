@@ -1,0 +1,44 @@
+{
+  "case": "git-plan/forms-and-help",
+  "skill": "git-plan",
+  "feature": "The nine forms of /GitPlan are chosen by one selecting option; help stops before any inspection and a wrong combination executes nothing",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "commands/GitPlan.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.en.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.ja.md",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}

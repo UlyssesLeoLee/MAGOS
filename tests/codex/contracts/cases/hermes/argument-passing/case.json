@@ -13,7 +13,8 @@
       "git-integrate",
       "git-cleanup",
       "git-converge",
-      "git-sweep"
+      "git-sweep",
+      "git-plan"
     ]
   },
   "expected": [
@@ -83,6 +84,16 @@
     },
     {
       "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "`User instruction:`",
+        "`[Skill directory: ...]`",
+        "The skill viewer rejects paths that contain `..`",
+        "multi-agent-git-orchestrator",
+        "Do not use `commands/*.md` for this adapter."
+      ]
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
       "contains": [
         "`User instruction:`",
         "`[Skill directory: ...]`",

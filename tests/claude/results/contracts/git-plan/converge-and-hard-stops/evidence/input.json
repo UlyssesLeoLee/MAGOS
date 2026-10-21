@@ -1,0 +1,20 @@
+{
+  "arguments": [
+    "<set>",
+    "--converge",
+    "--apply"
+  ],
+  "also": [
+    "--include-active",
+    "--land",
+    "--expect-revision <n>",
+    "--release",
+    "ready lane that is inconsistent",
+    "merge conflict",
+    "failed repository check",
+    "target moved after the integration branch was cut",
+    "integration branch created with a plain git switch -c",
+    "interrupted run resumed",
+    "main as the target"
+  ]
+}

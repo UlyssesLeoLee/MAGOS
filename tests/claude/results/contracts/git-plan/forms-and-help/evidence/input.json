@@ -1,0 +1,20 @@
+{
+  "arguments": [
+    "<set>",
+    "--into <branch>"
+  ],
+  "also": [
+    "--apply",
+    "--create",
+    "--status",
+    "--amend --expect-revision <n>",
+    "--converge [--include-active]",
+    "--converge --apply [--land] [--expect-revision <n>]",
+    "--release",
+    "--help",
+    "--lang <language>",
+    "two selecting options together",
+    "an option the form does not list",
+    "set name outside [a-z0-9][a-z0-9-]{0,23}"
+  ]
+}

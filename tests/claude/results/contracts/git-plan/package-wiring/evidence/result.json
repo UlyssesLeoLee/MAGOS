@@ -1,0 +1,94 @@
+{
+  "case": "git-plan/package-wiring",
+  "skill": "git-plan",
+  "feature": "The eighth command is wired into the sync script, the Hermes index, the adapters, the install guide, the three READMEs, the changelog, the release notes and the pressure tests",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "scripts/sync_hosts.py",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "__init__.py",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "commands/GitPlan.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-plan/agents/openai.yaml",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "plugin.yaml",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "plugin.json",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": ".claude-plugin/plugin.json",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/installation.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.en.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.ja.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "CHANGELOG.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "RELEASE_NOTES_1.0.4.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}
