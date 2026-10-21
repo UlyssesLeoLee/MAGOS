@@ -2509,14 +2509,16 @@ def test_redirection_operators_are_read_in_linear_time(target):
 
 
 # ---- sets (1.0.4): the host hook and the git layer around set-plan ---------------------------------------------------------------------
-def set_lane(wtbase, set_name, lid, branch, paths, deps=()):
-    return {"id": lid, "title": "lane " + lid, "branch": branch, "worktree": P(Path(wtbase) / (set_name + "-" + lid.lower())), "paths": list(paths), "depends_on": list(deps),
-            "acceptance": "it works"}
+def set_lane(wtbase, set_name, lid, paths, deps=()):
+    """A lane of a spec: the branch is agent/<set>/<id>, the worktree directory ends with -<set>-<id> after a prefix; it serves the requirement R1."""
+    return {"id": lid, "title": "lane " + lid, "branch": "agent/%s/%s" % (set_name, lid), "worktree": P(Path(wtbase) / ("wt-%s-%s" % (set_name, lid))), "serves": ["R1"],
+            "outcome": "the outcome of " + lid, "paths": list(paths), "depends_on": list(deps), "acceptance": "it works"}
 
 
 def register_set(guard, repo, tmp_path, name, lanes):
     """set-plan of `name` against the main tip of `repo`: the spec lies outside every worktree.  -> the spec."""
-    spec = {"v": 1, "title": name, "base": repo.git("rev-parse", "main"), "sheet": "sheet", "notes": [], "shared": [], "lanes": lanes}
+    spec = {"v": 1, "title": name, "requirements": [{"id": "R1", "text": "the task is done"}], "base": repo.git("rev-parse", "main"), "sheet": "sheet", "notes": [],
+            "shared": [], "lanes": lanes}
     f = Path(tmp_path) / ("spec-%s-%s.json" % (name, repo.path.name))
     f.write_text(json.dumps(spec), encoding="utf-8")
     r = guard(repo, "set-plan", "--set", name, "--target", "main", "--spec", str(f))
@@ -2526,8 +2528,8 @@ def register_set(guard, repo, tmp_path, name, lanes):
 
 def demo_set(guard, repo, tmp_path, wtbase=None):
     wt = wtbase or Path(tmp_path) / "wt"
-    return register_set(guard, repo, tmp_path, "demo", [set_lane(wt, "demo", "L1", "agent/demo/api", ["src/api/"]),
-                                                         set_lane(wt, "demo", "L2", "agent/demo/ui", ["src/ui/"], ["L1"]), set_lane(wt, "demo", "L3", "agent/demo/docs", ["docs/"])])
+    return register_set(guard, repo, tmp_path, "demo", [set_lane(wt, "demo", "api", ["src/api/"]), set_lane(wt, "demo", "ui", ["src/ui/"], ["api"]),
+                                                         set_lane(wt, "demo", "docs", ["docs/"])])
 
 
 def raw_git(repo, *args, cwd=None):
@@ -2541,7 +2543,7 @@ def test_set_subcommands_are_not_user_only(guard, tmp_path):
     empty, _ = session("empty", tmp_path)
     body = json.dumps({"v": 1, "sheet": "-> .git/magos/claims/x.claim; git switch -c x; rm .git/magos/ARMED; git worktree add ../w -b y"})
     g = "py -3 scripts/magos_guard.py"
-    subs = ["set-plan --set demo --target main --spec -", "set-show --set demo --drift", "set-update --set demo --expect-revision 1 --lane L1 --state active --note x",
+    subs = ["set-plan --set demo --target main --spec -", "set-show --set demo --drift", "set-update --set demo --expect-revision 1 --lane api --state active --note x",
             "set-release --set demo --reason done --abandon"]
     launcher = P(ROOT / "hooks" / "run-guard.cmd")
     allowed = []
@@ -2584,7 +2586,8 @@ def test_set_subcommands_are_not_user_only(guard, tmp_path):
                 assert not log.exists(), (half, words)  # the guard never started
     # the same text through the guard itself: the spec holds the words of a branch creation and of a write to the store, and nothing in it runs
     via = make(tmp_path, "viastdin")
-    spec = {"v": 1, "title": "t", "base": via.git("rev-parse", "main"), "sheet": body, "notes": [], "shared": [], "lanes": [set_lane(tmp_path / "wt-s", "demo", "L1", "agent/demo/api", ["src/api/"])]}
+    spec = {"v": 1, "title": "t", "requirements": [{"id": "R1", "text": "the task is done"}], "base": via.git("rev-parse", "main"), "sheet": body, "notes": [], "shared": [],
+            "lanes": [set_lane(tmp_path / "wt-s", "demo", "api", ["src/api/"])]}
     out = guard(via, "set-plan", "--set", "demo", "--target", "main", "--spec", "-", stdin=json.dumps(spec).encode("utf-8"))
     assert out.rc == 0 and branches(via) == ["main"] and not (tmp_path / "wt-s").exists()
     assert json.loads((Path(via.git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "magos" / "sets" / "demo.json").read_text(encoding="utf-8"))["sheet"] == body
@@ -2641,7 +2644,7 @@ def test_lane_creation_after_set_plan(guard, tmp_path):
             assert guard(r, "arm").rc == 0
         wt = tmp_path / ("wt-" + mode)
         demo_set(guard, r, tmp_path, wt)
-        l1, l3 = P(wt / "demo-l1"), P(wt / "demo-l3")
+        l1, l3 = P(wt / "wt-demo-api"), P(wt / "wt-demo-docs")
         add = lambda path, branch: 'git worktree add "%s" -b %s main' % (path, branch)
         assert verdict(hook(r.path, add(l1, "agent/demo/api"))) is None, mode  # the registered path and branch
         spellings = [l1.replace("/", "\\")] + ([l1.upper(), l1.lower()] if os.name == "nt" else [])
@@ -2651,12 +2654,12 @@ def test_lane_creation_after_set_plan(guard, tmp_path):
         assert reason and l1.lower() in reason.replace("\\", "/").lower(), (mode, reason)  # path_mismatch names the registered path
         assert verdict(hook(r.path, "git switch -c agent/demo/ui")) is None, mode
         assert NOMAN in (verdict(hook(r.path, "git switch -c agent/demo/rogue")) or ""), mode
-        lane_worktree(r, wt / "demo-l1", "agent/demo/api", {"src/api/a.py": "a\n"})  # git lets the registered creation through
+        lane_worktree(r, wt / "wt-demo-api", "agent/demo/api", {"src/api/a.py": "a\n"})  # git lets the registered creation through
         if mode == "armed":
             rogue = raw_git(r, "switch", "-c", "agent/demo/rogue")
             assert rogue.returncode != 0 and b"MAGOS" in rogue.stderr and "agent/demo/rogue" not in branches(r)  # the backstop vetoes the unclaimed branch
-        assert verdict(hook(r.path, add(l3, "agent/demo/docs"))) is None, mode  # L1's files lie outside L3's manifest
-        r.commit("docs/x.md", "x\n", cwd=wt / "demo-l1", msg="sibling commits a file of L3's manifest")
+        assert verdict(hook(r.path, add(l3, "agent/demo/docs"))) is None, mode  # api's files lie outside docs's manifest
+        r.commit("docs/x.md", "x\n", cwd=wt / "wt-demo-api", msg="sibling commits a file of docs's manifest")
         reason = verdict(hook(r.path, add(l3, "agent/demo/docs")))
         assert reason and OVERLAP in reason and "agent/demo/api" in reason, (mode, reason)  # denied, naming the sibling
         assert "agent/demo/docs" not in branches(r)
@@ -2682,20 +2685,20 @@ def test_integration_branch_creation_is_allowed_and_unrelated_creation_stays_den
                 assert p.returncode == 0, (args, p.stderr.decode("utf-8", "replace"))  # and the git layer finds the claim file of the name
                 raw_git(r, "switch", "main")
                 assert raw_git(r, "branch", "-D", "agent/demo/integration").returncode == 0
-        # L1 and L2 are merged into the integration branch
-        lane_worktree(r, wt / "demo-l1", "agent/demo/api", {"src/api/a.py": "a\n"})
-        lane_worktree(r, wt / "demo-l2", "agent/demo/ui", {"src/ui/u.py": "u\n"})
+        # api and ui are merged into the integration branch
+        lane_worktree(r, wt / "wt-demo-api", "agent/demo/api", {"src/api/a.py": "a\n"})
+        lane_worktree(r, wt / "wt-demo-ui", "agent/demo/ui", {"src/ui/u.py": "u\n"})
         assert raw_git(r, "switch", "-c", "agent/demo/integration").returncode == 0
         assert raw_git(r, "merge", "-q", "--no-ff", "-m", "merge the lanes", "agent/demo/api", "agent/demo/ui").returncode == 0
         assert raw_git(r, "switch", "main").returncode == 0
-        late = P(wt / "demo-l3")
-        assert verdict(hook(r.path, 'git worktree add "%s" -b agent/demo/docs main' % late)) is None, mode  # the merged files lie outside L3's manifest
+        late = P(wt / "wt-demo-docs")
+        assert verdict(hook(r.path, 'git worktree add "%s" -b agent/demo/docs main' % late)) is None, mode  # the merged files lie outside docs's manifest
         assert verdict(hook(r.path, "git switch -c agent/demo/docs")) is None, mode
         reason = verdict(hook(r.path, "git worktree add ../late -b agent/demo/docs"))  # another path than the registered one: path_mismatch
         assert reason and late.lower() in reason.replace("\\", "/").lower() and NOMAN not in reason, (mode, reason)
         assert NOMAN in (verdict(hook(r.path, "git switch -c agent/demo/late")) or ""), mode
         assert NOMAN in (verdict(hook(r.path, "git worktree add ../late -b agent/demo/late")) or ""), mode
-        # an unrelated branch over L2's manifest: the plan is denied naming L2's claim, and its creation without a plan too
+        # an unrelated branch over ui's manifest: the plan is denied naming ui's claim, and its creation without a plan too
         denied = guard(r, "plan", "--branch", "feature/ui", "--paths", "src/ui/x.py")
         assert denied.rc == 10 and "agent/demo/ui" in denied.out and "DENIES" in denied.out, (mode, denied)
         assert NOMAN in (verdict(hook(r.path, "git switch -c feature/ui")) or ""), mode
@@ -2711,14 +2714,14 @@ def test_integration_branch_creation_is_judged_for_name_and_claim_only(guard, tm
             ("wild", [("docs", ["docs/**/*.md"]), ("root", ["*.md"]), ("src", ["src/"])],
              ["git switch -c agent/wild/integration", "git branch agent/wild/integration", "git checkout -b agent/wild/integration",
               "git worktree add ../int -b agent/wild/integration main"]),
-            ("wide", [("md", ["**/*.md"]), ("py", ["src/**/*.py"])],
+            ("wide", [("markdown", ["**/*.md"]), ("python", ["src/**/*.py"])],
              ["git update-ref refs/heads/agent/wide/integration HEAD", "git switch -c agent/wide/integration", "git worktree add ../int -b agent/wide/integration main"])):
         for mode in ("armed", "auto"):
             r = make(tmp_path, "%s-%s" % (name, mode))
             if mode == "armed":
                 assert guard(r, "arm").rc == 0
             wt = tmp_path / ("wt-%s-%s" % (name, mode))
-            register_set(guard, r, tmp_path, name, [set_lane(wt, name, "L%d" % i, "agent/%s/%s" % (name, lid), paths) for i, (lid, paths) in enumerate(lanes, 1)])
+            register_set(guard, r, tmp_path, name, [set_lane(wt, name, lid, paths) for lid, paths in lanes])
             assert (store_claim(r, "agent/%s/integration" % name)).is_file()
 
             def allowed(label):
@@ -2727,8 +2730,8 @@ def test_integration_branch_creation_is_judged_for_name_and_claim_only(guard, tm
             allowed("fresh")
             first = "agent/%s/%s" % (name, lanes[0][0])
             second = "agent/%s/%s" % (name, lanes[1][0])
-            lane_worktree(r, wt / ("%s-l1" % name), first, {"docs/a.md": "a\n", "src/x.py": "x\n"}, "the files the manifests match")
-            lane_worktree(r, wt / ("%s-l2" % name), second, {"README.md": "r\n"}, "the files the manifests match")
+            lane_worktree(r, wt / ("wt-%s-%s" % (name, lanes[0][0])), first, {"docs/a.md": "a\n", "src/x.py": "x\n"}, "the files the manifests match")
+            lane_worktree(r, wt / ("wt-%s-%s" % (name, lanes[1][0])), second, {"README.md": "r\n"}, "the files the manifests match")
             allowed("after the lanes committed")
             bad = store_claim(r, "zz-unreadable")
             bad.parent.mkdir(parents=True, exist_ok=True)

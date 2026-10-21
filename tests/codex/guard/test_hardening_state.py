@@ -1087,10 +1087,11 @@ def test_a_stored_claim_under_a_refused_name_keeps_its_branch(repo, guard):
 
 # ---- sets (1.0.4): the integration claim ----------------------------------------------------------------------------------------------
 def set_spec_file(repo, tmp_path, name, lanes, base=None, tag=""):
-    """The spec file of a set (outside every worktree): lanes are (id, branch, paths, depends_on)."""
-    spec = {"v": 1, "title": name, "base": base or repo.git("rev-parse", "main"), "sheet": "sheet", "notes": [], "shared": [],
-            "lanes": [{"id": lid, "title": "lane " + lid, "branch": branch, "worktree": P(tmp_path / "wt" / (name + "-" + lid.lower())), "paths": list(paths), "depends_on": list(deps),
-                       "acceptance": "it works"} for lid, branch, paths, deps in lanes]}
+    """The spec file of a set (outside every worktree): lanes are (id, paths, depends_on); the branch of a lane is agent/<set>/<id> and its worktree ends with -<set>-<id>."""
+    spec = {"v": 1, "title": name, "requirements": [{"id": "R1", "text": "the task is done"}], "base": base or repo.git("rev-parse", "main"), "sheet": "sheet", "notes": [],
+            "shared": [], "lanes": [{"id": lid, "title": "lane " + lid, "branch": "agent/%s/%s" % (name, lid), "worktree": P(tmp_path / "wt" / ("wt-%s-%s" % (name, lid))),
+                                     "serves": ["R1"], "outcome": "the outcome of " + lid, "paths": list(paths), "depends_on": list(deps), "acceptance": "it works"}
+                                    for lid, paths, deps in lanes]}
     f = tmp_path / ("spec-%s%s.json" % (name, tag))
     f.write_text(json.dumps(spec), encoding="utf-8")
     return f
@@ -1102,7 +1103,7 @@ def register_set(guard, repo, tmp_path, name, lanes, tag=""):
     return r
 
 
-DEMO_LANES = [("L1", "agent/demo/api", ["src/api/"], []), ("L2", "agent/demo/ui", ["src/ui/"], ["L1"]), ("L3", "agent/demo/docs", ["docs/"], [])]
+DEMO_LANES = [("api", ["src/api/"], []), ("ui", ["src/ui/"], ["api"]), ("docs", ["docs/"], [])]
 
 
 def claim_text(base, branch, entries, extra=(), v=1):
@@ -1123,7 +1124,7 @@ SHAPES = [  # label, branch, entries, extra keys, is it the integration claim se
     ("role with a suffix", "agent/demo/integration", [MARKER], [("set", "demo"), ("role", "integration-x")], False),
     ("role twice", "agent/demo/integration", [MARKER], [("set", "demo"), ("role", "integration"), ("role", "integration")], False),
     ("set twice", "agent/demo/integration", [MARKER], [("set", "demo"), ("set", "demo"), ("role", "integration")], False),
-    ("a lane of a set", "agent/demo/api", ["src/api/"], [("set", "demo"), ("lane", "L1")], False),
+    ("a lane of a set", "agent/demo/api", ["src/api/"], [("set", "demo"), ("lane", "api")], False),
 ]
 
 
@@ -1199,8 +1200,8 @@ def test_the_integration_claim_is_never_a_claimant(repo, guard, tmp_path):
     other.path.mkdir()
     other.git("init", "-q")
     other.commit("README.md", "x\n")
-    register_set(guard, other, tmp_path, "demo", [("L1", "agent/demo/api", ["src/api/"], [])])
-    register_set(guard, other, tmp_path, "second", [("L1", "agent/second/magos", [".magos/**"], [])], tag="x")
+    register_set(guard, other, tmp_path, "demo", [("api", ["src/api/"], [])])
+    register_set(guard, other, tmp_path, "other", [("magos", [".magos/**"], [])], tag="x")
     # the integration branch holds a merged lane commit and a commit of its own that touches CHANGELOG.md
     third = Repo(tmp_path / "third")
     third.path.mkdir()
@@ -1209,23 +1210,23 @@ def test_the_integration_claim_is_never_a_claimant(repo, guard, tmp_path):
         third.write(rel, "base\n")
     third.git("add", "-A")
     third.git("commit", "-q", "-m", "init")
-    lanes = [("L1", "agent/demo/api", ["src/api/"], []), ("L2", "agent/demo/ui", ["src/ui/"], [])]
+    lanes = [("api", ["src/api/"], []), ("ui", ["src/ui/"], [])]
     register_set(guard, third, tmp_path, "demo", lanes, tag="t")
-    wt = tmp_path / "wt" / "demo-l1"
+    wt = tmp_path / "wt" / "wt-demo-api"
     third.git("worktree", "add", "-q", "-b", "agent/demo/api", str(wt), "main")
     third.commit("src/api/b.py", "b\n", cwd=wt, msg="lane work")
     third.git("switch", "-q", "-c", "agent/demo/integration")
-    third.git("merge", "-q", "--no-ff", "-m", "merge L1", "agent/demo/api")
+    third.git("merge", "-q", "--no-ff", "-m", "merge api", "agent/demo/api")
     third.commit("CHANGELOG.md", "changes\n", msg="the integration branch's own commit")
     third.git("switch", "-q", "main")
-    more = lanes + [("L4", "agent/demo/extra", ["CHANGELOG.md"], [])]
+    more = lanes + [("changelog", ["CHANGELOG.md"], [])]
     spec = set_spec_file(third, tmp_path, "demo", more, tag="amend")
     amended = guard(third, "set-plan", "--set", "demo", "--target", "main", "--spec", str(spec), "--amend", "--expect-revision", "1")
     assert amended.rc == 0, amended.out + amended.err  # the integration branch is a member of the set in the snapshot of set-plan
     d = json.loads(guard(third, "--json", "plan", "--branch", "tool/d", "--paths", "CHANGELOG.md").out)
-    assert d["code"] == "CONFLICT" and {c["branch"] for c in d["conflicts"]} == {"agent/demo/extra", "agent/demo/integration"}
+    assert d["code"] == "CONFLICT" and {c["branch"] for c in d["conflicts"]} == {"agent/demo/changelog", "agent/demo/integration"}
     kinds = {c["branch"]: [e["kind"] for e in c["evidence"]] for c in d["conflicts"]}
-    assert kinds["agent/demo/extra"] == ["declared"] and kinds["agent/demo/integration"] == ["committed"]  # the claim of the integration branch adds nothing
+    assert kinds["agent/demo/changelog"] == ["declared"] and kinds["agent/demo/integration"] == ["committed"]  # the claim of the integration branch adds nothing
     e = json.loads(guard(third, "--json", "plan", "--branch", "tool/e", "--paths", "src/api/").out)
     assert e["code"] == "CONFLICT" and {"agent/demo/api", "agent/demo/integration"} <= {c["branch"] for c in e["conflicts"]}
     assert all(c["evidence"] and not (c["branch"] == "agent/demo/integration" and "declared" in [x["kind"] for x in c["evidence"]]) for c in e["conflicts"])
@@ -1272,8 +1273,8 @@ def test_claims_with_set_keys_round_trip_and_old_claims_stay_readable(repo, guar
     plain = claim_text(base, "agent/old", ["src/"])  # a claim as 1.0.3 writes it: no key of a set
     doc = G.parse_claim(plain)
     assert doc["extra"] == [] and G.claim_set(doc) is None and not G.is_integration_claim(doc) and G.claim_bytes(g, "agent/old", doc)[1].decode("utf-8") == plain
-    shapes = [("agent/demo/api", ["src/api/"], [("set", "demo"), ("lane", "L1")]), ("agent/demo/integration", [MARKER], [("set", "demo"), ("role", "integration")]),
-              ("agent/rep/x", ["web/"], [("set", "a"), ("set", "b"), ("lane", "L1")])]  # a repeated line is kept as well
+    shapes = [("agent/demo/api", ["src/api/"], [("set", "demo"), ("lane", "api")]), ("agent/demo/integration", [MARKER], [("set", "demo"), ("role", "integration")]),
+              ("agent/rep/x", ["web/"], [("set", "a"), ("set", "b"), ("lane", "api")])]  # a repeated line is kept as well
     for branch, entries, extra in shapes:
         text = claim_text(base, branch, entries, extra)
         doc = G.parse_claim(text)
@@ -1289,18 +1290,18 @@ def test_claims_with_set_keys_round_trip_and_old_claims_stay_readable(repo, guar
     # plan --amend of such a claim (its set has no record) keeps the keys, in order, with line 1 as it was
     orphan = claims_dir(repo) / "agent" / "orphan.claim"
     orphan.parent.mkdir(parents=True, exist_ok=True)
-    orphan.write_bytes(claim_text(base, "agent/orphan", ["web/"], [("set", "ghost"), ("lane", "L1")]).encode("utf-8"))
+    orphan.write_bytes(claim_text(base, "agent/orphan", ["web/"], [("set", "ghost"), ("lane", "api")]).encode("utf-8"))
     assert guard(repo, "plan", "--branch", "agent/orphan", "--paths", "web/", "docs/", "--amend").rc == 0
     lines = orphan.read_text(encoding="utf-8").split("\n")
-    assert lines[0] == "state=active" and lines[9:11] == ["set=ghost", "lane=L1"] and lines[11:] == ["entry=web/", "entry=docs/", ""]
+    assert lines[0] == "state=active" and lines[9:11] == ["set=ghost", "lane=api"] and lines[11:] == ["entry=web/", "entry=docs/", ""]
     # the rows of list: a plain claim has neither field, the claims with set keys have them
     assert guard(repo, "plan", "--branch", "agent/plain", "--paths", "tools/").rc == 0
     rows = {r["branch"]: r for r in json.loads(guard(repo, "list", "--json").out)}
     assert "set" not in rows["agent/plain"] and "lane" not in rows["agent/plain"] and "role" not in rows["agent/plain"]
-    assert (rows["agent/orphan"]["set"], rows["agent/orphan"]["lane"]) == ("ghost", "L1") and "role" not in rows["agent/orphan"]
+    assert (rows["agent/orphan"]["set"], rows["agent/orphan"]["lane"]) == ("ghost", "api") and "role" not in rows["agent/orphan"]
     # the git layer reads line 1 only: a claim with set keys allows its branch, an unclaimed branch is vetoed
     assert guard(repo, "arm").rc == 0
-    orphan.write_bytes(claim_text(base, "agent/orphan", ["web/"], [("set", "ghost"), ("lane", "L1"), ("role", "integration")]).encode("utf-8"))
+    orphan.write_bytes(claim_text(base, "agent/orphan", ["web/"], [("set", "ghost"), ("lane", "api"), ("role", "integration")]).encode("utf-8"))
     repo.git("branch", "agent/orphan", "main")
     refused = subprocess.run(["git", "branch", "agent/unclaimed", "main"], cwd=str(repo.path), capture_output=True, env=os.environ.copy())
     assert refused.returncode != 0 and "MAGOS" in refused.stderr.decode("utf-8", "replace")
@@ -1309,15 +1310,15 @@ def test_claims_with_set_keys_round_trip_and_old_claims_stay_readable(repo, guar
 
 def test_list_shows_the_set_and_lane_of_a_claim(repo, guard, tmp_path):
     register_set(guard, repo, tmp_path, "demo", DEMO_LANES)
-    wt = tmp_path / "wt" / "demo-l1"
+    wt = tmp_path / "wt" / "wt-demo-api"
     repo.git("worktree", "add", "-q", "-b", "agent/demo/api", str(wt), "main")
     repo.commit("src/api/b.py", "b\n", cwd=wt, msg="lane work")
     repo.commit("web/outside.txt", "o\n", cwd=wt, msg="a file outside the manifest")
     repo.git("switch", "-q", "-c", "agent/demo/integration")  # the integration branch holds the merged lane commits
-    repo.git("merge", "-q", "--no-ff", "-m", "merge L1", "agent/demo/api")
+    repo.git("merge", "-q", "--no-ff", "-m", "merge api", "agent/demo/api")
     repo.git("switch", "-q", "main")
     assert guard(repo, "plan", "--branch", "tool/plain", "--paths", "tools/").rc == 0
-    register_set(guard, repo, tmp_path, "ghost", [("L1", "agent/ghost/a", ["ghost/"], [])], tag="g")
+    register_set(guard, repo, tmp_path, "ghost", [("ghosted", ["ghost/"], [])], tag="g")
     (common(repo) / "magos" / "sets" / "ghost.json").unlink()  # a set claim whose record is gone
     odd = claims_dir(repo) / "agent" / "odd"
     odd.mkdir(parents=True, exist_ok=True)
@@ -1326,19 +1327,19 @@ def test_list_shows_the_set_and_lane_of_a_claim(repo, guard, tmp_path):
     (odd / "other.claim").write_bytes(claim_text(base, "agent/odd/other", ["odd2/"], [("set", "other"), ("role", "integration")]).encode("utf-8"))  # not the marker entry
     rows = {r["branch"]: r for r in json.loads(guard(repo, "--json", "list").out)}
     assert not {"set", "lane", "role"} & set(rows["tool/plain"])  # a plain claim has none of the fields
-    assert (rows["agent/demo/api"]["set"], rows["agent/demo/api"]["lane"], "role" in rows["agent/demo/api"]) == ("demo", "L1", False)
-    assert (rows["agent/demo/ui"]["set"], rows["agent/demo/ui"]["lane"]) == ("demo", "L2") and rows["agent/demo/ui"]["state"] == "planned"
+    assert (rows["agent/demo/api"]["set"], rows["agent/demo/api"]["lane"], "role" in rows["agent/demo/api"]) == ("demo", "api", False)
+    assert (rows["agent/demo/ui"]["set"], rows["agent/demo/ui"]["lane"]) == ("demo", "ui") and rows["agent/demo/ui"]["state"] == "planned"
     integration = rows["agent/demo/integration"]
     assert (integration["set"], integration["lane"], integration["role"], integration["state"]) == ("demo", None, "integration", "active")  # unmerged work: active
-    assert (rows["agent/ghost/a"]["set"], rows["agent/ghost/a"]["lane"]) == ("ghost", "L1")  # an orphan set claim still shows its set
+    assert (rows["agent/ghost/ghosted"]["set"], rows["agent/ghost/ghosted"]["lane"]) == ("ghost", "ghosted")  # an orphan set claim still shows its set
     assert (rows["agent/odd/twice"]["set"], rows["agent/odd/twice"]["lane"]) == ("first", "L9")  # the first line names the set
     assert rows["agent/odd/other"]["set"] == "other" and "lane" not in rows["agent/odd/other"] and "role" not in rows["agent/odd/other"]  # role=integration in another shape
     zh = run(["--repo", str(repo.path), "--lang", "zh", "list"])
     text = zh.out.splitlines()
     assert zh.rc == 0 and text == guard(repo, "list").out.splitlines()  # the listing is not translated
-    assert "active   set demo/L1 agent/demo/api  [src/api/]" in text and "planned  set demo/L2 agent/demo/ui  [src/ui/]" in text
+    assert "active   set demo/api agent/demo/api  [src/api/]" in text and "planned  set demo/ui agent/demo/ui  [src/ui/]" in text
     assert "active   set demo/integration agent/demo/integration  [.magos/integration/demo/]" in text
-    assert "planned  set other agent/odd/other  [odd2/]" in text and "planned  set ghost/L1 agent/ghost/a  [ghost/]" in text and "planned  set first/L9 agent/odd/twice  [odd1/]" in text
+    assert "planned  set other agent/odd/other  [odd2/]" in text and "planned  set ghost/ghosted agent/ghost/ghosted  [ghost/]" in text and "planned  set first/L9 agent/odd/twice  [odd1/]" in text
     assert "planned  tool/plain  [tools/]" in text  # a plain claim is listed as before
     # --drift reports the lanes as before and skips the integration claim, whose branch holds files that its marker entry does not match
     drift = {r["branch"]: r["drift"] for r in json.loads(guard(repo, "--json", "list", "--drift").out)}
@@ -1356,8 +1357,8 @@ def test_doctor_reports_set_problems(repo, guard, tmp_path):
     out = guard(repo, "doctor")
     assert out.rc == 0 and "sets: 1, unreadable: 0, newer-format: 0" in out.out and "claims without a branch or planned worktree: none" in out.out  # the integration claim is no orphan
     assert "without a record" not in out.out
-    for name, edit, line in (("docs", None, "  set demo lane L3: claim missing"), ("ui", lambda t: t.replace("entry=src/ui/", "entry=lib/"), "  set demo lane L2: claim differs"),
-                             ("api", lambda t: t.replace("set=demo", "set=other"), "  set demo lane L1: claim differs"), ("api", lambda t: t.replace("lane=L1\n", ""), "  set demo lane L1: claim differs")):
+    for name, edit, line in (("docs", None, "  set demo lane docs: claim missing"), ("ui", lambda t: t.replace("entry=src/ui/", "entry=lib/"), "  set demo lane ui: claim differs"),
+                             ("api", lambda t: t.replace("set=demo", "set=other"), "  set demo lane api: claim differs"), ("api", lambda t: t.replace("lane=api\n", ""), "  set demo lane api: claim differs")):
         path = claims / (name + ".claim")
         good = path.read_text(encoding="utf-8")
         if edit is None:
@@ -1374,11 +1375,11 @@ def test_doctor_reports_set_problems(repo, guard, tmp_path):
             lane["state"] = state
     edit_set(repo, states)
     out = guard(repo, "doctor")
-    assert out.rc == 1 and "  set demo lane L1: branch vanished" in out.out.splitlines() and "  set demo lane L2: branch vanished" in out.out.splitlines() and "L3: branch vanished" not in out.out
+    assert out.rc == 1 and "  set demo lane api: branch vanished" in out.out.splitlines() and "  set demo lane ui: branch vanished" in out.out.splitlines() and "docs: branch vanished" not in out.out
     edit_set(repo, lambda rec: [lane.update(state=s) for lane, s in zip(rec["lanes"], ("planned", "integrated", "blocked"))])
     assert guard(repo, "doctor").rc == 0
     # claims of a set that has no record, a newer-format record, an unreadable one, and a temporary file
-    register_set(guard, repo, tmp_path, "ghost", [("L1", "agent/ghost/a", ["ghost/"], [])], tag="g")
+    register_set(guard, repo, tmp_path, "ghost", [("ghosted", ["ghost/"], [])], tag="g")
     (common(repo) / "magos" / "sets" / "ghost.json").unlink()
     sets = common(repo) / "magos" / "sets"
     (sets / "newer.json").write_bytes(b'{"v": 3}')
@@ -1387,13 +1388,13 @@ def test_doctor_reports_set_problems(repo, guard, tmp_path):
     out = guard(repo, "doctor")
     lines = out.out.splitlines()
     assert out.rc == 1 and "sets: 1, unreadable: 1, newer-format: 1" in lines
-    assert "  claims of set ghost without a record: agent/ghost/a, agent/ghost/integration" in lines
+    assert "  claims of set ghost without a record: agent/ghost/ghosted, agent/ghost/integration" in lines
     assert any(ln.startswith("  set record sets/newer.json was written by a newer MAGOS (v=3)") and "upgrade this guard" in ln for ln in lines)
     assert "  unreadable set record sets/broken.json" in lines
     assert "claims without a branch or planned worktree: agent/ghost/integration" in lines  # no record: the integration claim is an orphan too
     for name in ("newer.json", "broken.json", "demo.json.tmp"):
         (sets / name).unlink()
-    assert guard(repo, "release", "--branch", "agent/ghost/a").rc == 0 and guard(repo, "release", "--branch", "agent/ghost/integration").rc == 0  # release --branch frees them
+    assert guard(repo, "release", "--branch", "agent/ghost/ghosted").rc == 0 and guard(repo, "release", "--branch", "agent/ghost/integration").rc == 0  # release --branch frees them
     assert guard(repo, "doctor").rc == 0
     # the target branch is gone
     repo.git("switch", "-q", "-c", "scratch")

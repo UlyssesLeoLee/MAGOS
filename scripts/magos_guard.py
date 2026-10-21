@@ -183,6 +183,35 @@ M = {
     "show_order": ("合并顺序：{order}", "merge order: {order}"),
     "set_line": ("  lane {l}  分支 {b}  工作树 {w}  {n} 条路径", "  lane {l}  branch {b}  worktree {w}  {n} entries"),
     "set_line_integration": ("  集成分支 {b}", "  integration branch {b}"),
+    # ---- sets (1.0.4): the topic names of the lanes, the requirements they serve and the summary of what an integrated lane changed
+    "set_why_changes_target": ("目标分支 {t} 不存在，无法计算 lane {l} 的改动摘要",
+                               "the target branch {t} does not exist, so the summary of the changes of lane {l} cannot be computed"),
+    "set_why_changes_history": ("lane {l} 与 {ref} 没有共同历史，无法计算改动摘要", "lane {l} shares no history with {ref}, so the summary of its changes cannot be computed"),
+    "set_err_generic_id": ("lane id「{id}」是序号或泛称，看不出改动的主题。请改用 1 到 3 个单词的主题 slug（小写，连字符连接），例如 claim-store、sweep-readiness、readme-gitplan。",
+                           "lane id '{id}' is an ordinal or generic name and does not show the topic of the change. Name the topic with 1 to 3 words in kebab-case, "
+                           "for example claim-store, sweep-readiness, readme-gitplan."),
+    "set_err_reserved_id": ("lane id「{id}」是保留名：integration 属于集成分支 agent/<set>/integration，con、prn、aux、nul、com1 至 com9、lpt1 至 lpt9 是 Windows 设备名。"
+                            "请改用改动的主题命名，例如 integration-docs。",
+                            "lane id '{id}' is reserved: integration belongs to the integration branch agent/<set>/integration, and con, prn, aux, nul, com1 to com9 "
+                            "and lpt1 to lpt9 are Windows device names. Name the topic of the change instead, for example integration-docs."),
+    "set_err_id_form": ("lane id「{id}」不是主题 slug：必须匹配 {rule}（小写字母、数字、连字符，1 到 24 个字符，不以连字符开头），并用 1 到 3 个单词说明改动的主题，例如 claim-store。{hint}",
+                        "lane id '{id}' is not a topic slug: it must match {rule} (lowercase letters, digits and hyphens, 1 to 24 characters, not starting with a hyphen) "
+                        "and name the topic of the change in 1 to 3 words, for example claim-store.{hint}"),
+    "set_hint_slug": ("建议：{slug}。", "Suggestion: {slug}."),
+    "set_err_branch_form": ("lane {l} 的分支必须是 {want}（agent/<set>/<lane id>），而不是「{got}」。请改用 {want}。",
+                            "the branch of lane {l} must be {want} (agent/<set>/<lane id>), not '{got}'. Use {want}."),
+    "set_err_worktree_form": ("lane {l} 的工作树目录名必须以 -{s}-{l} 结尾，而「{got}」不是。请改用，例如：{want}。",
+                              "the worktree directory of lane {l} must have a name ending with -{s}-{l}, which '{got}' does not. Use, for example: {want}."),
+    "set_err_worktree_device": ("lane {l} 的工作树目录名「{got}」在第一个点之前是 Windows 设备名 {dev}。请改用，例如：{want}。",
+                                "the worktree directory name '{got}' of lane {l} is the Windows device name {dev} before its first dot. Use, for example: {want}."),
+    "set_err_unserved": ("需求 {r}（{t}）没有任何 lane 负责。请把 {r} 加入某个 lane 的 serves，或删除这条需求。",
+                         "requirement {r} ({t}) is served by no lane. Add {r} to the serves of a lane, or remove the requirement."),
+    "set_err_serves_unknown": ("serves 里的「{r}」不是本规划 requirements 中的编号（已有：{ids}；编号逐字匹配，区分大小写）。",
+                               "'{r}' in serves is no requirement id of this spec (known: {ids}; ids are matched exactly, case included)."),
+    "set_err_serves_count": ("lane {l} 的 serves 需要 1 到 12 个需求编号（现在 {n} 个）。", "the serves of lane {l} needs 1 to 12 requirement ids ({n} given)."),
+    "show_changes": ("    改动 {l}：{commits} 个提交，{files} 个文件，+{ins}/-{del}；路径 {paths}；{subjects}",
+                     "    changes {l}: {commits} commits, {files} files, +{ins}/-{del}; paths {paths}; {subjects}"),
+    "show_more": ("另有 {n} 项", "+{n} more"),
 }
 
 
@@ -2589,7 +2618,7 @@ _SCRUB = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_O
 _PIN = ["-c", "core.quotepath=false", "-c", "core.longpaths=true", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "--no-optional-locks"]
 # The only subcommands Git.run starts, none of which talks to a remote (in a partial clone, git itself fetches the objects a diff needs
 # from the promisor remote).
-LOCAL_GIT = frozenset(("--version", "branch", "check-ref-format", "config", "diff", "for-each-ref", "merge-base", "rev-list", "rev-parse", "status", "worktree"))
+LOCAL_GIT = frozenset(("--version", "branch", "check-ref-format", "config", "diff", "for-each-ref", "log", "merge-base", "rev-list", "rev-parse", "status", "worktree"))
 _PIN_HINT = "ask the user to pin it in their own terminal: git config magos.target <branch>"
 
 
@@ -3599,15 +3628,21 @@ def cmd_override(args):
 
 
 # ---------------------------------------------------------------- sets (1.0.4): the set record, the integration claim, the spec of set-plan
-SET_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,23}")
-LANE_ID = re.compile(r"[A-Za-z0-9_-]{1,16}")
+SET_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,23}")  # the slug: a set name and a lane id (a topic of one to three words)
+SLUG_RULE = "[a-z0-9][a-z0-9-]{0,23}"  # the text of SET_NAME that the messages show (a literal brace cannot stand in an entry of M)
+_GENERIC_ID = re.compile(r"(?:[0-9]+|[a-z]|(?:l|lane|task|agent|worker|wt|t|n|w|work|part|step|item)-?[0-9]+)")  # matched against the lower-cased id
+REQ_ID = re.compile(r"[A-Za-z0-9_-]{1,8}")
 _DEVICE = re.compile(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])")
 LANE_STATES = ("planned", "active", "ready", "integrated", "blocked")
 SPEC_BYTES, SPEC_LANES, SPEC_SHARED, SPEC_NOTES, SPEC_DEPENDS, SPEC_ERRORS, SPEC_PAIRS = 4194304, 12, 64, 5, 11, 20, 20
-SPEC_TOP = ("v", "title", "base", "sheet", "notes", "shared", "lanes")
-SPEC_LANE = ("id", "title", "branch", "worktree", "paths", "depends_on", "acceptance")
-RECORD_KEYS = ("v", "set", "target", "base", "revision", "created", "updated", "by", "title", "sheet", "notes", "shared", "integration", "lanes")
-RECORD_LANE_KEYS = ("id", "title", "branch", "worktree", "paths", "depends_on", "acceptance", "state", "head", "note", "updated")
+SPEC_REQS, SPEC_SERVES, SPEC_SHEET = 12, 12, 8192
+CHANGES_SUBJECTS, CHANGES_PATHS, CHANGES_SUBJECT_CHARS = 8, 12, 100  # the bounds of the changes summary of a lane
+SPEC_TOP = ("v", "title", "requirements", "base", "sheet", "notes", "shared", "lanes")
+SPEC_LANE = ("id", "title", "branch", "worktree", "paths", "depends_on", "serves", "outcome", "acceptance")
+SPEC_LANE_OPTIONAL = ("acceptance",)  # every other key of the spec is required
+RECORD_KEYS = ("v", "set", "target", "base", "revision", "created", "updated", "by", "title", "requirements", "sheet", "notes", "shared", "integration", "lanes")
+RECORD_LANE_KEYS = ("id", "title", "branch", "worktree", "paths", "depends_on", "serves", "outcome", "acceptance", "state", "head", "changes", "note", "updated")
+CHANGES_KEYS = ("commits", "subjects", "more", "files", "insertions", "deletions", "paths", "paths_more")
 _SURROGATE = re.compile(r"[\ud800-\udfff]")
 _SHEET_CTL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # the sheet may hold a newline and a tab
 _BASE = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
@@ -3756,20 +3791,30 @@ def _record_shape(rec, name):
         return "shared is not a list of {path, owner}"
     if rec.get("integration") is not None and not _is_text(rec["integration"]):
         return "integration is neither null nor a string"
+    if not isinstance(rec.get("requirements"), list) or not all(isinstance(r, dict) and _is_text(r.get("id")) and _is_text(r.get("text")) for r in rec["requirements"]):
+        return "requirements is not a list of {id, text}"
     if not isinstance(rec.get("lanes"), list):
         return "lanes is not a list"
     for i, ln in enumerate(rec["lanes"]):
         where = "lanes[%d]." % i
         if not isinstance(ln, dict):
             return "lanes[%d] is not an object" % i
-        why = texts(ln, ("id", "title", "branch", "worktree", "acceptance", "note", "updated"), where)
+        why = texts(ln, ("id", "title", "branch", "worktree", "outcome", "acceptance", "note", "updated"), where)
         if why:
             return why
-        if not all(isinstance(ln.get(k), list) and all(_is_text(x) for x in ln[k]) for k in ("paths", "depends_on")):
-            return "%spaths and depends_on are not lists of strings" % where
+        if not all(isinstance(ln.get(k), list) and all(_is_text(x) for x in ln[k]) for k in ("paths", "depends_on", "serves")):
+            return "%spaths, depends_on and serves are not lists of strings" % where
         if ln.get("state") not in LANE_STATES or (ln.get("head") is not None and not _is_text(ln["head"])):
             return "%sstate or head is not valid" % where
+        if ln.get("changes") is not None and not _changes_shape(ln["changes"]):
+            return "%schanges is neither null nor a summary of changes" % where
     return None
+
+
+def _changes_shape(ch):
+    """Is `ch` the summary of the changes of a lane (CHANGES_KEYS: six counts and two lists of strings; a key this guard does not know is allowed)?"""
+    return isinstance(ch, dict) and all(isinstance(ch.get(k), int) and not isinstance(ch.get(k), bool) for k in ("commits", "more", "files", "insertions", "deletions", "paths_more")) \
+        and all(isinstance(ch.get(k), list) and all(_is_text(x) for x in ch[k]) for k in ("subjects", "paths"))
 
 
 def parse_set(name, path, text):
@@ -3864,15 +3909,15 @@ def _field(path, key):
         "%s[%s]" % (path, ascii(key)[:60])
 
 
-def _keys(errs, obj, path, allowed):
-    """Duplicate, unknown and missing keys of the spec object `obj` at `path`."""
+def _keys(errs, obj, path, allowed, optional=()):
+    """Duplicate, unknown and missing keys of the spec object `obj` at `path`; every key of `allowed` is required except those of `optional`."""
     for k in obj.dups:
         errs.add(_field(path, k), "DUPLICATE", "the key appears more than once")
     for k in obj:
         if k not in allowed:
             errs.add(_field(path, k), "UNKNOWN_KEY", "not a key of the spec")
     for k in allowed:
-        if k not in obj:
+        if k not in obj and k not in optional:
             errs.add(_field(path, k), "MISSING", "required")
 
 
@@ -3953,32 +3998,155 @@ def _cycles(ids, deps):
     return groups
 
 
-def _check_lane(g, errs, i, ln):
-    """One lane of the spec at lanes[i] -> its model (the keys whose value is invalid are None), the errors recorded."""
-    path = "lanes[%d]" % i
+def _shown(text, limit=80):
+    """A value of the spec as a message shows it: control characters as spaces, cut to `limit` characters."""
+    text = _CTL.sub(" ", text)
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def slug_hint(lane_id):
+    """The slug that lower-casing `lane_id` and replacing every _ by - gives, when it is a topic slug that is neither generic nor reserved, else None."""
+    s = lane_id.lower().replace("_", "-")
+    return s if SET_NAME.fullmatch(s) and not _GENERIC_ID.fullmatch(s) and s != "integration" and not _DEVICE.fullmatch(s) else None
+
+
+def lane_id_problem(lang, value):
+    """-> (code, text) for a lane id that is no topic slug, or None.  The tests run in this order and the first that fails gives the one error: generic
+    (the lower-cased id is only digits, one letter or an ordinal such as l1, lane-2, task3), reserved (integration, a Windows device name), form (the
+    id as written is not [a-z0-9][a-z0-9-]{0,23})."""
+    low = value.lower()
+    if _GENERIC_ID.fullmatch(low):
+        return "GENERIC_ID", T(lang, "set_err_generic_id", id=_shown(value))
+    if low == "integration" or _DEVICE.fullmatch(low):
+        return "RESERVED", T(lang, "set_err_reserved_id", id=_shown(value))
+    if not SET_NAME.fullmatch(value):
+        slug = slug_hint(value)
+        return "FORMAT", T(lang, "set_err_id_form", id=_shown(value), rule=SLUG_RULE, hint=" " + T(lang, "set_hint_slug", slug=slug) if slug else "")
+    return None
+
+
+def _dir_name(norm):
+    """The directory name of a stored worktree path: its last component without a trailing separator ('' for the root of a drive)."""
+    p = norm.rstrip("/")
+    return "" if not p or re.fullmatch(r"[A-Za-z]:", p) else p.rsplit("/", 1)[-1]
+
+
+class _Spec:
+    """What the checks of one spec share: the language of the messages, the set and the target, the lane ids met so far, the requirement ids of the spec
+    (None while they cannot be judged) and, on demand, the default worktree path of a lane."""
+
+    def __init__(self, g, lang, set_name, target):
+        self.g, self.lang, self.set, self.target = g, lang, set_name, target
+        self.lanes, self.reqs, self._main = {}, None, None
+
+    def default_worktree(self, lid):
+        """<parent of the main worktree>/<repo dir name>-<set>-<id> with / separators (the main worktree is the first entry of git worktree list)."""
+        if self._main is None:
+            wts = worktrees(self.g)
+            self._main = wts[0]["path"].replace("\\", "/").rstrip("/") if wts else ""
+        parent, _, name = self._main.rpartition("/")
+        return "%s/%s-%s-%s" % (parent or ".", name or "repo", self.set, lid)
+
+    def worktree_name_error(self, lid, norm):
+        """The error of the directory name of the lane `lid` at the stored path `norm`: it must end with -<set>-<id> after a non-empty prefix (WORKTREE_FORM,
+        compared exactly, case included), and what stands before its first dot must be no Windows device name (WORKTREE); None when it holds."""
+        name, suffix = _dir_name(norm), "-%s-%s" % (self.set, lid)
+        if not name.endswith(suffix) or len(name) <= len(suffix):
+            return "WORKTREE_FORM", T(self.lang, "set_err_worktree_form", l=lid, s=self.set, got=_shown(name), want=self.default_worktree(lid))
+        first = name.split(".", 1)[0]
+        if _DEVICE.fullmatch(fold(first)):
+            return "WORKTREE", T(self.lang, "set_err_worktree_device", l=lid, got=_shown(name), dev=_shown(first), want=self.default_worktree(lid))
+        return None
+
+
+def _check_requirements(ctx, errs, spec):
+    """The `requirements` of the spec -> (the valid {id, text} items in order, the rows (index, id, text) of the items the coverage judges, the number of
+    repeated keys the items reported).  Sets ctx.reqs to {id: index} of the valid unique ids (None when there is none)."""
+    reqs, rows, reported = [], [], 0
+    if "requirements" not in spec:
+        return reqs, rows, reported
+    raw = spec["requirements"]
+    if not isinstance(raw, list):
+        errs.add("requirements", "TYPE", "must be a list, not %s" % _kind(raw))
+        return reqs, rows, reported
+    if not raw:
+        errs.add("requirements", "RANGE", "a plan has 1 to %d requirements, not 0" % SPEC_REQS)
+    elif len(raw) > SPEC_REQS:
+        errs.add("requirements[%d]" % SPEC_REQS, "RANGE", "at most %d requirements, not %d" % (SPEC_REQS, len(raw)))
+    seen, known = {}, {}
+    for i, item in enumerate(raw[:SPEC_REQS]):
+        where = "requirements[%d]" % i
+        if not isinstance(item, dict):
+            errs.add(where, "TYPE", "must be an object, not %s" % _kind(item))
+            continue
+        reported += len(item.dups)
+        _keys(errs, item, where, ("id", "text"))
+        rid = text = None
+        if "id" in item:
+            v = item["id"]
+            if not _is_text(v):
+                errs.add(where + ".id", "TYPE", "must be a string, not %s" % _kind(v))
+            elif _SURROGATE.search(v):
+                errs.add(where + ".id", "ENCODING", "holds a lone surrogate")
+            elif not REQ_ID.fullmatch(v):
+                errs.add(where + ".id", "FORMAT", "a requirement id is [A-Za-z0-9_-] of 1 to 8 characters, not %s" % _shown(v, 40))
+            elif v.lower() in seen:
+                errs.add(where + ".id", "DUPLICATE", "the id equals the id of requirements[%d] ignoring case" % seen[v.lower()])
+            else:
+                seen[v.lower()] = i
+                known[v] = i
+                rid = v
+        if "text" in item:
+            text = _text(errs, where + ".text", item["text"], 1, 200)
+        if rid is not None and text is not None:
+            reqs.append({"id": rid, "text": text})
+            rows.append((i, rid, text))
+    ctx.reqs = known or None
+    return reqs, rows, reported
+
+
+def _check_lane(ctx, errs, i, ln):
+    """One lane of the spec at lanes[i] -> its model (the keys whose value is invalid are None; `raw_id` is the id as written when it is a string), the
+    errors recorded in the order of the schema: id, title, branch, worktree, paths, depends_on, serves, outcome, acceptance."""
+    path, lang = "lanes[%d]" % i, ctx.lang
     if not isinstance(ln, dict):
         errs.add(path, "TYPE", "must be an object, not %s" % _kind(ln))
         return None
-    _keys(errs, ln, path, SPEC_LANE)
-    m = {"id": None, "title": None, "branch": None, "worktree": None, "paths": None, "entries": [], "depends_on": None, "acceptance": None}
+    _keys(errs, ln, path, SPEC_LANE, SPEC_LANE_OPTIONAL)
+    m = {"id": None, "raw_id": None, "title": None, "branch": None, "worktree": None, "paths": None, "entries": [], "depends_on": None, "serves": None,
+         "outcome": None, "acceptance": ""}
     if "id" in ln:
-        v = _text(errs, path + ".id", ln["id"], 1, 16)
-        if v is not None and not LANE_ID.fullmatch(v):
-            errs.add(path + ".id", "FORMAT", "an id is [A-Za-z0-9_-] of 1 to 16 characters")
-        elif v is not None and v.lower() == "integration":
-            errs.add(path + ".id", "FORMAT", "the id integration (in any case) names the integration claim of the set and is reserved")
-        elif v is not None:
-            m["id"] = v
+        v = ln["id"]
+        if not _is_text(v):
+            errs.add(path + ".id", "TYPE", "must be a string, not %s" % _kind(v))
+        elif _SURROGATE.search(v):
+            errs.add(path + ".id", "ENCODING", "holds a lone surrogate")
+        else:
+            m["raw_id"] = v
+            problem = lane_id_problem(lang, v)
+            if problem:
+                errs.add(path + ".id", *problem)
+            elif v in ctx.lanes:  # a repeated id is an invalid id of this lane: its one error, and no rule derived from the id
+                errs.add(path + ".id", "DUPLICATE", "the id equals the id of lanes[%d]" % ctx.lanes[v])
+            else:
+                ctx.lanes[v] = i
+                m["id"] = v
+    lid = m["id"]
+    lname = lid or (_shown(m["raw_id"], 40) if m["raw_id"] is not None else "#%d" % i)
     if "title" in ln:
         m["title"] = _text(errs, path + ".title", ln["title"], 1, 80)
-    if "acceptance" in ln:
-        m["acceptance"] = _text(errs, path + ".acceptance", ln["acceptance"], 1, 300)
     if "branch" in ln:
-        b = _text(errs, path + ".branch", ln["branch"], 1, 4096)
-        if b is not None:
-            reason = "holds a control character" if _CTL.search(b) else name_problem(g, b)
-            if reason:
-                errs.add(path + ".branch", "BRANCH_NAME", reason)
+        b = ln["branch"]
+        if not _is_text(b):
+            errs.add(path + ".branch", "TYPE", "must be a string, not %s" % _kind(b))
+        elif _SURROGATE.search(b):
+            errs.add(path + ".branch", "ENCODING", "holds a lone surrogate")
+        elif lid is not None:  # a lane whose id is invalid has no branch rule: its one error is the id's
+            want = "agent/%s/%s" % (ctx.set, lid)
+            if b != want:
+                errs.add(path + ".branch", "BRANCH_FORM", T(lang, "set_err_branch_form", l=lid, want=want, got=_shown(b)))
+            elif fold(b) == fold(ctx.target):
+                errs.add(path + ".branch", "BRANCH_NAME", "is the same branch as the target (case and Unicode normalisation ignored)")
             else:
                 m["branch"] = b
     if "worktree" in ln:
@@ -3993,6 +4161,9 @@ def _check_lane(g, errs, i, ln):
                 errs.add(path + ".worktree", "WORKTREE", reason)
             else:
                 m["worktree"] = norm
+                problem = ctx.worktree_name_error(lid, norm) if lid is not None else None
+                if problem:
+                    errs.add(path + ".worktree", *problem)
     if "paths" in ln:
         raw = ln["paths"]
         if not isinstance(raw, list):
@@ -4028,19 +4199,42 @@ def _check_lane(g, errs, i, ln):
             if len(ln["depends_on"]) > SPEC_DEPENDS:
                 errs.add(path + ".depends_on", "RANGE", "at most %d ids" % SPEC_DEPENDS)
             m["depends_on"] = list(ln["depends_on"][:SPEC_DEPENDS])
+    if "serves" in ln:
+        raw = ln["serves"]
+        if not isinstance(raw, list):
+            errs.add(path + ".serves", "TYPE", "must be a list, not %s" % _kind(raw))
+        else:
+            if not 1 <= len(raw) <= SPEC_SERVES:
+                errs.add(path + ".serves", "RANGE", T(lang, "set_err_serves_count", l=lname, n=len(raw)))
+            seen, m["serves"] = set(), []
+            for j, r in enumerate(raw[:SPEC_SERVES]):
+                where = "%s.serves[%d]" % (path, j)
+                if ctx.reqs is not None and (not _is_text(r) or r not in ctx.reqs):
+                    errs.add(where, "UNKNOWN_REQUIREMENT", T(lang, "set_err_serves_unknown", r=_shown(r if _is_text(r) else ascii(r), 40), ids=", ".join(ctx.reqs)))
+                elif _is_text(r) and r in seen:
+                    errs.add(where, "DUPLICATE", "%s is listed twice" % r)
+                elif _is_text(r):
+                    seen.add(r)
+                    m["serves"].append(r)
+    if "outcome" in ln:
+        m["outcome"] = _text(errs, path + ".outcome", ln["outcome"], 1, 300)
+    if "acceptance" in ln:
+        a = _text(errs, path + ".acceptance", ln["acceptance"], 0, 300)
+        m["acceptance"] = "" if a is None else a
     return m
 
 
-def check_spec(g, spec, dupes, set_name, target, spec_path):
-    """Validate a parsed spec: every field, then the rules across fields, all errors collected.  -> (errors, model); the model is None when
-    there is an error.  Reads no claim, record or ref: only `git check-ref-format` runs.  `spec_path`: the spec file (None for stdin), which
-    must not lie inside a lane worktree."""
+def check_spec(g, spec, dupes, set_name, target, spec_path, lang="en"):
+    """Validate a parsed spec: every field, then the rules across fields, all errors collected (the naming and coverage texts are in `lang`).  -> (errors,
+    model); the model is None when there is an error.  Reads no claim, record or ref: only the worktree list (for the default worktree path of a message)
+    and `git check-ref-format` run.  `spec_path`: the spec file (None for stdin), which must not lie inside a lane worktree."""
     errs = _Errors()
     if not isinstance(spec, dict):
         errs.add("spec", "TYPE", "the spec must be a JSON object, not %s" % _kind(spec))
         return errs, None
     _keys(errs, spec, "", SPEC_TOP)
     reported = len(spec.dups)
+    ctx = _Spec(g, lang, set_name, target)
     if "v" in spec:
         v = spec["v"]
         if isinstance(v, bool) or isinstance(v, float) or (_is_text(v)) or v is None or isinstance(v, (list, dict)):
@@ -4048,6 +4242,8 @@ def check_spec(g, spec, dupes, set_name, target, spec_path):
         elif v != 1 or isinstance(v, _Digits):
             errs.add("v", "UNSUPPORTED_VERSION", "this guard reads spec version 1 only")
     title = _text(errs, "title", spec["title"], 1, 120) if "title" in spec else None
+    requirements, req_rows, more = _check_requirements(ctx, errs, spec)
+    reported += more
     base = None
     if "base" in spec:
         if not _is_text(spec["base"]):
@@ -4056,7 +4252,7 @@ def check_spec(g, spec, dupes, set_name, target, spec_path):
             errs.add("base", "FORMAT", "must be the full object name of the target tip (40 or 64 hexadecimal digits)")
         else:
             base = spec["base"].lower()
-    sheet = _text(errs, "sheet", spec["sheet"], 1, 4096, True) if "sheet" in spec else None
+    sheet = _text(errs, "sheet", spec["sheet"], 1, SPEC_SHEET, True) if "sheet" in spec else None
     notes = []
     if "notes" in spec:
         if not isinstance(spec["notes"], list):
@@ -4076,18 +4272,12 @@ def check_spec(g, spec, dupes, set_name, target, spec_path):
             if not 1 <= len(lanes_raw) <= SPEC_LANES:
                 errs.add("lanes", "RANGE", "a set has 1 to %d lanes, not %d" % (SPEC_LANES, len(lanes_raw)))
             for i, ln in enumerate(lanes_raw[:SPEC_LANES]):
-                m = _check_lane(g, errs, i, ln)
+                m = _check_lane(ctx, errs, i, ln)
                 if isinstance(ln, dict):
                     reported += len(ln.dups)
                 lanes.append(m)
-    ids, seen_ids = {}, {}
-    for i, m in enumerate(lanes):  # lane ids are unique ignoring case
-        if m and m["id"] is not None:
-            if m["id"].lower() in seen_ids:
-                errs.add("lanes[%d].id" % i, "DUPLICATE", "the id equals the id of lanes[%d] ignoring case" % seen_ids[m["id"].lower()])
-            else:
-                seen_ids[m["id"].lower()] = i
-                ids[m["id"]] = i
+    ids = dict(ctx.lanes)  # the lane ids that passed the id rules, each with the index of its first lane
+    bad_ids = {m["raw_id"] for m in lanes if m and m["raw_id"] is not None and m["id"] is None}  # reported once, at the lane: no second error names them
     deps = {}
     for i, m in enumerate(lanes):  # depends_on: existing ids (spelled as the lane's id), no duplicate, no self, no cycle
         if not m or m["depends_on"] is None:
@@ -4096,7 +4286,8 @@ def check_spec(g, spec, dupes, set_name, target, spec_path):
         for j, d in enumerate(m["depends_on"]):
             where = "lanes[%d].depends_on[%d]" % (i, j)
             if not _is_text(d) or d not in ids:
-                errs.add(where, "UNKNOWN_LANE", "%s is no lane id of the spec (ids are matched exactly)" % (ascii(d)[:40]))
+                if not (_is_text(d) and d in bad_ids):
+                    errs.add(where, "UNKNOWN_LANE", "%s is no lane id of the spec (ids are matched exactly)" % (ascii(d)[:40]))
             elif d in seen:
                 errs.add(where, "DUPLICATE", "%s is listed twice" % d)
             elif d == m["id"]:
@@ -4143,7 +4334,8 @@ def check_spec(g, spec, dupes, set_name, target, spec_path):
                                 shared_seen.add(entry.alts[0][:-1])
                 if "owner" in s:
                     if not _is_text(owner) or owner not in ids:
-                        errs.add(where + ".owner", "UNKNOWN_LANE", "%s is no lane id of the spec (ids are matched exactly)" % ascii(owner)[:40])
+                        if not (_is_text(owner) and owner in bad_ids):
+                            errs.add(where + ".owner", "UNKNOWN_LANE", "%s is no lane id of the spec (ids are matched exactly)" % ascii(owner)[:40])
                     elif entry is not None:
                         manifest = lanes[ids[owner]]["entries"]
                         fp = entry.alts[0][:-1]  # the literal file: containment is the exact intersection, never the literal-directory rule
@@ -4151,19 +4343,15 @@ def check_spec(g, spec, dupes, set_name, target, spec_path):
                             errs.add(where + ".path", "NOT_IN_OWNER", "the path lies outside the manifest of its owner %s" % owner)
                 if entry is not None and _is_text(owner):
                     shared.append({"path": entry.raw, "owner": owner})
-    for i, m in enumerate(lanes):  # branches: distinct, no ref that would be a file and a directory, not the integration branch, not the target
-        if not m or m["branch"] is None:
-            continue
-        for what, other in [("the integration branch of the set", integration_branch(set_name)), ("the target", target)] + \
-                [("lane %s" % o["id"], o["branch"]) for o in lanes[:i] if o and o["id"] is not None and o["branch"] is not None]:
-            if fold(m["branch"]) == fold(other):
-                errs.add("lanes[%d].branch" % i, "DUPLICATE", "is the same branch as %s (case and Unicode normalisation ignored)" % what)
-            elif what != "the target":
-                reason = name_clash(m["branch"], [other])
-                if reason:
-                    errs.add("lanes[%d].branch" % i, "BRANCH_NAME", "%s (%s)" % (reason, what))
-    for i, m in enumerate(lanes):  # worktrees: distinct, none inside another
-        if not m or m["worktree"] is None:
+    served = set()  # the requirements and the lanes cover each other: every requirement is served by a lane (every lane serves an existing one: its serves)
+    for m in lanes:
+        if m and m["serves"]:
+            served.update(m["serves"])
+    for i, rid, text in req_rows:
+        if rid not in served:
+            errs.add("requirements[%d]" % i, "UNSERVED", T(lang, "set_err_unserved", r=rid, t=text[:60]))
+    for i, m in enumerate(lanes):  # worktrees: distinct, none inside another (a lane whose id is invalid has its one id error)
+        if not m or m["worktree"] is None or m["id"] is None:
             continue
         for o in lanes[:i]:
             if o and o["worktree"] is not None and o["id"] is not None:
@@ -4175,7 +4363,7 @@ def check_spec(g, spec, dupes, set_name, target, spec_path):
         errs.add("spec", "DUPLICATE", "a key appears more than once")
     if errs:
         return errs, None
-    return errs, {"title": title, "base": base, "sheet": sheet, "notes": notes, "shared": shared, "order": order, "lanes": lanes}
+    return errs, {"title": title, "requirements": requirements, "base": base, "sheet": sheet, "notes": notes, "shared": shared, "order": order, "lanes": lanes}
 
 
 def read_spec(g, arg):
@@ -4517,17 +4705,19 @@ def plan_set(g, args, mdl):
         old = old_lanes.get(m["id"])
         lane = dict(old) if old else {}
         fresh = {"id": m["id"], "title": m["title"], "branch": m["branch"], "worktree": m["worktree"], "paths": list(m["paths"]),
-                 "depends_on": list(m["depends_on"]), "acceptance": m["acceptance"]}
+                 "depends_on": list(m["depends_on"]), "serves": list(m["serves"]), "outcome": m["outcome"], "acceptance": m["acceptance"]}
         if old is None:
-            lane.update(fresh, state="planned", head=None, note="", updated=now)
+            lane.update(fresh, state="planned", head=None, changes=None, note="", updated=now)
         else:
-            if any(old[k] != fresh[k] for k in fresh):
+            if any(old.get(k) != fresh[k] for k in fresh):
                 lane["updated"] = now
             lane.update(fresh)
+            lane.setdefault("changes", None)  # the state, the head, the changes and the note of a lane that survives stay
         new_lanes.append(_ordered(lane, RECORD_LANE_KEYS))
     new = dict(rec) if rec else {}
     new.update(v=SET_FORMAT, set=name, target=rec["target"] if rec else target, base=mdl["base"], created=rec["created"] if rec else now, title=mdl["title"],
-               sheet=mdl["sheet"], notes=list(mdl["notes"]), shared=mdl["shared"], integration=rec["integration"] if rec else None, lanes=new_lanes)
+               requirements=[dict(r) for r in mdl["requirements"]], sheet=mdl["sheet"], notes=list(mdl["notes"]), shared=mdl["shared"],
+               integration=rec["integration"] if rec else None, lanes=new_lanes)
 
     def core(r):
         return {k: v for k, v in r.items() if k not in ("revision", "updated", "by")}
@@ -4573,11 +4763,14 @@ def plan_set(g, args, mdl):
         written.append(rpath)
         if write:
             commit_store(file_writes, deletes)
-            lanes_audit = [{"id": ln["id"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"]} for ln in new_lanes]
-            audit(g, op="set-amend" if rec else "set-plan", set=name, target=new["target"], base=mdl["base"], revision=revision, lanes=lanes_audit, integration=ib,
-                  host="cli", **({"previous_revision": rec["revision"], "removed": removed} if rec else {}))
-    lane_rows = [{"id": ln["id"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"], "state": ln["state"],
+            lanes_audit = [{"id": ln["id"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"], "serves": ln["serves"]} for ln in new_lanes]
+            audit(g, op="set-amend" if rec else "set-plan", set=name, target=new["target"], base=mdl["base"], revision=revision,
+                  requirements=[r["id"] for r in new["requirements"]], lanes=lanes_audit, integration=ib, host="cli",
+                  **({"previous_revision": rec["revision"], "removed": removed} if rec else {}))
+    lane_rows = [{"id": ln["id"], "title": ln["title"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"], "depends_on": ln["depends_on"],
+                  "serves": ln["serves"], "outcome": ln["outcome"], "acceptance": ln["acceptance"], "state": ln["state"],
                   "create": 'git worktree add "%s" -b %s %s' % (ln["worktree"], ln["branch"], new["target"])} for ln in new_lanes]
+    req_rows = requirement_rows(new)
     first = lane_rows[0] if lane_rows else {"create": ""}
     if args.dry_run:
         head = T(lang, "set_ok_check", s=name)
@@ -4590,8 +4783,14 @@ def plan_set(g, args, mdl):
     lines = [head] + [T(lang, "set_line", l=r["id"], b=r["branch"], w=r["worktree"], n=len(r["entries"])) for r in lane_rows] + [T(lang, "set_line_integration", b=ib)]
     lines += ["(%s) %s" % (w["code"], w["text"]) for w in warns]
     return {"decision": "allow", "code": "OK", "set": name, "target": {"name": new["target"], "sha": live}, "base": mdl["base"], "revision": revision,
-            "dry_run": args.dry_run, "unchanged": unchanged, "integration_branch": ib, "order": mdl["order"], "lanes": lane_rows,
+            "dry_run": args.dry_run, "unchanged": unchanged, "integration_branch": ib, "order": mdl["order"], "requirements": req_rows, "lanes": lane_rows,
             "written": [] if args.dry_run or unchanged else [p.replace("\\", "/") for p in written], "warnings": warns, "message": "\n".join(lines)}
+
+
+def requirement_rows(rec):
+    """The requirements of a plan or a record as {id, text, lanes}, in their order: `lanes` are the ids of the lanes that serve the requirement, in lane
+    order.  The coverage is derived from the `serves` of the lanes and never stored."""
+    return [{"id": r["id"], "text": r["text"], "lanes": [ln["id"] for ln in rec["lanes"] if r["id"] in ln["serves"]]} for r in rec["requirements"]]
 
 
 def _file_bytes(path):
@@ -4625,7 +4824,7 @@ def cmd_set_plan(args):
         spec, dupes, errs = parse_spec(text)
     mdl = None
     if not errs:
-        errs, mdl = check_spec(g, spec, dupes, name, args.target, spec_path)
+        errs, mdl = check_spec(g, spec, dupes, name, args.target, spec_path, lang)
     if errs:
         return set_emit(args, invalid_set(lang, list(errs)))
     pairs, total = lane_overlaps(mdl["lanes"], g.deadline)
@@ -4810,7 +5009,7 @@ def set_view(g, rec, drift):
         row = {"id": lane["id"], "branch_exists": branch is not None, "tip": lane_tip,
                "ahead": int(ahead[1].decode().strip()) if ahead and ahead[0] == 0 else None,
                "descends_from_base": is_ancestor(g, base, lane_tip) if lane_tip else None, "worktree_present": bool(here), "worktree_clean": clean,
-               "operation": ops, "state": lane["state"], "head": lane["head"], "claim": claim_status(name, lane, claims, bad)}
+               "operation": ops, "state": lane["state"], "head": lane["head"], "claim": claim_status(name, lane, claims, bad), "changes": lane.get("changes")}
         if drift:
             index[lane["id"]] = ManifestIndex(lane["paths"], g.deadline)
             files = None
@@ -4824,6 +5023,7 @@ def set_view(g, rec, drift):
             row.update(changed=files, out_of_lane=index[lane["id"]].outside(files) if files else [],
                        moved_since_ready=None if lane_tip is None else lane["state"] == "ready" and lane_tip != lane["head"])
         view["lanes"].append(row)
+    view["requirements"] = requirement_rows(rec)
     if drift:
         by_file = {}
         for lane in rec["lanes"]:
@@ -4857,6 +5057,12 @@ def show_text(lang, rec, view):
             wt = T(lang, "show_wt_absent") if not row["worktree_present"] else T(lang, "show_wt_clean" if row["worktree_clean"] else "show_wt_dirty")
         lines.append(T(lang, "show_lane", box="[x]" if lane["state"] in ("ready", "integrated") else "[ ]", l=lane["id"], st=lane["state"], head=short(lane["head"]),
                        tip=short(row["tip"]), n="-" if row["ahead"] is None else row["ahead"], wt=wt, b=lane["branch"]))
+        ch = lane.get("changes")
+        if lane["state"] == "integrated" and ch:  # what the lane changed, stored when it was recorded integrated
+            def listed(items, more):
+                return "; ".join(items + ([T(lang, "show_more", n=more)] if more else [])) or "-"
+            lines.append(T(lang, "show_changes", l=lane["id"], commits=ch["commits"], files=ch["files"], ins=ch["insertions"], paths=listed(ch["paths"], ch["paths_more"]),
+                           subjects=listed(ch["subjects"], ch["more"]), **{"del": ch["deletions"]}))
     drift = view.get("drift")
     if drift:
         for row in view["lanes"]:
@@ -4924,15 +5130,17 @@ def update_options(args):
 
 
 def update_checks(g, args, rec, lane, heads, wts):
-    """The conditions of --state ready and of --state integrated that the repository decides -> the denial (exit 16 or 22), or None."""
+    """The conditions of --state ready and of --state integrated that the repository decides -> (the denial (exit 16 or 22) or None, landed): `landed` is
+    true when the head of an integrated lane is already an ancestor of the tip of the target (the ancestry test asks the target first and the integration
+    branch second; the changes summary reuses the answer)."""
     lang, lid, head = args.lang, lane["id"], args.head.lower()
     branch = real_branch(lane, heads)
     if args.state == "ready":
         if branch is None:
-            return refuse16(lang, "set-update", [(lid, "BRANCH_MISSING", T(lang, "set_why_missing", l=lid, b=lane["branch"]))])
+            return refuse16(lang, "set-update", [(lid, "BRANCH_MISSING", T(lang, "set_why_missing", l=lid, b=lane["branch"]))]), False
         tip = heads[branch]
         if head != tip:
-            return refuse16(lang, "set-update", [(lid, "HEAD_MISMATCH", T(lang, "set_why_head_tip", head=args.head, b=branch, tip=tip))])
+            return refuse16(lang, "set-update", [(lid, "HEAD_MISMATCH", T(lang, "set_why_head_tip", head=args.head, b=branch, tip=tip))]), False
         items = []
         for w in lane_worktrees(wts, lane, branch):  # uncommitted work is not in the recorded head: a merge of it would leave that work behind
             notes, unreadable = operation(w["path"])
@@ -4941,23 +5149,90 @@ def update_checks(g, args, rec, lane, heads, wts):
             if dirty_paths(g, w["path"]):
                 items.append((lid, "DIRTY_WORKTREE", T(lang, "set_why_dirty", l=lid)))
         if items:
-            return refuse16(lang, "set-update", items)
+            return refuse16(lang, "set-update", items), False
         paths = committed_paths(g, heads.get(rec["target"]) or rec["base"], tip)  # the plan's base stands in for a target that is gone
         if paths is None:
-            return refuse16(lang, "set-update", [(lid, "NO_MERGE_BASE", T(lang, "set_why_base", l=lid))])
+            return refuse16(lang, "set-update", [(lid, "NO_MERGE_BASE", T(lang, "set_why_base", l=lid))]), False
         outside = ManifestIndex(lane["paths"], g.deadline).outside(paths)
         if outside:
             return set_deny(lang, "OUT_OF_LANE", T(lang, "set_out_of_lane", l=lid, files=_few(outside, 20)), lane=lid, files=outside[:SET_TEXT_MAX],
-                            truncated=len(outside) > SET_TEXT_MAX)
-        return None
+                            truncated=len(outside) > SET_TEXT_MAX), False
+        return None, False
     integration = integration_branch(rec["set"])
     if head != (lane["head"] or ""):
-        return refuse16(lang, "set-update", [(lid, "HEAD_MISMATCH", T(lang, "set_why_head_recorded", head=args.head, l=lid, rec=lane["head"] or "-"))])
+        return refuse16(lang, "set-update", [(lid, "HEAD_MISMATCH", T(lang, "set_why_head_recorded", head=args.head, l=lid, rec=lane["head"] or "-"))]), False
     if integration not in heads:
-        return refuse16(lang, "set-update", [(lid, "BRANCH_MISSING", T(lang, "set_why_integration", b=integration))])
-    if not any(is_ancestor(g, head, heads[b]) for b in (rec["target"], integration) if b in heads):
-        return refuse16(lang, "set-update", [(lid, "NOT_MERGED", T(lang, "set_why_ancestor", head=args.head, t=rec["target"]))])
-    return None
+        return refuse16(lang, "set-update", [(lid, "BRANCH_MISSING", T(lang, "set_why_integration", b=integration))]), False
+    landed = rec["target"] in heads and is_ancestor(g, head, heads[rec["target"]])
+    if not landed and not is_ancestor(g, head, heads[integration]):
+        return refuse16(lang, "set-update", [(lid, "NOT_MERGED", T(lang, "set_why_ancestor", head=args.head, t=rec["target"]))]), False
+    return None, landed
+
+
+def _subject(text):
+    """A commit subject as the summary stores it: control characters become spaces, blanks at the ends go, an empty one reads `(no subject)` and one over
+    CHANGES_SUBJECT_CHARS characters is cut to one character less followed by an ellipsis."""
+    s = _CTL.sub(" ", text).strip()
+    if not s:
+        return "(no subject)"
+    return s if len(s) <= CHANGES_SUBJECT_CHARS else s[:CHANGES_SUBJECT_CHARS - 1] + "…"
+
+
+def changes_summary(g, ref, head):
+    """What the lane at `head` changed against `ref` (full object names), from four read-only git commands -> the summary (CHANGES_KEYS, in that order), or
+    None when the two share no history (merge-base exits 1; any other failure raises GitFail).  The commits are those of `ref..head`; the files and lines are
+    the net change from the merge base of the two (`ref...head`), so a lane that merged `ref` into itself is not charged with its files."""
+    if g.run("merge-base", ref, head, ok=(0, 1))[0] != 0:
+        return None
+    rng = "%s..%s" % (ref, head)
+    commits = int(g.text("rev-list", "--count", rng).strip() or "0")
+    subjects = []
+    if commits:  # --skip and --max-count apply before --reverse: the oldest CHANGES_SUBJECTS commits of the range, oldest first
+        out = g.text("log", "--no-show-signature", "--encoding=UTF-8", "--format=%s", "--reverse", "--skip=%d" % max(commits - CHANGES_SUBJECTS, 0),
+                     "--max-count=%d" % CHANGES_SUBJECTS, rng)
+        lines = out.split("\n")  # one line per commit: an empty message is an empty line, which splitlines() would not tell from the end of the text
+        if lines and lines[-1] == "":
+            lines.pop()
+        subjects = [_subject(x) for x in lines]
+    toks = g.run("diff", "--numstat", "-z", "--find-renames", "--no-ext-diff", "--no-textconv", "%s...%s" % (ref, head), "--")[1].split(b"\0")
+    files = ins = dels = 0
+    keys = {}  # the distinct keys of the changed files, in the order of the first file that has them
+    i = 0
+    while i < len(toks):
+        tok, i = toks[i], i + 1
+        cols = tok.split(b"\t", 2)
+        if len(cols) < 3:
+            continue
+        added, removed, name = cols
+        if name == b"":  # a rename or copy: the old and the new name follow as records of their own; it is one file, named by its new name
+            names = toks[i:i + 2]
+            name, i = (names[-1] if names else b""), i + 2
+        files += 1
+        ins += int(added) if added.isdigit() else 0  # a binary file shows - in both columns: one file, no line
+        dels += int(removed) if removed.isdigit() else 0
+        segs = _CTL.sub(" ", name.decode("utf-8", "replace")).split("/")
+        keys.setdefault("/".join(segs[:2]), None)
+    listed = list(keys)
+    return {"commits": commits, "subjects": subjects, "more": commits - len(subjects), "files": files, "insertions": ins, "deletions": dels,
+            "paths": listed[:CHANGES_PATHS], "paths_more": max(len(listed) - CHANGES_PATHS, 0)}
+
+
+def lane_changes(g, rec, lane, heads, landed, lang):
+    """The summary of the changes of the lane that `set-update --state integrated` records -> (denial, summary).  The compare tip is the tip of the local
+    branch of the target, or the plan's base when the head is already in the target (`landed`), whose range against the tip would be empty.  Nothing is
+    recorded when it cannot be measured: the missing target is exit 11 (TARGET_UNCERTAIN), no common history exit 16 (NO_MERGE_BASE)."""
+    lid, target = lane["id"], rec["target"]
+    if landed:
+        ref, shown = rec["base"], "the plan's base %s" % rec["base"]
+    elif target in heads:
+        ref, shown = heads[target], target
+    else:  # the message of this exit 11 is the text itself
+        text = T(lang, "set_why_changes_target", t=target, l=lid)
+        return set_deny(lang, "UNKNOWN", text, unknowns=[{"code": "TARGET_UNCERTAIN", "text": text}]), None
+    summary = changes_summary(g, ref, lane["head"])
+    if summary is None:
+        return refuse16(lang, "set-update", [(lid, "NO_MERGE_BASE", T(lang, "set_why_changes_history", l=lid, ref=shown))]), None
+    return None, summary
 
 
 def update_set(g, args):
@@ -4982,20 +5257,27 @@ def update_set(g, args):
             return invalid_set(lang, [("--integration", "MISSING", "the record names no integration branch yet: pass --integration %s" % integration_branch(name))])
         if rec["integration"] is not None and args.integration not in (None, rec["integration"]):
             return invalid_set(lang, [("--integration", "STATE", "the record names the integration branch %s" % rec["integration"])])
+    changes = lane.get("changes") if to == "integrated" else None  # a lane that leaves integrated no longer states that it was merged
     if to in ("ready", "integrated"):
-        denial = update_checks(g, args, rec, lane, list_refs(g)[0], worktrees(g))
+        heads = list_refs(g)[0]
+        denial, landed = update_checks(g, args, rec, lane, heads, worktrees(g))
         if denial:
             return denial
+        if to == "integrated" and lane["state"] == "ready":  # the first record of the merge: what the lane changed, measured now; a repeated update keeps it
+            denial, changes = lane_changes(g, rec, lane, heads, landed, lang)
+            if denial:
+                return denial
     now = now_iso()
     new_lane = dict(lane, state=to, updated=now, note=lane["note"] if args.note is None else args.note,
-                    head=args.head.lower() if to in ("ready", "integrated") else lane["head"])
+                    head=args.head.lower() if to in ("ready", "integrated") else lane["head"], changes=changes)
     new = dict(rec, revision=rec["revision"] + 1, updated=now, by=who(g), integration=rec["integration"] if to != "integrated" else args.integration or rec["integration"],
                lanes=[_ordered(new_lane, RECORD_LANE_KEYS) if x is lane else x for x in rec["lanes"]])
     path = set_path(g, name)
     commit_store([(path, record_bytes(new), _file_bytes(path))], [])
+    counts = {k: changes[k] for k in ("commits", "files", "insertions", "deletions")} if changes else None
     audit(g, op="set-update", set=name, lane=lane["id"], state=to, head=new_lane["head"], note=new_lane["note"], integration=new["integration"], revision=new["revision"],
-          host="cli")
-    return {"decision": "allow", "code": "OK", "set": name, "lane": lane["id"], "state": to, "head": new_lane["head"], "note": new_lane["note"],
+          changes=counts, host="cli")
+    return {"decision": "allow", "code": "OK", "set": name, "lane": lane["id"], "state": to, "head": new_lane["head"], "changes": changes, "note": new_lane["note"],
             "integration": new["integration"], "revision": new["revision"], "warnings": [],
             "message": T(lang, "set_ok_update", s=name, l=lane["id"], st=to, rev=new["revision"])}
 
