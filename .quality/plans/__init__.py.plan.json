@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "source": "__init__.py",
+  "baseline_source_sha256": "a386beedea7f62fabc618073ce87e14de53d95bfef8ccb6681c41ef571bd9b07",
+  "prepared_branch": "agent/gitplan-1.0.4",
+  "technical_design": ".quality/docs/__init__.py.md",
+  "test_design": ".quality/test-design/__init__.py.test.md",
+  "prepared_technical_design_sha256": "0e24fe7e8d6050857538bfe908dd6350f3e13f6c7d5e9eae182b82d72602ff70",
+  "prepared_test_design_sha256": "36ae615de612ca036c92a5e9cbac8625dd2e8af195f45383a49f57ecc0333ec1",
+  "prepared_related_design_sha256": {}
+}

@@ -6,13 +6,13 @@ These are **semantic command intents**. Canonical names use a leading `/`. A hos
 
 ## Argument and Help Behavior
 
-All seven commands accept `--help`. When it is present, show that command's usage, argument descriptions, defaults, and examples, then stop before inspecting or changing a repository. `--help` takes precedence over other arguments.
+All eight commands accept `--help`. When it is present, show that command's usage, argument descriptions, defaults, and examples, then stop before inspecting or changing a repository. `--help` takes precedence over other arguments.
 
-**Reply language.** All seven commands accept `--lang <language>`. It selects the language of everything the command says to the user: help text, questions, errors, reports (including the final report of a write command after a long run), and recommendations. When it is absent the reply is in Chinese (简体中文). The value is the next token: a language name or a common code (`English`, `en`, `日本語`, `ja`, `Français`); put a multi-word name in quotes. The option may appear anywhere among the arguments and may be combined with `--help`; help is then shown in the requested language, with flags and examples left untouched. Never translate command names, option names, branch or worktree names, paths, SHAs, Git commands, or status codes such as `BLOCKED_DIRTY`; a short gloss in the reply language next to a code is fine. Remove `--lang` and its value from the arguments before any other parsing, so it never becomes part of a goal, target, or branch name. If `--lang` has no value, or the value is not a language, explain the problem (in Chinese) and show the usage without executing the command.
+**Reply language.** All eight commands accept `--lang <language>`. It selects the language of everything the command says to the user: help text, questions, errors, reports (including the final report of a write command after a long run), and recommendations. When it is absent the reply is in Chinese (简体中文). The value is the next token: a language name or a common code (`English`, `en`, `日本語`, `ja`, `Français`); put a multi-word name in quotes. The option may appear anywhere among the arguments and may be combined with `--help`; help is then shown in the requested language, with flags and examples left untouched. Never translate command names, option names, branch or worktree names, paths, SHAs, Git commands, or status codes such as `BLOCKED_DIRTY`; a short gloss in the reply language next to a code is fine. Remove `--lang` and its value from the arguments before any other parsing, so it never becomes part of a goal, target, or branch name. If `--lang` has no value, or the value is not a language, explain the problem (in Chinese) and show the usage without executing the command.
 
 Recognize only the options listed for each command. For an unknown option or a required option value that is missing or invalid, explain the issue and show the relevant usage without executing the command. If a required positional target is missing, ask the user for it. Host adapters should preserve the supplied argument text and route `--help` to this reference.
 
-Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other six). Append the same arguments after the host-specific entry point.
+Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other seven). Append the same arguments after the host-specific entry point.
 
 ## Host Adapter Contract
 
@@ -28,8 +28,8 @@ Each host reaches the same canonical command through its own adapter. Adapters d
 Rules for every adapter:
 
 - `skills/` adapters must not read `commands/*.md`; those wrappers contain Claude-specific loading steps.
-- Codex adapters set `policy.allow_implicit_invocation: false`, so they run only when selected explicitly; the root skill keeps semantic activation. Hermes has no per-skill switch, so `git-integrate`, `git-cleanup`, `git-converge`, and `git-sweep` refuse to write unless invoked explicitly.
-- If the shared rules (`SKILL.md`, `references/commands.md`) cannot be read, read-only commands may continue read-only and report the incomplete installation; `GitIntegrate` must not integrate, `GitCleanup` must not delete, `GitConverge` must not merge or delete, and `GitSweep` must not merge, delete, or push (preview only).
+- Codex adapters set `policy.allow_implicit_invocation: false`, so they run only when selected explicitly; the root skill keeps semantic activation. Hermes has no per-skill switch, so `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, and `git-plan` refuse to write unless invoked explicitly.
+- If the shared rules (`SKILL.md`, `references/commands.md`) cannot be read, read-only commands may continue read-only and report the incomplete installation; `GitIntegrate` must not integrate, `GitCleanup` must not delete, `GitConverge` must not merge or delete, `GitSweep` must not merge, delete, or push, and `GitPlan` must not register a plan, create a branch or worktree, merge, or release a set (preview only).
 - An installed package must contain `SKILL.md`, every file under `references/`, and every `skills/git-*/SKILL.md` with its `agents/openai.yaml`, laid out exactly as in this repository, so that the relative paths above resolve. The root `plugin.json` belongs to the Agent Plugins package (the whole repository), not to the Codex and Hermes skills-directory package.
 
 ## 1. GitRecon
@@ -640,6 +640,338 @@ Run state: COMPLETE / PARTIAL, remaining items + remedies, Next preview and Next
 Remaining risks (including: without a successful publish, the remote lacks the commits now only in local <branch>)
 ```
 
+## 8. GitPlan
+
+### Invocation
+
+```text
+/GitPlan <set> --into <branch>
+/GitPlan <set> --into <branch> --apply
+/GitPlan <set> --into <branch> --apply --create
+/GitPlan <set> --status
+/GitPlan <set> --amend --expect-revision <n>
+/GitPlan <set> --amend --expect-revision <n> --apply [--create]
+/GitPlan <set> --converge [--include-active]
+/GitPlan <set> --converge --apply [--include-active] [--land] [--expect-revision <n>]
+/GitPlan <set> --release
+/GitPlan <set> --into <branch> --lang English
+/GitPlan --help
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|---|---:|---|
+| `<set>` | Yes | Name of the plan: `[a-z0-9][a-z0-9-]{0,23}`, matched case-sensitively, and not a Windows device name (`con`, `nul`, `com1`, ...). It names the set record and the claims of its lanes. |
+| `--into <branch>` | Yes, to plan | Local branch the plan is made against and that `--land` later fast-forwards. Same rules as the section 6 `<branch>` (matched exactly in `refs/heads/`, not `main`). The other forms read it from the set record. |
+| `--apply` | No | With `--into`: register the plan the preview showed. With `--amend`: register the amended plan. With `--converge`: merge the lanes into the integration branch. Without it, only show a preview. |
+| `--create` | No | With `--apply` of a plan or an amendment: also create the branches and worktrees of the registered lanes that do not exist yet. |
+| `--status` | No | Read-only checklist: the sheet with the state of every lane and what remains. |
+| `--amend` | No | Re-plan a registered set. Needs `--expect-revision`. |
+| `--expect-revision <n>` | With `--amend` | The record revision (a positive integer) the amendment, or with `--converge --apply` the previewed convergence, was made against; a record at another revision stops the command. |
+| `--converge` | No | Preview the merge of the lanes, in dependency order, into one integration branch; with `--apply`, run it. |
+| `--include-active` | No | With `--converge`: treat a lane in state `active` that holds commits as ready at its current tip. In an apply this is the user's acceptance of those tips. |
+| `--land` | No | With `--converge --apply`: after the merges and the checks, fast-forward `<branch>` to the integration branch. |
+| `--release` | No | Retire the set once its lanes are integrated: remove its claims and its record. |
+| `--lang <language>` | No | Language of the reply, a name or code such as `English` or `ja`. Default: Chinese. See Argument and Help Behavior. |
+| `--help` | No | Show this command's usage and stop without inspecting or changing the repository. |
+
+The selecting option (`--into`, `--status`, `--amend`, `--converge`, `--release`) chooses the form. Two selecting options together, or an option the form does not list in **Invocation** (`--lang` and `--help` are handled first, as in Argument and Help Behavior), is a usage error: explain it, show the usage, and execute nothing.
+
+Examples: `/GitPlan feat-x --into develop`, `/GitPlan feat-x --into develop --apply --create`, `/GitPlan feat-x --status`, `/GitPlan feat-x --converge --apply --land`, `/GitPlan --help`.
+
+### 中文描述
+
+在任何子 Agent 开工之前，调查 Git 与代码，把一个任务拆成若干文件互斥的 lane（子 Agent 的 worktree），并给出一份简明清单：它既是你审阅的计划，也是任务完成后合并时的 TODO 参考。`magos_guard.py` 证明各 lane 的文件清单两两不相交，并以乐观锁登记（revision 与 base，没有人持锁）；过期的计划只会被发现，不会被覆盖。登记同时为集成分支 `agent/<set>/integration` 登记一份 claim，使守卫允许用普通 `git switch -c` 创建它；这份 claim 不占用任何文件，也不限制任何 lane 的 manifest。之后 `--status` 与 `--converge` 重新打印这份清单并勾选每个 lane 的状态，`--converge --apply` 按依赖顺序把 lane 合并进集成分支（"整体"），`--land` 再以一次快进把它落到 `<branch>`，`--release` 收尾。默认只预览；只有 `--apply`（以及 `--release`）才写入：登记写 claim 与 set 记录，`--create` 才创建分支和 worktree。从不推送、从不强制、从不删除分支或 worktree，也从不动 `main`。
+
+### Definitions
+
+- **set**: one plan, named `<set>`. Its **record** is the file `<git-common-dir>/magos/sets/<set>.json`. Each lane has one claim (the claim format of `references/lane-split.md`, plus `set=<set>` and `lane=<id>`), and the integration branch has one (`set=<set>`, `role=integration`, one marker entry `.magos/integration/<set>/`, because a claim needs a non-empty manifest): that claim is why a plain `git switch -c` may create `agent/<set>/integration` in a guarded repository. It is exempt from overlap judgement in both directions: it claims no files, so it restricts no lane manifest and is never a claimant, and the creation of that branch is judged only for its name and the existence of the claim. Only the guard's `set-plan`, `set-update` and `set-release` write the record and these claims, and `set-show` reads them. While the record exists, a plain `plan --amend` of a lane claim is refused (exit 14, `lane_in_set`) and so is a plain `release` of any claim of the set (exit 16, `blocked_set`): a set is changed only through this command. An open lane claim (`planned` or `active` in `<guard> list`) is active-owner evidence, so `/GitCleanup`, `/GitConverge` and `/GitSweep` report its lane as `BLOCKED_ACTIVE_OWNER`; `--release` removes the claims.
+- **guard**: `magos_guard.py`, run as `<guard>` (`references/lane-split.md` section 5). It must report version 1.0.4 or later (`<guard> version --json`, field `version`), because older guards lack the `set-*` subcommands; no guard, or an older one, is a gate failure.
+- **Guard call**: every call is an argument list, `<guard> <subcommand> --repo '<top>' --json --lang <zh or en> ...`, with `<top>` the top level of the invoking worktree and `--lang zh` when the reply language is Chinese, else `--lang en`. Section 6 **Argument safety** applies to it, and the command lines of this section leave `--repo`, `--json` and `--lang` out. The result is one JSON object with `decision`, `code`, `message`, `exit_code` and, for a denial, the keys of its kind: `errors` (`field`, `code`, `text`), `overlaps`, `lanes`, `blocked` (`lane`, `reason`), `unknowns` (`code`, `text`), `kind` with `expected` and `current`, `files`. Exit code 0 proceeds. Any other code stops the command at that call, except where a step gives a code another meaning (exit 21 of a preview's `set-show`, and a dry-run failure that **Preview behavior** step 3 fixes in the partition): completed steps stay, and the report quotes the guard's message and the row of **Remedies** for that code. The only retry is one repeat of a call that exited 13. The record and the claim files are never read or written except through the guard.
+- **view**: what `set-show --drift` prints with `--json`: besides the common keys, `record`, `view` and `warnings`. `record` is the stored record (`revision`, `target`, `base`, `integration`, and per lane `id`, `branch`, `worktree`, `paths`, `depends_on`, `acceptance`, `state`, `head`, `note`). `view` has `target_tip` (null when the target branch is gone), `target_moved`, `lanes` (per lane, in record order: `id`, `branch_exists`, `tip`, `ahead` (commits since `base`), `descends_from_base`, `worktree_present`, `worktree_clean`, `operation` (the operations in progress in its worktree, a list that is also non-empty when its metadata cannot be read), `state`, `head`, `claim` (`ok`, `missing` or `mismatch`), `changed` (the files it changed against the merge base with the current target tip; null when the branch shares no history with the target), `out_of_lane` and `moved_since_ready`) and `drift` (`shared_changes` and `target_overlap`, each a list of `{path, lanes}`, `stale` and `merge_order`, the lane ids in dependency order). `descends_from_base` is informational: no finding uses it.
+- **target**: `<branch>` of `--into`, or the `target` of the record for the other forms. It is gated as in section 6 (exact match in `refs/heads/`, not `main`, no case collision), and its tip SHA is read from one `git for-each-ref` listing. Every git command of this section names the target as `refs/heads/<name>` or by that SHA, never by the bare name, except `git switch`, which takes the bare name and resolves only branches.
+- **base**: the target tip SHA (the full SHA) the plan was made against. Every lane branch is cut from it, and an amendment moves it to the live target tip. A lane need not descend from the current `base`: the guard measures what a lane changed against the merge base with the current target tip, so an amendment that moves `base`, or a target that moved, never fails a lane by itself.
+- **lane**: `id`, `title`, `branch`, `worktree`, `paths` (a manifest of `references/lane-split.md` section 4), `depends_on`, `acceptance`, `state` and `head`. Its worktree is the one the view reports (`worktree_present`: at the registered path or holding its branch). The **lane state** is `planned` (registered, its branch may not exist), `active` (its owner works on it), `ready` (its owner recorded `--head <tip>`: committed, inside the manifest, worktree clean), `integrated` (its recorded head was merged; the guard needs `--head` equal to the head recorded at ready and `--integration agent/<set>/integration`) or `blocked`. The guard allows `planned` to `active` or `blocked`, `active` to `ready` or `blocked`, `ready` to `active`, to `ready` with a new head, to `integrated` or to `blocked`, `integrated` to `integrated` (a note) or `blocked`, and `blocked` to `active`; `active` and `blocked` may also repeat to change only the note, and any other transition is exit 24 on `--state`. A lane owner records progress with `set-update`; this command records `integrated`, and `ready` only for `--include-active`.
+- **integration branch**: `agent/<set>/integration`. Its **integration start SHA** is the target tip it was cut from (for a branch that exists, `git merge-base 'refs/heads/<target>' 'refs/heads/agent/<set>/integration'`).
+- **spec**: the JSON that `set-plan` reads. **sheet**: the checklist text built from it (**The spec and the sheet**).
+- **repository normal checks**: the build, test and lint commands the investigation read from the repository's own files (step 8 of **Investigation**), or "not identifiable".
+- **Unchanged from section 6**: **Names vs SHAs**, **Case collisions**, **Names**, **Argument safety** (for every command this section names and prints), **invoking worktree**, **clean**, **in progress**, the target gates, and the ignored-file overlap test of apply step 4.3.
+
+### Acceptance rules
+
+- **Plan and amendment.** `--apply` registers exactly the spec of the latest preview of the same set and target earlier in this conversation, byte for byte, and nothing else. With no such preview, after a change the user asked for since that preview, or when its `base` differs from the live target tip, the command makes a new preview and stops. The plan is generated, so the user's acceptance attaches to the previewed spec, not to the command line.
+- **Convergence.** `--converge --apply` is the user's acceptance of the lane heads listed in the plan that the run records and puts in its report, or in a converge preview of the same set earlier in this conversation, and with `--land` of one fast-forward of `<branch>` to the integration branch. It permits no write to any branch except the integration branch and, with `--land`, the target, and never to `main`.
+
+### Lane findings
+
+A lane recorded `integrated` is `INTEGRATED` and has no findings. Every other lane gets zero or more findings, evaluated in this order from the view. **Pending** findings leave the lane out of this run and stop nothing; a **failing** finding stops the whole command, in the preview as a failed gate, so a ready lane that is inconsistent is never merged around. A lane in state `planned` or `active` (and not included by `--include-active`) or `blocked` shows only its pending finding. A lane with no finding is `READY`.
+
+```text
+BLOCKED             pending   the recorded state is blocked
+NOT_READY           pending   the recorded state is planned or active; with --include-active an active lane whose ahead is above 0 is evaluated as ready at its current tip, and one whose ahead is 0 stays NOT_READY
+WAITING             pending   a dependency is neither INTEGRATED nor READY in this run
+MISSING_BRANCH      failing   branch_exists is false
+DIRTY               failing   worktree_clean is false
+IN_PROGRESS         failing   operation is not empty
+NO_MERGE_BASE       failing   the branch exists and changed is null: it shares no history with the target (the guard refuses to record it ready, exit 16)
+OUT_OF_LANE         failing   out_of_lane is not empty (the files are listed)
+SHARED_CHANGE       failing   the lane is named in an entry of drift.shared_changes (both lanes and the files are listed)
+MOVED               failing   moved_since_ready is true
+CLAIM_DRIFT         failing   claim is missing or mismatch
+PREDICTED_CONFLICT  hint      git merge-tree --write-tree exits 1 for its tip against the current target tip, tested as in section 6 preview item 3; a hint only, which cannot see a clash between two lanes
+```
+
+One plan-level finding, `STALE_PLAN` (failing), is added when `drift.stale` is true: the target moved since `base` and the files it changed intersect a lane manifest (`target_overlap`), so the lanes are no longer independent of what landed. A target that moved with an empty `target_overlap` is reported, and the plan stays valid.
+
+### Remedies
+
+Every failed gate, failing finding, guard exit code and stop of an apply in a report is followed by the action that lifts it. The command never performs these actions; they are the user's (or the lane owner's, the agent or person working in that lane's worktree), and the report writes each with the real path or name. **Rerun** means: run the preview again, then the apply (section 6).
+
+| Finding | Remedy |
+|---|---|
+| gate: no guard, or a guard older than 1.0.4 | install or refresh the guard (`references/installation.md`); `<guard> version` must print 1.0.4 or later |
+| gate: `<set>` is not `[a-z0-9][a-z0-9-]{0,23}`, or is a Windows device name | name the set within that class |
+| gate: target missing locally, matching only when case is ignored, `main`, or equal to another local branch ignoring case | the section 6 rows of the same name |
+| gate: invoking worktree detached, dirty or in progress; target in progress anywhere | the section 6 rows of the same name |
+| gate: invoking worktree is on neither the target nor (for a resume) the integration branch; target checked out in another worktree | `git switch '<target>'` when it is checked out nowhere else, or run the command from the worktree that holds it (`cd <path>`) |
+| gate: `agent/<set>/integration` exists and shares no history with the target | it is not this set's: rename it (`git branch -m '<old>' '<new>'`) or, after reviewing it, delete it yourself, then rerun; the command never deletes it |
+| gate: the record's `integration` names a branch that no longer exists | its merges are lost: restore the branch at the tip you trust (`git branch 'agent/<set>/integration' '<sha>'`), or record the lanes it held `blocked` and re-plan with `--amend` |
+| gate: the integration branch does not exist and its claim is missing from `<guard> list` | `--amend --expect-revision <n>` with the lanes unchanged writes the claim again |
+| gate: `--land` while a lane is not `READY` or `INTEGRATED` | run without `--land` to merge the lanes that are ready, and land when every lane is done |
+| exit 21 (set unknown) | check the name (`<guard> list` shows the set of every claim) or plan it first with `/GitPlan <set> --into <branch>` |
+| exit 20 (set exists; the preview finds it with `set-show`) | read it with `--status`, change it with `--amend --expect-revision <n>`, retire it with `--release`, or name another set |
+| exit 23 (a record written by a newer MAGOS) | upgrade the guard (`references/installation.md`); the record is never read or changed meanwhile |
+| exit 11, `unknowns` code `SET_UNREADABLE` | inspect the record file the message names yourself; the guard never overwrites or removes it, and nothing was changed |
+| exit 11, `unknowns` code `TARGET_UNCERTAIN` (from `set-plan`: the target is behind or diverged from its remote-tracking copy) | bring the local target up to date with a fast-forward (for example `git merge --ff-only '<remote-tracking refname>'` in the worktree that holds it; a diverged target is reconciled by you first), then plan again; nothing is fetched by this command |
+| exit 19, `kind` `base` (the target moved since the investigation, so `base` is not its live tip) | rerun: the new preview investigates the new tip |
+| exit 19, `kind` `revision` (the record changed after it was read), or a failed `--expect-revision` check | run `--status`, then redo with the revision it shows; after a converge apply that stopped on it, rerun: merges already made are recorded without merging again |
+| exit 12 or 24 (invalid spec or a name clashing with the repository; the message names the field) | fix that field in the partition and prove it again; a plan over a limit (more than 12 lanes, a sheet over 4096 characters, more than 200 manifest entries) must be smaller |
+| exit 10 or 11 from `set-plan` (a lane conflicts with, or could not be compared with, another claimant) | the guard names the lane, the claimant and the files: shrink or split that lane's manifest, wait until the other branch is merged, retire dead branches with `/GitCleanup`, or release the other claim yourself (`<guard> release --branch '<branch>'`, refused while its branch has unmerged work); `set-plan` never reads an override; for an unknown, establish the fact it names |
+| exit 13 (claim lock timeout) after its one retry | wait until the other guard call is done, then rerun |
+| exit 14 or 15 naming a lane, or a planned worktree path already in use | choose another branch name or worktree path in the partition; never reuse an existing branch |
+| exit 15 naming `agent/<set>/integration` (a fresh `set-plan` refuses while it exists) | rename it yourself (`git branch -m '<old>' '<new>'`) or, after reviewing it, delete it yourself, or name another set |
+| exit 14 `lane_in_set` or exit 16 `blocked_set` from a plain `plan --amend` or `release` of a claim of a set | use the set's own forms: `/GitPlan <set> --amend --expect-revision <n>`, `/GitPlan <set> --release` |
+| exit 16 from `--amend` (`blocked`: `UNMERGED_WORK` or `DIRTY_WORKTREE` for a lane to remove, `SHRINK` for a manifest cut below files the lane changed) | keep the lane, or keep those files in its manifest, or have its owner merge, commit or revert that work first |
+| exit 16 from `--release` (`blocked` names each lane: `NOT_INTEGRATED`, `UNMERGED_WORK`, `DIRTY_WORKTREE`, `CLAIM_UNUSABLE`) | integrate the lane with `--converge --apply` and land it (`--land`, or yourself): a lane branch not yet in the target is `UNMERGED_WORK`; commit, stash or discard in a dirty worktree; to give the plan up instead, run `<guard> set-release --set <set> --abandon` yourself, which the guard allows only while no lane branch holds commits that are not in the target and no lane worktree is dirty; the command never abandons |
+| exit 16 from `set-update` (`blocked` reason) | `HEAD_MISMATCH` or `NOT_MERGED`: the lane or the integration branch moved since the survey, so run `--status` and rerun; `BRANCH_MISSING`, `DIRTY_WORKTREE`, `OPERATION_IN_PROGRESS`, `NO_MERGE_BASE`: the row of the finding of the same name |
+| exit 22, `OUT_OF_LANE`, `SHARED_CHANGE` | the lane owner reverts the files outside its manifest, or `--amend` adds them to the lane that owns them by design (never to two lanes); then the owner records `ready` again |
+| `STALE_PLAN` | `--amend --expect-revision <n>`: the new preview investigates the new tip and the amendment moves `base` to it; a lane whose files `target_overlap` lists should take the new tip: its owner merges `'<target sha>'` into the lane branch in its worktree, then records `ready --head '<tip>'` again (a lane is never rebased) |
+| `BLOCKED` | clear what blocked the lane (its note in the view), then record it `--state active` and continue as for `NOT_READY`; the guard decides which transitions it accepts |
+| `NOT_READY` | the owner finishes the lane and records it: `<guard> set-update --set <set> --expect-revision <rev> --lane <id> --state ready --head '<tip>'` (first `--state active` for a planned lane; `<rev>` is `record.revision` of `<guard> set-show --set <set> --json`, and exit 19 means read it again); an active lane that holds commits can instead be included with `--include-active` |
+| `WAITING` (a dependency is not integrated) | finish and integrate the dependency first, or `--amend` the dependency away if it is not real |
+| `MISSING_BRANCH` | create the lane with the `git worktree add` line the apply report printed, or `--amend` the lane away |
+| `DIRTY`, `IN_PROGRESS` | in the lane's worktree commit, stash or discard the changes, or finish or abort the merge, cherry-pick, revert, rebase, am or bisect; when the tip changed, record `ready` again |
+| `NO_MERGE_BASE` | the lane branch was not cut from the target: `--amend` the lane to a new branch name and have its owner redo the work there |
+| `MOVED` | the lane gained commits after it was recorded ready: the owner records `--state ready --head '<tip>'` again (a ready lane may record a new head) |
+| `CLAIM_DRIFT` | `--amend --expect-revision <n>` with the lanes unchanged rewrites the claim from the record |
+| `PREDICTED_CONFLICT` | the owner merges the target tip into the lane, resolves it there and records `ready` again; a conflict stops the apply |
+| apply stopped by a conflict | the report names the lane, the files, the error text and the integration start SHA; completed merges stay on the integration branch and their lanes stay `integrated`. To resolve it, the lane owner merges the integration start SHA into the lane branch in its worktree (`git merge '<sha>'`), resolves and commits there, records `ready --head '<tip>'` again, and the rerun resumes. To undo the run instead, restore the integration branch to its start SHA yourself, record every lane this run integrated with `<guard> set-update ... --state blocked` (and `--state active` again when it resumes), and re-plan with `--amend` if the partition must change |
+| apply stopped because a `set-update` failed after a merge | the merge stays on the integration branch and is not recorded: run `--status`, then rerun, which records the lane without merging it again |
+| apply stopped by a refused switch, by a guard denial of the integration branch's creation, or by a merge that failed without a conflict (a hook, a lock file) | fix what the quoted text names (a denial is the guard's: never `override`, ask the user; the claim of that branch is the one `set-plan` registered, see the missing-claim gate row); completed merges stay and nothing was landed |
+| apply stopped by a failed check | fix what it names, on the integration branch by a commit of your own or in the lane (then record the lane `ready` again), then rerun; the check ran on the merged result; completed merges stay and nothing was landed |
+| `LAND_REFUSED`: the target moved since the integration start SHA (the lanes are independent of what landed, `target_overlap` was empty) | merge the target tip into the integration branch yourself while it is checked out (`git merge '<target sha>'`), then rerun with `--land`: the checks run on the combined result, and `--ff-only` then succeeds |
+| `LAND_REFUSED`: a recorded head is not in the integration branch | the integration branch lost a merge: restore it as in the row for a missing integration branch |
+| creation stopped: a lane's worktree path or branch exists (only one of the two), or git or the guard hook refuses it | move or remove the directory yourself (the command never deletes), or `--amend` the lane to another path or branch name; the claims of the set cover exactly the registered branches and paths, so a guard denial is quoted, never worked around and never overridden by the command |
+
+### Investigation
+
+Read-only: nothing is fetched, no network is used and nothing is written. The task to split is the work the user described in this conversation; when none can be identified, ask for it once before step 7 (steps 1 to 6 do not need it). Every command below is run as an argument list from the invoking worktree (`<top>` is its top level, from `git rev-parse --show-toplevel`), takes its SHAs from the listing of step 3, and reads code only from the target commit `<sha>`, never from a working tree, so the plan describes one commit.
+
+1. `<guard> version --json`: the gate on the guard.
+2. `git -C <top> status --porcelain=v1 --branch --untracked-files=all` and `git -C <top> worktree list --porcelain`: every worktree with its branch, HEAD, locked, prunable and detached state, and the in-progress state of each as section 6 defines it.
+3. `git -C <top> for-each-ref --format='%(refname)%09%(objectname)%09%(upstream)%09%(upstream:track)' refs/heads`, and `git -C <top> for-each-ref --format='%(refname)%09%(objectname)' refs/remotes refs/tags`: branches with SHAs, upstream refnames and ahead/behind, remote-tracking refs and tags. The target's SHA is `<sha>`.
+4. `<guard> list --json`: every open claim (`branch`, `state`, `entries`, and `set` with `lane` or `role` for the claim of a set), which is what the plan is judged against, except a claim with `role` `integration`, which claims no files and is never a claimant.
+5. Remote freshness, local only: for the target's upstream and for every remote-tracking ref `<remote>/<target>` of step 3, `git -C <top> rev-list --left-right --count 'refs/heads/<target>...<remote-tracking refname>'`; the report says "remote freshness: local-only". A target behind or diverged from one of them is refused by the guard (exit 11, `TARGET_UNCERTAIN`).
+6. Names already taken: from steps 2 and 3, every branch, tag and worktree path that a planned name must not equal, collide with by case, or share as a ref prefix, and the integration branch `agent/<set>/integration`, which must not exist.
+7. Layout: `git -C <top> -c core.quotePath=false ls-tree -r --name-only <sha>` (for a tree too large to read, `ls-tree --name-only <sha>` and the same with `<dir>/` for the directories that matter): top-level directories, packages, modules, test directories and file counts.
+8. Entry points and the repository normal checks: `git -C <top> show <sha>:<path>` for `README*`, `CONTRIBUTING*`, `AGENTS.md`, `CLAUDE.md`, the build and test files (`package.json`, `Makefile`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pom.xml`, `*.csproj`) and the CI definition (`.github/workflows/`, `.gitlab-ci.yml`); the build, test and lint commands they name are the checks.
+9. Ownership and shared files, from the step 7 listing and `git show` where a file must be read: `CODEOWNERS` (also under `.github/` and `docs/`), lockfiles, generated files (`git -C <top> grep -l -I -i -E 'do not edit|auto-generated' <sha> -- '<dir>'`), registries and barrel files (`__init__.py`, `index.*`, `mod.rs`, route, plugin and command tables), migration directories and their numbering, version files, changelogs.
+10. Churn: `git -C <top> log --since='90 days ago' --no-merges --name-only --pretty=format: -n 500 <sha>`; the files and directories changed most often are hot spots and go whole into one lane.
+11. Coupling: `git -C <top> grep -n -I -E '<import pattern of the language>' <sha> -- '<dir>'` for each candidate boundary. Imports across a boundary are hints, not proof: the guard does not detect semantic coupling across files, so coupled files go into the same lane.
+
+### Partition rules
+
+1. A plan has at most 12 lanes, and aims at 2 to 6.
+2. A lane owns whole directories where it can, and its manifest lists everything the lane writes (`references/lane-split.md` section 4: at most 200 entries, globs only as that section allows).
+3. Tests go with the code they test, and coupled files (imports across a boundary, a hot spot, files that must change together) go into the same lane.
+4. Every shared file (lockfile, generated file, registry, barrel file, migration numbering, version file, changelog) belongs to exactly one lane and lies inside that lane's manifest, or it is a post-merge task of the integration step, listed in the sheet and in `notes`.
+5. A dependency is declared only where one lane needs the result of another (interface first), and dependency chains are kept short.
+6. Every lane owns at least one file, and every path the task changes lies in exactly one lane or is shared.
+7. Lane ids are `L1`, `L2`, ... (the pattern is `[A-Za-z0-9_-]{1,16}`, unique ignoring case, and `integration` is never an id). The lanes are listed in merge order, dependencies before dependents, so that the guard's `merge_order` is the listed order. A lane branch is `agent/<set>/<id lower-cased>`, a lane worktree is `<parent directory of the main worktree>/<repository directory name>-<set>-<id lower-cased>`, unless the user names them.
+8. A branch name is safe as section 6 **Names** defines it, equals no existing branch or tag, collides with none by case or as a ref prefix, and is neither `agent/<set>/integration` nor under it; a worktree path is absolute, does not exist, and neither lies inside nor contains any worktree of the repository.
+
+### The spec and the sheet
+
+The spec is JSON, written to a scratch file outside every worktree (the session scratchpad or the system temporary directory) and passed as `--spec '<file>'`; where no such directory is writable it is given on standard input with `--spec -`. The scratch file is no part of the record and is the preview's only write.
+
+```json
+{"v":1,"title":"<the task, one line, at most 120 characters>","base":"<target sha>","sheet":"<the sheet text, at most 4096 characters>","notes":["<risk, or post-merge: task>"],
+ "shared":[{"path":"<file>","owner":"<lane id>"}],
+ "lanes":[{"id":"L1","title":"<at most 60 characters>","branch":"<branch>","worktree":"<absolute path>","paths":["<manifest entry>"],"depends_on":["<lane id>"],"acceptance":"<at most 300 characters>"}]}
+```
+
+`notes` holds at most 5 items of at most 200 characters: the risks and the post-merge tasks (each starting `post-merge:`). The sheet is built from the spec and says nothing the spec does not:
+
+```text
+# Plan <set> -> <branch>  rev <n>  base <sha7>
+- [ ] L1 <title> | branch <branch> | owns <paths> | needs <ids or -> | accept <one short phrase>
+- [ ] L2 ...
+- [ ] merge L1 -> L2 -> L3 into agent/<set>/integration; run <repository checks>; land on <branch>
+Shared: <file> -> L1 ; <file> -> L2 ; <post-merge task> -> merge step
+Risks: <at most 5 short items>
+```
+
+- The lane lines are in merge order; `owns` lists the manifest entries separated by commas (a long list shortens to directories, then ends with `+N more`); `rev` is the revision the registration records (1 for a new set, `<n>+1` for an amendment); the merge line names the checks found, or `not identifiable`.
+- `--status` and `--converge` regenerate the checklist from the record, never from the stored sheet text: the header carries the record's revision and base, and a lane line is `- [x] <id> <title> | <state> | head <sha7> | branch <branch>` when the lane is `ready` or `integrated` and `- [ ] ...` with `head -` when it has none. The merge line is `[x]` once every lane is `integrated`.
+- Below the checklist, **Remaining TODO** is a numbered list in this order, an empty part left out and an empty list written `nothing remains`: each lane that is not `ready` or `integrated` (`finish <id>: <state>; accept <acceptance>`); each `ready` lane that is not `integrated` (`merge <id> <head7>`, in merge order); `run the repository checks on agent/<set>/integration` while a lane is `integrated` and the target does not contain the integration branch tip; each `post-merge:` note; `land agent/<set>/integration on <branch>` when every lane is `integrated` and the target does not contain the integration tip; `release the set` when every lane is `integrated`, every lane worktree is clean and the target contains every recorded head (`git merge-base --is-ancestor '<head>' '<target sha>'`).
+
+### Preview behavior (`<set> --into <branch>`, default, read-only)
+
+1. **Gates** (any failure stops the whole command, and nothing is written; every gate is evaluated, and the report names every failed gate with its remedy): the guard; the `<set>` name; the target gates of section 6; and the set not existing (`<guard> set-show --set <set> --json` exits 21 when it is free; 0 means it exists, 23 a newer format, 11 an unreadable record). The invoking worktree's state is no gate here: a plan writes no worktree.
+2. **Investigate** (**Investigation**), partition (**Partition rules**), write the spec and the sheet.
+3. **Prove** the plan: `<guard> set-plan --set <set> --target '<branch>' --spec '<file>' --dry-run`. Exit 0 means all of this held and nothing was written: the spec version, at most 12 lanes, unique ids and branches, valid names, distinct worktrees outside each other and outside every worktree of the repository, every manifest valid, every pair of manifests disjoint (exact glob intersection), `depends_on` ids existing and acyclic, every shared path inside its owner's manifest, the target a local branch that is not behind or diverged from a remote-tracking copy, `base` equal to the live target tip, no lane branch and not `agent/<set>/integration` existing yet, and every lane judged against the other claimants (conflicts and unknowns deny the whole set and name the lane). A failure the partition can fix (exit 24 or 12, exit 14 or 15 naming a lane, exit 10 with `overlaps`: two of its own lanes) is fixed in the partition and proved again; a failure caused by something outside the plan (another claimant in `lanes`, a moved target, a target behind or diverged from its remote-tracking copy, an existing integration branch) is reported with its remedy and the readiness is `BLOCKED`. The report shows only the proved plan.
+4. **Report** with the readiness: `READY` when every gate holds and the proof exited 0, with the next command `/GitPlan <set> --into <branch> --apply` (`--lang` as given), and the note that `--create` adds the lane branches and worktrees (without it the apply prints the commands); otherwise `BLOCKED` with every failure and its remedy.
+
+The preview does not fetch, register, create or merge anything.
+
+### Apply behavior (`--into <branch> --apply [--create]`)
+
+1. **Re-check** under the Acceptance rule: the gates, that `base` still equals the live target tip, and that the previewed spec file is still there and unchanged (with `--spec -`, the previewed text is given again, unchanged). A difference stops with a new preview.
+2. **Register**: `<guard> set-plan --set <set> --target '<branch>' --spec '<file>'`. Exit 0 writes every lane claim (each with `set=<set>` and `lane=<id>`), the claim of the integration branch and the record at revision 1, every lane `planned`, atomically: on any failure the guard leaves no partial state. Read the record back with `<guard> set-show --set <set> --json` and stop if a lane's id, branch, worktree (compared with `/` separators) or manifest differs from the spec.
+3. **Create** (only with `--create`), for each lane of the record in order, only a registered lane, at its registered worktree path, from the recorded `base` (checked with `git -C <top> cat-file -e '<base>^{commit}'`): a lane whose branch and path both exist is already created and is skipped, and when only one of them exists the step stops; otherwise run `git -C <top> worktree add -b '<branch>' '<worktree>' '<base>'`, then confirm that `git -C '<worktree>' rev-parse HEAD` prints the base. A guard denial or a git failure stops the step: lanes already created stay and are reported, and nothing is retried in another form. A created lane stays `planned`; its owner records `active` when it starts. Without `--create` the report prints that same `git worktree add` line for each lane (ref names and paths in single quotes), for the user to run. The integration branch is never created here.
+4. **Report**: the revision, the registered lanes, what was created or printed, the checklist, and for each lane a handoff (branch, worktree, manifest, dependencies, acceptance, and the two `set-update` lines of **Remedies** `NOT_READY`).
+
+### Status (`--status`, read-only)
+
+1. Gates: the guard; the `<set>` name; `<guard> set-show --set <set> --drift --json` exits 0 (21 unknown, 23 newer format, 11 unreadable).
+2. From that output take the **view**: the record, and per lane whether its branch exists, its tip, its commits ahead of `base`, its worktree, clean and in-progress state, its recorded state and head and its claim; the files each lane changed outside its manifest, the files changed by two lanes, whether the target moved since `base` and the files it changed that intersect a lane manifest, the lanes whose tip differs from the recorded head, and the merge order. A `target_tip` of null is reported (the target branch is gone), and so are the guard's `warnings`. Add, read-only, whether the integration branch exists and whether the target contains it, and for each `integrated` lane whether its head is an ancestor of the target.
+3. Evaluate every lane with the **Lane findings** and print the regenerated checklist and **Remaining TODO** (**The spec and the sheet**). The next command is `/GitPlan <set> --converge` when a lane is `ready` and not `integrated`, or when only the land remains; `/GitPlan <set> --release` when only the release remains; and none otherwise (the report names what the lane owners must do).
+
+### Amend (`--amend --expect-revision <n> [--apply [--create]]`)
+
+1. **Gates**: the guard; the set exists; `<n>` equals the record's `revision` (else stop with the `kind` `revision` row of **Remedies**, naming the current revision); the record's target exists locally and is not `main`.
+2. **Investigate** again (**Investigation**), then build the amended spec from the record and what the user asked to change: surviving lane ids keep their branch and worktree, new lanes follow the **Partition rules**, and `base` is the live target tip. A lane whose branch holds commits that are not in the target is kept, and its manifest keeps every file it changed (the guard refuses otherwise, exit 16).
+3. **Prove**: `<guard> set-plan --set <set> --target '<target>' --spec '<file>' --amend --expect-revision <n> --dry-run` (the checks of the preview, plus the revision). Exit 0 with `unchanged` true means the amendment changes nothing: say so and stop. Otherwise the readiness is `READY` or `BLOCKED` as in the preview, and the next command is the same line with `--apply`.
+4. **Apply** (Acceptance rule): the same call without `--dry-run`. Lanes whose id survives keep their state; the revision becomes `<n>+1`; the guard replaces the claims in the same atomic write and moves `base`, and the `base` of every surviving lane claim, to the live target tip. With `--create`, only lanes whose branch and worktree do not exist are created, as in **Apply behavior** step 3. A lane cut from an older `base` needs nothing: the guard measures what it changed against the merge base with the current target tip.
+
+### Converge preview (`--converge [--include-active]`, read-only)
+
+1. **Gates** (every gate is evaluated, the report names every failed one with its remedy, and a report with a failed gate has no merge plan): the guard; the set exists; the record's target exists locally (`target_tip` is not null); the integration branch is consistent with the record (absent while the record's `integration` is empty and `<guard> list --json` has the claim row of this set with `role` `integration`; or present, named by the record or not yet recorded, and sharing history with the target; any other state fails, **Remedies**); the invoking worktree is on the target, or on the integration branch when that exists, and is clean and not in progress, and the target is not in progress anywhere; `STALE_PLAN`; any failing finding of **Lane findings**.
+2. **Status report**: everything of **Status** steps 2 and 3, evaluated with `--include-active` when given, so the preview and the apply after it judge a lane alike.
+3. **Merge plan**: the lanes to merge (the `READY` ones) in the order of `drift.merge_order`; each with its recorded head, `PREDICTED_CONFLICT` where it applies, and the repository normal checks to run on the result. The preview also says whether `--land` would be possible (it is when the target tip is an ancestor of the integration branch tip, so that `git merge --ff-only` can succeed; a new integration branch is cut from the current tip), and that the record's `post-merge:` tasks are not done by this command.
+4. **Readiness**: `READY` when no gate fails and every lane is `READY` or `INTEGRATED`: one run of the next command merges all of them, and `--land` can follow in the same run. `PARTIAL` when no gate fails but some lane is pending: the next command merges the `READY` lanes and the report lists what each pending lane needs. `BLOCKED` when a gate fails. The next command (not for `BLOCKED`) is `/GitPlan <set> --converge --apply --expect-revision <revision shown>` with `--include-active` and `--lang` as given; `--land` is only suggested in words, never added to the line.
+
+The preview does not merge, switch, create, record, fetch or delete; `git merge-tree --write-tree` may create unreachable objects but no refs, index or worktree changes.
+
+### Converge apply (`--converge --apply [--include-active] [--land] [--expect-revision <n>]`)
+
+1. **Re-survey and record the plan** by running the preview logic fresh: the lane order, each lane's recorded head, the target tip, the record's revision and the state of the integration branch. A mismatch of `--expect-revision <n>` with the record stops the run. Compare with the most recent converge preview or apply report of the same set earlier in this conversation, if any: a lane head, the target tip or the revision that differs stops the run with a new preview, except for what an interrupted run of this command recorded itself. Stop on any failed gate or failing finding, and on `--land` while a lane is not `READY` or `INTEGRATED`. Without an earlier plan the recorded plan is the plan.
+2. **Include active lanes** (only with `--include-active`): for each such lane run `<guard> set-update --set <set> --expect-revision <rev> --lane <id> --state ready --head '<tip>'`, which also proves that every file the lane changed, measured against the merge base with the current target tip, lies inside its manifest (exit 22 stops the run and names the files). Every successful `set-update` makes the record one revision newer; the next call passes the `revision` of its result.
+3. **Integration branch**, only when at least one lane is to be merged or `--land` was typed: when it is absent and the invoking worktree is on the target, run `git -C <top> switch -c 'agent/<set>/integration' '<target sha>'` (the CURRENT target tip; that SHA is the integration start SHA). The guard allows this plain creation because `set-plan` registered the claim of that branch, which is exempt from overlap judgement (the creation is judged for the branch name and the existence of that claim only, never against a lane's manifest or commits); a refusal, or a denial by the guard's hook, stops the run before any merge, is quoted in the report and is never overridden or retried in another form. When the branch exists and the invoking worktree is still on the target, run `git -C <top> switch --no-overwrite-ignore 'agent/<set>/integration'`; on the integration branch already, nothing is needed.
+4. **Merge** each `READY` lane in the merge order, inside the invoking worktree:
+   1. Recheck that the lane tip still equals the recorded head; if not, stop.
+   2. When the head is already an ancestor of the integration branch or of the target (an earlier run merged it, or the lane has no commits of its own), skip to step 4.5.
+   3. Run the ignored-file overlap test of section 6 apply step 4.3 against the lane's changed paths since its merge base; an overlap stops the run.
+   4. Run `git -C <top> merge --no-ff -m 'Merge lane <id> of plan <set> into agent/<set>/integration' '<recorded head>'`. Never `--no-verify`, `-X ours`, `-X theirs`, `--allow-unrelated-histories`, squash or rebase.
+   5. Record it: `<guard> set-update --set <set> --expect-revision <rev> --lane <id> --state integrated --head '<recorded head>' --integration 'agent/<set>/integration'`.
+   6. On a conflict list the unmerged paths (`git -C <top> diff --name-only --diff-filter=U`), run `git -C <top> merge --abort`, and stop; never resolve it with ours or theirs, and never by hand. Completed merges stay on the integration branch only. The report names the lane, the files, the error text, the integration start SHA and the conflict row of **Remedies**, which also gives the undo path.
+   7. On any other failure of the merge or of the `set-update`, stop; a merge that is made but not recorded is recorded by the next run (step 4.2).
+5. **Validate** with the repository normal checks in the invoking worktree, on the integration branch, once at least one lane was merged or recorded, or `--land` was typed. A failed check stops the run before any land; "not identifiable" is reported as "not validated" and does not stop it.
+6. **Land** (only with `--land`, after step 5 did not fail): re-read the record and the target tip, and continue only when every lane is `integrated`, every recorded head is an ancestor of the integration branch tip, the target tip is an ancestor of the integration branch tip (it still sits at the integration start SHA), the invoking worktree is clean and not in progress, and the target is checked out nowhere else. Then run `git -C <top> switch --no-overwrite-ignore '<target>'` and `git -C <top> merge --ff-only '<integration tip sha>'`, and confirm that `git rev-parse refs/heads/<target>` equals that SHA. When a condition fails, report `LAND_REFUSED` with the failed condition and both SHAs and do nothing else (**Remedies**); the invoking worktree stays on the integration branch.
+7. **Report** in the reply language: the plan acted on, each merge (lane, head, merge commit), each `set-update`, skipped lanes with their findings, where and why the run stopped, the target's start and end SHA, the integration branch tip, the validation result, the land result, the regenerated checklist with **Remaining TODO**, and that nothing was pushed (publishing is the user's decision).
+
+A rerun after an interruption or a conflict starts from a fresh survey and resumes on the same integration branch: lanes already `integrated` are skipped, and the earlier moves of the run do not make its plan stale (step 1).
+
+### Release (`--release`)
+
+1. Gates: the guard; the `<set>` name; `<guard> set-show --set <set> --drift --json` exits 0. Print the final checklist and **Remaining TODO** first, because the record is removed.
+2. Run `<guard> set-release --set <set> --reason integrated`. Exit 0 removes the lane claims, the integration claim and the record and appends to the guard's audit log; exit 16 means a lane is not integrated, is not yet in the target or has a dirty worktree, and the guard names it (**Remedies**).
+3. Report the released claims (`released`), and that the lane branches, their worktrees and the integration branch are not touched: with the claims gone, nothing of the set blocks `/GitCleanup` any longer, which retires the merged ones.
+
+### Hard stop conditions
+
+Never: push, force-push or touch a remote or remote-tracking ref, and never fetch or use the network; move, reset, merge into or delete `main`, or take `main` as the target; delete a branch or a worktree, or run `git worktree prune`; use `override`, `arm`, `disarm` or `install`, run the guard's plain `plan` or `release` on a claim of a set, or edit `.git/magos`; write the claim store or the set record other than through `magos_guard.py set-plan`, `set-update` and `set-release`; rebase, squash, cherry-pick or reset; merge anything except a recorded lane head into the integration branch, and (with `--land`) the integration branch into the target by one `--ff-only` merge; resolve a conflict with ours or theirs, or by hand; pass `--no-verify`, `-X ours`, `-X theirs` or `--allow-unrelated-histories` to a merge; create any branch or worktree other than a registered lane (at its registered path, from the recorded `base`) and the integration branch (from the target tip, in the invoking worktree); register a plan that no preview of this conversation showed, or any other spec than the previewed one; write inside a lane worktree (a lane is only read, and merged from its recorded head in the invoking worktree); shrink, amend or release the claim of a lane to make a conflict disappear; run a git or guard command as a shell string (section 6 **Argument safety**). Do not proceed when the skill or this reference could not be loaded; preview only.
+
+### Output
+
+Write every report in the reply language (Chinese unless `--lang` selects another one), headings and tables included. Each form prints exactly its own block.
+
+Plan preview and amend preview (`--into`, `--amend`):
+
+```text
+Plan header (set, target and base SHA, remote freshness, revision to be recorded)
+Gates (every failed gate with its remedy)
+Investigation (3 to 6 bullets: git facts, code facts, shared files and hot spots)
+Checklist (the sheet)
+Lane table (per lane: id, branch, worktree, full manifest, needs, acceptance; shared files with their owner; the spec file path)
+Changes (amend only: lanes added, removed or changed against the record, base old and new)
+Exclusivity proof (lane pairs checked, shared files with their owner, dependency order, paths of the task in no lane: none, set-plan --dry-run result)
+Checks against other claimants (claimants checked, warnings, unknowns, the verdict for each lane)
+Not touched (existing branches, worktrees, claims, remotes, main; the preview wrote only the scratch spec file)
+Readiness: READY / BLOCKED, failures + remedies, next command
+```
+
+Plan apply and amend apply (`--apply`):
+
+```text
+Plan acted on (the previewed spec, set, revision recorded)
+Registered (lanes, claims including the integration claim, revision)
+Created branches and worktrees (only with --create), or the git worktree add lines to run
+Skipped or stopped items + reasons
+Checklist (the sheet)
+Lane handoff (per lane: branch, worktree, manifest, dependencies, acceptance, the set-update lines)
+Not touched
+Remaining risks
+```
+
+Status (`--status`):
+
+```text
+Header (set, target, base SHA, revision, integration branch state) and gates
+Checklist (regenerated)
+Lane table (state, head, findings with their remedies; drift)
+Remaining TODO
+Next command
+```
+
+Converge preview (`--converge`):
+
+```text
+Header (set, target tip, base SHA, revision, integration branch state)
+Gates (every failed gate with its remedy)
+Checklist (regenerated) and lane table
+Merge plan (order, PREDICTED_CONFLICT, repository checks to run, land prediction)
+Remaining TODO
+Not touched
+Readiness: READY / PARTIAL / BLOCKED, failures + remedies, next command
+```
+
+Converge apply (`--converge --apply`):
+
+```text
+Plan acted on (lane order, recorded heads, target tip, revision)
+Gates
+Applied operations (switches, merges, set-update calls)
+Skipped lanes + their findings
+Stopped at (only when the run stopped: lane, files, error text, integration start SHA, the row of Remedies)
+Target start SHA -> end SHA, integration branch tip
+Validation
+Land result (only with --land)
+Checklist (regenerated) and Remaining TODO
+Not touched
+Remaining risks (including: nothing was pushed)
+```
+
+Release (`--release`):
+
+```text
+Gates
+Final checklist and Remaining TODO (printed before the record is removed)
+Released claims
+Not touched (lane branches, worktrees, the integration branch)
+```
+
 ## Command Relationship
 
 ```text
@@ -649,6 +981,8 @@ Remaining risks (including: without a successful publish, the remote lacks the c
    ↓ deep single-target evidence
 /GitRecommend [goal]
    ↓ decision support
+/GitPlan <set> --into <branch> [--apply] [--create]
+   ↓ lanes planned up front (lane claims and set record), later merged as one whole by --converge [--apply] [--land]
 /GitIntegrate <target>
    ↓ guarded integration mutation
 /GitCleanup [--apply]
@@ -660,3 +994,5 @@ Remaining risks (including: without a successful publish, the remote lacks the c
 ```
 
 `/GitRecon`, `/GitAnalyze`, and `/GitRecommend` are observation/advice commands. `/GitIntegrate` is an integration write-intent. `/GitCleanup` is preview-only unless `--apply` is explicit. `/GitConverge` is preview-only unless `--apply` is explicit; it merges unreviewed local branches only on the user's acceptance of the plan it prints. `/GitSweep` runs the same convergence and is the only command that deletes remote branches, and only those already merged into a branch the remote keeps; with `--push` it is also the only command that pushes commits, one fast-forward push of `<branch>`.
+
+`/GitPlan` is preview-only unless `--apply` (or `--release`) is explicit. It plans the lanes before any sub-agent starts and converges them afterwards: only with `--apply` or `--release` does it write the claim store and the set record (always through the guard's `set-*` subcommands); only with `--apply` does it create lane branches and worktrees (`--create`) and merge the lanes into an integration branch of its own, plus one fast-forward of `<branch>` with `--land`; it never pushes and never deletes a branch or a worktree.

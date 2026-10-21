@@ -18,7 +18,7 @@ The guard stops the lane that is being created, never a lane that already exists
 - "Changed" is measured against the integration target. Every worktree contains every file; a lane claims a file only
   if it differs from the target in that file (committed, staged, unstaged, untracked or in progress) or declared it.
 
-The file holds seven cooperating parts.
+The file holds eight cooperating parts.
 
 1. **Manifest and overlap engine.** Entries are normalised (NFC, case-folded, separators unified, trailing dots and
    spaces stripped) and compared with an exact glob-intersection dynamic programme at character level and at path level.
@@ -28,9 +28,10 @@ The file holds seven cooperating parts.
 2. **Evidence gatherer.** A Git runner (argv lists, scrubbed environment, pinned options that turn off the fsmonitor
    and the untracked cache, `-z` machine formats, per-call timeout and a total deadline that every Git call of one hook
    invocation shares) enumerates claimants: every non-bare worktree, every local branch not merged into the target,
-   every unmerged remote-tracking branch, and every open claim. The runner runs only the local subcommands
-   `--version`, `branch`, `check-ref-format`, `config`, `diff`, `for-each-ref`, `merge-base`, `rev-parse`, `status` and
-   `worktree` (`LOCAL_GIT`), read after any leading `--git-dir=` or `--work-tree=` argument; for any other first
+   every unmerged remote-tracking branch, and every open claim except the integration claim of a set (Sets,
+   Integration claim). The runner runs only the local subcommands
+   `--version`, `branch`, `check-ref-format`, `config`, `diff`, `for-each-ref`, `merge-base`, `rev-list`, `rev-parse`,
+   `status` and `worktree` (`LOCAL_GIT`), read after any leading `--git-dir=` or `--work-tree=` argument; for any other first
    argument (another subcommand, an option such as `-c` or `--config-env`, or none) it raises `GitFail` `GIT_FAILED`
    before git starts.
    Committed evidence is the three-dot diff against each merge base minus content the target already holds; a detached
@@ -44,10 +45,11 @@ The file holds seven cooperating parts.
    engagement and gathered claimant evidence) is collected at most once, whatever number of directory or redirect
    states of the command line lead to it.
 3. **Claim store.** `<git-common-dir>/magos/claims/<branch>.claim` files, written under an OS file lock with a
-   temporary file and `os.replace`, plus an append-only `audit.log`. The store is shared by all worktrees, is never part
+   temporary file and `os.replace`, plus an append-only `audit.log` and, from 1.0.4, the set records
+   `<git-common-dir>/magos/sets/<set>.json` (part 8). The store is shared by all worktrees, is never part
    of a work tree and is not carried by fetch, push, clone, bundle or mirror. Every claim carries a format number; the
    guard reads format `CLAIM_FORMAT = 1` and refuses to act on a claim written in a newer format instead of misreading
-   it.
+   it; a set record carries its own format number (`SET_FORMAT = 1`) with the same rule.
 4. **Command detector.** A lexer for bash, PowerShell and cmd that unwraps `bash -c`, `pwsh -Command`,
    `-EncodedCommand`, `cmd /c`, `env` (also `env -S` / `--split-string`, whose value is split into the command it runs),
    `sudo`, `doas`, `xargs` and similar wrappers (depth 3), tracks `cd`, `git -C`, `env -C` and `sudo -D`, and recognises
@@ -400,11 +402,16 @@ The file holds seven cooperating parts.
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
-7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.3) and equals
+7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.4) and equals
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the
-   copy, the Hermes entry, the repository and the backstop.
+   copy, the Hermes entry, the repository, the backstop and the sets.
+8. **Sets.** `set-plan`, `set-show`, `set-update` and `set-release` register, read, update and retire a set: one task
+   divided into lanes with exclusive file ownership, merged back as one whole. They reuse the manifest engine for the
+   disjointness proof, the evidence gatherer and the judge for the comparison with every other claimant, the claim store
+   for the lane claims and the claim lock for every write, and add the set record, the revision compare-and-swap and the
+   lane state machine. The section Sets (version 1.0.4) states them.
 
 ## Dependencies
 
@@ -454,10 +461,14 @@ Downstream callers:
   exists, the guard script beside it (`<hermes home>/plugins/magos/scripts/magos_guard.py`) declares the installing
   guard's `GUARD_VERSION` and, on Windows, its path holds none of the characters `install` refuses in a guard home
   (Public Contract), else the copied launcher.
-- `references/lane-split.md` and `SKILL.md` tell agents to run `check`, `plan`, `list` and `release`; `version` is
-  read-only and agents may run it as well.
+- `references/lane-split.md` and `SKILL.md` tell agents to run `check`, `plan`, `list` and `release`, and, for sets,
+  `set-plan`, `set-show`, `set-update` and `set-release`; `version` is read-only and agents may run it as well.
 - `/GitIntegrate`, `/GitRecon`, `/GitCleanup`, `/GitConverge` and `/GitSweep` read or release claims through `list` and
   `release` as `references/commands.md` describes; the read-only commands never write claims.
+- `/GitPlan` (`references/commands.md` section 8, `commands/GitPlan.md`, `skills/git-plan/`) checks that `version` is
+  at least 1.0.4, registers a set with `set-plan`, reads it with `set-show`, records the state of the lanes with
+  `set-update` and retires the set with `set-release`; its read-only forms (the plan and amend previews, `--status` and
+  `--converge` without `--apply`) call only `version`, `list`, `set-show` and `set-plan --dry-run`, which never write.
 - Package manifests: `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` (`metadata.version`),
   `skills/git-orchestrator/SKILL.md` (when it states a version) and line 3 of `references/commands.md` carry the same
   version as `GUARD_VERSION`; a contract test reads all of them. `__init__.py` registers the skills only.
@@ -471,8 +482,10 @@ Invocation: `py -3 -X utf8 -B scripts/magos_guard.py <command> [options]` (`pyth
 abbreviated (every parser is built with `allow_abbrev=False`), so `--rep` is a usage error. Input is read as bytes
 (UTF-8, BOM tolerated); output is UTF-8.
 
-Commands an agent may run: `check`, `plan`, `list`, `release`, `doctor`, `version`. Commands only the user runs:
-`override`, `arm`, `disarm`, `install`. The host hook recognises a user-only command whatever the global options before
+Commands an agent may run: `check`, `plan`, `list`, `release`, `doctor`, `version`, `set-plan`, `set-show`,
+`set-update`, `set-release`. Commands only the user runs:
+`override`, `arm`, `disarm`, `install`. The set subcommands are not user-only: the host hook lets them through like
+`plan`, `release` and `list` (Sets, Hook). The host hook recognises a user-only command whatever the global options before
 it look like. A guard word is a word ending in `magos_guard` or `magos_guard.py`, or a word whose case-folded base name
 (after the last `/` or `\`) is `run-guard.cmd` or `run-guard`, after which a leading `--strict` is skipped. After the
 guard word the hook skips a `--opt=value` word, a prefix of `--repo` or `--lang` together with its value, a prefix of
@@ -488,14 +501,21 @@ read as well.
   an audit line. Identical entries are a no-op (exit 0). Different entries need `--amend` (exit 14 otherwise); an amend
   is judged with the lane's own claim excluded, and a removal-only amend skips the overlap check. A branch that already
   exists with no open claim is refused (exit 15). A `--worktree` value that contains a control character is refused
-  (exit 12). On success it prints the creation command, for example `git worktree add "<path>" -b <B> <target>`.
+  (exit 12). A branch whose claim carries `set=<name>` of a set that has a record is a lane of that set: identical
+  entries are still a no-op, any other `plan` or `plan --amend` is refused with exit 14 and the message that names the
+  set (`lane_in_set`), because the manifests of a set are changed only by `set-plan --amend`. On success it prints the
+  creation command, for example `git worktree add "<path>" -b <B> <target>`.
 - `list [--drift] [--json]`: each claim as `planned` (no branch yet), `active` (unmerged work, a workspace, or a fresh
   branch at the target tip or the plan's base) or `idle` (integrated: merged, moved beyond the plan's base and the target
   tip, no worktree). An idle claim stops blocking other lanes. `--drift` reports files in the lane's footprint matched
   by none of its entries; it never denies. Claims the guard cannot use are listed as well: `unreadable claims/<file>`
   for a file that does not parse and `newer-format <branch> (v=N): upgrade this guard` for a claim of a newer format
   (`claims/<file>` in place of the branch when the claim has no `branch` line); `--json` gives them as rows with state
-  `unreadable` (with `path`) or `newer-format` (with `branch`, `v` and `path`).
+  `unreadable` (with `path`) or `newer-format` (with `branch`, `v` and `path`). A claim that carries `set=` shows its
+  set and lane (text ` set <name>/<lane>` after the state, ` set <name>/integration` for the integration claim; JSON
+  fields `set`, `lane` and, for the integration claim, `role` `integration` with `lane` null); the rows of every other
+  claim are unchanged. The state of an integration claim is computed like that of every claim and is information only,
+  because the claim blocks nothing; `--drift` skips it, because it claims no files (Sets, Integration claim).
 - `release --branch B [--reason R]`: normalises B as a ref spelling (a backslash read as `/`, empty and `.` segments
   dropped, `..` resolved), finds the claim by the folded name of that spelling among the parsed claims and deletes the
   file of the stored canonical branch name after confirming that its real path lies inside `<store>/claims`; the
@@ -508,7 +528,10 @@ read as well.
   whose line 2 starts with `v=` in a spelling the format line does not allow (Claim file below) is refused with exit 16
   and kept. Otherwise `release` prints `no open claim for B` and exits 0. A claim whose stored branch name does
   not lead back to its own file inside `<store>/claims` is not deleted: `release` refuses with exit 16 and names the
-  file for the user to inspect.
+  file for the user to inspect. A claim that carries `set=<name>` of a set that has a record (a lane or the
+  integration claim of that set) is refused with exit 16 and the message that names the set (`blocked_set`): the
+  claims of a set are released only by `set-release`; the claim of a set that has no record (a registration that was
+  interrupted) is released like any other.
 - `override --fingerprint FP --reason R`: exits 2 unless FP is the 12 lowercase hex digits a denial prints; refuses
   (exit 17) unless stdin and stdout are a real console; the user retypes the fingerprint; writes a one-shot record valid
   for one hour. Only `plan` reads override records: the next `plan` whose denial has the same fingerprint consumes the
@@ -599,7 +622,8 @@ read as well.
   launcher that does not exist (the Hermes plugin was removed, and `fail_closed` then blocks every Hermes terminal call)
   and a launcher whose guard script (`../scripts/magos_guard.py` beside it) declares a `GUARD_VERSION` other than the
   running guard's. Outside a repository it then reports that the guard is inert there. In a repository it checks mode,
-  hook uniformity, hook content, claim parsing (unreadable and newer-format claims), orphan claims, `core.hooksPath` and
+  hook uniformity, hook content, claim parsing (unreadable and newer-format claims), orphan claims, the sets (the
+  `sets:` line and the set problems of Sets, Hook, list, doctor and the plain commands), `core.hooksPath` and
   the backstop command recorded in `<store>/guard`: a recorded script that does not exist is reported as missing with
   the re-arm command, a recorded script that declares an older `GUARD_VERSION` than the running guard, or none, is
   reported as older than this guard with the re-arm command (both count as problems), and a hook that differs from this
@@ -612,6 +636,18 @@ read as well.
   created is deleted and reported as a failed self-test. Exit 1 on any problem, 0 otherwise.
 - `version [--json]`: read-only, works inside and outside a repository; prints `GUARD_VERSION`, the sha256 of the
   running file, its path and the Python version; `--json` prints `{version, sha256, path, python}`. Exit 0.
+- `set-plan --set NAME --target BRANCH --spec FILE|- [--dry-run] [--amend --expect-revision N]`: validates a set spec
+  and, unless `--dry-run`, registers the lane claims, the integration claim and the set record as one operation under
+  the lock (Sets, set-plan). Exit 0 registered, previewed or unchanged; 2 usage; 10 overlap or conflict; 11 unknown;
+  12 name or worktree clash with the repository; 13 lock; 14, 15 lane or branch exists; 16 amend refused; 19 stale;
+  20 set exists; 21 set unknown (`--amend`); 23 newer format; 24 invalid spec.
+- `set-show --set NAME [--drift]`: read-only, no lock; prints the record and the derived view (Sets, set-show). Exit 0;
+  11, 21, 23 as above.
+- `set-update --set NAME --expect-revision N --lane ID --state active|ready|integrated|blocked [--head SHA] [--note
+  TEXT] [--integration BRANCH]`: one lane transition under the lock with a revision compare-and-swap (Sets,
+  set-update). Exit 0; 2 usage; 11; 13; 16 refused by the repository state; 19 stale; 21; 22 OUT_OF_LANE; 23; 24.
+- `set-release --set NAME [--reason R] [--abandon]`: retires a set and releases its claims (Sets, set-release). Exit 0;
+  11; 13; 16 blocked; 21; 23.
 
 Repository of a creation. Each creation is judged in its own repository: the redirect target when the invocation has
 one, else the directory the invocation runs in at that point (after `cd`, `pushd`, `Set-Location`, `git -C`, `env -C`
@@ -657,11 +693,16 @@ on stdout.
 Exit codes: 0 allow, registered, ok or unchanged; 1 `doctor` found a problem, or a usage error of `hook` (a failure the
 launcher maps, never a deny); 2 usage error of any other command, not a git repository, a malformed fingerprint, or a
 guard home whose launcher path `install` refuses on Windows; 3 arm refused; 10 CONFLICT, NO_MANIFEST, UNPLANNABLE,
-UNPARSEABLE or PROTECTED; 11 UNKNOWN (also any engine exception, an exhausted budget, a claim in a newer format or a
-failed install: plan and check fail closed); 12 INVALID_MANIFEST (also an invalid branch name or a `--worktree` with a
-control character); 13 LOCK_TIMEOUT (30 s); 14 LANE_EXISTS; 15 BRANCH_EXISTS; 16 BLOCKED (release);
-17 CONSOLE_REQUIRED (`override`, `arm`, `disarm`, `install`); 18 DOWNGRADE_REFUSED (`install`). The launcher's refusal
-of a subcommand other than `hook` is its own exit 2; the guard is not started.
+UNPARSEABLE or PROTECTED; 11 UNKNOWN (also any engine exception, an exhausted budget, a claim in a newer format, a set
+record that cannot be read or a failed install: plan and check fail closed); 12 INVALID_MANIFEST (also an invalid
+branch name or a `--worktree` with a control character, and for `set-plan` a branch name or worktree path that clashes
+with the repository); 13 LOCK_TIMEOUT (30 s); 14 LANE_EXISTS; 15 BRANCH_EXISTS; 16 BLOCKED (`release`, `set-release`,
+and the refusals of `set-update` and `set-plan --amend` that the repository state causes);
+17 CONSOLE_REQUIRED (`override`, `arm`, `disarm`, `install`); 18 DOWNGRADE_REFUSED (`install`); 19 STALE (the plan or
+the revision a set command was made against is not the current one); 20 SET_EXISTS; 21 SET_UNKNOWN; 22 OUT_OF_LANE
+(`set-update --state ready` with files outside the lane's manifest); 23 SET_NEWER_FORMAT (a set record of a newer
+format); 24 INVALID_SPEC (a spec or option value that is invalid in itself; the message names the field). The
+launcher's refusal of a subcommand other than `hook` is its own exit 2; the guard is not started.
 
 Claim file (LF; the git layer reads only line 1, which is exactly `state=active` in every format): `state=active`,
 `v=<format>`, `branch`, `worktree`, `target`, `base`, `created`, `by`, `override`, then one `entry=<raw entry>` line per
@@ -684,8 +725,14 @@ readable and keeps allowing the creation of its own branch: the host hook judges
 Windows alias rule for it, while `plan` and `plan --amend` refuse the name. `list` names such a claim (JSON field
 `refused_name`, the reason; text ` (name refused by plan: ...)`) and `doctor` prints one line naming every such claim,
 so the user can release it and plan the lane under another name. A worktree path is
-compared case- and separator-insensitively where the platform is. Store layout:
-`<git-common-dir>/magos/{ARMED,lang,guard,arm-config.json,claims/,override/,audit.log,lock}`; the guard home holds
+compared case- and separator-insensitively where the platform is. The claims of a set carry the additive keys
+`set=<name>` and `lane=<id>` (the integration claim `set=<name>` and `role=integration`) after the standard keys: they
+are kept in the claim's `extra` list, not in `CLAIM_KEYS`, so claims without a set are byte-identical to those of
+1.0.3, the format stays `CLAIM_FORMAT = 1`, and a guard of 1.0.3 reads and writes these claims like any claim with
+keys it does not know. Only `set-plan` writes `role=integration`; `plan` writes no extra key, and `role=integration`
+is read only as one part of the shape of the integration claim (Sets, Integration claim), so the key alone exempts
+nothing. Store layout:
+`<git-common-dir>/magos/{ARMED,lang,guard,arm-config.json,claims/,sets/,override/,audit.log,lock}`; the guard home holds
 `guard/{scripts,hooks,generated}/`, `guard/VERSION.json` and `audit.log`.
 
 Verdict (`--json`): `{decision, code, conflicts:[{key, branch, worktrees, planned, evidence:[{kind committed|uncommitted|declared,
@@ -703,7 +750,10 @@ Invariants:
 3. Unknown is not safe: an ambiguous target (or a `--target` that does not resolve), `git am`, unreadable operation
    metadata, a locked worktree missing on disk, more than 120 unmerged local branches, an unreadable claim, a claim in a
    newer format, a Git failure or an exhausted budget (18 s per command or hook call, 30 s per Git call) deny creation
-   in `plan`, `check`, an armed repository and for a named worktree. In auto mode a snapshot that hides lanes (more
+   in `plan`, `check`, `set-plan`, an armed repository and for a named worktree. The one creation no unknown of the
+   judgement denies is that of the branch of an integration claim, which is judged for the branch name and the claim
+   only (Sets, Integration claim): an uncertain target, an unreadable claim elsewhere and the cap of unmerged branches do
+   not deny it, and only a Git failure of its name check fails closed. In auto mode a snapshot that hides lanes (more
    than 120 unmerged local branches, or more unmerged remote-tracking branches than the 300 it analyses) counts as
    engaged. When the engagement check itself fails (an uncertain integration target, a Git failure, an exhausted
    budget), the host hook treats a branch-only creation as engaged only when the repository holds an open claim (then
@@ -714,11 +764,14 @@ Invariants:
    failure and the outcome. Opening the repository is the one step that does not fail closed: a failure of `rev-parse`
    there, other than a missing Git or an exhausted budget, reads as "not a repository".
 4. Hard overlap is a direct path, directory prefix, glob, rename side, case or Unicode collision, or a declared manifest
-   against a manifest. Warnings never deny: inferred target, remote freshness, operation in progress, repository not armed.
-5. The only writes are claim and audit files (under the lock), override records, the files `arm` (including
+   against a manifest; the integration claim of a set takes part in none of them (Sets, Integration claim). Warnings
+   never deny: inferred target, remote freshness, operation in progress, repository not armed.
+5. The only writes are claim, set-record and audit files (under the lock), override records, the files `arm` (including
    `arm-config.json`), `disarm` and `install` (including `VERSION.json` and the generated snippet) print, and the audit
    lines `arm` and `disarm` append to `<store>/audit.log` and `install` appends to `<guard home>/audit.log`. `check`,
-   `list`, `hook`, `version` and every `--dry-run` never write.
+   `list`, `hook`, `version`, `set-show` and every `--dry-run` never write; `set-plan`, `set-update` and `set-release`
+   write only the claim and set-record files of their own set and an audit line, and never a branch, a ref, a worktree or
+   the index.
 6. Engagement: ARMED (marker file) guards every new branch and worktree; AUTO (default) always guards named worktree
    creation and guards branch-only or auto-named creation only when another lane exists; OFF
    (`git config --local magos.guard off`) silences the host hooks of that repository: its own creations, and a line the
@@ -732,7 +785,8 @@ Invariants:
    word beginning with `magos.` beside an alias it defines with `-c alias.<name>=` or a subcommand that is not a
    built-in git command, because an alias can run `config`. Edits of the guard's state are denied once
    the session directory's repository is armed or holds a claim: `core.hooksPath`, `GIT_CONFIG_*`, worktree config, and
-   writers or redirects aimed at `.git/hooks`, `.git/refs`, `.git/HEAD`, `.git/config`, `packed-refs`, `.git/magos`,
+   writers or redirects aimed at `.git/hooks`, `.git/refs`, `.git/HEAD`, `.git/config`, `packed-refs`, `.git/magos`
+   (the claims, the set records under `.git/magos/sets` and every other file of the store),
    `.magos`, the absolute path of the session repository's `<git-common-dir>/magos` (in any separator or case spelling
    the platform folds), the absolute path of the guard home (`~/.magos` or `MAGOS_HOME`) and the Hermes plugin
    directory `<hermes home>/plugins/magos` when it holds a launcher. The writers include the PowerShell cmdlets
@@ -766,6 +820,536 @@ Invariants:
    that times out. The warning names the absolute guard path and says how to stop the guard on any host
    (`MAGOS_GUARD=off` in the host environment or removing the MAGOS hook entry; for Claude, `claude plugin disable
    magos`).
+
+## Sets (version 1.0.4)
+
+A set is one task divided into lanes (sub-agent worktrees) that are merged back as one whole. `/GitPlan`
+(`references/commands.md` section 8) investigates the repository and the code before any sub-agent starts, divides the
+work with exclusive file ownership and registers the division through the four set subcommands; the guard proves every
+rule that the spec and the repository allow it to prove, registers the claims of all lanes and the plan record as one
+operation, and records the state of every lane afterwards. The plan is optimistically locked: nobody holds a lock while
+working. Every change to a registered set compares a `revision` and increments it, the plan carries the target tip it
+was made against (`base`), and a lane records the head it was marked ready at. A stale plan is detected and refused,
+never overwritten. The guard changes no branch, ref, worktree or index and runs no `merge`, `merge-tree`, `switch` or
+`worktree add`: the merging of the lanes is done by the command in the user's repository, through the host hook like any
+other git command, and the guard checks and records. Besides the subcommands of part 2, the set subcommands run
+`rev-list` (the number of commits a lane is ahead of the plan's base), and they run `worktree` only as `worktree list`.
+
+### Subcommands and shared rules
+
+```
+set-plan    --set NAME --target BRANCH --spec FILE|- [--dry-run] [--amend --expect-revision N]
+set-show    --set NAME [--drift]
+set-update  --set NAME --expect-revision N --lane ID --state active|ready|integrated|blocked
+            [--head SHA] [--note TEXT] [--integration BRANCH]
+set-release --set NAME [--reason R] [--abandon]
+```
+
+- Global options `--repo`, `--lang` and `--json` work anywhere, and options are never abbreviated, as for every
+  subcommand. A directory that is not a git repository is exit 2.
+- A set name is `[a-z0-9][a-z0-9-]{0,23}` and not one of the Windows device names `con`, `prn`, `aux`, `nul`, `com1` to
+  `com9`, `lpt1` to `lpt9` (the record is the file `sets/<set>.json`, and a device name with any extension is a device on
+  Windows); anything else is exit 24 with the field `--set`. A lane id is `[A-Za-z0-9_-]{1,16}`.
+- None of the four is user-only (Public Contract). They run through the host hook like `plan`, `release` and `list`
+  (Hook below).
+- `set-plan` (without `--dry-run`), `set-update` and `set-release` take the claim `Lock` (exit 13 after 30 s) and read
+  the repository, the claims and the record inside it; the budget of their git calls (18 s) starts when the lock is held,
+  so a long wait for the lock does not shorten it. `set-show` and every `--dry-run` take no lock, create nothing (not
+  even the store directory or the `lock` file, which the first locked call creates) and run on a budget that starts when
+  the repository is opened.
+- Every outcome prints one result on stdout: the message (text) or, with `--json`, one object with at least `decision`
+  (`allow` or `deny`), `code`, `message` and `exit_code` that equals the exit code of the process. Stderr stays empty,
+  except for a usage error (exit 2) and the generic Git-failure and internal-error lines of Errors (exit 11, with the
+  deny object under `--json`). A set command that stops writes nothing: no claim, no record, no temporary file.
+- Every write of a call is one transaction (Atomic write below). Every call that changes the store appends one audit
+  line (the audit lines are listed under Compatibility, limits and cost); a refusal, a preview, `--dry-run` and
+  `set-show` append none.
+
+### Data model
+
+**Spec** (the input of `set-plan`; JSON, UTF-8 with or without a BOM, or UTF-16 with a BOM as PowerShell 5.1 writes it,
+decoded by `decode_manifest`; a file outside every worktree, or `-` for stdin):
+
+```
+{"v": 1, "title": str, "base": "<full object name of the target tip>", "sheet": str, "notes": [str],
+ "shared": [{"path": str, "owner": id}],
+ "lanes": [{"id": id, "title": str, "branch": str, "worktree": str, "paths": [manifest entry],
+            "depends_on": [id], "acceptance": str}]}
+```
+
+Every key shown is required (`notes`, `shared` and `depends_on` may be empty lists), and a key that is not shown is
+invalid at every level. The limits:
+
+| Field | Rule |
+| --- | --- |
+| whole spec | at most 4,194,304 bytes (reading stops at 4,194,305 bytes), a JSON object, no duplicate key at any depth, no `NaN`, `Infinity` or `-Infinity`, nesting the JSON parser can read; no string holds a control character (the `sheet` may hold newline and tab) or a lone surrogate; the text is parsed with an integer hook that keeps a run of more than 4,000 digits as text, as `format_number` does for claims, so the result does not depend on the interpreter's integer-size limit |
+| `v` | the integer 1 (a boolean, a float or a string is invalid; every other integer, a run of digits of any length included, is an unsupported spec version, `UNSUPPORTED_VERSION`) |
+| `title` | 1 to 120 characters |
+| `base` | 40 or 64 hexadecimal digits in any case, stored in lower case; an abbreviation is invalid |
+| `sheet` | 1 to 4,096 characters (code points); stored verbatim, never parsed |
+| `notes` | at most 5 strings of 1 to 200 characters |
+| `shared` | at most 64 objects; `path` is a file path that passes `parse_entry` with no `*` or `?` and no trailing `/`, unique after folding; `owner` names a lane id of the spec, and the path lies inside the owner's manifest: `segs_overlap(alt, fpath(path))` is true for an alternative `alt` of an entry of the owner (the exact glob intersection of the entry with the file, so a directory entry covers the files below it), and the literal-directory clause of `path_hit` does not apply, so `src/c` is not inside `src/c/x.py` |
+| `lanes` | 1 to 12 objects |
+| lane `id` | `[A-Za-z0-9_-]{1,16}`, unique ignoring case, and not `integration` in any case (the name `list` shows for the integration claim, ` set <name>/integration`, which a lane of that id would read as; exit 24, `FORMAT`, `lanes[i].id`) |
+| lane `title` | 1 to 80 characters |
+| lane `branch` | the branch rules below |
+| lane `worktree` | the worktree rules below |
+| lane `paths` | 1 to 200 strings; each is one manifest entry read by `parse_entry` (at most 1,024 characters, normalised, with every refusal of the manifest syntax: empty, magic, absolute, `..`, `.git`, a `**` inside a segment, too broad); there is no comment syntax, so a `#` starts a path; entries equal after normalisation collapse into the first |
+| lane `depends_on` | at most 11 ids of other lanes of the spec, spelled as the lane's `id`, no duplicate, no self |
+| lane `acceptance` | 1 to 300 characters |
+
+*Branch rules.* A lane branch passes the intrinsic rules of `check_name` (a valid branch name by
+`check-ref-format --branch`, at most 100 characters, none of `< > | "`, no Windows reserved device name in a path
+component, and the Windows alias rule: no component ending in `.` or a space or in `.claim`); two lane branches never
+collide ignoring case and Unicode normalisation and never clash as a ref that would be both a file and a directory
+(`agent/x` and `agent/x/y`); and none collides or clashes with the integration branch `agent/<set>/integration`, which
+the set reserves, or equals the target. These are spec rules (exit 24, field `lanes[i].branch`). The rules that need the
+repository are the existing ones of `check_name` against the refs and claims of the repository (a clash with an existing
+branch or claim, a collision with one ignoring case and Unicode), refused with exit 12 and `[BRANCH_NAME]`, and the
+existence of the branch (exit 15) or of a claim for it that is not the set's own (exit 14).
+
+*Worktree rules.* A lane worktree is an absolute path, classified by the guard's own rule and never by `os.path.isabs`
+(whose Windows result for a rooted path without a drive differs from Python 3.13 on): after `_norm_path` (Git Bash
+drive spellings such as `/c/x` map to drive paths on Windows) it is a drive path (`C:/x`, `C:\x`) or a UNC path on
+Windows and a path with a leading `/` on POSIX; a leading `~`, a `..` segment, a control character, a backslash on
+POSIX or a length over `MAX_DIR` (4,096) is invalid (exit 24, field `lanes[i].worktree`). It is stored as
+`os.path.normpath` with `/` as the separator (the spelling `plan --worktree` stores) and compared with `pkey`, so case
+and separators fold where the platform folds them. Two lane worktrees are never equal and never one inside the other
+(exit 24). Against the repository, a lane worktree is never inside a worktree of the repository (the main one
+included) or inside the git common directory, and no existing worktree lies inside it (exit 12, `[WORKTREE]`), except
+the worktree that is already checked out on the lane's own branch (an amend of a lane whose worktree exists). The guard
+validates the spelling and the position, not whether the directory is free: `git worktree add` decides that. The spec
+file is never inside a worktree of the repository or inside a lane worktree of the spec (exit 24, `SPEC_IN_WORKTREE`).
+
+*Other cross-field rules (exit 24).* `depends_on` names existing ids and forms a directed acyclic graph (a cycle is
+reported with the lanes on it, `CYCLE`); the merge order is the topological order of the graph in which, at every step,
+the first lane of the `lanes` array whose dependencies are all placed comes next, so it is deterministic. Errors are
+collected across fields and reported together (at most 20 lines, then `... and N more`), each as `[CODE] field: text`
+with `field` a path such as `lanes[2].paths[7]`, `lanes[1].worktree`, `shared[0].owner`, `sheet` or `base`; the codes are
+`TOO_LARGE`, `ENCODING`, `JSON`, `MISSING`, `UNKNOWN_KEY`, `TYPE`, `RANGE`, `FORMAT`, `DUPLICATE`,
+`UNSUPPORTED_VERSION`, `UNKNOWN_LANE`, `CYCLE`, `NOT_IN_OWNER`, `BRANCH_NAME`, `WORKTREE`, `SPEC_IN_WORKTREE`, `STATE`
+and the codes of the manifest syntax (`EMPTY`, `TOO_LONG`, `MAGIC`, `ABSOLUTE`, `DOTDOT`, `BAD_SEGMENT`, `GITDIR`,
+`BAD_GLOB`, `UNIVERSAL`, `TOO_MANY`).
+
+**Set record** `<git-common-dir>/magos/sets/<set>.json`: one JSON object, UTF-8 without a BOM, LF, written only by the
+guard (the tamper filter denies agent writes under the store). Fields, in this order: `v` (`SET_FORMAT` = 1), `set`,
+`target` (the branch name the set lands on), `base` (the target tip the plan was made against, lower case), `revision`
+(1 at registration, +1 on every change), `created`, `updated` (UTC `YYYY-MM-DDTHH:MM:SSZ`), `by` (the user of the last
+write, as claims write it), `title`, `sheet`, `notes`, `shared`, `integration` (null until the first `integrated`
+update records the branch), and `lanes`, each with `id`, `title`, `branch`, `worktree`, `paths` (the raw entries),
+`depends_on`, `acceptance`, `state` (`planned`, `active`, `ready`, `integrated` or `blocked`; `planned` at
+registration), `head` (null until `ready`), `note` (empty until set) and `updated`. A key this guard does not know, in
+the record object or in a lane object of a record of format 1, is kept and written back unchanged. The `set` field
+equals the file name; a record that does not is unreadable.
+
+**Lane claims.** Every lane has one claim of the existing format written like a claim of `plan`: `branch`, `worktree`
+(the normalised spelling above), `target` (the target's name), `base` (the plan's base), `created`, `by`, empty
+`override`, one `entry=` line per path, then the extra keys `set=<name>` and `lane=<id>`; `v=1` and `state=active`.
+
+**Integration claim.** Creating `agent/<set>/integration` (the branch the convergence merges the lanes into) must pass
+the host hook and the git layer like the creation of any branch, so the set registers a claim for it as well: branch
+`agent/<set>/integration`, empty `worktree`, `target` and `base` as the lanes', the single entry
+`.magos/integration/<set>/` (the marker entry: a claim needs a non-empty manifest, and the marker names no file of the
+work tree), and the extra keys `set=<name>` and `role=integration` (no `lane=`). Only `set-plan` writes `role=integration`
+(`plan` writes no extra key of its own, and the tamper filter denies agent writes to the claim store, Invariant 7), so
+an agent cannot request the exemption below. The command creates the branch with a plain `git switch -c agent/<set>/integration <target
+tip>`, and a denial of that creation is the host hook's, never worked around. The set refuses to register when the
+integration branch already exists (exit 15, naming it) or has a claim that is not the set's own (exit 14).
+
+*The integration claim is exempt from overlap judgement, in both directions.* The integration branch is the whole,
+assembled by merging the lanes, so its claim claims no files and restricts no lane manifest: entries such as
+`docs/**/*.md`, `**/*.md` and `*.md` are valid in a lane, and the marker takes no part in the pairwise proof of
+`set-plan` (step 4). The exemption belongs to the claim that has exactly the shape `set-plan` writes
+(`is_integration_claim`): `role=integration` exactly, `set=<S>`, the branch `agent/<S>/integration` and the single entry
+`.magos/integration/<S>/`, the last three compared folded. A claim that carries `role=integration` in any other shape (for
+example the remainder of an interrupted registration whose entries a plain `plan --amend`, or a guard of 1.0.3, changed,
+since an amend keeps the extra keys of the claim) is an ordinary claim: its entries are declared evidence and its
+creation is judged in full. A set-plan amend writes the claim again in its shape (step 12). The exemption is decided by
+the claim alone: the set record is not read, so the claim of an interrupted registration is exempt as well until
+`release --branch` frees it.
+
+- *As a claimant (the judgement).* The claimant list of the judgement is built from two sources: `gather` reads git
+  only (branches, worktrees, commits, uncommitted files) and knows no claim; `judge` then adds the declared entries of
+  the open claims in `with_declared`. `with_declared` skips an integration claim, so its marker entry never reaches
+  `evaluate` and it is never a claimant of `plan`, `check`, `set-plan` (step 11) or the creation check of any other
+  branch, of its own set or of another one. A skipped claim is not parsed, so it yields no `CLAIM_UNPARSEABLE`.
+  The exemption concerns the claim only: the real branch `agent/<S>/integration`, once it exists, and a worktree on it
+  are gathered like any branch, and the commits merged into it are evidence like those of any unmerged branch; only
+  `set-plan` leaves them out of its own snapshot as members of the set (step 9).
+- *As a creation (`check_creation`).* The creation of the branch of an integration claim is judged for the claim and the
+  name only. The checks that precede the judgement stay: a claim of a newer format is UNKNOWN `CLAIM_NEWER_FORMAT`, a
+  branch without a claim is `NO_MANIFEST`, and the claim's registered worktree is compared with the path of the
+  creation (the integration claim has none, so there is no `path_mismatch`). Then the branch name passes `check_name`
+  against the refs and the other claims with `stored` true, as for the claim of any branch (`INVALID_MANIFEST`,
+  `[BRANCH_NAME]` on failure), and the creation is allowed: `plan_core` is not called, so nothing is gathered or
+  evaluated, and no lane's manifest, no commit of a lane and no unknown of the judgement (an unreadable claim elsewhere,
+  an uncertain target, more unmerged branches than the cap) denies it; only a Git failure of the name check
+  (`check-ref-format`, the refs) fails closed, as for every creation. The git layer reads line 1 of the claim file of the
+  name, so the claim is all its backstop needs. Any other branch is judged in full: an unclaimed one is `NO_MANIFEST`, a claimed one by its entries.
+- *What `list`, `doctor` and the release show of it.* `list` prints ` set <name>/integration` (JSON `role`
+  `integration`, `lane` null) and its state as for any claim, and `list --drift` skips it; it prints them only for a claim
+  that `is_integration_claim` accepts, so a claim that carries `role=integration` in another shape shows its `set` alone
+  (text ` set <name>`, no lane and no `role`) and reads as missing to a reader that looks for the integration claim
+  (`/GitPlan` then writes it again with `set-plan --amend`, step 12). `doctor` leaves it out of the
+  orphan-claims line while the set has a record and names it in `claims of set <s> without a record` when the record is
+  gone; it prints nothing else for the exemption. `release --branch` refuses it while the record exists (`blocked_set`),
+  and `set-release` removes it in the transaction with the lane claims (each only when it exists, lies inside the store,
+  carries `set=<name>` and is the claim of the reserved branch name).
+
+**Format gate.** A set record whose `v` is an integer (not a boolean) greater than `SET_FORMAT` is never read as if it
+were this format, never overwritten and never removed: every set command that names it (`set-plan` with or without
+`--amend`, `set-show`, `set-update`, `set-release`) refuses with exit 23 (`set_newer`: "set X was written by a newer
+MAGOS (v=N); upgrade this guard (doctor shows its version, install refreshes the copy), or run this command with the
+MAGOS that wrote it"); the check precedes every other field, so no field of a newer record is interpreted. The record
+is parsed with the integer hook of the spec (a run of more than 4,000 digits stays text), so an integer `v` above
+`SET_FORMAT` of any length is a newer format on every interpreter, as `format_number` treats a long format line of a
+claim. A record that is not a JSON object, has no integer `v`, has `v` below 1 or is not valid JSON is
+unreadable: the command refuses with exit 11 (UNKNOWN, code `SET_UNREADABLE`, naming the file, `set_unreadable`), the
+file is never overwritten or removed by this guard, and the user inspects it. Readers list only `*.json` files of
+`sets/`, so a temporary file (`*.tmp`) never reads as a record. A claim of a newer format among the claims of the set is
+handled by the claim gate (UNKNOWN `CLAIM_NEWER_FORMAT`, never overwritten, never released).
+
+**Atomic write.** The text of every claim a set writes is produced by the validation and serialisation part of
+`write_claim` (the control-character refusal, the match of the folded branch with the name, the refusal when the claim
+file holds another branch's claim or cannot be read, the refusal to overwrite a newer-format claim), so a claim written
+by a set is exactly a claim `plan` could write; a refusal ends the call before anything is written (a name or
+control-character refusal exit 12, a newer-format claim exit 11). The call then builds the complete list of writes
+(claim files, then the record last) and deletions (claims of removed lanes), reads the previous bytes of every file it
+will touch inside the lock, and applies the writes with `replace_files` (every new content staged in a temporary file
+beside its destination, every file moved into place
+with `os.replace`, a failed move puts every file already moved back from its previous bytes and removes the temporary
+files), then the deletions; when a deletion fails, every deletion and write already made is undone from the previous
+bytes (a file that had none is removed) and the error is raised, so the store never holds a mixture of two versions.
+When an undo itself fails (`NotRestored`), the call exits 11 and names the files that could not be put back, which
+`doctor` then reports. The record is the last write, so a reader that sees a new record sees every claim it needs. A
+process that is killed between two moves leaves either claims of a set without a record or a record whose claims are
+missing: `doctor` reports both directions, `release --branch` frees the claims of a set that has no record, and
+`set-release --abandon` retires a record whose claims are gone.
+
+### set-plan
+
+`set-plan --set NAME --target BRANCH --spec FILE|- [--dry-run] [--amend --expect-revision N]`. Steps, in this order; the
+first failing step ends the call, and a failure at any step writes nothing:
+
+1. **Usage (exit 2).** `--amend` without `--expect-revision`, `--expect-revision` without `--amend`, and an
+   `--expect-revision` that is not `[1-9][0-9]{0,8}`. `--set`, `--target` and `--spec` are required (a missing one is a
+   usage error); an invalid `--set` is exit 24.
+2. **Read the spec.** Bytes are read from the file or from stdin up to the size limit; a missing file, a directory or an
+   unreadable file is exit 24 on `--spec`; a file inside a worktree is `SPEC_IN_WORKTREE` (write it outside every
+   worktree, or pass `-`). The text is decoded (`decode_manifest`) and parsed with duplicate keys, `NaN`/`Infinity` and
+   over-deep nesting refused.
+3. **Validate every field and the cross-field rules** of Data model, collecting all errors; any error is exit 24. No
+   claim, record or ref has been read at this point (only the worktree list, for the position of the spec file).
+4. **Pairwise disjointness (exit 10).** Only the lanes of the spec take part: the integration claim claims no files and
+   its marker entry is not compared (Integration claim), so a lane entry whose first segment is a wildcard is valid. The
+   entries of every lane are indexed by the folded literal first segment of each of their alternatives; an alternative whose first segment holds `*` or `?`, or is `**`, goes to a wildcard group. An
+   entry of one lane is compared by `entries_overlap` (the exact glob intersection that `plan` uses) with the entries
+   of the other lanes in its own bucket and in the wildcard group only, and an entry in the wildcard group with every
+   entry of the other lanes, so the work is near-linear when lanes own distinct directories, and the call's deadline is
+   ticked between entries: when it runs out, the call ends with exit 11 (UNKNOWN, `BUDGET_EXCEEDED`) and nothing is
+   written, never with a partial proof. Every overlapping pair is reported with both lane ids and both raw entries (at
+   most 20 pairs, in lane order and entry order, then `... and N more`); the verdict is CONFLICT (exit 10) with the
+   pairs in `overlaps`. Entries equal after normalisation, a glob and a file it matches, a directory and a file below it,
+   two globs that can match one path, and entries that differ only in case or Unicode normalisation all overlap.
+5. **Lock** (not with `--dry-run`): exit 13 on timeout. Inside it the claims, the record and the refs are read afresh.
+6. **The record.** Without `--amend`: a record of the set (readable, any revision) is exit 20 (`set_exists`, naming the
+   revision and the two ways forward), a newer-format one exit 23, an unreadable one exit 11. With `--amend`: no record
+   is exit 21 (`set_unknown`), a newer one exit 23, an unreadable one exit 11, a `--target` that is not the record's
+   target (folded) exit 24 (a target never changes; release the set and plan a new one), and an `--expect-revision` that
+   is not the record's revision exit 19 (`set_stale_revision`, naming both revisions).
+7. **The live base (exit 19).** The target must exist as the local branch `refs/heads/<target>`; the guard's own
+   resolution of the target (`resolve_target` with `--target`, the one the judgement uses) must give the same sha, else
+   the call ends with exit 11 (UNKNOWN, `TARGET_UNCERTAIN`: the target does not resolve to a local branch, or the local
+   branch is behind or diverged from its remote-tracking copy, where lanes cut from the local branch would never
+   descend from the sha the plan names). The spec's `base` must equal that sha read inside the lock, else STALE
+   (exit 19, `set_stale_base`, naming both): the planner investigated another tip. Nothing is fetched.
+8. **Names against the repository.** The claims of the set are, in an amend, the claims whose `set=` value is the set's
+   name; in a fresh registration no claim is the set's own (a claim that carries `set=<name>` while no record exists is
+   the remainder of an interrupted registration and is refused like any other claim until `release --branch` frees it).
+   For every lane in spec order and then the integration branch: `check_name` against the refs and the claims of the
+   repository that are not the set's own, extended with the other branches of the spec so that file-versus-directory and
+   case or Unicode collisions among them are caught (exit 12, `[BRANCH_NAME]` naming the lane); a claim of the branch
+   that is not the set's own (exit 14, `set_lane_exists`); a branch that exists with no claim of the set (exit 15,
+   `set_branch_exists`). The kinds are checked in this order, every offending lane of the first failing kind is named,
+   and the first failing kind decides the exit code. The worktree rules against the repository are checked here
+   (exit 12, `[WORKTREE]`).
+9. **One snapshot.** `gather(g, None, <target>)` runs once for the whole call (not once per lane) and the claimants that
+   are members of the set are left out of it: the branches of the record's lanes and of the spec's lanes and the
+   integration branch `agent/<set>/integration` by `lane_key`, their worktrees by their `wt:` key and the claims of the
+   set. The lanes were proven pairwise disjoint by step 4, so they are not compared with each other, and the commits of
+   the lanes already merged into the integration branch never conflict with the set's own lanes; the evidence of the
+   members is kept aside for step 10.
+10. **Amend only: lanes that were already started.** For every lane of the record, matched by id: a lane absent from the
+    spec is removed, and it is refused with exit 16 (BLOCKED, reason `UNMERGED_WORK` or `DIRTY_WORKTREE`, naming the lane)
+    when its branch exists with commits that are not in the target (`refs/heads/<b>` is not merged into the target) or
+    its worktree has uncommitted changes; a lane that survives keeps its branch and worktree when either exists (a
+    changed `branch` or `worktree` of a lane that has a branch or a worktree on disk is exit 24), and it is refused with
+    exit 16 (reason `SHRINK`, naming the lane and the files) when a file it already changed (committed over every merge
+    base with the target, or uncommitted in its worktree, a rename counting both names) is no longer inside its new
+    manifest. A lane whose id is new is registered `planned`.
+11. **Judgement against every other claimant.** For each lane in spec order, `judge` runs on the snapshot with the
+    claims of the set left out and the lane's entries (`evaluate` compares them with the committed, uncommitted and
+    declared evidence of every claimant that is not a member; `with_declared` skips the integration claim of any other
+    set as well, so it is never a claimant). A conflict or an unknown denies the whole set and names
+    the lane (`set_lane_item`) and the claimants as `render` names them, without the override paragraph of `options`,
+    which is replaced by the set's own (`set_options`): `set-plan` never reads or consumes an override. Every lane is
+    judged, so every offending lane is named. The code is CONFLICT (exit 10) when any lane has a conflict and UNKNOWN
+    (exit 11) when the lanes have only unknowns (an unreadable or newer-format claim anywhere denies, as for `plan`).
+    The warnings of the snapshot and `NOT_ARMED` and `HOOK_BYPASSED` as `plan_core` computes them are printed with the
+    success.
+12. **Build and compare.** The new record (`base` the spec's, `target` the record's, `revision` 1, or the old revision + 1
+    for an amend, the lane states, heads and notes carried over for the ids that survive, `planned` and a null `head` for
+    new ones, `integration` kept, `created` kept) and the claims (a lane
+    claim is rewritten when it is missing, or its entries, worktree, target or base differ; its `created` is kept; the
+    claims of survivors get the new `base` when the amend moves it; claims of removed lanes are deleted; the
+    integration claim is written when it is missing or does not have the shape `set-plan` writes, its `created` kept).
+    When an amend changes nothing (every record field except `revision`, `updated` and `by`, and every claim, equals
+    what exists) the call ends with exit 0 and `unchanged: true`, the revision stays, and nothing is written.
+13. **Write** (not with `--dry-run`) with the transaction of Atomic write, then append the audit line and print the
+    result. `--dry-run` runs steps 1 to 12 against the same snapshot logic without the lock and prints the verdict the
+    registration would give, with `dry_run: true` and the same exit code; it writes nothing and appends nothing.
+
+Result (`--json`): success `{decision: "allow", code: "OK", set, target: {name, sha}, base, revision, dry_run, unchanged,
+integration_branch, order, lanes: [{id, branch, worktree, entries, state, create}], written, warnings, message,
+exit_code}` where `create` is `git worktree add "<worktree>" -b <branch> <target>` and `written` lists the claim and
+record files the call wrote (empty for `--dry-run` and `unchanged`); `revision` is the revision the record has after the
+call (the one a `--dry-run` would write, the current one for `unchanged`) and `warnings` is a list of `{code, text}`;
+denial `{decision: "deny", code, set, errors: [{field, code, text}], overlaps: [{a, b, entries: [[entry of a, entry of
+b]]}], lanes: [{id, branch, code, conflicts, unknowns}], unknowns: [{code, text}], blocked: [{lane, reason, files}],
+expected, current, kind, message, exit_code}` with only the keys of the denial present (`errors` for exits 12, 14, 15
+and 24, `overlaps` for the pairwise exit 10, `lanes` for the judgement of exits 10 and 11, `unknowns` for an exit 11 of
+the call itself (`TARGET_UNCERTAIN`, `SET_UNREADABLE`, `BUDGET_EXCEEDED`, `GIT_FAILED`, `INTERNAL_ERROR`), `blocked` for
+exit 16, `kind` `base` or `revision` with `expected` and `current` for exit 19, `current` the record's revision for exit
+20). `conflicts` and `unknowns` of a lane have the shape of the verdict of `plan`. The text of a success is `set_ok_plan` (or `set_ok_amend`, `set_ok_check`,
+`set_unchanged`), one line per lane (id, branch, worktree, entry count), the line of the integration branch and the
+`(CODE) text` warning lines.
+
+### set-update
+
+`set-update --set NAME --expect-revision N --lane ID --state STATE [--head SHA] [--note TEXT] [--integration BRANCH]`
+changes one lane of a registered set. `--expect-revision` is required and is `[1-9][0-9]{0,8}`, `--state` takes only
+`active`, `ready`, `integrated` or `blocked`, `--lane` is required (another value or a missing option is a usage error,
+exit 2). Under the lock: the record is read (exit 21 unknown, 23 newer, 11 unreadable); the revision is compared (exit 19, `set_stale_revision`);
+`--lane` must be a lane of the record (exit 24, field `--lane`, naming the ids); then the transition and its conditions:
+
+| From | planned | active | ready | integrated | blocked |
+| --- | --- | --- | --- | --- | --- |
+| planned | not a target state | allowed | refused | refused | allowed |
+| active | not a target state | allowed (note) | allowed | refused | allowed |
+| ready | not a target state | allowed (rework) | allowed (new head) | allowed | allowed |
+| integrated | not a target state | refused | refused | allowed (note) | allowed |
+| blocked | not a target state | allowed (resume) | refused | refused | allowed (note) |
+
+A refused transition is exit 24, field `--state`, `STATE`, naming the lane's state; `planned` is the initial state
+and never a `--state` value. `--note` is at most 200 characters without a control character and replaces the lane's note
+(an empty value clears it). `--head` is a full object name (40 or 64 hexadecimal digits) and is accepted only with
+`ready` and `integrated`, where it is required; `--integration` is accepted only with `integrated`; any other
+combination is exit 24 on the option.
+
+- **ready.** The lane's branch must exist (else exit 16, `BRANCH_MISSING`) and `--head` must equal its tip (else exit 16,
+  `HEAD_MISMATCH`, naming both). The lane's worktree, when one exists, must be clean (`DIRTY_WORKTREE`) and in no
+  rebase, merge, cherry-pick, revert or sequencer operation (`OPERATION_IN_PROGRESS`), because uncommitted work is not in
+  the recorded head and would be left behind by a merge of it; both are exit 16. The files the lane changed, measured
+  by `committed_paths(g, <target tip>, <tip>)` (the evidence function the guard uses everywhere, so a lane that merged
+  the target into itself is not charged with the target's files; the plan's `base` stands in for the target tip when the
+  target branch no longer exists), must all lie inside the lane's manifest by the exact glob intersection (`path_hit`); a
+  file outside it is exit 22 (OUT_OF_LANE, `set_out_of_lane`, naming the lane and the files, at most 200 in `files`
+  with `truncated`), and no common history with the target is exit 16 (`NO_MERGE_BASE`). Success records the head.
+- **integrated.** The lane must be `ready` (the table), `--head` must equal the head recorded at ready (else exit 16,
+  `HEAD_MISMATCH`), and it must be an ancestor of the target's tip or of the tip of the integration branch (else
+  exit 16, `NOT_MERGED`, `set_why_ancestor`). `--integration` must be the reserved name `agent/<set>/integration`
+  and the branch must exist (`BRANCH_MISSING`); it is required while the record's `integration` is null and must equal
+  it afterwards, and success stores it. Nothing else about the merge is checked: the command performed it.
+- **active, blocked.** No condition; `--head` is refused (exit 24). A lane that is `ready` and returns to `active`
+  keeps its head until it is marked ready again.
+
+Success writes the record only (the lane's `state`, `head`, `note`, `updated`, the record's `integration`, `revision`
++ 1, `updated`, `by`), as one atomic replace; every other byte of the record is unchanged. Result (`--json`):
+`{decision, code, set, lane, state, head, note, integration, revision, warnings, message, exit_code}`; a refusal
+carries the keys of its exit as Result keys below lists them (`blocked: [{lane, reason}]` for exit 16, `lane`, `files`
+and `truncated` for exit 22, `errors` for exit 24, `kind`, `expected` and `current` for exit 19, `unknowns` for exit 11).
+
+### set-show
+
+`set-show --set NAME [--drift]` is read-only, takes no lock and exits 0 with the record and its derived view (exit 21
+unknown, 23 newer, 11 unreadable). `--json` prints `{decision, code, record, view, warnings, message, exit_code}`, where
+`record` is the stored record as read and `view` is:
+
+- `target_tip` (the tip of the local target branch, null when it no longer exists) and `target_moved` (the tip differs
+  from `base`; null when the branch is missing);
+- `lanes`, in the record's order, each with `id` and: `branch_exists`, `tip` (null without a branch), `ahead`
+  (`rev-list --count <base>..<tip>`; null without a branch), `descends_from_base` (the base is an ancestor of the tip;
+  informational, since a lane need not descend from the base: an amendment moves the base and no command gates on it),
+  `worktree_present` (a worktree at the lane's path or on its branch that is not prunable), `worktree_clean` (null when
+  none), `operation` (the operations in progress of that worktree as `operation` reads them, `["unreadable"]` when its
+  metadata cannot be read), `state`, `head` (as recorded) and `claim` (`ok`, `missing`, or `mismatch` when the claim of
+  the branch lacks `set=<name>` or `lane=<id>` or its entries differ from the record's `paths`);
+- with `--drift` the lanes also carry `changed` (the files the lane changed, measured as `set-update` measures them,
+  sorted: committed changes only, the uncommitted ones are shown by `worktree_clean`; null without a branch, and null
+  when there is no common history with the target, which adds the warning `UNRELATED_HISTORY`), `out_of_lane` (the files of
+  `changed` that no entry of the lane's manifest matches) and `moved_since_ready` (true when the state is `ready` and the
+  tip is not the recorded head, false otherwise, null without a branch), and `view` carries the object `drift` with the
+  fields `shared_changes` (a list of `{path, lanes}`: every file that two or more lanes changed, with those lane ids),
+  `target_overlap` (a list of `{path, lanes}`: the files the target changed since the plan's base, measured by
+  `committed_paths(g, <base>, <target tip>)`, that fall inside the manifest of at least one lane, with those lane ids; empty
+  when the target did not move), `stale` (true when the target moved and `target_overlap` is not empty: the plan must be
+  amended; false otherwise, null when the target branch is missing) and `merge_order` (the topological order of the lane
+  ids, as defined under Other cross-field rules). `warnings` is a list of `{code, text}`; `moved_since_ready`,
+  `out_of_lane`, `changed` and `drift` exist only with `--drift`. A lane with no branch has `out_of_lane` empty and
+  `changed` null.
+
+Paths are tested against the lane manifests through the same first-segment index as the pairwise check, so a drift
+view over thousands of files stays within the budget (exhausted: exit 11, `BUDGET_EXCEEDED`). The text view prints the
+header `show_head`, the stored sheet verbatim, one line per lane (`show_lane`: `[x]` for `ready` and `integrated`, `[ ]`
+otherwise, the state, the recorded head and the tip abbreviated to 7 digits, the commits ahead, the worktree as `clean`,
+`dirty`, an operation, `absent` or `unreadable`, the branch) and, with `--drift`, the lines that are not empty:
+`show_out`, `show_shared`, `show_moved` (with the overlap files), `show_moved_ready` and `show_order`.
+
+### set-release
+
+`set-release --set NAME [--reason R] [--abandon]` retires a set. Under the lock the record is read (exit 21, 23, 11),
+then for every lane the guard evaluates the same predicate `release` uses, against the record's target: the lane has
+**unmerged work** when its branch exists and is not merged into the tip of the local branch `target` of the record
+(when that branch no longer exists, no existing lane branch counts as merged), and a **dirty worktree** when the
+worktree on that branch or at the registered path has uncommitted changes (a Git failure counts as dirty). Without `--abandon` every lane must also be in
+state `integrated`; with `--abandon` the state does not matter. Each failing lane is named with its reason
+(`NOT_INTEGRATED`, `UNMERGED_WORK`, `DIRTY_WORKTREE`, `CLAIM_UNUSABLE` for a lane claim that is unreadable or of a newer
+format) and any of them is exit 16 (BLOCKED, `set_blocked`) with nothing written. A lane whose branch no longer exists
+has no unmerged work. So a set whose lanes were integrated and landed releases, a lane that changed nothing is "not
+needed", and `--abandon` drops a plan whose branches hold nothing that is not in the target.
+
+When nothing blocks, one transaction deletes the claim of every lane and the integration claim (each only when it
+exists, lies inside `<store>/claims`, carries `set=<name>` and is the claim of the stored branch, as `release` checks; a
+claim of that branch that belongs to another set or to none is left alone and reported as a warning) and then the record.
+The call prints `set_released` with the number of claims it removed, and appends the audit line with `--reason`.
+`--reason` is at most 200 characters. The guard never removes a branch, a worktree or a file of the work tree. The claims
+of a set that is released stop blocking `/GitCleanup`, `/GitConverge` and `/GitSweep`; while the set is open they block
+them as `BLOCKED_ACTIVE_OWNER`, as every open lane claim does. Result (`--json`): `{decision, code, set, abandoned,
+released: [branch], warnings, blocked: [{lane, reason}], message, exit_code}`.
+
+### Exit codes and messages
+
+The exit table `EXIT` gains `STALE` 19, `SET_EXISTS` 20, `SET_UNKNOWN` 21, `OUT_OF_LANE` 22, `SET_NEWER_FORMAT` 23 and
+`INVALID_SPEC` 24; `CONFLICT` 10, `UNKNOWN` 11, `LOCK_TIMEOUT` 13, `LANE_EXISTS` 14, `BRANCH_EXISTS` 15 and `BLOCKED` 16
+keep their meaning, and `INVALID_MANIFEST` 12 is used for a branch name or worktree path that clashes with the
+repository. The rule: a spec or option value that is invalid in itself is 24 and names the field; a failure that the
+repository or the record causes keeps the existing code. The verdict `code` and the process exit code agree.
+
+**Result keys (`--json`).** Every result of a set command carries `decision`, `code`, `message` and `exit_code`, where
+`code` is the `EXIT` name of the exit code (`OK` for 0, then `CONFLICT`, `UNKNOWN`, `INVALID_MANIFEST`, `LOCK_TIMEOUT`,
+`LANE_EXISTS`, `BRANCH_EXISTS`, `BLOCKED`, `STALE`, `SET_EXISTS`, `SET_UNKNOWN`, `OUT_OF_LANE`, `SET_NEWER_FORMAT`,
+`INVALID_SPEC`); a denial adds only the keys of its exit, and a caller reads nothing else of it:
+
+| Exit | Extra keys |
+| --- | --- |
+| 10 | `overlaps` (two lanes of the plan) or `lanes` (per lane `id`, `branch`, `code`, `conflicts`, `unknowns` of the judgement against other claimants) |
+| 11 | `unknowns: [{code, text}]` of the call itself (`TARGET_UNCERTAIN`, `SET_UNREADABLE`, `BUDGET_EXCEEDED`, `GIT_FAILED`, `INTERNAL_ERROR`), or `lanes` when the judgement found only unknowns |
+| 12, 14, 15, 24 | `errors: [{field, code, text}]` (`field` a path such as `lanes[2].branch`; `code` `BRANCH_NAME`, `WORKTREE`, `LANE_EXISTS`, `BRANCH_EXISTS` or a code of Other cross-field rules) |
+| 16 | `blocked: [{lane, reason, files}]` with `reason` one of `UNMERGED_WORK`, `DIRTY_WORKTREE`, `SHRINK`, `BRANCH_MISSING`, `HEAD_MISMATCH`, `OPERATION_IN_PROGRESS`, `NO_MERGE_BASE`, `NOT_MERGED`, `NOT_INTEGRATED`, `CLAIM_UNUSABLE` |
+| 19 | `kind` (`base` or `revision`), `expected`, `current` |
+| 20 | `current` (the record's revision) |
+| 22 | `lane`, `files`, `truncated` |
+| 21, 23 | none beyond the common keys |
+
+The messages are entries of the table `M` (`T(lang, key, **fields)`), zh first and en second:
+
+| Key | zh | en |
+| --- | --- | --- |
+| `set_invalid` | MAGOS：set 规划无效，未登记也未创建任何东西：\n{errors} | MAGOS: the set plan is invalid, nothing registered or created:\n{errors} |
+| `set_stale_base` | MAGOS：计划已过期，未写入任何东西：目标 {t} 现在位于 {live}，而计划基于 {base}。请重新调查仓库后再规划。 | MAGOS: the plan is stale, nothing was written: target {t} is now at {live}, but the plan was made against {base}. Investigate the repository again and re-plan. |
+| `set_stale_revision` | MAGOS：计划已过期，未写入任何东西：set「{s}」现在是修订 {cur}，而你基于修订 {exp}。请先用 set-show 重新读取。 | MAGOS: the plan is stale, nothing was written: set '{s}' is at revision {cur}, not {exp}. Read it again with set-show. |
+| `set_exists` | MAGOS：set「{s}」已存在（修订 {rev}）。用 --amend --expect-revision {rev} 修改，或先 set-release。 | MAGOS: set '{s}' already exists (revision {rev}). Change it with --amend --expect-revision {rev}, or release it first with set-release. |
+| `set_unknown` | MAGOS：没有名为「{s}」的 set。 | MAGOS: there is no set named '{s}'. |
+| `set_out_of_lane` | MAGOS：拒绝把 lane {l} 标记为 ready：下列文件在它的 manifest 之外：{files}。请撤销这些改动，或用 set-plan --amend 调整归属。 | MAGOS: refused to mark lane {l} ready: these files lie outside its manifest: {files}. Revert them, or move the ownership with set-plan --amend. |
+| `set_newer` | MAGOS：set「{s}」由更新版本的 MAGOS 写入（v={v}）：请升级本守卫（doctor 显示版本，install 刷新副本），或用写入它的那个 MAGOS 执行这条命令。 | MAGOS: set '{s}' was written by a newer MAGOS (v={v}): upgrade this guard (doctor shows its version, install refreshes the copy), or run this command with the MAGOS that wrote it. |
+| `set_unreadable` | MAGOS：set 记录 {f} 无法读取，未做任何修改；请用户检查该文件。 | MAGOS: the set record {f} cannot be read; nothing was changed. The user must inspect the file. |
+| `set_conflict` | MAGOS 拒绝登记 set「{s}」：下列 lane 的 manifest 与其他 lane 或已有分支重叠，或无法分析。没有登记也没有创建任何东西。 | MAGOS DENIES registering set '{s}': the manifests of the lanes below overlap other lanes or existing branches, or could not be analysed. Nothing was registered or created. |
+| `set_overlap` | lane {a} 与 lane {b} 的 manifest 重叠：{pairs} | lane {a} and lane {b} overlap: {pairs} |
+| `set_lane_item` | lane {l}（分支 {b}）： | lane {l} (branch {b}): |
+| `set_options` | 可选处理：① 缩小或拆分重叠的 lane；② 等对方合入 {target} 后再规划；③ 对方若已合并或已放弃，用 release 释放它的登记（未合并的工作不会被释放）。set-plan 不读取也不消耗用户覆盖（override）。 | Options: (1) shrink or split the overlapping lanes; (2) wait until the others are merged into {target}; (3) if the other lane is merged or abandoned, release its claim with release (unmerged work is never released). set-plan neither reads nor consumes an override. |
+| `set_branch_exists` | MAGOS：lane {l} 的分支「{b}」已经存在且没有有效登记，不能事后补登记。请换一个新分支名。 | MAGOS: the branch '{b}' of lane {l} already exists without a claim; it cannot be registered after the fact. Choose a new branch name. |
+| `set_lane_exists` | MAGOS：lane {l} 的分支「{b}」已有一份不属于这个 set 的登记。请先 release 它，或换一个分支名。 | MAGOS: the branch '{b}' of lane {l} already has a claim that is not this set's. Release it first, or choose another branch name. |
+| `set_ok_plan` | MAGOS：已登记 set「{s}」：{n} 个 lane，目标 {t}，基线 {base}，修订 {rev}。现在可以逐个创建 lane，例如：{example} | MAGOS: registered set '{s}': {n} lanes, target {t}, base {base}, revision {rev}. You may now create the lanes, e.g.: {example} |
+| `set_ok_amend` | MAGOS：已修改 set「{s}」：修订 {old} → {rev}，{n} 个 lane。 | MAGOS: amended set '{s}': revision {old} -> {rev}, {n} lanes. |
+| `set_ok_check` | MAGOS：预览通过，没有发现重叠（set「{s}」未登记）。 | MAGOS: preview passed, no overlap found (set '{s}' not registered). |
+| `set_unchanged` | MAGOS：set「{s}」没有变化（修订 {rev}），未写入任何东西。 | MAGOS: set '{s}' is unchanged (revision {rev}); nothing was written. |
+| `set_ok_update` | MAGOS：set「{s}」的 lane {l} 现在是 {st}，修订 {rev}。 | MAGOS: lane {l} of set '{s}' is now {st}, revision {rev}. |
+| `set_released` | MAGOS：已释放 set「{s}」及其 {n} 份登记。 | MAGOS: released set '{s}' and its {n} claims. |
+| `set_blocked` | MAGOS：拒绝 {op}：{why} | MAGOS: {op} refused: {why} |
+| `set_why_state` | lane {l} 的状态是 {st}，不是 integrated | lane {l} is {st}, not integrated |
+| `set_why_unmerged` | lane {l} 的分支 {b} 有未合并的工作 | the branch {b} of lane {l} has unmerged work |
+| `set_why_dirty` | lane {l} 的工作树有未提交的修改 | the worktree of lane {l} has uncommitted changes |
+| `set_why_operation` | lane {l} 的工作树正在进行 {op} | the worktree of lane {l} has a {op} in progress |
+| `set_why_missing` | lane {l} 的分支 {b} 不存在 | the branch {b} of lane {l} does not exist |
+| `set_why_head_tip` | --head {head} 不是分支 {b} 的当前提交 {tip} | --head {head} is not the tip {tip} of branch {b} |
+| `set_why_head_recorded` | --head {head} 不是 lane {l} 在 ready 时记录的 head {rec} | --head {head} is not the head {rec} recorded for lane {l} at ready |
+| `set_why_ancestor` | 提交 {head} 既不在 {t} 中，也不在集成分支中 | commit {head} is in neither {t} nor the integration branch |
+| `set_why_shrink` | lane {l} 已经改动了新 manifest 之外的文件：{files} | lane {l} already changed files outside its new manifest: {files} |
+| `set_why_claim` | lane {l} 的登记无法读取或来自更新版本的 MAGOS | the claim of lane {l} cannot be read or comes from a newer MAGOS |
+| `set_why_base` | lane {l} 与计划的基线没有共同历史 | lane {l} shares no history with the plan's base |
+| `lane_in_set` | MAGOS：分支「{b}」是 set「{s}」的 lane，不能单独修改它的登记。用 set-plan --amend 修改，或先 set-release。 | MAGOS: branch '{b}' is a lane of set '{s}'; its claim cannot be changed on its own. Use set-plan --amend, or set-release first. |
+| `blocked_set` | MAGOS：拒绝 release：「{b}」是 set「{s}」的登记。请用 set-release 一并释放。 | MAGOS: release refused: '{b}' belongs to set '{s}'. Retire the whole set with set-release. |
+| `show_head` | set「{s}」→ {t}　基线 {base}　修订 {rev}　集成分支 {i} | set '{s}' -> {t}  base {base}  revision {rev}  integration {i} |
+| `show_lane` | {box} {l}　{st}　记录 {head}　当前 {tip}　领先 {n}　工作树 {wt}　分支 {b} | {box} {l}  {st}  head {head}  tip {tip}  ahead {n}  worktree {wt}  branch {b} |
+| `show_out` | 越界文件（{l}）：{files} | outside the manifest ({l}): {files} |
+| `show_shared` | 多个 lane 改动的文件：{files} | changed by more than one lane: {files} |
+| `show_moved` | 目标已从 {base} 移到 {tip}；与 lane 重叠的文件：{files} | the target moved from {base} to {tip}; files that overlap lanes: {files} |
+| `show_moved_ready` | ready 之后分支又移动：{lanes} | moved since ready: {lanes} |
+| `show_order` | 合并顺序：{order} | merge order: {order} |
+
+The words of `show_lane` that stand for the worktree are `干净`/`clean`, `有未提交修改`/`dirty`, `{op} 进行中`/`{op} in
+progress`, `缺失`/`absent` and `无法读取`/`unreadable`; the lane states are the identifiers `planned`, `active`, `ready`,
+`integrated` and `blocked` in both languages. A usage error is argparse's own text and exit 2. The generic Git-failure
+and internal-error lines of Errors (exit 11) apply to every set subcommand.
+
+### Hook, list, doctor and the plain commands
+
+- **Hook.** `_USER_ONLY` is unchanged: `set-plan`, `set-show`, `set-update` and `set-release` are no user-only
+  subcommand, so `protected()` lets a guard word followed by them through, in every spelling of the global options, behind
+  the launcher or a wrapper. A spec passed on stdin by a here-document or an echo pipe (its text may hold `->`, `.git/magos`
+  or a branch command) is not a write to the guard's state and creates nothing. Direct writes stay denied: a writer or a
+  redirect aimed at `.git/magos/sets/<set>.json` (relative or the absolute store path in any separator or case spelling) is
+  `PROTECTED` once the repository is armed or holds a claim, like a write to a claim file. The creation of a lane branch
+  or worktree after `set-plan` is judged by the existing creation check against the lane's claim and its registered
+  worktree path (`path_mismatch` for another path). The creation of `agent/<set>/integration` is judged for its name and
+  the existence of the integration claim only, in an AUTO-engaged and in an armed repository alike, whatever the
+  manifests of the lanes (Integration claim); the git layer finds the claim file of each name. An overlapping creation
+  of an unrelated branch, and the creation of a branch that has no claim, is still denied.
+- **list.** The `set` and `lane` (or `role`) of a claim as listed under Public Contract.
+- **doctor.** When `sets/` holds any file or any claim carries `set=`, doctor prints `sets: <n>, unreadable: <n>,
+  newer-format: <n>` after the claim line and then one line per problem, each a problem for the exit code: a set whose
+  lane claim is missing or whose `set=`, `lane=` or entries differ from the record (`set <s> lane <l>: claim missing` or
+  `claim differs`); a lane in state `active` or `ready` whose branch no longer exists (`branch vanished`; a `planned`,
+  `integrated` or `blocked` lane without a branch is no problem); a set whose target branch no longer exists; claims that
+  carry `set=<s>` while no readable record `<s>` exists (`claims of set <s> without a record: <branches>`, the interrupted
+  registration); a newer-format or unreadable record (named, with the upgrade advice for the former). The line of orphan
+  claims (`claims without a branch or planned worktree`) leaves out the integration claim of a set that has a record. A
+  repository without sets prints what 1.0.3 printed, the version aside.
+- **plan and release** refuse the claims of a set as Public Contract says; `check` is unchanged.
+
+### Compatibility, limits and cost
+
+- A claim of a set is an ordinary claim of format 1: a guard of 1.0.3 reads it, judges its entries as declared
+  manifests for every other lane, keeps `set=`, `lane=` and `role=` when it amends the claim, and the git layer reads line 1
+  as before. A guard of 1.0.3 has no set subcommand (a usage error, exit 2), does not show sets in `list` or `doctor`, and
+  cannot refuse `release` or `plan --amend` of a set claim, so a set whose claims an older guard changed shows `mismatch` or
+  `missing` in `set-show` and in `doctor`. A guard of 1.0.3 also has no exemption: it judges the marker entry of an
+  integration claim as the declared manifest of a lane, so a hook that runs it denies the creation of a lane whose
+  entries can match a path under the marker (`**/*.md`) and judges the creation of the integration branch against the
+  lanes. `/GitPlan` checks `version` first and stops below 1.0.4, and `install` refreshes the Codex and Hermes copies.
+- Limits: 12 lanes, 200 entries per lane, 1,024 characters per entry, 64 shared paths, 5 notes, a sheet of 4,096
+  characters, a spec of 4 MiB, 20 error lines, 20 overlap pairs, 200 files in an OUT_OF_LANE listing, revisions of 1 to
+  999,999,999 as an option. A set of 12 lanes with 200 entries each registers within the 18 s budget when the lanes own
+  distinct directories: validation and the pairwise proof are indexed, the snapshot is gathered once, and the judgement is
+  one `evaluate` per lane. A spec whose entries all start with a wildcard needs the full comparison and may exhaust the
+  budget, which ends the call with exit 11 and no write.
+- Audit lines (one JSON line each, appended to `<store>/audit.log` under the lock after the write, with `ts`, `by` and
+  `host` `cli` as for `plan`): `set-plan` (`set`, `target`, `base`, `revision`, `lanes` as `{id, branch, worktree,
+  entries}`, `integration`), `set-amend` (the same with `revision` the new one, `previous_revision` and `removed` lane
+  ids), `set-update` (`set`, `lane`, `state`, `head`, `note`, `integration`, `revision`) and `set-release` (`set`,
+  `reason`, `abandon`, `lanes` as ids, `claims` as the removed branches).
+- Known limits are below and in `references/lane-split.md`: sets live in one clone; semantic coupling between files is
+  not detected; the claims of an older guard cannot see the set.
 
 ## Change Notes
 
@@ -867,17 +1451,47 @@ Version 1.0.3 is a hardening release of the guard (`GUARD_VERSION` 1.0.3). Relat
 - honours a claim stored under a name the Windows alias rule refuses when its branch is created, and names such
   claims in `list` and `doctor`.
 
-Compatibility: claim files of format 1 written by 1.0.0 and 1.0.1 are read unchanged, and line 1 of every claim stays
+Version 1.0.4 is a feature release of the guard (`GUARD_VERSION` 1.0.4) that adds the sets for `/GitPlan`. Relative to
+the 1.0.3 product it:
+
+- adds the subcommands `set-plan`, `set-show`, `set-update` and `set-release`, none of them user-only, and the exit
+  codes 19 (STALE), 20 (SET_EXISTS), 21 (SET_UNKNOWN), 22 (OUT_OF_LANE), 23 (SET_NEWER_FORMAT) and 24 (INVALID_SPEC);
+- stores a set as one record `<store>/sets/<set>.json` (format `SET_FORMAT` 1, a record of a newer format is refused
+  with exit 23 and never misread) and as one claim per lane plus one claim for the integration branch, written together
+  in one transaction with a rollback, claims first and the record last; the integration claim is exempt from overlap
+  judgement in both directions (it is never a claimant, and the creation of its branch is judged for the name and the
+  claim only), so it restricts no lane manifest;
+- validates a spec before anything is written: field limits (at most 12 lanes, 200 entries per lane, a sheet of 4,096
+  characters, a spec of 4 MiB), unique ids and branches with the existing branch-name rules and the Windows alias rule,
+  absolute worktrees that are distinct and nested in nothing, the manifest syntax of every entry, a dependency graph
+  without a cycle, shared files inside their owner's manifest, and the pairwise disjointness of the lane manifests by the
+  exact glob intersection through a first-segment index;
+- refuses a plan made against another target tip (STALE, exit 19) and an amend or an update made against another revision
+  (the same exit), judges every lane against every claimant outside the set from one snapshot, and never reads or
+  consumes an override;
+- keeps the lane states of an amended set, refuses the removal of a lane that holds unmerged work and the shrinking of a
+  manifest below files the lane already changed, and checks at `ready` that the recorded head is the branch tip, that the
+  worktree is clean and idle and that every changed file lies inside the manifest (OUT_OF_LANE, exit 22), and at
+  `integrated` that the head is in the target or in the integration branch;
+- derives a view of a set (`set-show`, with the drift of the lanes, of the target and of the files two lanes changed),
+  retires a set only when its lanes are integrated and landed or, with `--abandon`, hold no unmerged work, and records
+  every write in the audit log;
+- lists the set and lane of a claim in `list`, reports set problems in `doctor`, refuses `plan --amend` and `release` of
+  the claim of a lane that belongs to a set, and runs `rev-list` (added to `LOCAL_GIT`) for the commits a lane is ahead
+  of the plan's base.
+
+Compatibility: claim files of format 1 written by 1.0.0 to 1.0.3 are read unchanged, and line 1 of every claim stays
 `state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule
 refuses allows the creation of its branch. The git-layer hook reads `refs/heads/` in any case of `refs` and `heads`, so `doctor` reports an armed
-repository as different from this version until `arm` runs again. The Codex and Hermes copies under `~/.magos/guard`
-receive 1.0.3 only when the user re-runs `install`; `doctor` reports a stale copy with the refresh command, and armed
-repositories are refreshed by re-running `arm`. Exit code 18 is new. A Hermes entry points at the Hermes plugin
+repository as different from this version until `arm` runs again; the text of the git-layer hook is the same in 1.0.4,
+so a repository armed by 1.0.3 stays current. The Codex and Hermes copies under `~/.magos/guard`
+receive 1.0.4 only when the user re-runs `install`; `doctor` reports a stale copy with the refresh command, and armed
+repositories are refreshed by re-running `arm`. Exit code 18 and the exit codes 19 to 24 are new. A Hermes entry points at the Hermes plugin
 launcher only while the plugin's guard declares the installing guard's version; after the plugin moves to another
 version, `doctor` reports the difference and `install` points the entry at the copy until the versions agree again.
 `references/lane-split.md` is a flat reference shipped to Codex and Hermes by the `references/*.md` glob.
 `hooks/hooks.json` and `hooks/run-guard.cmd` sit at the repository root, outside `.claude-plugin/`. The root
-`description` is 1017 characters. The git layer is opt-in per repository (`arm`) and the Codex and Hermes entries are
+`description` stays within 1024 characters. The git layer is opt-in per repository (`arm`) and the Codex and Hermes entries are
 generated, never merged automatically.
 
 Known limits, stated in `references/lane-split.md` section 12:
@@ -1031,3 +1645,22 @@ Known limits, stated in `references/lane-split.md` section 12:
 - A plugin directory whose Windows path holds a cmd metacharacter breaks the plugin's own Windows hook entry, which
   `install` cannot choose.
 - Claims are per clone, and neither an override nor the console gate is access control.
+- Sets live in one clone: the record and the claims are in the clone's store, are shared by its worktrees and are not
+  carried by fetch, push, clone, bundle or mirror, so a second clone neither sees nor honours the set, and the set record
+  never travels with the integration branch.
+- The guard proves the disjointness of the manifests, not the independence of the lanes: semantic coupling between files
+  (a changed signature, a shared type, a config key read elsewhere) is not detected, and coupled files belong in one lane.
+  A manifest is a declared ownership, not a barrier: nothing stops a lane from editing a file outside it; `ready`
+  (OUT_OF_LANE) and `set-show --drift` (`out_of_lane`, `shared_changes`) report it afterwards.
+- The claims of an older guard cannot see the set: a guard of 1.0.3 reads the claims of a set as ordinary claims but has no
+  set subcommand, does not list or report sets, and can `release` or amend a lane claim of a set, which `set-show` and
+  `doctor` then report as `missing` or `mismatch`.
+- A plan is stale only when it is next compared: the target can move after `set-plan` without any message, and the plan
+  learns it at the next `set-plan --amend`, `set-show --drift` (`target_moved`, `target_overlap`, `stale`) or convergence.
+  `ready` records a commit: a later reset or force move of the branch shows as `moved_since_ready`, not as a refusal.
+- `set-release` judges unmerged work by ancestry, like `release`: a lane whose branch was squash-merged or rebased into the
+  target holds commits the target does not contain by ancestry, so the set cannot be released until that branch is deleted
+  or merged. A process killed in the middle of a registration leaves claims without a record or a record without claims,
+  which `doctor` reports and `release --branch` and `set-release --abandon` clear.
+- Shared files are plain file paths (no glob or directory) and are checked only against the owner's manifest; the
+  guard does not read the `sheet`, the notes or the acceptance text.

@@ -9,13 +9,16 @@ Source-SHA256: `f5b65edb9e55248dfa2601c6bee3b201f0f12d6443b52f8e8e4c47f4f5906701
 `sync_hosts.py` compares or synchronizes the MAGOS files that each AI host loads from the user's home with the bytes in
 this repository. It serves three hosts:
 
-- **Claude Code**: the seven command files `commands/GitRecon.md`, `GitAnalyze.md`, `GitRecommend.md`,
-  `GitIntegrate.md`, `GitCleanup.md`, `GitConverge.md` and `GitSweep.md`, installed under `~/.claude/commands/`.
+- **Claude Code**: the eight command files `commands/GitRecon.md`, `GitAnalyze.md`, `GitRecommend.md`,
+  `GitIntegrate.md`, `GitCleanup.md`, `GitConverge.md`, `GitSweep.md` and `GitPlan.md`, installed under
+  `~/.claude/commands/`.
 - **Codex** and **Hermes**: the host-neutral skill package, the same list for both (`package_files()`): the root
   `SKILL.md`, every `references/*.md`, and every `skills/<name>/SKILL.md` with its `skills/<name>/agents/openai.yaml`
-  when present, except the plugin-only entry skill `git-orchestrator`. The adapters resolve `../../SKILL.md` and
-  `../../references/*.md`, so the installed tree keeps the repository layout. `plugin.json`, `commands/`, `scripts/`
-  (including the lane guard), `hooks/`, `tests/` and the READMEs are not part of the package.
+  when present, except the plugin-only entry skill `git-orchestrator`. The eight command adapters are `git-recon`,
+  `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep` and `git-plan`, so the
+  package carries sixteen adapter files, the `SKILL.md` and the `agents/openai.yaml` of each. The adapters resolve
+  `../../SKILL.md` and `../../references/*.md`, so the installed tree keeps the repository layout. `plugin.json`,
+  `commands/`, `scripts/` (including the lane guard), `hooks/`, `tests/` and the READMEs are not part of the package.
 
 It never deletes an installed file, never writes outside a selected install root, writes nothing when its preflight
 fails, and has no network access. It also detects a MAGOS plugin that Claude Code already loads, because the plugin
@@ -36,9 +39,13 @@ Downstream callers:
   (`python -X utf8 scripts/sync_hosts.py [--host ...] [--verify | --apply [--create-roots]]`).
 - `tests/codex/run_host_cases.py` loads the module and provisions its fixtures with `package_files()` and reads the
   Hermes configuration location with `hermes_home()`, so the test layout equals a real install.
-- `tests/codex/contracts/install_layout.py` checks the package containment rules against the same list.
-- The Claude source-contract case `git-converge/package-wiring` (`tests/claude/contracts/cases.json`) pins the text
-  `"GitCleanup", "GitConverge", "GitSweep")` of `COMMAND_NAMES`.
+- `tests/codex/contracts/install_layout.py` checks the package containment rules against the same list and expects an
+  installed package to expose nine skills: the root `multi-agent-git-orchestrator` and the eight adapters (a git
+  checkout adds the plugin-only `git-orchestrator`).
+- The Claude source-contract case `git-converge/package-wiring` (`tests/claude/contracts/cases.json`) pins the tail
+  `"GitConverge", "GitSweep", "GitPlan")` of `COMMAND_NAMES`. The tuple lists the commands in the section order of
+  `references/commands.md`, the seven earlier commands first and `GitPlan` last, and `COMMAND_PATHS` derives
+  `commands/<name>.md` from it, so adding a command is one entry and the order of the inventory lines follows it.
 - `scripts/magos_guard.py install` copies the lane guard for Codex and Hermes, because this script never ships it.
 
 ## Public Contract
@@ -118,10 +125,12 @@ or a usage error.
 
 ## Change Notes
 
-Version 1.0.2 of the script detects a MAGOS plugin installed from a Claude Code marketplace as well as a
-skills-directory clone: a user-scope entry of a `magos@<marketplace>` key in `~/.claude/plugins/installed_plugins.json`,
-or, when that index is absent or malformed, a `magos` manifest in the plugins cache. A detected marketplace install is
-reported with a note and leaves the Claude commands out of a default run exactly like a clone; an explicit
-`--host claude` copies them. The package list, install roots, modes, statuses, report and exit codes are those of 1.0.1.
-Compatibility: a home without a MAGOS plugin, or with only a project-scoped or local-scoped install, gets the Claude
-commands by default.
+Version 1.0.4 of the script installs eight Claude command files: `GitPlan` is the eighth entry of `COMMAND_NAMES`, so
+`--host claude --apply` into a home without MAGOS commands reports `Written: 8`. The Codex and Hermes package list
+carries the `git-plan` adapter (`skills/git-plan/SKILL.md` and `skills/git-plan/agents/openai.yaml`) through the
+`skills/*/SKILL.md` glob without a code change. Plugin detection (a skills-directory clone, a user-scope marketplace
+install, the plugins cache), install roots, modes, statuses, the report and the exit codes are those of 1.0.2.
+Compatibility: a Claude home that holds the seven earlier command files reports `commands/GitPlan.md` as `missing`
+(`--verify` exits 1) until `--apply` copies it, and an installed Codex or Hermes package reports the two `git-plan`
+files the same way; `--apply` deletes no installed file. A home without a MAGOS plugin, or with only a
+project-scoped or local-scoped install, gets the Claude commands by default.

@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "source": "scripts/sync_hosts.py",
-  "baseline_source_sha256": "bdb089f7a8c4eafd9ac400e87d200edef6f73e7af1a1f3116dcf269319b9df8d",
-  "prepared_branch": "agent/hardening-1.0.2",
+  "baseline_source_sha256": "f5b65edb9e55248dfa2601c6bee3b201f0f12d6443b52f8e8e4c47f4f5906701",
+  "prepared_branch": "agent/gitplan-1.0.4",
   "technical_design": ".quality/docs/scripts/sync_hosts.py.md",
   "test_design": ".quality/test-design/scripts/sync_hosts.py.test.md",
-  "prepared_technical_design_sha256": "be37b604b76db2ab04f0064333cbe9f6950a69afb4b55464a08d57ed9b165dc0",
-  "prepared_test_design_sha256": "9b0bc0a5c44330e8aceb863a3d3e5a7b5faef132aefa6ed57aa40df96b98fd3f",
+  "prepared_technical_design_sha256": "038379eb0fcb73a20536aa540ebd7ad46254bfffd3b11911c222d28e5a489110",
+  "prepared_test_design_sha256": "b7aa7558246ad38754272db2a00e223e32cfcd1a48fee5bfbf5467babee53a5d",
   "prepared_related_design_sha256": {}
 }
