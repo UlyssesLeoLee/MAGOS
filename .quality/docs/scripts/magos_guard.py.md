@@ -1530,7 +1530,7 @@ and the line of `show_changes` by four. A usage error is argparse's own text and
 and internal-error lines of Errors (exit 11) apply to every set subcommand.
 
 The messages with a name to correct state the compliant form. `T` formats with `str.format`, so an entry holds no
-literal brace: `set_err_id_form` takes the placeholder `{rule}` for the text `[a-z0-9][a-z0-9-]{0,23}` and `{hint}`,
+literal brace: `set_err_id_form` takes the parameter `{rule}` for the text `[a-z0-9][a-z0-9-]{0,23}` and `{hint}`,
 which is empty or one space followed by the text of `set_hint_slug` (the slug that lower-casing the id and replacing
 `_` by `-` gives, when it is valid). In `set_err_branch_form` `{want}` is `agent/<set>/<id>` of the lane and `{got}` the
 branch of the spec; in `set_err_worktree_form` and `set_err_worktree_device` `{got}` is the directory name of the spec
