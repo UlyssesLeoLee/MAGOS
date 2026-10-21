@@ -2,7 +2,7 @@
 
 Source: `scripts/sync_hosts.py`
 
-Source-SHA256: `f5b65edb9e55248dfa2601c6bee3b201f0f12d6443b52f8e8e4c47f4f5906701`
+Source-SHA256: `77ee18e17694d491d0192dc540a4fbc4612b491e5554387370af41f2553fb51e`
 
 ## Test Strategy
 

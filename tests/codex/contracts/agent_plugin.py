@@ -128,7 +128,7 @@ Sources: https://agent-plugins.org/specification (1.0.0), the manifest schema be
 https://agentskills.io/specification as the reference validator skills-ref codes them. No official Agent Plugins
 validator exists, and clients must not fetch schemas while loading (§5.2), so the schema is mirrored here.
 
-Plugin clients discover only skills/<dir>/SKILL.md (§6.1, §7.1). They see the seven command adapters and the
+Plugin clients discover only skills/<dir>/SKILL.md (§6.1, §7.1). They see the eight command adapters and the
 git-orchestrator entry skill; the orchestrator SKILL.md at the package root is not a plugin skill, so the entry skill
 and the adapters reach it through their ../../ paths.
 """
@@ -174,14 +174,14 @@ ANNOTATIONS = {"$schema", "$id", "title", "description"}
 TYPES = {"object": dict, "string": str, "array": list}
 
 EXPECTED_PLUGIN_SKILLS = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-orchestrator",
-                         "git-recommend", "git-recon", "git-sweep"]
+                         "git-plan", "git-recommend", "git-recon", "git-sweep"]
 ROOT_SKILL_NAME = "multi-agent-git-orchestrator"
 # The Agent Skills fields, plus one documented Claude Code host key: `disable-model-invocation: true` keeps the model
 # from invoking a skill through the Skill tool (only the user's slash command runs it). Hermes passes unknown keys
 # through; Codex reads only the fields it knows.
 MODEL_INVOCATION_KEY = "disable-model-invocation"
 ALLOWED_FIELDS = {"name", "description", "license", "allowed-tools", "metadata", "compatibility", MODEL_INVOCATION_KEY}
-WRITE_ADAPTERS = ("git-cleanup", "git-converge", "git-integrate", "git-sweep")  # the adapters that write; only the user runs them
+WRITE_ADAPTERS = ("git-cleanup", "git-converge", "git-integrate", "git-plan", "git-sweep")  # the adapters that write; only the user runs them
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 QUOTED_FIELDS = ("description", "compatibility")
 ADAPTER_REFERENCE = re.compile(r"`((?:\.\./)+[A-Za-z0-9_./-]+\.(?:md|yaml))`")
@@ -525,12 +525,12 @@ def check(root: Path) -> list[dict]:
          lambda: check_version(root)),
         ("plugin: the entry skill's metadata.version and the guard's GUARD_VERSION equal the manifest version",
          lambda: check_shipped_versions(root)),
-        ("plugin: skills/ discovery (§7.1) finds exactly the seven command adapters and git-orchestrator", discovery),
+        ("plugin: skills/ discovery (§7.1) finds exactly the eight command adapters and git-orchestrator", discovery),
         ("plugin: every discovered skill meets Agent Skills (strict YAML, allowed fields, name = directory, "
          "string-only metadata)", lambda: [problem for path in found for problem in skill_problems(path, path.parent.name)]),
         ("plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules",
          lambda: skill_problems(root / "SKILL.md", ROOT_SKILL_NAME)),
-        ("plugin: only the write adapters (git-integrate, git-cleanup, git-converge, git-sweep) set "
+        ("plugin: only the write adapters (git-integrate, git-cleanup, git-converge, git-sweep, git-plan) set "
          "disable-model-invocation: true (Claude Code host key)", lambda: check_model_invocation(root)),
         ("plugin: package paths stay inside the plugin root and include no links (§4.1)", lambda: check_containment(root)),
         ("plugin: mcp.json is absent or valid (§7.2)", lambda: check_mcp(root)),

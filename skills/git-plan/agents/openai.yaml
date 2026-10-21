@@ -1,0 +1,5 @@
+interface:
+  display_name: "git-plan"
+  short_description: "规划并收敛车道；$git-plan SET --into BRANCH [--apply] [--help]"
+policy:
+  allow_implicit_invocation: false

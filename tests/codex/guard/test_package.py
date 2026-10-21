@@ -282,7 +282,7 @@ def contract_module(name):
 
 def test_write_adapters_disable_model_invocation():
     frontmatter, plugin = contract_module("skill_frontmatter"), contract_module("agent_plugin")
-    writes = {"git-integrate", "git-cleanup", "git-converge", "git-sweep"}
+    writes = {"git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan"}
     assert set(plugin.WRITE_ADAPTERS) == writes
     assert plugin.ALLOWED_FIELDS - {"name", "description", "license", "allowed-tools", "metadata", "compatibility"} == {"disable-model-invocation"}
     seen = set()
@@ -296,7 +296,7 @@ def test_write_adapters_disable_model_invocation():
     assert writes | {"git-recon", "git-analyze", "git-recommend", "git-orchestrator"} == seen
     assert "disable-model-invocation" not in frontmatter.parse((ROOT / "SKILL.md").read_text(encoding="utf-8"))[0]
     assert plugin.check_model_invocation(ROOT) == []
-    for command in ("GitIntegrate", "GitCleanup", "GitConverge", "GitSweep"):  # the Claude commands of the same name say the same
+    for command in ("GitIntegrate", "GitCleanup", "GitConverge", "GitSweep", "GitPlan"):  # the Claude commands of the same name say the same
         assert "\ndisable-model-invocation: true\n" in (ROOT / "commands" / (command + ".md")).read_text(encoding="utf-8")
 
 

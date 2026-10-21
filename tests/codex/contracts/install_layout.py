@@ -22,7 +22,7 @@ import agent_plugin
 import skill_frontmatter
 
 EXPECTED_SKILLS = {"multi-agent-git-orchestrator", "git-recon", "git-analyze", "git-recommend",
-                   "git-integrate", "git-cleanup", "git-converge", "git-sweep"}
+                   "git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan"}
 # A git clone also carries skills/git-orchestrator, the entry skill plugin hosts need because they never load the
 # root SKILL.md; scripts/sync_hosts.py leaves it out of the Codex and Hermes packages (PLUGIN_ONLY_SKILLS).
 CHECKOUT_SKILLS = EXPECTED_SKILLS | {"git-orchestrator"}

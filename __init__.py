@@ -26,6 +26,7 @@ INDEX_DESCRIPTIONS = {
     "git-cleanup": "Deletes branches and worktrees: run only when the user types /magos:git-cleanup. Never load it yourself.",
     "git-converge": "Merges and deletes branches: run only when the user types /magos:git-converge. Never load it yourself.",
     "git-sweep": "Merges, deletes and pushes remote deletions: run only when the user types /magos:git-sweep. Never load it yourself.",
+    "git-plan": "Registers lane claims and, with --converge --apply, merges the lanes: run only when the user types /magos:git-plan. Never load it yourself.",
 }
 
 

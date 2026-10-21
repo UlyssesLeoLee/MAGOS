@@ -10,7 +10,7 @@
     {
       "name": "magos",
       "source": "./",
-      "description": "Multi-Agent Git Orchestrator: the orchestrator skill plus seven explicit Git commands (GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge, GitSweep).",
+      "description": "Multi-Agent Git Orchestrator: the orchestrator skill plus eight explicit Git commands (GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge, GitSweep, GitPlan).",
       "category": "development",
       "keywords": ["git", "worktree", "multi-agent", "branch", "merge"]
     }
