@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "source": "scripts/magos_guard.py",
-  "baseline_source_sha256": "530d3e716f54638cf79f6624036881a392c4998fff5b4aef81ed8dc582ae02f7",
+  "baseline_source_sha256": "b60d2552f7e5bd2e6a7fd7a5499f3b7fceb3b6e1dab038919fc797920e6ead8a",
   "prepared_branch": "agent/gitplan-1.0.4",
   "technical_design": ".quality/docs/scripts/magos_guard.py.md",
   "test_design": ".quality/test-design/scripts/magos_guard.py.test.md",
-  "prepared_technical_design_sha256": "943b969c9ba548c4da2f0371afb1fac81adba13f88d2f42965b9a8a1c7db1218",
-  "prepared_test_design_sha256": "06683b351c7dd3532099f353339a50a61689cce2657074fd476f3b999a36d36e",
+  "prepared_technical_design_sha256": "e445765586106f08e3d66c9e24e1edc7752fc4e5a76a87b1879fbbc218c262ac",
+  "prepared_test_design_sha256": "83925119bbf439ad6cf9bd79e5c079b2f1af43b7bf799e7ef2bac51a994556db",
   "prepared_related_design_sha256": {}
 }
