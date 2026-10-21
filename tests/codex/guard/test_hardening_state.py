@@ -1083,3 +1083,320 @@ def test_a_stored_claim_under_a_refused_name_keeps_its_branch(repo, guard):
     assert guard(repo, "release", "--branch", "rel.claim").rc == 0  # the way out: release it and plan the lane under another name
     assert guard(repo, "plan", "--branch", "rel-claim", "--paths", "docs/").rc == 0
     assert denied(hook(repo, command="git switch -c rel.claim")) is not None
+
+
+# ---- sets (1.0.4): the integration claim ----------------------------------------------------------------------------------------------
+def set_spec_file(repo, tmp_path, name, lanes, base=None, tag=""):
+    """The spec file of a set (outside every worktree): lanes are (id, branch, paths, depends_on)."""
+    spec = {"v": 1, "title": name, "base": base or repo.git("rev-parse", "main"), "sheet": "sheet", "notes": [], "shared": [],
+            "lanes": [{"id": lid, "title": "lane " + lid, "branch": branch, "worktree": P(tmp_path / "wt" / (name + "-" + lid.lower())), "paths": list(paths), "depends_on": list(deps),
+                       "acceptance": "it works"} for lid, branch, paths, deps in lanes]}
+    f = tmp_path / ("spec-%s%s.json" % (name, tag))
+    f.write_text(json.dumps(spec), encoding="utf-8")
+    return f
+
+
+def register_set(guard, repo, tmp_path, name, lanes, tag=""):
+    r = guard(repo, "set-plan", "--set", name, "--target", "main", "--spec", str(set_spec_file(repo, tmp_path, name, lanes, tag=tag)))
+    assert r.rc == 0, r.out + r.err
+    return r
+
+
+DEMO_LANES = [("L1", "agent/demo/api", ["src/api/"], []), ("L2", "agent/demo/ui", ["src/ui/"], ["L1"]), ("L3", "agent/demo/docs", ["docs/"], [])]
+
+
+def claim_text(base, branch, entries, extra=(), v=1):
+    lines = ["state=active", "v=%d" % v, "branch=" + branch, "worktree=", "target=main", "base=" + base, "created=2026-01-01T00:00:00Z", "by=t", "override="]
+    return "\n".join(lines + ["%s=%s" % kv for kv in extra] + ["entry=" + e for e in entries]) + "\n"
+
+
+MARKER = ".magos/integration/demo/"
+SHAPES = [  # label, branch, entries, extra keys, is it the integration claim set-plan writes?
+    ("written by set-plan", "agent/demo/integration", [MARKER], [("set", "demo"), ("role", "integration")], True),
+    ("upper case", "AGENT/DEMO/INTEGRATION", [MARKER.upper()], [("set", "DEMO"), ("role", "integration")], True),
+    ("another entry", "agent/demo/integration", ["lib/"], [("set", "demo"), ("role", "integration")], False),
+    ("a second entry", "agent/demo/integration", [MARKER, "lib/"], [("set", "demo"), ("role", "integration")], False),
+    ("another branch", "agent/demo/late", [MARKER], [("set", "demo"), ("role", "integration")], False),
+    ("another set", "agent/demo/integration", [MARKER], [("set", "other"), ("role", "integration")], False),
+    ("no set", "agent/demo/integration", [MARKER], [("role", "integration")], False),
+    ("role in another case", "agent/demo/integration", [MARKER], [("set", "demo"), ("role", "Integration")], False),
+    ("role with a suffix", "agent/demo/integration", [MARKER], [("set", "demo"), ("role", "integration-x")], False),
+    ("role twice", "agent/demo/integration", [MARKER], [("set", "demo"), ("role", "integration"), ("role", "integration")], False),
+    ("set twice", "agent/demo/integration", [MARKER], [("set", "demo"), ("set", "demo"), ("role", "integration")], False),
+    ("a lane of a set", "agent/demo/api", ["src/api/"], [("set", "demo"), ("lane", "L1")], False),
+]
+
+
+def test_integration_claim_is_recognised_by_its_shape_and_skipped_by_the_judgement(repo, guard, monkeypatch):
+    base = repo.git("rev-parse", "main")
+    docs = [(label, branch, G.parse_claim(claim_text(base, branch, entries, extra)), integration) for label, branch, entries, extra, integration in SHAPES]
+    for label, branch, doc, integration in docs:
+        assert G.is_integration_claim(doc) is integration, label
+    assert G.integration_branch("demo") == "agent/demo/integration" and G.integration_entry("demo") == MARKER
+    assert G.is_integration_claim(G.parse_claim(claim_text(base, "agent/demo/api", ["src/api/"]))) is False  # a claim of 1.0.3 has no extra key
+    g = G.open_repo(str(repo.path))
+    snap = G.gather(g)
+    real_parse = G.parse_entry
+    for label, branch, doc, integration in docs:  # with_declared leaves the integration claim out and keeps every other claim with its entries
+        table, bad = G.with_declared([], {G.fold(branch): doc}, G.lane_key("agent/unrelated"), snap)
+        if integration:
+            assert table == [] and bad == [], label
+        else:
+            assert [(c["branch"], [e.raw for e in c["declared"]]) for c in table] == [(branch, doc["entries"])] and bad == [], label
+    # an integration claim is never parsed: no CLAIM_UNPARSEABLE even where parsing would fail
+    monkeypatch.setattr(G, "parse_entry", lambda raw: (_ for _ in ()).throw(G.ManifestError("BAD", "never parsed")) if raw == MARKER else real_parse(raw))
+    table, bad = G.with_declared([], {G.fold("agent/demo/integration"): docs[0][2]}, G.lane_key("agent/x"), snap)
+    assert table == [] and bad == []
+    table, bad = G.with_declared([], {G.fold("agent/demo/integration"): docs[5][2]}, G.lane_key("agent/x"), snap)  # another set's claim is parsed
+    assert table == [] and bad == ["agent/demo/integration"]
+    monkeypatch.setattr(G, "parse_entry", real_parse)
+    # check_creation: the integration claim is allowed for its claim and its name; every other shape is judged in full
+    assert guard(repo, "plan", "--branch", "agent/other", "--paths", ".magos/", "lib/", "src/api/").rc == 0  # overlaps the marker and the entries of the claims below
+    for label, branch, doc, integration in docs:
+        path = put_claim(repo, branch, claim_text(base, branch, doc["entries"], doc["extra"]))
+        v = G.check_creation(g, branch, {"path": None}, "en", "auto")
+        if integration:
+            assert v is None, (label, v)
+        else:
+            assert v and v["code"] == "CONFLICT" and "agent/other" in [c["branch"] for c in v["conflicts"]], (label, v)  # its entries conflict with an overlapping claimant
+        path.unlink()
+    calls = []
+    real_core = G.plan_core
+    monkeypatch.setattr(G, "plan_core", lambda *a, **k: calls.append(a[1]) or (_ for _ in ()).throw(AssertionError("judged")))
+    for label, branch, doc, integration in docs[:2]:
+        path = put_claim(repo, branch, claim_text(base, branch, doc["entries"], doc["extra"]))
+        assert G.check_creation(g, branch, {"path": None}, "en", "armed") is None and calls == [], label  # nothing is gathered or evaluated
+        path.unlink()
+    monkeypatch.setattr(G, "plan_core", real_core)
+    assert guard(repo, "release", "--branch", "agent/other").rc == 0
+    bad_claim = put_claim(repo, "zz-unreadable", "garbage")  # an unreadable claim elsewhere
+    uncertain = lambda *a, **k: (_ for _ in ()).throw(G.Uncertain("integration target is ambiguous"))
+    for label, branch, doc, integration in (docs[0], docs[2], docs[4]):
+        path = put_claim(repo, branch, claim_text(base, branch, doc["entries"], doc["extra"]))
+        v = G.check_creation(g, branch, {"path": None}, "en", "armed")
+        if integration:
+            assert v is None, label
+        else:
+            assert v and v["code"] == "UNKNOWN" and v["unknowns"][0]["code"] == "CLAIM_UNPARSEABLE", (label, v)
+        with monkeypatch.context() as m:  # an uncertain target
+            m.setattr(G, "gather", uncertain)
+            v = G.check_creation(g, branch, {"path": None}, "en", "armed")
+            assert (v is None) if integration else (v and v["code"] == "UNKNOWN"), (label, v)
+        path.unlink()
+    bad_claim.unlink()
+
+
+def test_the_integration_claim_is_never_a_claimant(repo, guard, tmp_path):
+    register_set(guard, repo, tmp_path, "demo", DEMO_LANES)
+    assert "role=integration" in (claims_dir(repo) / "agent" / "demo" / "integration.claim").read_text(encoding="utf-8")
+    r = guard(repo, "--json", "plan", "--branch", "tool/a", "--paths", ".magos/")  # the marker lies under .magos/
+    v = json.loads(r.out)
+    assert r.rc == 0 and v["conflicts"] == [] and "agent/demo/integration" not in r.out, r
+    cwd = str(repo.path)
+    assert G.decide({"tool_name": "Bash", "tool_input": {"command": "git switch -c tool/a"}, "cwd": cwd}, "en") is None  # its creation is allowed
+    # another set whose lane owns .magos/**
+    other = Repo(tmp_path / "other")
+    other.path.mkdir()
+    other.git("init", "-q")
+    other.commit("README.md", "x\n")
+    register_set(guard, other, tmp_path, "demo", [("L1", "agent/demo/api", ["src/api/"], [])])
+    register_set(guard, other, tmp_path, "second", [("L1", "agent/second/magos", [".magos/**"], [])], tag="x")
+    # the integration branch holds a merged lane commit and a commit of its own that touches CHANGELOG.md
+    third = Repo(tmp_path / "third")
+    third.path.mkdir()
+    third.git("init", "-q")
+    for rel in ("src/api/a.py", "README.md"):
+        third.write(rel, "base\n")
+    third.git("add", "-A")
+    third.git("commit", "-q", "-m", "init")
+    lanes = [("L1", "agent/demo/api", ["src/api/"], []), ("L2", "agent/demo/ui", ["src/ui/"], [])]
+    register_set(guard, third, tmp_path, "demo", lanes, tag="t")
+    wt = tmp_path / "wt" / "demo-l1"
+    third.git("worktree", "add", "-q", "-b", "agent/demo/api", str(wt), "main")
+    third.commit("src/api/b.py", "b\n", cwd=wt, msg="lane work")
+    third.git("switch", "-q", "-c", "agent/demo/integration")
+    third.git("merge", "-q", "--no-ff", "-m", "merge L1", "agent/demo/api")
+    third.commit("CHANGELOG.md", "changes\n", msg="the integration branch's own commit")
+    third.git("switch", "-q", "main")
+    more = lanes + [("L4", "agent/demo/extra", ["CHANGELOG.md"], [])]
+    spec = set_spec_file(third, tmp_path, "demo", more, tag="amend")
+    amended = guard(third, "set-plan", "--set", "demo", "--target", "main", "--spec", str(spec), "--amend", "--expect-revision", "1")
+    assert amended.rc == 0, amended.out + amended.err  # the integration branch is a member of the set in the snapshot of set-plan
+    d = json.loads(guard(third, "--json", "plan", "--branch", "tool/d", "--paths", "CHANGELOG.md").out)
+    assert d["code"] == "CONFLICT" and {c["branch"] for c in d["conflicts"]} == {"agent/demo/extra", "agent/demo/integration"}
+    kinds = {c["branch"]: [e["kind"] for e in c["evidence"]] for c in d["conflicts"]}
+    assert kinds["agent/demo/extra"] == ["declared"] and kinds["agent/demo/integration"] == ["committed"]  # the claim of the integration branch adds nothing
+    e = json.loads(guard(third, "--json", "plan", "--branch", "tool/e", "--paths", "src/api/").out)
+    assert e["code"] == "CONFLICT" and {"agent/demo/api", "agent/demo/integration"} <= {c["branch"] for c in e["conflicts"]}
+    assert all(c["evidence"] and not (c["branch"] == "agent/demo/integration" and "declared" in [x["kind"] for x in c["evidence"]]) for c in e["conflicts"])
+
+
+def test_the_integration_creation_still_needs_its_claim_and_a_valid_name(repo, guard, tmp_path):
+    register_set(guard, repo, tmp_path, "demo", DEMO_LANES)
+    g = G.open_repo(str(repo.path))
+    name = "agent/demo/integration"
+    claim = claims_dir(repo) / "agent" / "demo" / "integration.claim"
+    text = claim.read_text(encoding="utf-8")
+
+    def judged():
+        return G.check_creation(g, name, {"path": None}, "en", "armed")
+    assert judged() is None  # the claim exists and the name is valid
+    claim.unlink()
+    assert judged()["code"] == "NO_MANIFEST"  # without a claim
+    claim.write_text(text.replace("v=1", "v=2", 1), encoding="utf-8")
+    v = judged()
+    assert v["code"] == "UNKNOWN" and v["unknowns"][0]["code"] == "CLAIM_NEWER_FORMAT" and name in v["unknowns"][0]["text"] and "upgrade this guard" in v["unknowns"][0]["text"]
+    claim.write_text(text, encoding="utf-8")
+    repo.git("update-ref", "refs/heads/agent/demo/integration/x", "HEAD")  # a ref that would be a directory of the branch name
+    v = judged()
+    assert v["code"] == "INVALID_MANIFEST" and "[BRANCH_NAME]" in v["message"] and "agent/demo/integration/x" in v["message"]
+    repo.git("update-ref", "-d", "refs/heads/agent/demo/integration/x")
+    assert judged() is None
+    other = G.check_creation(g, "agent/demo/late", {"path": None}, "en", "armed")
+    assert other["code"] == "NO_MANIFEST"  # a branch that has no claim is still denied
+
+
+# ---- sets (1.0.4): claims with set keys, list and doctor -----------------------------------------------------------------------------------
+def edit_set(repo, fn, name="demo"):
+    """The record of a set, changed by `fn` and written back in the format of the guard."""
+    path = common(repo) / "magos" / "sets" / (name + ".json")
+    rec = json.loads(path.read_text(encoding="utf-8"))
+    fn(rec)
+    path.write_bytes(G.record_bytes(rec))
+    return rec
+
+
+def test_claims_with_set_keys_round_trip_and_old_claims_stay_readable(repo, guard, tmp_path):
+    g = G.open_repo(str(repo.path))
+    base = repo.git("rev-parse", "main")
+    plain = claim_text(base, "agent/old", ["src/"])  # a claim as 1.0.3 writes it: no key of a set
+    doc = G.parse_claim(plain)
+    assert doc["extra"] == [] and G.claim_set(doc) is None and not G.is_integration_claim(doc) and G.claim_bytes(g, "agent/old", doc)[1].decode("utf-8") == plain
+    shapes = [("agent/demo/api", ["src/api/"], [("set", "demo"), ("lane", "L1")]), ("agent/demo/integration", [MARKER], [("set", "demo"), ("role", "integration")]),
+              ("agent/rep/x", ["web/"], [("set", "a"), ("set", "b"), ("lane", "L1")])]  # a repeated line is kept as well
+    for branch, entries, extra in shapes:
+        text = claim_text(base, branch, entries, extra)
+        doc = G.parse_claim(text)
+        assert doc["extra"] == extra and doc["v"] == 1 and "set" not in G.CLAIM_KEYS and "lane" not in G.CLAIM_KEYS and "role" not in G.CLAIM_KEYS
+        assert G.claim_bytes(g, branch, doc)[1].decode("utf-8") == text  # written back unchanged and in order
+        assert text.split("\n")[0] == "state=active"  # line 1 is what the git layer reads
+    assert G.claim_set(G.parse_claim(claim_text(base, "agent/rep/x", ["web/"], shapes[2][2]))) == "a"  # the first line names the set
+    for key, value in (("set", "de\x01mo"), ("lane", "L\x001")):  # a control character is refused by the writer
+        bad = G.parse_claim(claim_text(base, "agent/demo/api", ["src/api/"], [("set", "demo")]))
+        bad["extra"] = [(key, value)]
+        with pytest.raises(G.ClaimRefused):
+            G.claim_bytes(g, "agent/demo/api", bad)
+    # plan --amend of such a claim (its set has no record) keeps the keys, in order, with line 1 as it was
+    orphan = claims_dir(repo) / "agent" / "orphan.claim"
+    orphan.parent.mkdir(parents=True, exist_ok=True)
+    orphan.write_bytes(claim_text(base, "agent/orphan", ["web/"], [("set", "ghost"), ("lane", "L1")]).encode("utf-8"))
+    assert guard(repo, "plan", "--branch", "agent/orphan", "--paths", "web/", "docs/", "--amend").rc == 0
+    lines = orphan.read_text(encoding="utf-8").split("\n")
+    assert lines[0] == "state=active" and lines[9:11] == ["set=ghost", "lane=L1"] and lines[11:] == ["entry=web/", "entry=docs/", ""]
+    # the rows of list: a plain claim has neither field, the claims with set keys have them
+    assert guard(repo, "plan", "--branch", "agent/plain", "--paths", "tools/").rc == 0
+    rows = {r["branch"]: r for r in json.loads(guard(repo, "list", "--json").out)}
+    assert "set" not in rows["agent/plain"] and "lane" not in rows["agent/plain"] and "role" not in rows["agent/plain"]
+    assert (rows["agent/orphan"]["set"], rows["agent/orphan"]["lane"]) == ("ghost", "L1") and "role" not in rows["agent/orphan"]
+    # the git layer reads line 1 only: a claim with set keys allows its branch, an unclaimed branch is vetoed
+    assert guard(repo, "arm").rc == 0
+    orphan.write_bytes(claim_text(base, "agent/orphan", ["web/"], [("set", "ghost"), ("lane", "L1"), ("role", "integration")]).encode("utf-8"))
+    repo.git("branch", "agent/orphan", "main")
+    refused = subprocess.run(["git", "branch", "agent/unclaimed", "main"], cwd=str(repo.path), capture_output=True, env=os.environ.copy())
+    assert refused.returncode != 0 and "MAGOS" in refused.stderr.decode("utf-8", "replace")
+    assert "agent/orphan" in repo.git("branch", "--list", "agent/orphan") and not repo.git("branch", "--list", "agent/unclaimed")
+
+
+def test_list_shows_the_set_and_lane_of_a_claim(repo, guard, tmp_path):
+    register_set(guard, repo, tmp_path, "demo", DEMO_LANES)
+    wt = tmp_path / "wt" / "demo-l1"
+    repo.git("worktree", "add", "-q", "-b", "agent/demo/api", str(wt), "main")
+    repo.commit("src/api/b.py", "b\n", cwd=wt, msg="lane work")
+    repo.commit("web/outside.txt", "o\n", cwd=wt, msg="a file outside the manifest")
+    repo.git("switch", "-q", "-c", "agent/demo/integration")  # the integration branch holds the merged lane commits
+    repo.git("merge", "-q", "--no-ff", "-m", "merge L1", "agent/demo/api")
+    repo.git("switch", "-q", "main")
+    assert guard(repo, "plan", "--branch", "tool/plain", "--paths", "tools/").rc == 0
+    register_set(guard, repo, tmp_path, "ghost", [("L1", "agent/ghost/a", ["ghost/"], [])], tag="g")
+    (common(repo) / "magos" / "sets" / "ghost.json").unlink()  # a set claim whose record is gone
+    odd = claims_dir(repo) / "agent" / "odd"
+    odd.mkdir(parents=True, exist_ok=True)
+    base = repo.git("rev-parse", "main")
+    (odd / "twice.claim").write_bytes(claim_text(base, "agent/odd/twice", ["odd1/"], [("set", "first"), ("set", "second"), ("lane", "L9")]).encode("utf-8"))
+    (odd / "other.claim").write_bytes(claim_text(base, "agent/odd/other", ["odd2/"], [("set", "other"), ("role", "integration")]).encode("utf-8"))  # not the marker entry
+    rows = {r["branch"]: r for r in json.loads(guard(repo, "--json", "list").out)}
+    assert not {"set", "lane", "role"} & set(rows["tool/plain"])  # a plain claim has none of the fields
+    assert (rows["agent/demo/api"]["set"], rows["agent/demo/api"]["lane"], "role" in rows["agent/demo/api"]) == ("demo", "L1", False)
+    assert (rows["agent/demo/ui"]["set"], rows["agent/demo/ui"]["lane"]) == ("demo", "L2") and rows["agent/demo/ui"]["state"] == "planned"
+    integration = rows["agent/demo/integration"]
+    assert (integration["set"], integration["lane"], integration["role"], integration["state"]) == ("demo", None, "integration", "active")  # unmerged work: active
+    assert (rows["agent/ghost/a"]["set"], rows["agent/ghost/a"]["lane"]) == ("ghost", "L1")  # an orphan set claim still shows its set
+    assert (rows["agent/odd/twice"]["set"], rows["agent/odd/twice"]["lane"]) == ("first", "L9")  # the first line names the set
+    assert rows["agent/odd/other"]["set"] == "other" and "lane" not in rows["agent/odd/other"] and "role" not in rows["agent/odd/other"]  # role=integration in another shape
+    zh = run(["--repo", str(repo.path), "--lang", "zh", "list"])
+    text = zh.out.splitlines()
+    assert zh.rc == 0 and text == guard(repo, "list").out.splitlines()  # the listing is not translated
+    assert "active   set demo/L1 agent/demo/api  [src/api/]" in text and "planned  set demo/L2 agent/demo/ui  [src/ui/]" in text
+    assert "active   set demo/integration agent/demo/integration  [.magos/integration/demo/]" in text
+    assert "planned  set other agent/odd/other  [odd2/]" in text and "planned  set ghost/L1 agent/ghost/a  [ghost/]" in text and "planned  set first/L9 agent/odd/twice  [odd1/]" in text
+    assert "planned  tool/plain  [tools/]" in text  # a plain claim is listed as before
+    # --drift reports the lanes as before and skips the integration claim, whose branch holds files that its marker entry does not match
+    drift = {r["branch"]: r["drift"] for r in json.loads(guard(repo, "--json", "list", "--drift").out)}
+    assert drift["agent/demo/api"] == ["web/outside.txt"] and drift["agent/demo/integration"] == [] and drift["agent/demo/ui"] == []
+    shown = guard(repo, "list", "--drift").out
+    assert "drift: web/outside.txt" in [ln for ln in shown.splitlines() if "agent/demo/api" in ln][0]
+    assert "drift:" not in [ln for ln in shown.splitlines() if "agent/demo/integration" in ln][0]
+
+
+def test_doctor_reports_set_problems(repo, guard, tmp_path):
+    out = guard(repo, "doctor")
+    assert out.rc == 0 and "sets:" not in out.out and "set demo" not in out.out  # a repository without sets prints no line about sets
+    register_set(guard, repo, tmp_path, "demo", DEMO_LANES)
+    claims = claims_dir(repo) / "agent" / "demo"
+    out = guard(repo, "doctor")
+    assert out.rc == 0 and "sets: 1, unreadable: 0, newer-format: 0" in out.out and "claims without a branch or planned worktree: none" in out.out  # the integration claim is no orphan
+    assert "without a record" not in out.out
+    for name, edit, line in (("docs", None, "  set demo lane L3: claim missing"), ("ui", lambda t: t.replace("entry=src/ui/", "entry=lib/"), "  set demo lane L2: claim differs"),
+                             ("api", lambda t: t.replace("set=demo", "set=other"), "  set demo lane L1: claim differs"), ("api", lambda t: t.replace("lane=L1\n", ""), "  set demo lane L1: claim differs")):
+        path = claims / (name + ".claim")
+        good = path.read_text(encoding="utf-8")
+        if edit is None:
+            path.unlink()
+        else:
+            path.write_text(edit(good), encoding="utf-8")
+        out = guard(repo, "doctor")
+        assert out.rc == 1 and line in out.out.splitlines() and "sets: 1, unreadable: 0, newer-format: 0" in out.out, (name, out.out)
+        path.write_text(good, encoding="utf-8")
+    assert guard(repo, "doctor").rc == 0
+    # a lane in state active or ready whose branch is gone is a problem; planned, integrated and blocked lanes without a branch are not
+    def states(rec):
+        for lane, state in zip(rec["lanes"], ("active", "ready", "planned")):
+            lane["state"] = state
+    edit_set(repo, states)
+    out = guard(repo, "doctor")
+    assert out.rc == 1 and "  set demo lane L1: branch vanished" in out.out.splitlines() and "  set demo lane L2: branch vanished" in out.out.splitlines() and "L3: branch vanished" not in out.out
+    edit_set(repo, lambda rec: [lane.update(state=s) for lane, s in zip(rec["lanes"], ("planned", "integrated", "blocked"))])
+    assert guard(repo, "doctor").rc == 0
+    # claims of a set that has no record, a newer-format record, an unreadable one, and a temporary file
+    register_set(guard, repo, tmp_path, "ghost", [("L1", "agent/ghost/a", ["ghost/"], [])], tag="g")
+    (common(repo) / "magos" / "sets" / "ghost.json").unlink()
+    sets = common(repo) / "magos" / "sets"
+    (sets / "newer.json").write_bytes(b'{"v": 3}')
+    (sets / "broken.json").write_bytes(b"{")
+    (sets / "demo.json.tmp").write_bytes(b"garbage")
+    out = guard(repo, "doctor")
+    lines = out.out.splitlines()
+    assert out.rc == 1 and "sets: 1, unreadable: 1, newer-format: 1" in lines
+    assert "  claims of set ghost without a record: agent/ghost/a, agent/ghost/integration" in lines
+    assert any(ln.startswith("  set record sets/newer.json was written by a newer MAGOS (v=3)") and "upgrade this guard" in ln for ln in lines)
+    assert "  unreadable set record sets/broken.json" in lines
+    assert "claims without a branch or planned worktree: agent/ghost/integration" in lines  # no record: the integration claim is an orphan too
+    for name in ("newer.json", "broken.json", "demo.json.tmp"):
+        (sets / name).unlink()
+    assert guard(repo, "release", "--branch", "agent/ghost/a").rc == 0 and guard(repo, "release", "--branch", "agent/ghost/integration").rc == 0  # release --branch frees them
+    assert guard(repo, "doctor").rc == 0
+    # the target branch is gone
+    repo.git("switch", "-q", "-c", "scratch")
+    repo.git("branch", "-q", "-D", "main")
+    out = guard(repo, "doctor")
+    assert out.rc == 1 and "  set demo: the target branch main no longer exists" in out.out.splitlines()

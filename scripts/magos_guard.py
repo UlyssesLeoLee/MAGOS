@@ -2,8 +2,8 @@
 """MAGOS lane guard: a lane's files are planned before the lane exists; creating a lane that overlaps another lane is denied.
 
 One stdlib-only file (Python >= 3.9): CLI, PreToolUse hook entry for Claude Code / Codex / Hermes, and the sh body of the git
-reference-transaction backstop. check / list / hook never write; plan / release / override / arm / disarm / install write only the
-claim store under <git-common-dir>/magos and the files they print.
+reference-transaction backstop. check / list / hook / set-show never write; plan / release / override / arm / disarm / install and the set
+commands set-plan / set-update / set-release write only the claim store and the set records under <git-common-dir>/magos and the files they print.
 """
 from __future__ import annotations
 
@@ -33,8 +33,9 @@ except ImportError:  # POSIX
 if sys.platform == "win32":  # CreateProcess searches the working directory before PATH unless this is set: a git.exe planted there never runs
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
 
-GUARD_VERSION = "1.0.3"  # the one version constant of the guard; equals the package version (plugin.json, .claude-plugin/plugin.json, plugin.yaml, SKILL.md)
+GUARD_VERSION = "1.0.4"  # the one version constant of the guard; equals the package version (plugin.json, .claude-plugin/plugin.json, plugin.yaml, SKILL.md)
 CLAIM_FORMAT = 1  # the claim file format this guard reads and writes (line `v=`); a claim of a newer format is never misread
+SET_FORMAT = 1  # the set record format this guard reads and writes (field `v`); a record of a newer format is never misread
 GS = "**"
 BUDGET_S, MAX_CLAIMANTS, MAX_REMOTES, MAX_ENTRIES, LOCK_S, MAX_TEXT = 18.0, 120, 300, 200, 30.0, 200000
 MAX_DIR = 4096  # the longest directory spelling the detector resolves: a longer one is an unknown directory
@@ -52,7 +53,7 @@ HOOKED_TOOLS = {
 SHELL_TOOLS = HOOKED_TOOLS["shell"] + HOOKED_TOOLS["host_shell"]
 EXIT = {"OK": 0, "OVERRIDDEN": 0, "CONFLICT": 10, "NO_MANIFEST": 10, "UNPLANNABLE": 10, "UNPARSEABLE": 10, "PROTECTED": 10, "UNKNOWN": 11,
         "INVALID_MANIFEST": 12, "LOCK_TIMEOUT": 13, "LANE_EXISTS": 14, "BRANCH_EXISTS": 15, "BLOCKED": 16, "CONSOLE_REQUIRED": 17, "ARM_REFUSED": 3,
-        "DOWNGRADE_REFUSED": 18}
+        "DOWNGRADE_REFUSED": 18, "STALE": 19, "SET_EXISTS": 20, "SET_UNKNOWN": 21, "OUT_OF_LANE": 22, "SET_NEWER_FORMAT": 23, "INVALID_SPEC": 24}
 MARK = "MAGOS lane guard"  # identifies the reference-transaction hook this file wrote
 HOOK_DEADLINE = None  # set for the duration of a hook call: every git call of that call shares one budget
 
@@ -119,6 +120,69 @@ M = {
     "released": ("MAGOS：已释放「{b}」的登记。", "MAGOS: released the claim of '{b}'."),
     "overridden": ("MAGOS：已记录用户覆盖（指纹 {fp}，1 小时内有效）。", "MAGOS: recorded the user's override (fingerprint {fp}, valid for 1 hour)."),
     "need_tty": ("MAGOS：这条命令只能由用户在真实终端里执行（当前标准输入不是控制台）。", "MAGOS: only the user may run this, in a real terminal (stdin is not a console)."),
+    # ---- sets (1.0.4): set-plan, set-show, set-update, set-release, and the plain plan / release refusing the claims of a set
+    "set_invalid": ("MAGOS：set 规划无效，未登记也未创建任何东西：\n{errors}", "MAGOS: the set plan is invalid, nothing registered or created:\n{errors}"),
+    "set_stale_base": ("MAGOS：计划已过期，未写入任何东西：目标 {t} 现在位于 {live}，而计划基于 {base}。请重新调查仓库后再规划。",
+                       "MAGOS: the plan is stale, nothing was written: target {t} is now at {live}, but the plan was made against {base}. Investigate the repository again and re-plan."),
+    "set_stale_revision": ("MAGOS：计划已过期，未写入任何东西：set「{s}」现在是修订 {cur}，而你基于修订 {exp}。请先用 set-show 重新读取。",
+                           "MAGOS: the plan is stale, nothing was written: set '{s}' is at revision {cur}, not {exp}. Read it again with set-show."),
+    "set_exists": ("MAGOS：set「{s}」已存在（修订 {rev}）。用 --amend --expect-revision {rev} 修改，或先 set-release。",
+                   "MAGOS: set '{s}' already exists (revision {rev}). Change it with --amend --expect-revision {rev}, or release it first with set-release."),
+    "set_unknown": ("MAGOS：没有名为「{s}」的 set。", "MAGOS: there is no set named '{s}'."),
+    "set_out_of_lane": ("MAGOS：拒绝把 lane {l} 标记为 ready：下列文件在它的 manifest 之外：{files}。请撤销这些改动，或用 set-plan --amend 调整归属。",
+                        "MAGOS: refused to mark lane {l} ready: these files lie outside its manifest: {files}. Revert them, or move the ownership with set-plan --amend."),
+    "set_newer": ("MAGOS：set「{s}」由更新版本的 MAGOS 写入（v={v}）：请升级本守卫（doctor 显示版本，install 刷新副本），或用写入它的那个 MAGOS 执行这条命令。",
+                  "MAGOS: set '{s}' was written by a newer MAGOS (v={v}): upgrade this guard (doctor shows its version, install refreshes the copy), or run this command with the MAGOS that wrote it."),
+    "set_unreadable": ("MAGOS：set 记录 {f} 无法读取，未做任何修改；请用户检查该文件。", "MAGOS: the set record {f} cannot be read; nothing was changed. The user must inspect the file."),
+    "set_conflict": ("MAGOS 拒绝登记 set「{s}」：下列 lane 的 manifest 与其他 lane 或已有分支重叠，或无法分析。没有登记也没有创建任何东西。",
+                     "MAGOS DENIES registering set '{s}': the manifests of the lanes below overlap other lanes or existing branches, or could not be analysed. Nothing was registered or created."),
+    "set_overlap": ("lane {a} 与 lane {b} 的 manifest 重叠：{pairs}", "lane {a} and lane {b} overlap: {pairs}"),
+    "set_lane_item": ("lane {l}（分支 {b}）：", "lane {l} (branch {b}):"),
+    "set_options": ("可选处理：① 缩小或拆分重叠的 lane；② 等对方合入 {target} 后再规划；③ 对方若已合并或已放弃，用 release 释放它的登记（未合并的工作不会被释放）。set-plan 不读取也不消耗用户覆盖（override）。",
+                    "Options: (1) shrink or split the overlapping lanes; (2) wait until the others are merged into {target}; (3) if the other lane is merged or abandoned, release its claim with release "
+                    "(unmerged work is never released). set-plan neither reads nor consumes an override."),
+    "set_branch_exists": ("MAGOS：lane {l} 的分支「{b}」已经存在且没有有效登记，不能事后补登记。请换一个新分支名。",
+                          "MAGOS: the branch '{b}' of lane {l} already exists without a claim; it cannot be registered after the fact. Choose a new branch name."),
+    "set_lane_exists": ("MAGOS：lane {l} 的分支「{b}」已有一份不属于这个 set 的登记。请先 release 它，或换一个分支名。",
+                        "MAGOS: the branch '{b}' of lane {l} already has a claim that is not this set's. Release it first, or choose another branch name."),
+    "set_ok_plan": ("MAGOS：已登记 set「{s}」：{n} 个 lane，目标 {t}，基线 {base}，修订 {rev}。现在可以逐个创建 lane，例如：{example}",
+                    "MAGOS: registered set '{s}': {n} lanes, target {t}, base {base}, revision {rev}. You may now create the lanes, e.g.: {example}"),
+    "set_ok_amend": ("MAGOS：已修改 set「{s}」：修订 {old} → {rev}，{n} 个 lane。", "MAGOS: amended set '{s}': revision {old} -> {rev}, {n} lanes."),
+    "set_ok_check": ("MAGOS：预览通过，没有发现重叠（set「{s}」未登记）。", "MAGOS: preview passed, no overlap found (set '{s}' not registered)."),
+    "set_unchanged": ("MAGOS：set「{s}」没有变化（修订 {rev}），未写入任何东西。", "MAGOS: set '{s}' is unchanged (revision {rev}); nothing was written."),
+    "set_ok_update": ("MAGOS：set「{s}」的 lane {l} 现在是 {st}，修订 {rev}。", "MAGOS: lane {l} of set '{s}' is now {st}, revision {rev}."),
+    "set_released": ("MAGOS：已释放 set「{s}」及其 {n} 份登记。", "MAGOS: released set '{s}' and its {n} claims."),
+    "set_blocked": ("MAGOS：拒绝 {op}：{why}", "MAGOS: {op} refused: {why}"),
+    "set_why_state": ("lane {l} 的状态是 {st}，不是 integrated", "lane {l} is {st}, not integrated"),
+    "set_why_unmerged": ("lane {l} 的分支 {b} 有未合并的工作", "the branch {b} of lane {l} has unmerged work"),
+    "set_why_dirty": ("lane {l} 的工作树有未提交的修改", "the worktree of lane {l} has uncommitted changes"),
+    "set_why_operation": ("lane {l} 的工作树正在进行 {op}", "the worktree of lane {l} has a {op} in progress"),
+    "set_why_missing": ("lane {l} 的分支 {b} 不存在", "the branch {b} of lane {l} does not exist"),
+    "set_why_head_tip": ("--head {head} 不是分支 {b} 的当前提交 {tip}", "--head {head} is not the tip {tip} of branch {b}"),
+    "set_why_head_recorded": ("--head {head} 不是 lane {l} 在 ready 时记录的 head {rec}", "--head {head} is not the head {rec} recorded for lane {l} at ready"),
+    "set_why_ancestor": ("提交 {head} 既不在 {t} 中，也不在集成分支中", "commit {head} is in neither {t} nor the integration branch"),
+    "set_why_shrink": ("lane {l} 已经改动了新 manifest 之外的文件：{files}", "lane {l} already changed files outside its new manifest: {files}"),
+    "set_why_claim": ("lane {l} 的登记无法读取或来自更新版本的 MAGOS", "the claim of lane {l} cannot be read or comes from a newer MAGOS"),
+    "set_why_integration": ("集成分支 {b} 不存在", "the integration branch {b} does not exist"),
+    "set_why_base": ("lane {l} 与计划的基线没有共同历史", "lane {l} shares no history with the plan's base"),
+    "lane_in_set": ("MAGOS：分支「{b}」是 set「{s}」的 lane，不能单独修改它的登记。用 set-plan --amend 修改，或先 set-release。",
+                    "MAGOS: branch '{b}' is a lane of set '{s}'; its claim cannot be changed on its own. Use set-plan --amend, or set-release first."),
+    "blocked_set": ("MAGOS：拒绝 release：「{b}」是 set「{s}」的登记。请用 set-release 一并释放。",
+                    "MAGOS: release refused: '{b}' belongs to set '{s}'. Retire the whole set with set-release."),
+    "show_head": ("set「{s}」→ {t}　基线 {base}　修订 {rev}　集成分支 {i}", "set '{s}' -> {t}  base {base}  revision {rev}  integration {i}"),
+    "show_lane": ("{box} {l}　{st}　记录 {head}　当前 {tip}　领先 {n}　工作树 {wt}　分支 {b}", "{box} {l}  {st}  head {head}  tip {tip}  ahead {n}  worktree {wt}  branch {b}"),
+    "show_wt_clean": ("干净", "clean"),
+    "show_wt_dirty": ("有未提交修改", "dirty"),
+    "show_wt_op": ("{op} 进行中", "{op} in progress"),
+    "show_wt_absent": ("缺失", "absent"),
+    "show_wt_unreadable": ("无法读取", "unreadable"),
+    "show_out": ("越界文件（{l}）：{files}", "outside the manifest ({l}): {files}"),
+    "show_shared": ("多个 lane 改动的文件：{files}", "changed by more than one lane: {files}"),
+    "show_moved": ("目标已从 {base} 移到 {tip}；与 lane 重叠的文件：{files}", "the target moved from {base} to {tip}; files that overlap lanes: {files}"),
+    "show_moved_ready": ("ready 之后分支又移动：{lanes}", "moved since ready: {lanes}"),
+    "show_order": ("合并顺序：{order}", "merge order: {order}"),
+    "set_line": ("  lane {l}  分支 {b}  工作树 {w}  {n} 条路径", "  lane {l}  branch {b}  worktree {w}  {n} entries"),
+    "set_line_integration": ("  集成分支 {b}", "  integration branch {b}"),
 }
 
 
@@ -303,6 +367,18 @@ def _few(items, n=8):
     return ", ".join(items[:n]) + (" ..." if len(items) > n else "")
 
 
+def conflict_lines(lang, v):
+    """The lines that name every conflicting branch / worktree / evidence kind / files of a verdict, then its unknowns."""
+    L = []
+    for i, c in enumerate(v.get("conflicts", []), 1):
+        L.append(T(lang, "item", i=i, b=c["branch"] or "(detached)", w=", ".join(c["worktrees"]) or "-", p=T(lang, "planned") if c.get("planned") else ""))
+        for e in c["evidence"]:
+            k = T(lang, "k_" + e["kind"])
+            L.append(T(lang, "ev_decl", k=k, t=_few(e["theirs"]), m=_few(e["matched"])) if e["kind"] == "declared"
+                     else T(lang, "ev", k=k, n=len(e["files"]), f=_few(e["files"]), m=_few(e["matched"])))
+    return L + ["[%s] %s" % (u["code"], u["text"]) for u in v.get("unknowns", [])]
+
+
 def render(lang, v, name):
     """Human message of a verdict, naming every conflicting branch / worktree / evidence kind / files."""
     if v["code"] == "NO_MANIFEST":
@@ -312,13 +388,7 @@ def render(lang, v, name):
         L.append(T(lang, "conflict", b=name))
     elif v.get("unknowns"):
         L.append(T(lang, "unknown", b=name))
-    for i, c in enumerate(v.get("conflicts", []), 1):
-        L.append(T(lang, "item", i=i, b=c["branch"] or "(detached)", w=", ".join(c["worktrees"]) or "-", p=T(lang, "planned") if c.get("planned") else ""))
-        for e in c["evidence"]:
-            k = T(lang, "k_" + e["kind"])
-            L.append(T(lang, "ev_decl", k=k, t=_few(e["theirs"]), m=_few(e["matched"])) if e["kind"] == "declared"
-                     else T(lang, "ev", k=k, n=len(e["files"]), f=_few(e["files"]), m=_few(e["matched"])))
-    L += ["[%s] %s" % (u["code"], u["text"]) for u in v.get("unknowns", [])]
+    L += conflict_lines(lang, v)
     if v["decision"] == "deny" and v.get("unknowns") and all(u["code"] == "CLAIM_NEWER_FORMAT" for u in v["unknowns"]):
         L.append(T(lang, "newer_only"))  # no shrink, wait, release or override: only a guard that reads that format can act on the claim
     elif v["decision"] == "deny" and v.get("fingerprint"):
@@ -2519,7 +2589,7 @@ _SCRUB = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_O
 _PIN = ["-c", "core.quotepath=false", "-c", "core.longpaths=true", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "--no-optional-locks"]
 # The only subcommands Git.run starts, none of which talks to a remote (in a partial clone, git itself fetches the objects a diff needs
 # from the promisor remote).
-LOCAL_GIT = frozenset(("--version", "branch", "check-ref-format", "config", "diff", "for-each-ref", "merge-base", "rev-parse", "status", "worktree"))
+LOCAL_GIT = frozenset(("--version", "branch", "check-ref-format", "config", "diff", "for-each-ref", "merge-base", "rev-list", "rev-parse", "status", "worktree"))
 _PIN_HINT = "ask the user to pin it in their own terminal: git config magos.target <branch>"
 
 
@@ -3049,9 +3119,10 @@ def write_atomic(path, data, mode=None):
                 pass
 
 
-def write_claim(g, name, doc):
-    """Write the claim of `name` in format CLAIM_FORMAT.  Refuses (ClaimRefused) a value with a control character (each one in `by` becomes a
-    space) and a claim file that holds another branch's claim or cannot be read; refuses (ClaimTooNew) to overwrite a newer-format claim."""
+def claim_bytes(g, name, doc):
+    """-> (path, text) of the claim of `name` in format CLAIM_FORMAT.  Refuses (ClaimRefused) a value with a control character (each one in
+    `by` becomes a space) and a claim file that holds another branch's claim or cannot be read; refuses (ClaimTooNew) to overwrite a
+    newer-format claim.  Nothing is written: write_claim and the set commands put the text in place."""
     path = claim_path(g, name)
     vals = {k: str(doc.get(k) or "") for k in CLAIM_KEYS}
     vals["by"] = _CTL.sub(" ", vals["by"])
@@ -3072,7 +3143,13 @@ def write_claim(g, name, doc):
         if fold(other["branch"]) != fold(name):
             raise ClaimRefused("the claim file %s holds the claim of %s" % (path, other["branch"]))
     lines = ["state=active", "v=%d" % CLAIM_FORMAT] + ["%s=%s" % (k, vals[k]) for k in CLAIM_KEYS] + ["%s=%s" % kv for kv in extra]
-    write_atomic(path, ("\n".join(lines + ["entry=" + e for e in doc["entries"]]) + "\n").encode("utf-8"))
+    return path, ("\n".join(lines + ["entry=" + e for e in doc["entries"]]) + "\n").encode("utf-8")
+
+
+def write_claim(g, name, doc):
+    """Write the claim of `name` in format CLAIM_FORMAT (claim_bytes states what it refuses), whole or not at all."""
+    path, data = claim_bytes(g, name, doc)
+    write_atomic(path, data)
 
 
 def audit(g, **rec):
@@ -3097,26 +3174,34 @@ def alias_problem(name):
     return None
 
 
-def check_name(g, name, claims, stored=False):
-    """-> reason the branch name cannot be a lane, or None.  `stored`: the name of a claim an earlier guard stored, which keeps allowing the
-    creation of its branch: only the Windows alias rule is not applied to it."""
+def name_problem(g, name, stored=False):
+    """-> the intrinsic reason the branch name cannot be a lane (the rules that need no other branch), or None.  `stored`: the name of a
+    claim an earlier guard stored, which keeps allowing the creation of its branch: only the Windows alias rule is not applied to it."""
     if name.startswith("-") or g.run("check-ref-format", "--branch", name, ok=(0, 1, 128))[0] != 0:
         return "not a valid git branch name"
     if len(name) > 100 or re.search(r'[<>|"]', name):
         return "longer than 100 characters or contains one of < > | \""
     if any(re.fullmatch(r"(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?", c.lower()) for c in name.split("/")):
         return "a path component is a Windows reserved device name"
-    problem = None if stored else alias_problem(name)
-    if problem:
-        return problem
+    return None if stored else alias_problem(name)
+
+
+def name_clash(name, others):
+    """-> the reason the branch name clashes with one of the branch names `others` (a ref cannot be both a file and a directory; a case or
+    Unicode normalisation collision), or None."""
     f = fold(name)
-    for other in list(list_refs(g)[0]) + [d["branch"] for d in claims.values()]:
+    for other in others:
         o = fold(other)
         if o != f and (f.startswith(o + "/") or o.startswith(f + "/")):
             return "clashes with the existing branch or claim %s (a ref cannot be both a file and a directory)" % other
         if other != name and o == f:
             return "collides with %s once case and Unicode normalisation are ignored" % other
     return None
+
+
+def check_name(g, name, claims, stored=False):
+    """-> reason the branch name cannot be a lane, or None (name_problem, then name_clash against the branches and the `claims`)."""
+    return name_problem(g, name, stored) or name_clash(name, list(list_refs(g)[0]) + [d["branch"] for d in claims.values()])
 
 
 # ---------------------------------------------------------------- judge and commands
@@ -3135,6 +3220,8 @@ def with_declared(claimants, claims, own, snap):
     table, bad, heads = {c["key"]: dict(c, declared=list(c["declared"])) for c in claimants}, [], snap["heads"]
     for fname, doc in claims.items():
         key = lane_key(doc["branch"])
+        if is_integration_claim(doc):
+            continue  # the integration branch of a set is the whole, assembled from the lanes: its claim claims no files, and is never parsed
         if key == own or is_idle(doc, heads, snap["merged"], snap["wt_branches"], snap["target"]["sha"]):
             continue  # the lane itself, or an integrated lane that no longer has a workspace (idle)
         try:
@@ -3170,6 +3257,17 @@ def judge(snap, claims, bad_claims, name, entries, override):
     return v
 
 
+def backstop_warnings(g, lanes):
+    """The warnings about the git backstop: NOT_ARMED when parallel lanes exist (`lanes`) and the backstop is not installed, HOOK_BYPASSED when it
+    is installed and core.hooksPath keeps git from running it."""
+    armed, found = os.path.exists(os.path.join(store(g), "ARMED")), []
+    if not armed and lanes:
+        found.append({"code": "NOT_ARMED", "text": "parallel lanes exist but the git backstop is not installed; the user can run `arm`"})
+    if armed and g.run("config", "--get", "core.hooksPath", ok=(0, 1))[0] == 0:
+        found.append({"code": "HOOK_BYPASSED", "text": "core.hooksPath is set: git no longer runs the backstop; tell the user (arm refuses while it is set)"})
+    return found
+
+
 def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree="", stored=False):
     """Judge `name` against every claimant; with write=True register the claim atomically.  Returns a verdict dict.  `stored`: `name` is the
     branch of a claim that exists (the host hook judging its creation), so a name an earlier guard stored is not refused by the alias rule."""
@@ -3184,16 +3282,16 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
         snap = gather(g, name, target_arg, own_wt)
     except (Uncertain, GitFail) as err:
         return deny("UNKNOWN", unknowns=[{"code": getattr(err, "code", "TARGET_UNCERTAIN"), "text": str(err)}])
-    if not os.path.exists(os.path.join(store(g), "ARMED")) and (claims or any(c["paths"]["committed"] or c["paths"]["uncommitted"] for c in snap["claimants"])):
-        snap["warnings"] = snap["warnings"] + [{"code": "NOT_ARMED", "text": "parallel lanes exist but the git backstop is not installed; the user can run `arm`"}]
-    if os.path.exists(os.path.join(store(g), "ARMED")) and g.run("config", "--get", "core.hooksPath", ok=(0, 1))[0] == 0:
-        snap["warnings"] = snap["warnings"] + [{"code": "HOOK_BYPASSED", "text": "core.hooksPath is set: git no longer runs the backstop; tell the user (arm refuses while it is set)"}]
+    snap["warnings"] = snap["warnings"] + backstop_warnings(g, bool(claims) or any(c["paths"]["committed"] or c["paths"]["uncommitted"] for c in snap["claimants"]))
 
     def judge_now(claims, bad_claims):
         old = claims.get(fold(name))
         if not old and name in snap["heads"]:
             return deny("BRANCH_EXISTS", message=T(lang, "branch_exists", b=name), target=snap["target"])
         same = bool(old) and {e.raw for e in entries} == set(old["entries"]) and (not worktree or pkey(old["worktree"] or ".") == pkey(os.path.abspath(worktree)))
+        owner = claim_set_record(g, old) if old and not same and write else None
+        if owner:  # a lane of a set: its manifest changes only through set-plan --amend
+            return deny("LANE_EXISTS", message=T(lang, "lane_in_set", b=name, s=owner), target=snap["target"])
         if old and not same and not amend:
             return deny("LANE_EXISTS", message=T(lang, "lane_exists", b=name), target=snap["target"])
         shrink = bool(old) and amend and {e.raw for e in entries} <= set(old["entries"])
@@ -3338,15 +3436,25 @@ def cmd_list(args):
         refused = alias_problem(doc["branch"])
         if refused:  # stored by an earlier guard: it still allows its branch, but plan refuses the name
             row["refused_name"] = refused
+        owner = claim_set(doc)
+        if owner is not None:  # a claim of a set: the set and its lane (the integration claim: role integration, no lane)
+            row["set"] = owner
+            if is_integration_claim(doc):
+                row.update(lane=None, role="integration")
+            elif claim_extra(doc, "lane"):
+                row["lane"] = claim_extra(doc, "lane")[0]
         if args.drift:
             try:
                 ents = [parse_entry(r) for r in doc["entries"]]
             except ManifestError:
                 ents = None  # an unparseable claim is reported by doctor; its drift cannot be computed
-            row["drift"] = [] if ents is None else [p for p in drift.get(lane_key(doc["branch"]), []) if not any(path_hit(e, fpath(p)) for e in ents)]
+            row["drift"] = [] if ents is None or row.get("role") else [p for p in drift.get(lane_key(doc["branch"]), []) if not any(path_hit(e, fpath(p)) for e in ents)]
         rows.append(row)
-    lines = ["%-8s %s  [%s]%s%s" % (r["state"], r["branch"], ", ".join(r["entries"]), "  drift: " + _few(r["drift"]) if r.get("drift") else "",
-                                  " (name refused by plan: %s)" % r["refused_name"] if r.get("refused_name") else "") for r in rows]
+
+    def label(r):
+        return " set %s" % r["set"] + ("/" + (r["lane"] or r["role"]) if r.get("lane") or r.get("role") else "") if "set" in r else ""
+    lines = ["%-8s%s %s  [%s]%s%s" % (r["state"], label(r), r["branch"], ", ".join(r["entries"]), "  drift: " + _few(r["drift"]) if r.get("drift") else "",
+                                    " (name refused by plan: %s)" % r["refused_name"] if r.get("refused_name") else "") for r in rows]
     for b in bad:  # claims the guard cannot use are shown too: they deny every creation, and this is where the user sees why
         path = b.replace(os.sep, "/")
         if b.code == "CLAIM_NEWER_FORMAT":
@@ -3428,6 +3536,10 @@ def cmd_release(args):
                     return 0
                 out_text("no open claim for %s" % args.branch)
                 return 0
+            owner = claim_set_record(g, doc)
+            if owner:  # a claim of a set that has a record (a lane or the integration claim): only set-release retires it
+                sys.stderr.write(T(args.lang, "blocked_set", b=doc["branch"], s=owner) + "\n")
+                return EXIT["BLOCKED"]
             heads, wts = list_refs(g)[0], worktrees(g)
             b = real_branch(doc, heads)
             unmerged = b is not None and "refs/heads/" + b not in merged_set(g)[0]
@@ -3484,6 +3596,1495 @@ def cmd_override(args):
     audit(g, op="override", fingerprint=args.fingerprint, reason=args.reason, host="cli")
     out_text(T(args.lang, "overridden", fp=args.fingerprint))
     return 0
+
+
+# ---------------------------------------------------------------- sets (1.0.4): the set record, the integration claim, the spec of set-plan
+SET_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,23}")
+LANE_ID = re.compile(r"[A-Za-z0-9_-]{1,16}")
+_DEVICE = re.compile(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])")
+LANE_STATES = ("planned", "active", "ready", "integrated", "blocked")
+SPEC_BYTES, SPEC_LANES, SPEC_SHARED, SPEC_NOTES, SPEC_DEPENDS, SPEC_ERRORS, SPEC_PAIRS = 4194304, 12, 64, 5, 11, 20, 20
+SPEC_TOP = ("v", "title", "base", "sheet", "notes", "shared", "lanes")
+SPEC_LANE = ("id", "title", "branch", "worktree", "paths", "depends_on", "acceptance")
+RECORD_KEYS = ("v", "set", "target", "base", "revision", "created", "updated", "by", "title", "sheet", "notes", "shared", "integration", "lanes")
+RECORD_LANE_KEYS = ("id", "title", "branch", "worktree", "paths", "depends_on", "acceptance", "state", "head", "note", "updated")
+_SURROGATE = re.compile(r"[\ud800-\udfff]")
+_SHEET_CTL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # the sheet may hold a newline and a tab
+_BASE = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
+
+
+def set_name_problem(name):
+    """-> why `name` is no set name, or None: [a-z0-9][a-z0-9-]{0,23} and no Windows device name (the record is the file sets/<name>.json,
+    and a device name with any extension is a device on Windows)."""
+    if not SET_NAME.fullmatch(name):
+        return "a set name is [a-z0-9][a-z0-9-]{0,23}"
+    if _DEVICE.fullmatch(name):
+        return "%s is a Windows device name" % name
+    return None
+
+
+def integration_branch(set_name):
+    return "agent/%s/integration" % set_name
+
+
+def integration_entry(set_name):
+    return ".magos/integration/%s/" % set_name
+
+
+def claim_extra(doc, key):
+    """The values of the extra lines `key=` of a claim, in file order."""
+    return [v for k, v in doc.get("extra") or [] if k == key]
+
+
+def claim_set(doc):
+    """The name in the first `set=` line of a claim, or None."""
+    vals = claim_extra(doc, "set")
+    return vals[0] if vals else None
+
+
+def is_integration_claim(doc):
+    """Has the claim exactly the shape set-plan writes for the integration branch of a set: one `role=integration` line, one `set=<S>` line,
+    the branch agent/<S>/integration and the single entry .magos/integration/<S>/ (the last three compared folded)?  Only such a claim is
+    exempt from the overlap judgement; any other claim, one that carries role=integration included, is an ordinary claim."""
+    sets = claim_extra(doc, "set")
+    if claim_extra(doc, "role") != ["integration"] or len(sets) != 1:
+        return False
+    return fold(doc["branch"]) == fold(integration_branch(sets[0])) and len(doc["entries"]) == 1 and \
+        fold(doc["entries"][0]) == fold(integration_entry(sets[0]))
+
+
+def sets_dir(g):
+    return os.path.join(store(g), "sets")
+
+
+def set_path(g, name):
+    return os.path.join(sets_dir(g), name + ".json")
+
+
+class SetNewer(Exception):
+    """A set record of a newer format: never interpreted, overwritten or removed.  .v is the format number (an int, or the digit text of one
+    too long for int())."""
+
+    def __init__(self, name, v):
+        super().__init__("set %s: format v=%s is newer than this guard's v=%d" % (name, v, SET_FORMAT))
+        self.name, self.v = name, v
+
+    @property
+    def shown(self):
+        text = str(self.v)
+        return text if len(text) <= 40 else text[:37] + "..."
+
+
+class SetUnreadable(Exception):
+    """A set record that is no JSON object of a format this guard knows: never overwritten or removed."""
+
+    def __init__(self, name, path, why):
+        super().__init__(why)
+        self.name, self.path, self.why = name, path, why
+
+
+class BadSet(str):
+    """An unusable file in read_sets' second list: the str is its name below sets/; .code is SET_UNREADABLE or SET_NEWER_FORMAT, .name the
+    set and .v the format of a newer record."""
+
+    def __new__(cls, rel, code, name, v=None):
+        s = str.__new__(cls, rel)
+        s.code, s.name, s.v = code, name, v
+        return s
+
+
+class _Digits(str):
+    """The JSON integer of more than 4,000 digits, kept as its text (int() refuses to read more than 4,300 digits from Python 3.11 on)."""
+
+
+def _json_int(text):
+    return int(text) if len(text.lstrip("-")) <= 4000 else _Digits(text)
+
+
+class _Obj(dict):
+    """A parsed JSON object that remembers the keys it repeated."""
+
+    def __init__(self):
+        super().__init__()
+        self.dups = []
+
+
+def _loads(text):
+    """-> (value, number of repeated keys).  Parses with the hooks of the set formats: a repeated key is counted (the last value stays), NaN and
+    the infinities are refused, an integer of more than 4,000 digits stays text (_Digits).  Raises ValueError and RecursionError."""
+    seen = [0]
+
+    def pairs(items):
+        obj = _Obj()
+        for k, v in items:
+            if k in obj:
+                obj.dups.append(k)
+                seen[0] += 1
+            obj[k] = v
+        return obj
+
+    def constant(name):
+        raise ValueError("%s is not allowed" % name)
+    return json.loads(text, object_pairs_hook=pairs, parse_int=_json_int, parse_constant=constant), seen[0]
+
+
+def _kind(v):
+    return "null" if v is None else "a boolean" if isinstance(v, bool) else "a number" if isinstance(v, (int, float, _Digits)) else "a string" if isinstance(v, str) \
+        else "a list" if isinstance(v, list) else "an object"
+
+
+def _is_text(v):
+    return isinstance(v, str) and not isinstance(v, _Digits)
+
+
+def _record_shape(rec, name):
+    """-> why a record of format 1 is unusable, or None.  Keys this guard does not know are not looked at."""
+    def texts(d, keys, where):
+        for k in keys:
+            if not _is_text(d.get(k)):
+                return "%s%s is not a string" % (where, k)
+        return None
+    if rec.get("set") != name:
+        return "the field set is not the file name"
+    why = texts(rec, ("target", "base", "created", "updated", "by", "title", "sheet"), "")
+    rev = rec.get("revision")
+    if why or isinstance(rev, bool) or not isinstance(rev, int) or rev < 1:
+        return why or "revision is not a positive integer"
+    if not isinstance(rec.get("notes"), list) or not all(_is_text(n) for n in rec["notes"]):
+        return "notes is not a list of strings"
+    if not isinstance(rec.get("shared"), list) or not all(isinstance(s, dict) and _is_text(s.get("path")) and _is_text(s.get("owner")) for s in rec["shared"]):
+        return "shared is not a list of {path, owner}"
+    if rec.get("integration") is not None and not _is_text(rec["integration"]):
+        return "integration is neither null nor a string"
+    if not isinstance(rec.get("lanes"), list):
+        return "lanes is not a list"
+    for i, ln in enumerate(rec["lanes"]):
+        where = "lanes[%d]." % i
+        if not isinstance(ln, dict):
+            return "lanes[%d] is not an object" % i
+        why = texts(ln, ("id", "title", "branch", "worktree", "acceptance", "note", "updated"), where)
+        if why:
+            return why
+        if not all(isinstance(ln.get(k), list) and all(_is_text(x) for x in ln[k]) for k in ("paths", "depends_on")):
+            return "%spaths and depends_on are not lists of strings" % where
+        if ln.get("state") not in LANE_STATES or (ln.get("head") is not None and not _is_text(ln["head"])):
+            return "%sstate or head is not valid" % where
+    return None
+
+
+def parse_set(name, path, text):
+    """The record of set `name` from its text.  The format gate comes first: a record of a newer format raises SetNewer before any other field
+    is read, whatever its shape; every other unusable record raises SetUnreadable."""
+    try:
+        rec, _ = _loads(text)
+    except (ValueError, RecursionError, MemoryError) as err:
+        raise SetUnreadable(name, path, "not valid JSON: %s" % str(err)[:120])
+    if not isinstance(rec, dict):
+        raise SetUnreadable(name, path, "the record is not a JSON object")
+    v = rec.get("v")
+    if isinstance(v, _Digits):
+        if v.startswith("-"):
+            raise SetUnreadable(name, path, "the format v is below 1")
+        raise SetNewer(name, v)
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise SetUnreadable(name, path, "the record has no integer format v")
+    if v > SET_FORMAT:
+        raise SetNewer(name, v)
+    if v < 1:
+        raise SetUnreadable(name, path, "the format v is below 1")
+    why = _record_shape(rec, name)
+    if why:
+        raise SetUnreadable(name, path, why)
+    return rec
+
+
+def read_set(g, name):
+    """-> the record of set `name`, or None when there is none.  Raises SetNewer and SetUnreadable (see parse_set)."""
+    path = set_path(g, name)
+    if not os.path.lexists(path):
+        return None
+    try:
+        text = _read_retry(path)
+    except (OSError, ValueError) as err:
+        raise SetUnreadable(name, path, str(err)[:120])
+    return parse_set(name, path, text)
+
+
+def read_sets(g):
+    """-> ({set name: record}, [BadSet]): every `*.json` file of sets/; an unusable one is listed with its code.  Once per repository within a
+    hook call."""
+    return _memo(("sets", g.common), lambda: _read_sets(g))
+
+
+def _read_sets(g):
+    recs, bad = {}, []
+    try:
+        names = sorted(os.listdir(sets_dir(g)))
+    except OSError:
+        return recs, bad
+    for f in names:
+        if not f.endswith(".json"):  # a temporary file (*.tmp) is never a record
+            continue
+        try:
+            rec = read_set(g, f[:-5])
+        except SetNewer as err:
+            bad.append(BadSet(f, "SET_NEWER_FORMAT", f[:-5], err.v))
+        except SetUnreadable:
+            bad.append(BadSet(f, "SET_UNREADABLE", f[:-5]))
+        else:
+            if rec is not None:
+                recs[f[:-5]] = rec
+    return recs, bad
+
+
+def claim_set_record(g, doc):
+    """The name of the set the claim `doc` belongs to while that set has a record (a file sets/<set>.json, whatever its state), else None.  The
+    name is validated before it is used as a path."""
+    name = claim_set(doc)
+    return name if name and set_name_problem(name) is None and os.path.lexists(set_path(g, name)) else None
+
+
+def _ordered(d, order):
+    """`d` with the keys of `order` first, in that order, then every other key in its own order."""
+    out = {k: d[k] for k in order if k in d}
+    out.update({k: v for k, v in d.items() if k not in out})
+    return out
+
+
+class _Errors(list):
+    """The errors of a spec, each (field, code, text)."""
+
+    def add(self, field, code, text):
+        self.append((field, code, text))
+
+
+def _field(path, key):
+    """The field path of the key `key` of the object at `path` (a key that is no plain word is shown in its repr)."""
+    return "%s.%s" % (path, key) if path and re.fullmatch(r"[A-Za-z0-9_-]{1,40}", key) else key if re.fullmatch(r"[A-Za-z0-9_-]{1,40}", key) else \
+        "%s[%s]" % (path, ascii(key)[:60])
+
+
+def _keys(errs, obj, path, allowed):
+    """Duplicate, unknown and missing keys of the spec object `obj` at `path`."""
+    for k in obj.dups:
+        errs.add(_field(path, k), "DUPLICATE", "the key appears more than once")
+    for k in obj:
+        if k not in allowed:
+            errs.add(_field(path, k), "UNKNOWN_KEY", "not a key of the spec")
+    for k in allowed:
+        if k not in obj:
+            errs.add(_field(path, k), "MISSING", "required")
+
+
+def _text(errs, field, v, lo, hi, multiline=False):
+    """The string `v` when it holds lo to hi characters without a lone surrogate or a control character (the sheet may hold a newline and a
+    tab), else None with the error recorded."""
+    if not _is_text(v):
+        errs.add(field, "TYPE", "must be a string, not %s" % _kind(v))
+    elif not lo <= len(v) <= hi:
+        errs.add(field, "RANGE", "must hold %d to %d characters, not %d" % (lo, hi, len(v)))
+    elif _SURROGATE.search(v):
+        errs.add(field, "ENCODING", "holds a lone surrogate")
+    elif (_SHEET_CTL if multiline else _CTL).search(v):
+        errs.add(field, "FORMAT", "holds a control character")
+    else:
+        return v
+    return None
+
+
+def lane_worktree(p):
+    """-> (the stored spelling of an absolute worktree path, None) or (None, reason).  Classified here and never with os.path.isabs, whose
+    Windows result for a rooted path without a drive differs from Python 3.13 on: a drive path (C:/x, C:\\x) or a UNC path on Windows, a
+    path with a leading / elsewhere.  Git Bash drive spellings (/c/x) map to drive paths on Windows.  The spelling is os.path.normpath with
+    / as the separator, as plan --worktree stores it."""
+    if len(p) > MAX_DIR:
+        return None, "longer than %d characters" % MAX_DIR
+    if _CTL.search(p):
+        return None, "holds a control character"
+    if p.startswith("~"):
+        return None, "starts with ~: write the absolute path"
+    q = _norm_path(p)
+    if os.name == "nt":
+        absolute = re.match(r"[A-Za-z]:[\\/]", q) or re.match(r"[\\/]{2}[^\\/]", q)
+    else:
+        absolute = q.startswith("/") and "\\" not in q
+    if not absolute:
+        return None, "is not an absolute path"
+    if ".." in re.split(r"[\\/]" if os.name == "nt" else "/", q):
+        return None, "holds a '..' segment"
+    return os.path.normpath(q).replace("\\", "/"), None
+
+
+def inside_path(path, root):
+    """Is `path` the directory `root` or below it (pkey form: case and separators fold where the platform folds them)?"""
+    p, r = pkey(path), pkey(root)
+    return p == r or p.startswith(r.rstrip(os.sep) + os.sep)
+
+
+def merge_order(ids, deps):
+    """The topological order of the lane ids: at every step the first lane of `ids` whose dependencies are all placed comes next, so it is
+    deterministic.  A lane on or behind a cycle is left out."""
+    placed, order = set(), []
+    while len(order) < len(ids):
+        nxt = next((i for i in ids if i not in placed and all(d in placed for d in deps.get(i, ()))), None)
+        if nxt is None:
+            break
+        placed.add(nxt)
+        order.append(nxt)
+    return order
+
+
+def _cycles(ids, deps):
+    """The groups of lane ids that depend on each other in a cycle, each in `ids` order."""
+    def reach(start):
+        seen, todo = set(), list(deps.get(start, ()))
+        while todo:
+            x = todo.pop()
+            if x not in seen:
+                seen.add(x)
+                todo.extend(deps.get(x, ()))
+        return seen
+    reached, groups, covered = {i: reach(i) for i in ids}, [], set()
+    for i in ids:
+        if i in reached[i] and i not in covered:
+            group = [j for j in ids if j in reached[i] and i in reached[j]]
+            covered.update(group)
+            groups.append(group)
+    return groups
+
+
+def _check_lane(g, errs, i, ln):
+    """One lane of the spec at lanes[i] -> its model (the keys whose value is invalid are None), the errors recorded."""
+    path = "lanes[%d]" % i
+    if not isinstance(ln, dict):
+        errs.add(path, "TYPE", "must be an object, not %s" % _kind(ln))
+        return None
+    _keys(errs, ln, path, SPEC_LANE)
+    m = {"id": None, "title": None, "branch": None, "worktree": None, "paths": None, "entries": [], "depends_on": None, "acceptance": None}
+    if "id" in ln:
+        v = _text(errs, path + ".id", ln["id"], 1, 16)
+        if v is not None and not LANE_ID.fullmatch(v):
+            errs.add(path + ".id", "FORMAT", "an id is [A-Za-z0-9_-] of 1 to 16 characters")
+        elif v is not None and v.lower() == "integration":
+            errs.add(path + ".id", "FORMAT", "the id integration (in any case) names the integration claim of the set and is reserved")
+        elif v is not None:
+            m["id"] = v
+    if "title" in ln:
+        m["title"] = _text(errs, path + ".title", ln["title"], 1, 80)
+    if "acceptance" in ln:
+        m["acceptance"] = _text(errs, path + ".acceptance", ln["acceptance"], 1, 300)
+    if "branch" in ln:
+        b = _text(errs, path + ".branch", ln["branch"], 1, 4096)
+        if b is not None:
+            reason = "holds a control character" if _CTL.search(b) else name_problem(g, b)
+            if reason:
+                errs.add(path + ".branch", "BRANCH_NAME", reason)
+            else:
+                m["branch"] = b
+    if "worktree" in ln:
+        w = ln["worktree"]
+        if not _is_text(w):
+            errs.add(path + ".worktree", "TYPE", "must be a string, not %s" % _kind(w))
+        elif _SURROGATE.search(w):
+            errs.add(path + ".worktree", "ENCODING", "holds a lone surrogate")
+        else:
+            norm, reason = lane_worktree(w)
+            if reason:
+                errs.add(path + ".worktree", "WORKTREE", reason)
+            else:
+                m["worktree"] = norm
+    if "paths" in ln:
+        raw = ln["paths"]
+        if not isinstance(raw, list):
+            errs.add(path + ".paths", "TYPE", "must be a list, not %s" % _kind(raw))
+        elif not raw:
+            errs.add(path + ".paths", "EMPTY", "a lane owns at least one manifest entry")
+        else:
+            if len(raw) > MAX_ENTRIES:
+                errs.add(path + ".paths", "TOO_MANY", "more than %d entries" % MAX_ENTRIES)
+            seen, m["paths"] = set(), []
+            for j, p in enumerate(raw[:MAX_ENTRIES]):
+                where = "%s.paths[%d]" % (path, j)
+                if not _is_text(p):
+                    errs.add(where, "TYPE", "must be a string, not %s" % _kind(p))
+                elif _SURROGATE.search(p):
+                    errs.add(where, "ENCODING", "holds a lone surrogate")
+                elif _CTL.search(p):
+                    errs.add(where, "EMPTY", "empty entry or control character")
+                else:
+                    try:
+                        e = parse_entry(p)
+                    except ManifestError as err:
+                        errs.add(where, err.code, str(err))
+                        continue
+                    if e.alts not in seen:  # equal after normalisation: collapsed into the first
+                        seen.add(e.alts)
+                        m["entries"].append(e)
+                        m["paths"].append(e.raw)
+    if "depends_on" in ln:
+        if not isinstance(ln["depends_on"], list):
+            errs.add(path + ".depends_on", "TYPE", "must be a list, not %s" % _kind(ln["depends_on"]))
+        else:
+            if len(ln["depends_on"]) > SPEC_DEPENDS:
+                errs.add(path + ".depends_on", "RANGE", "at most %d ids" % SPEC_DEPENDS)
+            m["depends_on"] = list(ln["depends_on"][:SPEC_DEPENDS])
+    return m
+
+
+def check_spec(g, spec, dupes, set_name, target, spec_path):
+    """Validate a parsed spec: every field, then the rules across fields, all errors collected.  -> (errors, model); the model is None when
+    there is an error.  Reads no claim, record or ref: only `git check-ref-format` runs.  `spec_path`: the spec file (None for stdin), which
+    must not lie inside a lane worktree."""
+    errs = _Errors()
+    if not isinstance(spec, dict):
+        errs.add("spec", "TYPE", "the spec must be a JSON object, not %s" % _kind(spec))
+        return errs, None
+    _keys(errs, spec, "", SPEC_TOP)
+    reported = len(spec.dups)
+    if "v" in spec:
+        v = spec["v"]
+        if isinstance(v, bool) or isinstance(v, float) or (_is_text(v)) or v is None or isinstance(v, (list, dict)):
+            errs.add("v", "TYPE", "must be the integer 1, not %s" % _kind(v))
+        elif v != 1 or isinstance(v, _Digits):
+            errs.add("v", "UNSUPPORTED_VERSION", "this guard reads spec version 1 only")
+    title = _text(errs, "title", spec["title"], 1, 120) if "title" in spec else None
+    base = None
+    if "base" in spec:
+        if not _is_text(spec["base"]):
+            errs.add("base", "TYPE", "must be a string, not %s" % _kind(spec["base"]))
+        elif not _BASE.fullmatch(spec["base"]):
+            errs.add("base", "FORMAT", "must be the full object name of the target tip (40 or 64 hexadecimal digits)")
+        else:
+            base = spec["base"].lower()
+    sheet = _text(errs, "sheet", spec["sheet"], 1, 4096, True) if "sheet" in spec else None
+    notes = []
+    if "notes" in spec:
+        if not isinstance(spec["notes"], list):
+            errs.add("notes", "TYPE", "must be a list, not %s" % _kind(spec["notes"]))
+        else:
+            if len(spec["notes"]) > SPEC_NOTES:
+                errs.add("notes[%d]" % SPEC_NOTES, "RANGE", "at most %d notes" % SPEC_NOTES)
+            for j, n in enumerate(spec["notes"][:SPEC_NOTES]):
+                note = _text(errs, "notes[%d]" % j, n, 1, 200)
+                if note is not None:
+                    notes.append(note)
+    lanes_raw, lanes = spec.get("lanes"), []
+    if "lanes" in spec:
+        if not isinstance(lanes_raw, list):
+            errs.add("lanes", "TYPE", "must be a list, not %s" % _kind(lanes_raw))
+        else:
+            if not 1 <= len(lanes_raw) <= SPEC_LANES:
+                errs.add("lanes", "RANGE", "a set has 1 to %d lanes, not %d" % (SPEC_LANES, len(lanes_raw)))
+            for i, ln in enumerate(lanes_raw[:SPEC_LANES]):
+                m = _check_lane(g, errs, i, ln)
+                if isinstance(ln, dict):
+                    reported += len(ln.dups)
+                lanes.append(m)
+    ids, seen_ids = {}, {}
+    for i, m in enumerate(lanes):  # lane ids are unique ignoring case
+        if m and m["id"] is not None:
+            if m["id"].lower() in seen_ids:
+                errs.add("lanes[%d].id" % i, "DUPLICATE", "the id equals the id of lanes[%d] ignoring case" % seen_ids[m["id"].lower()])
+            else:
+                seen_ids[m["id"].lower()] = i
+                ids[m["id"]] = i
+    deps = {}
+    for i, m in enumerate(lanes):  # depends_on: existing ids (spelled as the lane's id), no duplicate, no self, no cycle
+        if not m or m["depends_on"] is None:
+            continue
+        seen = set()
+        for j, d in enumerate(m["depends_on"]):
+            where = "lanes[%d].depends_on[%d]" % (i, j)
+            if not _is_text(d) or d not in ids:
+                errs.add(where, "UNKNOWN_LANE", "%s is no lane id of the spec (ids are matched exactly)" % (ascii(d)[:40]))
+            elif d in seen:
+                errs.add(where, "DUPLICATE", "%s is listed twice" % d)
+            elif d == m["id"]:
+                errs.add(where, "CYCLE", "lane %s depends on itself" % d)
+            else:
+                seen.add(d)
+        if m["id"] is not None:
+            deps[m["id"]] = [d for d in m["depends_on"] if _is_text(d) and d in seen]
+    order_ids = [m["id"] for m in lanes if m and m["id"] is not None]
+    order = merge_order(order_ids, deps)
+    if len(order) < len(order_ids):
+        for group in _cycles(order_ids, deps):
+            errs.add("lanes[%d].depends_on" % ids[group[0]], "CYCLE", "lanes %s depend on each other in a cycle" % ", ".join(group))
+    shared, shared_seen = [], set()
+    if "shared" in spec:
+        if not isinstance(spec["shared"], list):
+            errs.add("shared", "TYPE", "must be a list, not %s" % _kind(spec["shared"]))
+        else:
+            if len(spec["shared"]) > SPEC_SHARED:
+                errs.add("shared", "RANGE", "at most %d shared paths" % SPEC_SHARED)
+            for j, s in enumerate(spec["shared"][:SPEC_SHARED]):
+                where = "shared[%d]" % j
+                if not isinstance(s, dict):
+                    errs.add(where, "TYPE", "must be an object, not %s" % _kind(s))
+                    continue
+                reported += len(s.dups)
+                _keys(errs, s, where, ("path", "owner"))
+                owner, entry = s.get("owner"), None
+                if "path" in s:
+                    p = _text(errs, where + ".path", s["path"], 1, 1024)
+                    if p is not None:
+                        try:
+                            entry = parse_entry(p)
+                        except ManifestError as err:
+                            errs.add(where + ".path", err.code, str(err))
+                        else:
+                            if re.search(r"[*?]", p) or p.strip().replace("\\", "/").endswith("/"):
+                                errs.add(where + ".path", "BAD_GLOB", "a shared path names one file: no * or ? and no trailing /")
+                                entry = None
+                            elif entry.alts[0][:-1] in shared_seen:
+                                errs.add(where + ".path", "DUPLICATE", "the path is listed twice (after folding)")
+                                entry = None
+                            else:
+                                shared_seen.add(entry.alts[0][:-1])
+                if "owner" in s:
+                    if not _is_text(owner) or owner not in ids:
+                        errs.add(where + ".owner", "UNKNOWN_LANE", "%s is no lane id of the spec (ids are matched exactly)" % ascii(owner)[:40])
+                    elif entry is not None:
+                        manifest = lanes[ids[owner]]["entries"]
+                        fp = entry.alts[0][:-1]  # the literal file: containment is the exact intersection, never the literal-directory rule
+                        if not any(segs_overlap(alt, fp) for e in manifest for alt in e.alts):
+                            errs.add(where + ".path", "NOT_IN_OWNER", "the path lies outside the manifest of its owner %s" % owner)
+                if entry is not None and _is_text(owner):
+                    shared.append({"path": entry.raw, "owner": owner})
+    for i, m in enumerate(lanes):  # branches: distinct, no ref that would be a file and a directory, not the integration branch, not the target
+        if not m or m["branch"] is None:
+            continue
+        for what, other in [("the integration branch of the set", integration_branch(set_name)), ("the target", target)] + \
+                [("lane %s" % o["id"], o["branch"]) for o in lanes[:i] if o and o["id"] is not None and o["branch"] is not None]:
+            if fold(m["branch"]) == fold(other):
+                errs.add("lanes[%d].branch" % i, "DUPLICATE", "is the same branch as %s (case and Unicode normalisation ignored)" % what)
+            elif what != "the target":
+                reason = name_clash(m["branch"], [other])
+                if reason:
+                    errs.add("lanes[%d].branch" % i, "BRANCH_NAME", "%s (%s)" % (reason, what))
+    for i, m in enumerate(lanes):  # worktrees: distinct, none inside another
+        if not m or m["worktree"] is None:
+            continue
+        for o in lanes[:i]:
+            if o and o["worktree"] is not None and o["id"] is not None:
+                if inside_path(m["worktree"], o["worktree"]) or inside_path(o["worktree"], m["worktree"]):
+                    errs.add("lanes[%d].worktree" % i, "WORKTREE", "equals or lies inside the worktree of lane %s, or contains it" % o["id"])
+    if spec_path and any(m and m["worktree"] is not None and inside_path(spec_path, m["worktree"]) for m in lanes):
+        errs.add("--spec", "SPEC_IN_WORKTREE", "the spec file lies inside a lane worktree: write it elsewhere, or pass - and send it on stdin")
+    if dupes > reported and not errs:
+        errs.add("spec", "DUPLICATE", "a key appears more than once")
+    if errs:
+        return errs, None
+    return errs, {"title": title, "base": base, "sheet": sheet, "notes": notes, "shared": shared, "order": order, "lanes": lanes}
+
+
+def read_spec(g, arg):
+    """-> (the decoded spec text, the spec file's absolute path or None, errors).  The file must lie outside every worktree; it is read up to
+    4,194,305 bytes, and `-` reads stdin."""
+    errs, path = _Errors(), None
+    try:
+        if arg == "-":
+            raw = sys.stdin.buffer.read(SPEC_BYTES + 1)
+        else:
+            path = os.path.abspath(arg)
+            if any(inside_path(path, w["path"]) for w in worktrees(g)):
+                errs.add("--spec", "SPEC_IN_WORKTREE", "the spec file lies inside a worktree (it would dirty it): write it elsewhere, or pass - and send it on stdin")
+                return None, path, errs
+            with open(path, "rb") as fh:
+                raw = fh.read(SPEC_BYTES + 1)
+    except (OSError, ValueError) as err:
+        errs.add("--spec", "MISSING", "cannot read the spec: %s" % str(err)[:120])
+        return None, path, errs
+    if len(raw) > SPEC_BYTES:
+        errs.add("spec", "TOO_LARGE", "the spec is larger than %d bytes" % SPEC_BYTES)
+        return None, path, errs
+    try:
+        return decode_manifest(raw), path, errs
+    except ManifestError:
+        errs.add("spec", "ENCODING", "the spec is not UTF-8, or UTF-16 with a byte order mark")
+        return None, path, errs
+
+
+def parse_spec(text):
+    """-> (value, number of repeated keys, errors): the JSON of a spec with the hooks of _loads."""
+    errs = _Errors()
+    try:
+        value, dupes = _loads(text)
+    except RecursionError:
+        errs.add("spec", "JSON", "the JSON nests deeper than a parser can read")
+    except (ValueError, MemoryError) as err:
+        errs.add("spec", "JSON", "not valid JSON: %s" % str(err)[:160])
+    else:
+        return value, dupes, errs
+    return None, 0, errs
+
+# ---------------------------------------------------------------- set-plan
+def set_emit(args, v):
+    """Print the one result of a set command (the message, or with --json one object) and return its exit code, which `code` (an EXIT name) names."""
+    v["exit_code"] = EXIT[v["code"]]
+    out_text(json.dumps(v, ensure_ascii=False) if args.json else v["message"])
+    return v["exit_code"]
+
+
+def set_deny(lang, code, message, **extra):
+    """A denial: decision, code, the keys of its exit, then the message (set_emit adds the exit code)."""
+    v = {"decision": "deny", "code": code}
+    v.update(extra)
+    v["message"] = message
+    return v
+
+
+def error_lines(errors):
+    """The `[CODE] field: text` lines of a list of (field, code, text): at most SPEC_ERRORS, then `... and N more`."""
+    lines = ["  [%s] %s: %s" % (code, field, text) for field, code, text in errors[:SPEC_ERRORS]]
+    return lines + (["  ... and %d more" % (len(errors) - SPEC_ERRORS)] if len(errors) > SPEC_ERRORS else [])
+
+
+def invalid_set(lang, errors, code="INVALID_SPEC"):
+    """The denial of exit 24 (a spec or option value that is invalid in itself) or 12 (a name or worktree that clashes with the repository)."""
+    return set_deny(lang, code, T(lang, "set_invalid", errors="\n".join(error_lines(errors))),
+                    errors=[{"field": f, "code": c, "text": t} for f, c, t in errors[:SPEC_ERRORS]])
+
+
+def unknown_set(lang, code, text):
+    """The denial of exit 11 for an unknown of the call itself (TARGET_UNCERTAIN, SET_UNREADABLE, BUDGET_EXCEEDED, ...)."""
+    return set_deny(lang, "UNKNOWN", "[%s] %s" % (code, text), unknowns=[{"code": code, "text": text}])
+
+
+def record_denial(lang, name, err):
+    """The denial for a record that cannot be used: exit 23 (SetNewer) or exit 11 (SetUnreadable)."""
+    if isinstance(err, SetNewer):
+        return set_deny(lang, "SET_NEWER_FORMAT", T(lang, "set_newer", s=name, v=err.shown))
+    path = err.path.replace(os.sep, "/")
+    return set_deny(lang, "UNKNOWN", T(lang, "set_unreadable", f=path), unknowns=[{"code": "SET_UNREADABLE", "text": "%s: %s" % (path, err.why)}])
+
+
+def lane_overlaps(lanes, deadline):
+    """The pairs of manifest entries of two lanes that can match a common path -> (the first SPEC_PAIRS as (lane id, entry, lane id, entry), the
+    number of pairs).  The entries are indexed by the folded literal first segment of each of their alternatives; an alternative whose first
+    segment holds * or ? or is ** goes to the wildcard group.  An entry is compared (entries_overlap, the exact glob intersection) with the
+    entries of the later lanes in its own bucket and in the wildcard group, and an entry in the wildcard group with every entry of the later
+    lanes, so lanes that own distinct directories cost near-linear work.  Raises GitFail BUDGET_EXCEEDED when `deadline` passes: the proof
+    is never partial."""
+    def tick():
+        if time.monotonic() > deadline:
+            raise GitFail("BUDGET_EXCEEDED", "the proof that the lane manifests are disjoint ran out of time")
+    buckets, wild, every = {}, [], []
+    for li, lane in enumerate(lanes):
+        for ei, e in enumerate(lane["entries"]):
+            every.append((li, ei))
+            for alt in e.alts:
+                if alt[0] == GS or _WILD.search(alt[0]):
+                    wild.append((li, ei))
+                else:
+                    buckets.setdefault(alt[0], []).append((li, ei))
+    pairs, total, n = [], 0, 0
+    for li, lane in enumerate(lanes):
+        for ei, e in enumerate(lane["entries"]):
+            tick()
+            cand = set()
+            for alt in e.alts:
+                cand.update(every if alt[0] == GS or _WILD.search(alt[0]) else buckets.get(alt[0], []) + wild)
+            for lj, ej in sorted(c for c in cand if c[0] > li):
+                n += 1
+                if not n % 16:
+                    tick()
+                other = lanes[lj]["entries"][ej]
+                if entries_overlap(e, other):
+                    total += 1
+                    if len(pairs) < SPEC_PAIRS:
+                        pairs.append((lane["id"], e.raw, lanes[lj]["id"], other.raw))
+    return pairs, total
+
+
+def overlap_denial(lang, name, pairs, total):
+    """The denial of exit 10 for lanes of the plan that overlap each other: both lane ids and both raw entries of every pair."""
+    groups = []
+    for a, ea, b, eb in pairs:
+        if groups and (groups[-1]["a"], groups[-1]["b"]) == (a, b):
+            groups[-1]["entries"].append([ea, eb])
+        else:
+            groups.append({"a": a, "b": b, "entries": [[ea, eb]]})
+    lines = [T(lang, "set_conflict", s=name)] + [T(lang, "set_overlap", a=x["a"], b=x["b"], pairs="; ".join("%s <-> %s" % tuple(p) for p in x["entries"])) for x in groups]
+    return set_deny(lang, "CONFLICT", "\n".join(lines + (["... and %d more" % (total - len(pairs))] if total > len(pairs) else [])), overlaps=groups)
+
+
+def _claim_same(old, want):
+    """Does the claim `old` hold what `want` says (entries, worktree, target, base and the set keys)?"""
+    return old["entries"] == want["entries"] and old["worktree"] == want["worktree"] and old["target"] == want["target"] and old["base"] == want["base"] and \
+        [claim_extra(old, k) for k in ("set", "lane", "role")] == [claim_extra(want, k) for k in ("set", "lane", "role")]
+
+
+def _new_dirs(paths):
+    """The directories above `paths` that do not exist yet (what a failed write must not leave behind)."""
+    new = set()
+    for p in paths:
+        d = os.path.dirname(p)
+        while d and not os.path.isdir(d) and d not in new:
+            new.add(d)
+            d = os.path.dirname(d)
+    return new
+
+
+def commit_store(writes, deletes):
+    """Change the store as one: `writes` [(path, bytes, previous bytes or None)] go in with replace_files (the record is the last one), then
+    `deletes` [(path, previous bytes)] are removed; when a deletion fails, every deletion and write already made is undone from the previous
+    bytes (a file that had none is removed) and the error is raised, so the store never holds a mixture of two versions.  NotRestored when an
+    undo fails as well."""
+    new_dirs = _new_dirs([p for p, _d, _c in writes])
+
+    def drop_dirs():
+        for d in sorted(new_dirs, key=len, reverse=True):
+            try:
+                os.rmdir(d)
+            except OSError:
+                pass
+    try:
+        replace_files([(p, d, c, None) for p, d, c in writes])  # puts its own files back when a move fails
+    except BaseException:
+        drop_dirs()
+        raise
+    gone = []
+    try:
+        for path, cur in deletes:
+            os.remove(path)
+            gone.append((path, cur))
+    except BaseException as err:
+        lost = []
+        for path, cur in reversed(gone):
+            try:
+                write_atomic(path, cur)
+            except OSError:
+                lost.append(path)
+        for path, _data, cur in reversed(writes):
+            try:
+                if cur is None:
+                    os.remove(path)
+                else:
+                    write_atomic(path, cur)
+            except OSError:
+                lost.append(path)
+        drop_dirs()
+        if lost:
+            raise NotRestored("%s; and %s could not be put back" % (err, ", ".join(lost)))
+        raise
+
+
+def _blocked_text(lang, op, blocked, branches):
+    """The refusal of exit 16: one reason per blocked lane (`branches`: lane id -> branch)."""
+    def why(b):
+        r = b["reason"]
+        if r == "UNMERGED_WORK":
+            return T(lang, "set_why_unmerged", l=b["lane"], b=branches.get(b["lane"], "?"))
+        if r == "DIRTY_WORKTREE":
+            return T(lang, "set_why_dirty", l=b["lane"])
+        if r == "SHRINK":
+            return T(lang, "set_why_shrink", l=b["lane"], files=_few(b["files"]))
+        return "%s %s" % (b["lane"], r)
+    return T(lang, "set_blocked", op=op, why="; ".join(why(b) for b in blocked))
+
+
+def _lane_checks(g, mdl, rec, snap, members, heads, wts):
+    """Step 10 of set-plan: the lanes of the record that were already started -> (errors for exit 24, blocked for exit 16, removed ids)."""
+    errs, blocked, removed = [], [], []
+    by_id = {m["id"]: (i, m) for i, m in enumerate(mdl["lanes"])}
+    for old in rec["lanes"]:
+        ev = members.get(lane_key(old["branch"]))
+        changed = sorted(ev["paths"]["committed"] | ev["paths"]["uncommitted"]) if ev else []
+        branch = real_branch(old, heads)
+        hit = by_id.get(old["id"])
+        if hit is None:  # the lane is removed: refused while it holds work
+            removed.append(old["id"])
+            if branch is not None and "refs/heads/" + branch not in snap["merged"]:
+                blocked.append({"lane": old["id"], "reason": "UNMERGED_WORK", "files": []})
+            if ev and ev["paths"]["uncommitted"]:
+                blocked.append({"lane": old["id"], "reason": "DIRTY_WORKTREE", "files": sorted(ev["paths"]["uncommitted"])[:SPEC_ERRORS]})
+            continue
+        i, new = hit
+        started = branch is not None or any(not w["bare"] and not w["prunable"] and (pkey(w["path"]) == pkey(old["worktree"]) or
+                                                                                 (w["branch"] and fold(w["branch"]) == fold(old["branch"]))) for w in wts)
+        if started and new["branch"] != old["branch"]:
+            errs.append(("lanes[%d].branch" % i, "STATE", "lane %s has a branch or a worktree: its branch %s cannot change" % (old["id"], old["branch"])))
+        if started and pkey(new["worktree"]) != pkey(old["worktree"]):
+            errs.append(("lanes[%d].worktree" % i, "STATE", "lane %s has a branch or a worktree: its worktree %s cannot change" % (old["id"], old["worktree"])))
+        outside = [p for p in changed if not any(path_hit(e, fpath(p)) for e in new["entries"])]
+        if outside:
+            blocked.append({"lane": old["id"], "reason": "SHRINK", "files": outside[:200]})
+    return errs, blocked, removed
+
+
+def plan_set(g, args, mdl):
+    """Steps 5 to 13 of set-plan (Sets design): the record, the live base, the names against the repository, one snapshot, the lanes that were
+    already started, the judgement against every other claimant, the new record and claims, and the write.  Runs inside the claim lock for a
+    registration and without it for --dry-run.  -> the result dict."""
+    lang, name, target, write = args.lang, args.set, args.target, not args.dry_run
+    claims, bad_claims = read_claims(g)
+    try:
+        rec = read_set(g, name)
+    except (SetNewer, SetUnreadable) as err:
+        return record_denial(lang, name, err)
+    if args.amend:
+        if rec is None:
+            return set_deny(lang, "SET_UNKNOWN", T(lang, "set_unknown", s=name))
+        if fold(target) != fold(rec["target"]):
+            return invalid_set(lang, [("--target", "STATE", "a target never changes: set %s lands on %s; release it and plan a new set" % (name, rec["target"]))])
+        if args.expect_revision != rec["revision"]:
+            return set_deny(lang, "STALE", T(lang, "set_stale_revision", s=name, cur=rec["revision"], exp=args.expect_revision),
+                            kind="revision", expected=args.expect_revision, current=rec["revision"])
+    elif rec is not None:
+        return set_deny(lang, "SET_EXISTS", T(lang, "set_exists", s=name, rev=rec["revision"]), current=rec["revision"])
+    heads, remotes, syms = list_refs(g)
+    why = None
+    if target not in heads:
+        why = "the target %s is not a local branch: plan against a local branch" % target
+    else:
+        try:
+            tip, _ = resolve_target(g, heads, remotes, syms, target)
+            if tip["sha"] != heads[target]:
+                why = "the local branch %s is behind or diverged from its remote-tracking copy: lanes cut from it would not descend from the sha the plan names" % target
+        except Uncertain as err:
+            why = str(err)
+    if why:
+        return unknown_set(lang, "TARGET_UNCERTAIN", why)
+    live = heads[target]
+    if live != mdl["base"]:
+        return set_deny(lang, "STALE", T(lang, "set_stale_base", t=target, live=live, base=mdl["base"]), kind="base", expected=mdl["base"], current=live)
+    own_claims = {k: d for k, d in claims.items() if rec is not None and claim_set(d) == name}  # a fresh registration has none: a remnant is refused like any claim
+    others = {k: d for k, d in claims.items() if k not in own_claims}
+    ib = integration_branch(name)
+    branches = [(m["id"], "lanes[%d].branch" % i, m["branch"]) for i, m in enumerate(mdl["lanes"])] + [("integration", "integration", ib)]
+    pool = list(heads) + [d["branch"] for d in others.values()]
+    registered = {fold(x) for x in [ln["branch"] for ln in rec["lanes"]] + [ib]} if rec is not None else set()  # a newer-format claim of one of these is the claim gate's (exit 11)
+    clashes, foreign, existing = [], [], []
+    for lid, field, b in branches:
+        reason = name_clash(b, pool)
+        if reason:
+            clashes.append((field, "BRANCH_NAME", "lane %s: %s %s" % (lid, b, reason)))
+        gated = fold(b) in registered and newer_claim(bad_claims, b) is not None
+        if fold(b) in others or (newer_claim(bad_claims, b) is not None and not gated):
+            foreign.append((field, "LANE_EXISTS", T(lang, "set_lane_exists", l=lid, b=b)))
+        elif b in heads and fold(b) not in own_claims and not gated:
+            existing.append((field, "BRANCH_EXISTS", T(lang, "set_branch_exists", l=lid, b=b)))
+    wts = worktrees(g)
+    for i, m in enumerate(mdl["lanes"]):
+        for w in wts:
+            if not (w["branch"] and fold(w["branch"]) == fold(m["branch"]) and pkey(w["path"]) == pkey(m["worktree"])) and \
+                    (inside_path(m["worktree"], w["path"]) or inside_path(w["path"], m["worktree"])):
+                clashes.append(("lanes[%d].worktree" % i, "WORKTREE", "lane %s: %s is, lies inside or contains the worktree %s of the repository" % (m["id"], m["worktree"], w["path"])))
+        if inside_path(m["worktree"], g.common):
+            clashes.append(("lanes[%d].worktree" % i, "WORKTREE", "lane %s: %s lies inside the git directory" % (m["id"], m["worktree"])))
+    if clashes:
+        return invalid_set(lang, clashes, "INVALID_MANIFEST")
+    for errors, code, key in ((foreign, "LANE_EXISTS", None), (existing, "BRANCH_EXISTS", None)):
+        if errors:
+            return set_deny(lang, code, "\n".join(t for _f, _c, t in errors), errors=[{"field": f, "code": c, "text": t} for f, c, t in errors])
+    try:
+        snap = gather(g, None, target)
+    except Uncertain as err:
+        return unknown_set(lang, "TARGET_UNCERTAIN", str(err))
+    warns = list(snap["warnings"]) + backstop_warnings(g, True)  # the lanes of the set are parallel lanes
+    member_keys = {lane_key(b) for _l, _f, b in branches} | {lane_key(ln["branch"]) for ln in (rec["lanes"] if rec else [])}
+    member_keys |= {"wt:" + pkey(w) for w in [m["worktree"] for m in mdl["lanes"]] + [ln["worktree"] for ln in (rec["lanes"] if rec else [])]}
+    members = {c["key"]: c for c in snap["claimants"] if c["key"] in member_keys}
+    snap2 = dict(snap, claimants=[c for c in snap["claimants"] if c["key"] not in member_keys])
+    removed = []
+    if rec is not None:
+        errs, blocked, removed = _lane_checks(g, mdl, rec, snap, members, heads, wts)
+        if errs:
+            return invalid_set(lang, errs)
+        if blocked:
+            return set_deny(lang, "BLOCKED", _blocked_text(lang, "set-plan --amend", blocked, {ln["id"]: ln["branch"] for ln in rec["lanes"]}), blocked=blocked)
+    offending = []
+    for m in mdl["lanes"]:
+        v = judge(snap2, others, bad_claims, m["branch"], m["entries"], None)
+        if v["decision"] == "deny":
+            offending.append((m, v))
+    if offending:
+        conflicts = any(v["conflicts"] for _m, v in offending)
+        lines = [T(lang, "set_conflict", s=name)]
+        for m, v in offending:
+            lines.append(T(lang, "set_lane_item", l=m["id"], b=m["branch"]))
+            lines += conflict_lines(lang, v)
+        newer_only = not conflicts and all(u["code"] == "CLAIM_NEWER_FORMAT" for _m, v in offending for u in v["unknowns"])
+        lines.append(T(lang, "newer_only") if newer_only else T(lang, "set_options", target=target))
+        return set_deny(lang, "CONFLICT" if conflicts else "UNKNOWN", "\n".join(lines),
+                        lanes=[{"id": m["id"], "branch": m["branch"], "code": v["code"], "conflicts": v["conflicts"], "unknowns": v["unknowns"]} for m, v in offending])
+    now = now_iso()
+    by = who(g) if write else ""
+    old_lanes = {ln["id"]: ln for ln in rec["lanes"]} if rec else {}
+    new_lanes = []
+    for m in mdl["lanes"]:
+        old = old_lanes.get(m["id"])
+        lane = dict(old) if old else {}
+        fresh = {"id": m["id"], "title": m["title"], "branch": m["branch"], "worktree": m["worktree"], "paths": list(m["paths"]),
+                 "depends_on": list(m["depends_on"]), "acceptance": m["acceptance"]}
+        if old is None:
+            lane.update(fresh, state="planned", head=None, note="", updated=now)
+        else:
+            if any(old[k] != fresh[k] for k in fresh):
+                lane["updated"] = now
+            lane.update(fresh)
+        new_lanes.append(_ordered(lane, RECORD_LANE_KEYS))
+    new = dict(rec) if rec else {}
+    new.update(v=SET_FORMAT, set=name, target=rec["target"] if rec else target, base=mdl["base"], created=rec["created"] if rec else now, title=mdl["title"],
+               sheet=mdl["sheet"], notes=list(mdl["notes"]), shared=mdl["shared"], integration=rec["integration"] if rec else None, lanes=new_lanes)
+
+    def core(r):
+        return {k: v for k, v in r.items() if k not in ("revision", "updated", "by")}
+    wants = []
+    for m in mdl["lanes"]:
+        wants.append({"branch": m["branch"], "worktree": m["worktree"], "target": new["target"], "base": mdl["base"], "override": "", "entries": list(m["paths"]),
+                      "extra": [("set", name), ("lane", m["id"])]})
+    wants.append({"branch": ib, "worktree": "", "target": new["target"], "base": mdl["base"], "override": "", "entries": [integration_entry(name)],
+                  "extra": [("set", name), ("role", "integration")]})
+    file_writes, written = [], []
+    for want in wants:
+        old = claims.get(fold(want["branch"]))
+        if old is not None and _claim_same(old, want):
+            continue
+        want["created"] = old["created"] if old else now
+        want["by"] = by
+        if old:  # the keys of the claim this guard does not know stay
+            want["extra"] += [(k, v) for k, v in old.get("extra") or [] if k not in ("set", "lane", "role")]
+        try:
+            path, data = claim_bytes(g, want["branch"], want)
+        except ClaimTooNew as err:
+            return set_deny(lang, "UNKNOWN", "[CLAIM_NEWER_FORMAT] %s" % newer_text(want["branch"], err.v),
+                            unknowns=[{"code": "CLAIM_NEWER_FORMAT", "text": newer_text(want["branch"], err.v)}])
+        except ClaimRefused as err:
+            return invalid_set(lang, [("lanes", "BRANCH_NAME", "%s: %s" % (want["branch"], err))], "INVALID_MANIFEST")
+        file_writes.append((path, data, _file_bytes(path)))
+        written.append(path)
+    wanted = {fold(w["branch"]) for w in wants}
+    deletes = []
+    for key, doc in own_claims.items():
+        if key not in wanted:
+            real = in_store(os.path.join(store(g), "claims"), doc["file"])
+            if real is None:
+                warns.append({"code": "CLAIM_NOT_REMOVED", "text": "the claim file %s lies outside the claim store and was left alone" % doc["file"]})
+            else:
+                deletes.append((doc["file"], _file_bytes(doc["file"])))
+    unchanged = rec is not None and core(new) == core(rec) and not file_writes and not deletes
+    revision = rec["revision"] if unchanged else (rec["revision"] + 1 if rec else 1)
+    if not unchanged:
+        new.update(revision=revision, updated=now, by=by)
+        rpath = set_path(g, name)
+        file_writes.append((rpath, record_bytes(new), _file_bytes(rpath)))
+        written.append(rpath)
+        if write:
+            commit_store(file_writes, deletes)
+            lanes_audit = [{"id": ln["id"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"]} for ln in new_lanes]
+            audit(g, op="set-amend" if rec else "set-plan", set=name, target=new["target"], base=mdl["base"], revision=revision, lanes=lanes_audit, integration=ib,
+                  host="cli", **({"previous_revision": rec["revision"], "removed": removed} if rec else {}))
+    lane_rows = [{"id": ln["id"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"], "state": ln["state"],
+                  "create": 'git worktree add "%s" -b %s %s' % (ln["worktree"], ln["branch"], new["target"])} for ln in new_lanes]
+    first = lane_rows[0] if lane_rows else {"create": ""}
+    if args.dry_run:
+        head = T(lang, "set_ok_check", s=name)
+    elif unchanged:
+        head = T(lang, "set_unchanged", s=name, rev=revision)
+    elif rec is not None:
+        head = T(lang, "set_ok_amend", s=name, old=rec["revision"], rev=revision, n=len(lane_rows))
+    else:
+        head = T(lang, "set_ok_plan", s=name, n=len(lane_rows), t=new["target"], base=mdl["base"], rev=revision, example=first["create"])
+    lines = [head] + [T(lang, "set_line", l=r["id"], b=r["branch"], w=r["worktree"], n=len(r["entries"])) for r in lane_rows] + [T(lang, "set_line_integration", b=ib)]
+    lines += ["(%s) %s" % (w["code"], w["text"]) for w in warns]
+    return {"decision": "allow", "code": "OK", "set": name, "target": {"name": new["target"], "sha": live}, "base": mdl["base"], "revision": revision,
+            "dry_run": args.dry_run, "unchanged": unchanged, "integration_branch": ib, "order": mdl["order"], "lanes": lane_rows,
+            "written": [] if args.dry_run or unchanged else [p.replace("\\", "/") for p in written], "warnings": warns, "message": "\n".join(lines)}
+
+
+def _file_bytes(path):
+    """The bytes of a file, or None when there is none."""
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except FileNotFoundError:
+        return None
+
+
+def revision_arg(text):
+    """argparse type of --expect-revision: 1 to 999,999,999 written without a sign or a leading zero."""
+    if not re.fullmatch(r"[1-9][0-9]{0,8}", text):
+        raise argparse.ArgumentTypeError("%r is not a revision (1 to 999999999)" % text)
+    return int(text)
+
+
+def cmd_set_plan(args):
+    g = open_repo(args.repo)
+    if g is None:
+        sys.stderr.write("not a git repository: %s\n" % args.repo)
+        return 2
+    lang, name = args.lang, args.set
+    why = set_name_problem(name)
+    if why:
+        return set_emit(args, invalid_set(lang, [("--set", "FORMAT", why)]))
+    text, spec_path, errs = read_spec(g, args.spec)
+    spec, dupes = None, 0
+    if text is not None:
+        spec, dupes, errs = parse_spec(text)
+    mdl = None
+    if not errs:
+        errs, mdl = check_spec(g, spec, dupes, name, args.target, spec_path)
+    if errs:
+        return set_emit(args, invalid_set(lang, list(errs)))
+    pairs, total = lane_overlaps(mdl["lanes"], g.deadline)
+    if pairs:
+        return set_emit(args, overlap_denial(lang, name, pairs, total))
+    if args.dry_run:
+        return set_emit(args, plan_set(g, args, mdl))
+    try:
+        with Lock(g):
+            g.deadline = time.monotonic() + BUDGET_S  # the budget of the git calls starts when the lock is held
+            v = plan_set(g, args, mdl)
+    except LockTimeout:
+        v = set_deny(lang, "LOCK_TIMEOUT", T(lang, "lock", s=os.environ.get("MAGOS_LOCK_TIMEOUT", int(LOCK_S))))
+    return set_emit(args, v)
+
+
+# ---------------------------------------------------------------- set-show, set-update, set-release
+SET_TEXT_MAX = 200  # characters of --note and --reason, and the files an OUT_OF_LANE listing carries
+_TRANSITIONS = {"planned": ("active", "blocked"), "active": ("active", "ready", "blocked"), "ready": ("active", "ready", "integrated", "blocked"),
+                "integrated": ("integrated", "blocked"), "blocked": ("active", "blocked")}  # the states --state may name, by the state the lane is in
+
+
+def record_bytes(rec):
+    """The bytes of a set record as the guard writes it: the keys of RECORD_KEYS first, indented, LF, UTF-8 without a BOM.  Every write of a
+    record (set-plan, set-update) goes through this one serialiser, so the change of one field leaves every other byte as it was."""
+    return (json.dumps(_ordered(rec, RECORD_KEYS), ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def _seg_glob(pat, name):
+    """Does the segment glob `pat` (* and ?) match the plain name?  Greedy, with one point to fall back to: O(len(pat) * len(name))."""
+    if not _WILD.search(pat):
+        return pat == name
+    p = i = 0
+    star = mark = -1
+    while i < len(name):
+        if p < len(pat) and pat[p] == "*":
+            star, mark, p = p, i, p + 1
+        elif p < len(pat) and (pat[p] == "?" or pat[p] == name[i]):
+            p += 1
+            i += 1
+        elif star >= 0:
+            mark += 1
+            i, p = mark, star + 1
+        else:
+            return False
+    while p < len(pat) and pat[p] == "*":
+        p += 1
+    return p == len(pat)
+
+
+def _path_glob(alt, path):
+    """Does the path glob `alt` (segment globs; ** is any number of segments, also none) match the plain path?  The same greedy walk over segments."""
+    p = i = 0
+    star = mark = -1
+    while i < len(path):
+        if p < len(alt) and alt[p] == GS:
+            star, mark, p = p, i, p + 1
+        elif p < len(alt) and _seg_glob(alt[p], path[i]):
+            p += 1
+            i += 1
+        elif star >= 0:
+            mark += 1
+            i, p = mark, star + 1
+        else:
+            return False
+    while p < len(alt) and alt[p] == GS:
+        p += 1
+    return p == len(alt)
+
+
+class ManifestIndex:
+    """The entries of one manifest, indexed for testing many paths.  The prefixes of the literal files and directories an entry names are
+    looked up in sets; every other entry is indexed by the folded literal first segment of each of its alternatives, and an alternative whose
+    first segment holds * or ?, or is **, goes to a group that is tested for every path (the index of lane_overlaps).  A path without a
+    wildcard character is matched by a greedy glob walk, which takes time proportional to the size of the glob and the path; a path that
+    holds * or ? is compared with the exact intersection.  hit(path) is exactly path_hit over the entries.  `deadline` (a monotonic time)
+    ends a long test with GitFail BUDGET_EXCEEDED, never with a partial answer."""
+
+    def __init__(self, raws, deadline=None):
+        self.deadline, self.literal, self.proper, self.buckets, self.wild, self.entries, self.tests = deadline, set(), set(), {}, [], [], 0
+        for raw in raws:
+            try:
+                e = parse_entry(raw)
+            except ManifestError:  # a record is validated when it is written: an entry that cannot be read here matches nothing
+                continue
+            self.entries.append(e)
+            for alt in e.alts:  # a file that an entry names as a directory: the path is a proper prefix of the entry's literal part
+                lit = alt[:next((k for k, g in enumerate(alt) if g == GS or _WILD.search(g)), len(alt))]
+                self.proper.update(lit[:k] for k in range(1, len(lit)))
+            alt = e.alts[0]
+            if len(e.alts) == 1 and alt[-1] == GS and not any(g == GS or _WILD.search(g) for g in alt[:-1]):
+                self.literal.add(alt[:-1])
+                continue
+            placed = set()
+            for a in e.alts:
+                key = None if a[0] == GS or _WILD.search(a[0]) else a[0]
+                if key not in placed:
+                    placed.add(key)
+                    (self.wild if key is None else self.buckets.setdefault(key, [])).append(e)
+
+    def tick(self):
+        self.tests += 1
+        if self.deadline and not self.tests % 256 and time.monotonic() > self.deadline:
+            raise GitFail("BUDGET_EXCEEDED", "the comparison of the files with the lane manifests ran out of time")
+
+    def hit(self, path):
+        """Does the folded path (fpath) fall under an entry of the manifest?"""
+        if not path:
+            return False
+        if any(_WILD.search(g) for g in path):  # a file name with * or ? is a glob itself: only the exact intersection compares it
+            for e in self.entries:
+                self.tick()
+                if path_hit(e, path):
+                    return True
+            return False
+        if any(path[:k] in self.literal for k in range(1, len(path) + 1)) or path in self.proper:
+            return True
+        for e in self.buckets.get(path[0], []) + self.wild:
+            self.tick()
+            if any(_path_glob(a, path) for a in e.alts):
+                return True
+        return False
+
+    def outside(self, files):
+        """The files of `files` that no entry matches, sorted."""
+        return sorted(p for p in files if not self.hit(fpath(p)))
+
+
+def lane_worktrees(wts, lane, branch):
+    """The worktrees a lane has: at its registered path or on its branch (`branch` is the real branch of the lane, or None), neither bare nor
+    prunable; the one at the registered path first."""
+    here = [w for w in wts if not w["bare"] and not w["prunable"] and (pkey(w["path"]) == pkey(lane["worktree"]) or (branch is not None and w["branch"] == branch))]
+    return sorted(here, key=lambda w: pkey(w["path"]) != pkey(lane["worktree"]))
+
+
+def claim_status(name, lane, claims, bad):
+    """`ok`, `missing` or `mismatch` for the claim of a lane of set `name`: it must carry `set=<name>` and `lane=<id>` and the record's entries
+    in order.  A claim of the branch that cannot be read, or comes from a newer MAGOS, is a mismatch (it cannot be rewritten as it is)."""
+    doc = claims.get(fold(lane["branch"]))
+    if doc is None:
+        rel = os.path.normcase(os.path.join(*lane["branch"].split("/")) + ".claim")
+        return "mismatch" if newer_claim(bad, lane["branch"]) or any(os.path.normcase(b) == rel for b in bad) else "missing"
+    return "ok" if claim_extra(doc, "set") == [name] and claim_extra(doc, "lane") == [lane["id"]] and doc["entries"] == lane["paths"] else "mismatch"
+
+
+def is_ancestor(g, a, b):
+    """Is commit `a` an ancestor of (or equal to) commit `b`?  An object that git does not know is no ancestor."""
+    return g.run("merge-base", "--is-ancestor", a, b, ok=(0, 1, 128))[0] == 0
+
+
+def set_lookup(g, args):
+    """-> (the record of the set the command names, None), or (None, the denial): exit 21 (no record), 23 (a newer format) or 11 (unreadable)."""
+    try:
+        rec = read_set(g, args.set)
+    except (SetNewer, SetUnreadable) as err:
+        return None, record_denial(args.lang, args.set, err)
+    if rec is None:
+        return None, set_deny(args.lang, "SET_UNKNOWN", T(args.lang, "set_unknown", s=args.set))
+    return rec, None
+
+
+def set_view(g, rec, drift):
+    """The view of a set record derived from the repository (Sets, set-show) -> (view, warnings).  It only reads: refs, worktrees, claims and,
+    with `drift`, the files each lane changed.  The target tip is the tip of the local branch of the record (never resolve_target, which a
+    remote-tracking copy can make uncertain)."""
+    name, base, wts = rec["set"], rec["base"], worktrees(g)
+    heads = list_refs(g)[0]
+    claims, bad = read_claims(g)
+    tip = heads.get(rec["target"])
+    view = {"target_tip": tip, "target_moved": None if tip is None else tip != base, "lanes": []}
+    warns, changed, index = [], {}, {}
+    for lane in rec["lanes"]:
+        branch = real_branch(lane, heads)
+        lane_tip = heads[branch] if branch else None
+        here = lane_worktrees(wts, lane, branch)
+        clean, ops = None, []
+        if here:
+            notes, unreadable = operation(here[0]["path"])
+            ops = notes + (["unreadable"] if unreadable else [])
+            clean = not dirty_paths(g, here[0]["path"])
+        ahead = g.run("rev-list", "--count", "%s..%s" % (base, lane_tip), ok=(0, 128)) if lane_tip else None
+        row = {"id": lane["id"], "branch_exists": branch is not None, "tip": lane_tip,
+               "ahead": int(ahead[1].decode().strip()) if ahead and ahead[0] == 0 else None,
+               "descends_from_base": is_ancestor(g, base, lane_tip) if lane_tip else None, "worktree_present": bool(here), "worktree_clean": clean,
+               "operation": ops, "state": lane["state"], "head": lane["head"], "claim": claim_status(name, lane, claims, bad)}
+        if drift:
+            index[lane["id"]] = ManifestIndex(lane["paths"], g.deadline)
+            files = None
+            if lane_tip:
+                paths = committed_paths(g, tip or base, lane_tip)
+                if paths is None:  # no common history: a merge would need --allow-unrelated-histories
+                    warns.append({"code": "UNRELATED_HISTORY", "text": "lane %s: %s shares no history with %s" % (lane["id"], branch, rec["target"])})
+                else:
+                    files = sorted(paths)
+            changed[lane["id"]] = files
+            row.update(changed=files, out_of_lane=index[lane["id"]].outside(files) if files else [],
+                       moved_since_ready=None if lane_tip is None else lane["state"] == "ready" and lane_tip != lane["head"])
+        view["lanes"].append(row)
+    if drift:
+        by_file = {}
+        for lane in rec["lanes"]:
+            for p in changed[lane["id"]] or ():
+                by_file.setdefault(p, []).append(lane["id"])
+        overlap = []
+        if tip is not None and tip != base:
+            for n, p in enumerate(sorted(committed_paths(g, base, tip) or ()), 1):
+                if not n % 256 and time.monotonic() > g.deadline:
+                    raise GitFail("BUDGET_EXCEEDED", "the comparison of the files with the lane manifests ran out of time")
+                ids = [ln["id"] for ln in rec["lanes"] if index[ln["id"]].hit(fpath(p))]
+                if ids:
+                    overlap.append({"path": p, "lanes": ids})
+        view["drift"] = {"shared_changes": [{"path": p, "lanes": ids} for p, ids in sorted(by_file.items()) if len(ids) > 1], "target_overlap": overlap,
+                         "stale": None if tip is None else bool(tip != base and overlap),
+                         "merge_order": merge_order([ln["id"] for ln in rec["lanes"]], {ln["id"]: ln["depends_on"] for ln in rec["lanes"]})}
+    return view, warns
+
+
+def show_text(lang, rec, view):
+    """The text view of set-show: the header, the stored sheet verbatim, one line per lane and, with --drift, the drift lines that are not empty."""
+    def short(sha):
+        return sha[:7] if sha else "-"
+    lines = [T(lang, "show_head", s=rec["set"], t=rec["target"], base=short(rec["base"]), rev=rec["revision"], i=rec["integration"] or "-"), rec["sheet"].rstrip("\n")]
+    for lane, row in zip(rec["lanes"], view["lanes"]):
+        if "unreadable" in row["operation"]:
+            wt = T(lang, "show_wt_unreadable")
+        elif row["operation"]:
+            wt = T(lang, "show_wt_op", op="/".join(row["operation"]))
+        else:
+            wt = T(lang, "show_wt_absent") if not row["worktree_present"] else T(lang, "show_wt_clean" if row["worktree_clean"] else "show_wt_dirty")
+        lines.append(T(lang, "show_lane", box="[x]" if lane["state"] in ("ready", "integrated") else "[ ]", l=lane["id"], st=lane["state"], head=short(lane["head"]),
+                       tip=short(row["tip"]), n="-" if row["ahead"] is None else row["ahead"], wt=wt, b=lane["branch"]))
+    drift = view.get("drift")
+    if drift:
+        for row in view["lanes"]:
+            if row["out_of_lane"]:
+                lines.append(T(lang, "show_out", l=row["id"], files=_few(row["out_of_lane"])))
+        if drift["shared_changes"]:
+            lines.append(T(lang, "show_shared", files=_few(["%s [%s]" % (x["path"], ",".join(x["lanes"])) for x in drift["shared_changes"]])))
+        if drift["target_overlap"]:
+            lines.append(T(lang, "show_moved", base=short(rec["base"]), tip=short(view["target_tip"]),
+                           files=_few(["%s [%s]" % (x["path"], ",".join(x["lanes"])) for x in drift["target_overlap"]])))
+        moved = [row["id"] for row in view["lanes"] if row["moved_since_ready"]]
+        if moved:
+            lines.append(T(lang, "show_moved_ready", lanes=", ".join(moved)))
+        if drift["merge_order"]:
+            lines.append(T(lang, "show_order", order=" -> ".join(drift["merge_order"])))
+    return "\n".join(lines)
+
+
+def cmd_set_show(args):
+    g = open_repo(args.repo)
+    if g is None:
+        sys.stderr.write("not a git repository: %s\n" % args.repo)
+        return 2
+    why = set_name_problem(args.set)
+    if why:
+        return set_emit(args, invalid_set(args.lang, [("--set", "FORMAT", why)]))
+    rec, denial = set_lookup(g, args)  # no lock, and nothing is created
+    if denial:
+        return set_emit(args, denial)
+    view, warns = set_view(g, rec, args.drift)
+    return set_emit(args, {"decision": "allow", "code": "OK", "record": rec, "view": view, "warnings": warns, "message": show_text(args.lang, rec, view)})
+
+
+def refuse16(lang, op, items):
+    """The denial of exit 16 for `op`: items [(lane, reason, the text of the reason)]; the JSON carries only lane and reason."""
+    return set_deny(lang, "BLOCKED", T(lang, "set_blocked", op=op, why="; ".join(why for _l, _r, why in items)),
+                    blocked=[{"lane": lane, "reason": reason} for lane, reason, _w in items])
+
+
+def update_options(args):
+    """The errors of the option values of set-update that need no repository (exit 24), each (field, code, text)."""
+    errs, to = [], args.state
+    why = set_name_problem(args.set)
+    if why:
+        errs.append(("--set", "FORMAT", why))
+    if args.head is not None and not _BASE.fullmatch(args.head):
+        errs.append(("--head", "FORMAT", "a full object name: 40 or 64 hexadecimal digits"))
+    elif args.head is not None and to not in ("ready", "integrated"):
+        errs.append(("--head", "STATE", "--head goes with --state ready or integrated, not %s" % to))
+    elif args.head is None and to in ("ready", "integrated"):
+        errs.append(("--head", "MISSING", "--state %s needs --head <the tip of the lane branch>" % to))
+    if args.note is not None:
+        if len(args.note) > SET_TEXT_MAX:
+            errs.append(("--note", "RANGE", "at most %d characters, not %d" % (SET_TEXT_MAX, len(args.note))))
+        elif _SURROGATE.search(args.note):
+            errs.append(("--note", "ENCODING", "holds a lone surrogate"))
+        elif _CTL.search(args.note):
+            errs.append(("--note", "FORMAT", "holds a control character"))
+    if args.integration is not None:
+        if to != "integrated":
+            errs.append(("--integration", "STATE", "--integration goes with --state integrated, not %s" % to))
+        elif args.integration != integration_branch(args.set):
+            errs.append(("--integration", "FORMAT", "the integration branch of set %s is %s" % (args.set, integration_branch(args.set))))
+    return errs
+
+
+def update_checks(g, args, rec, lane, heads, wts):
+    """The conditions of --state ready and of --state integrated that the repository decides -> the denial (exit 16 or 22), or None."""
+    lang, lid, head = args.lang, lane["id"], args.head.lower()
+    branch = real_branch(lane, heads)
+    if args.state == "ready":
+        if branch is None:
+            return refuse16(lang, "set-update", [(lid, "BRANCH_MISSING", T(lang, "set_why_missing", l=lid, b=lane["branch"]))])
+        tip = heads[branch]
+        if head != tip:
+            return refuse16(lang, "set-update", [(lid, "HEAD_MISMATCH", T(lang, "set_why_head_tip", head=args.head, b=branch, tip=tip))])
+        items = []
+        for w in lane_worktrees(wts, lane, branch):  # uncommitted work is not in the recorded head: a merge of it would leave that work behind
+            notes, unreadable = operation(w["path"])
+            if notes or unreadable:
+                items.append((lid, "OPERATION_IN_PROGRESS", T(lang, "set_why_operation", l=lid, op="/".join(notes + (["unreadable"] if unreadable else [])))))
+            if dirty_paths(g, w["path"]):
+                items.append((lid, "DIRTY_WORKTREE", T(lang, "set_why_dirty", l=lid)))
+        if items:
+            return refuse16(lang, "set-update", items)
+        paths = committed_paths(g, heads.get(rec["target"]) or rec["base"], tip)  # the plan's base stands in for a target that is gone
+        if paths is None:
+            return refuse16(lang, "set-update", [(lid, "NO_MERGE_BASE", T(lang, "set_why_base", l=lid))])
+        outside = ManifestIndex(lane["paths"], g.deadline).outside(paths)
+        if outside:
+            return set_deny(lang, "OUT_OF_LANE", T(lang, "set_out_of_lane", l=lid, files=_few(outside, 20)), lane=lid, files=outside[:SET_TEXT_MAX],
+                            truncated=len(outside) > SET_TEXT_MAX)
+        return None
+    integration = integration_branch(rec["set"])
+    if head != (lane["head"] or ""):
+        return refuse16(lang, "set-update", [(lid, "HEAD_MISMATCH", T(lang, "set_why_head_recorded", head=args.head, l=lid, rec=lane["head"] or "-"))])
+    if integration not in heads:
+        return refuse16(lang, "set-update", [(lid, "BRANCH_MISSING", T(lang, "set_why_integration", b=integration))])
+    if not any(is_ancestor(g, head, heads[b]) for b in (rec["target"], integration) if b in heads):
+        return refuse16(lang, "set-update", [(lid, "NOT_MERGED", T(lang, "set_why_ancestor", head=args.head, t=rec["target"]))])
+    return None
+
+
+def update_set(g, args):
+    """set-update inside the claim lock -> the result dict: the record is read, its revision compared, the lane and the transition checked, the
+    conditions of the new state decided by the repository, and the record written whole (the one write)."""
+    lang, name = args.lang, args.set
+    rec, denial = set_lookup(g, args)
+    if denial:
+        return denial
+    if args.expect_revision != rec["revision"]:
+        return set_deny(lang, "STALE", T(lang, "set_stale_revision", s=name, cur=rec["revision"], exp=args.expect_revision), kind="revision",
+                        expected=args.expect_revision, current=rec["revision"])
+    lane = next((x for x in rec["lanes"] if x["id"] == args.lane), None)
+    if lane is None:
+        return invalid_set(lang, [("--lane", "UNKNOWN_LANE", "set %s has the lanes %s" % (name, ", ".join(x["id"] for x in rec["lanes"])))])
+    to = args.state
+    if to not in _TRANSITIONS[lane["state"]]:
+        return invalid_set(lang, [("--state", "STATE", "lane %s is %s: it cannot become %s (from %s: %s)" % (lane["id"], lane["state"], to, lane["state"],
+                                                                                                          ", ".join(_TRANSITIONS[lane["state"]])))])
+    if to == "integrated":
+        if rec["integration"] is None and args.integration is None:
+            return invalid_set(lang, [("--integration", "MISSING", "the record names no integration branch yet: pass --integration %s" % integration_branch(name))])
+        if rec["integration"] is not None and args.integration not in (None, rec["integration"]):
+            return invalid_set(lang, [("--integration", "STATE", "the record names the integration branch %s" % rec["integration"])])
+    if to in ("ready", "integrated"):
+        denial = update_checks(g, args, rec, lane, list_refs(g)[0], worktrees(g))
+        if denial:
+            return denial
+    now = now_iso()
+    new_lane = dict(lane, state=to, updated=now, note=lane["note"] if args.note is None else args.note,
+                    head=args.head.lower() if to in ("ready", "integrated") else lane["head"])
+    new = dict(rec, revision=rec["revision"] + 1, updated=now, by=who(g), integration=rec["integration"] if to != "integrated" else args.integration or rec["integration"],
+               lanes=[_ordered(new_lane, RECORD_LANE_KEYS) if x is lane else x for x in rec["lanes"]])
+    path = set_path(g, name)
+    commit_store([(path, record_bytes(new), _file_bytes(path))], [])
+    audit(g, op="set-update", set=name, lane=lane["id"], state=to, head=new_lane["head"], note=new_lane["note"], integration=new["integration"], revision=new["revision"],
+          host="cli")
+    return {"decision": "allow", "code": "OK", "set": name, "lane": lane["id"], "state": to, "head": new_lane["head"], "note": new_lane["note"],
+            "integration": new["integration"], "revision": new["revision"], "warnings": [],
+            "message": T(lang, "set_ok_update", s=name, l=lane["id"], st=to, rev=new["revision"])}
+
+
+def cmd_set_update(args):
+    g = open_repo(args.repo)
+    if g is None:
+        sys.stderr.write("not a git repository: %s\n" % args.repo)
+        return 2
+    errs = update_options(args)  # before the lock, so that an invalid call creates nothing
+    if errs:
+        return set_emit(args, invalid_set(args.lang, errs))
+    try:
+        with Lock(g):
+            g.deadline = time.monotonic() + BUDGET_S  # the budget of the git calls starts when the lock is held
+            v = update_set(g, args)
+    except LockTimeout:
+        v = set_deny(args.lang, "LOCK_TIMEOUT", T(args.lang, "lock", s=os.environ.get("MAGOS_LOCK_TIMEOUT", int(LOCK_S))))
+    return set_emit(args, v)
+
+
+def worktree_dirty(g, wt):
+    """Has the worktree uncommitted changes?  A status that git cannot produce counts as dirty; a git that cannot run at all raises."""
+    rc, out = g.run("status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignored=no", cwd=wt, ok=None)
+    return rc != 0 or bool(parse_status(out))
+
+
+def release_set(g, args):
+    """set-release inside the claim lock -> the result dict.  The predicate is the one `release` uses for a lane, against the target of the
+    record: unmerged work (its branch exists and is not merged into the tip of the local target branch; no branch counts as merged when that
+    branch is gone) and a dirty worktree; without --abandon every lane must also be integrated.  Nothing is written while any lane blocks."""
+    lang, name = args.lang, args.set
+    rec, denial = set_lookup(g, args)
+    if denial:
+        return denial
+    claims, bad = read_claims(g)
+    heads, wts = list_refs(g)[0], worktrees(g)
+    tip = heads.get(rec["target"])
+    merged = {x for x in g.text("for-each-ref", "--merged=" + tip, "--format=%(refname)", "refs/heads").split("\n") if x} if tip else set()
+    items, root = [], os.path.join(store(g), "claims")
+    for lane in rec["lanes"]:
+        lid, branch = lane["id"], real_branch(lane, heads)
+        if not args.abandon and lane["state"] != "integrated":
+            items.append((lid, "NOT_INTEGRATED", T(lang, "set_why_state", l=lid, st=lane["state"])))
+        if branch is not None and "refs/heads/" + branch not in merged:
+            items.append((lid, "UNMERGED_WORK", T(lang, "set_why_unmerged", l=lid, b=branch)))
+        if any(worktree_dirty(g, w["path"]) for w in lane_worktrees(wts, lane, branch)):
+            items.append((lid, "DIRTY_WORKTREE", T(lang, "set_why_dirty", l=lid)))
+    for lid, branch in [(x["id"], x["branch"]) for x in rec["lanes"]] + [("integration", integration_branch(name))]:
+        rel = os.path.normcase(os.path.join(*branch.split("/")) + ".claim")
+        if newer_claim(bad, branch) or any(os.path.normcase(b) == rel for b in bad):  # it cannot be read, so it cannot be known to be the set's own
+            items.append((lid, "CLAIM_UNUSABLE", T(lang, "set_why_claim", l=lid)))
+    if items:
+        return refuse16(lang, "set-release", items)
+    warns, deletes, released = [], [], []
+    for branch in [x["branch"] for x in rec["lanes"]] + [integration_branch(name)]:
+        doc = claims.get(fold(branch))
+        if doc is None:
+            continue
+        path = in_store(root, claim_path(g, doc["branch"]))
+        if claim_set(doc) != name or fold(doc["branch"]) != fold(branch) or path is None or not os.path.isfile(path) or not os.path.samefile(path, doc["file"]):
+            warns.append({"code": "CLAIM_NOT_REMOVED", "text": "the claim of %s does not belong to set %s (or does not lie at its own path) and was left in place" % (branch, name)})
+            continue
+        deletes.append((path, _file_bytes(path)))
+        released.append(doc["branch"])
+    record = set_path(g, name)
+    commit_store([], deletes + [(record, _file_bytes(record))])  # the claims first, the record last: one transaction
+    audit(g, op="set-release", set=name, revision=rec["revision"], reason=args.reason, abandon=args.abandon, lanes=[x["id"] for x in rec["lanes"]], claims=released, host="cli")
+    lines = [T(lang, "set_released", s=name, n=len(released))] + ["(%s) %s" % (w["code"], w["text"]) for w in warns]
+    return {"decision": "allow", "code": "OK", "set": name, "abandoned": args.abandon, "released": released, "warnings": warns, "message": "\n".join(lines)}
+
+
+def cmd_set_release(args):
+    g = open_repo(args.repo)
+    if g is None:
+        sys.stderr.write("not a git repository: %s\n" % args.repo)
+        return 2
+    errs = [("--set", "FORMAT", why) for why in [set_name_problem(args.set)] if why]
+    if len(args.reason) > SET_TEXT_MAX:
+        errs.append(("--reason", "RANGE", "at most %d characters, not %d" % (SET_TEXT_MAX, len(args.reason))))
+    if errs:
+        return set_emit(args, invalid_set(args.lang, errs))
+    try:
+        with Lock(g):
+            g.deadline = time.monotonic() + BUDGET_S  # the budget of the git calls starts when the lock is held
+            v = release_set(g, args)
+    except LockTimeout:
+        v = set_deny(args.lang, "LOCK_TIMEOUT", T(args.lang, "lock", s=os.environ.get("MAGOS_LOCK_TIMEOUT", int(LOCK_S))))
+    return set_emit(args, v)
 
 
 # ---------------------------------------------------------------- host hooks (L1)
@@ -3547,6 +5148,9 @@ def check_creation(g, name, cr, lang, mode):
         return deny("NO_MANIFEST")
     if cr.get("path") and doc["worktree"] and pkey(cr["path"]) != pkey(doc["worktree"]):
         return deny("UNPLANNABLE", message=T(lang, "path_mismatch", b=name, want=doc["worktree"], got=cr["path"]))
+    if is_integration_claim(doc):  # the whole of a set: judged for its claim and its name only, so no manifest, commit or unknown of the judgement denies it
+        reason = check_name(g, name, {k: d for k, d in claims.items() if k != fold(name)}, True)
+        return deny("INVALID_MANIFEST", message=T(lang, "invalid", errors="  [BRANCH_NAME] %s: %s" % (name, reason))) if reason else None
     try:
         entries = [parse_entry(r) for r in doc["entries"]]
     except ManifestError:
@@ -4321,6 +5925,44 @@ def selftest_probe(g):
     return rc, err.decode("utf-8", "replace").strip()
 
 
+def set_report(g, claims, bad_claims, heads):
+    """The sets part of doctor: the `sets:` line (printed when sets/ holds a file or a claim carries set=) and one line per problem -> whether
+    there was a problem: a lane claim that is missing or differs from the record, an active or ready lane whose branch is gone, a target branch
+    that is gone, claims of a set that has no record file (an interrupted registration), and a record that is newer or unreadable."""
+    recs, bad = read_sets(g)
+    try:
+        listed = [f for f in os.listdir(sets_dir(g)) if os.path.isfile(os.path.join(sets_dir(g), f))]
+    except OSError:
+        listed = []
+    carriers = [d for d in claims.values() if claim_set(d) is not None]
+    if not listed and not carriers:
+        return False
+    too_new = [b for b in bad if b.code == "SET_NEWER_FORMAT"]
+    out_text("sets: %d, unreadable: %d, newer-format: %d" % (len(recs), len(bad) - len(too_new), len(too_new)))
+    lines = []
+    for name, rec in sorted(recs.items()):
+        for lane in rec["lanes"]:
+            status = claim_status(name, lane, claims, bad_claims)
+            if status != "ok":
+                lines.append("set %s lane %s: claim %s" % (name, lane["id"], "missing" if status == "missing" else "differs"))
+            if lane["state"] in ("active", "ready") and real_branch(lane, heads) is None:
+                lines.append("set %s lane %s: branch vanished" % (name, lane["id"]))
+        if rec["target"] not in heads:
+            lines.append("set %s: the target branch %s no longer exists" % (name, rec["target"]))
+    ghosts = {}
+    for d in carriers:
+        if claim_set_record(g, d) is None:  # no record file: a record that exists but cannot be read has its own line below
+            ghosts.setdefault(claim_set(d), []).append(d["branch"])
+    for name, branches in sorted(ghosts.items()):
+        lines.append("claims of set %s without a record: %s" % (name, ", ".join(sorted(branches))))
+    for b in too_new:
+        lines.append("set record sets/%s was written by a newer MAGOS (v=%s): upgrade this guard (doctor shows its version, install refreshes the copy)" % (b, b.v))
+    lines += ["unreadable set record sets/%s" % b for b in bad if b.code == "SET_UNREADABLE"]
+    for line in lines:
+        out_text("  " + line)
+    return bool(lines)
+
+
 def cmd_doctor(args):
     me = os.path.abspath(__file__)
     out_text("guard %s (%s) at %s" % (GUARD_VERSION, sha256_of(read_bytes(me) or b"")[:12], me.replace("\\", "/")))
@@ -4351,7 +5993,8 @@ def cmd_doctor(args):
     out_text("repository: %s (mode %s); claims: %d, unreadable: %d, newer-format: %d" % (g.common, mode, len(claims), len(bad) - len(too_new), len(too_new)))
     for b in bad:
         out_text("  %s" % (b.text if b.code == "CLAIM_NEWER_FORMAT" else "unreadable claims/%s" % b.replace(os.sep, "/")))
-    orphans = [d["branch"] for d in claims.values() if d["branch"] not in heads and not d["worktree"]]
+    set_problems = set_report(g, claims, bad, heads)
+    orphans = [d["branch"] for d in claims.values() if d["branch"] not in heads and not d["worktree"] and not (is_integration_claim(d) and claim_set_record(g, d))]
     out_text("claims without a branch or planned worktree: %s" % (", ".join(orphans) or "none"))
     refused = [d["branch"] for d in claims.values() if alias_problem(d["branch"])]
     if refused:  # they keep allowing their branches; plan refuses the names, so the lanes can only be released and planned again
@@ -4367,7 +6010,7 @@ def cmd_doctor(args):
     bypassed = mode == "armed" and g.run("config", "--get", "core.hooksPath", ok=(0, 1))[0] == 0
     if bypassed:
         out_text("core.hooksPath is set: git no longer runs the backstop")
-    problems = problems or bool(bad) or len(dirs) > 1 or (mode == "armed" and not same) or bypassed
+    problems = problems or bool(bad) or set_problems or len(dirs) > 1 or (mode == "armed" and not same) or bypassed
     recorded = os.path.join(store(g), "guard")
     if os.path.exists(os.path.join(store(g), "ARMED")) and os.path.isfile(recorded):
         cmd = read_text(recorded).strip()
@@ -4459,8 +6102,32 @@ def main(argv=None):
     p.add_argument("--allow-downgrade", action="store_true")
     sub.add_parser("doctor", parents=[common]).add_argument("--home")
     sub.add_parser("version", parents=[common])
+    p = sub.add_parser("set-plan", parents=[common])
+    p.add_argument("--set", required=True)
+    p.add_argument("--target", required=True)
+    p.add_argument("--spec", required=True)
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--amend", action="store_true")
+    p.add_argument("--expect-revision", type=revision_arg)
+    p = sub.add_parser("set-show", parents=[common])
+    p.add_argument("--set", required=True)
+    p.add_argument("--drift", action="store_true")
+    p = sub.add_parser("set-update", parents=[common])
+    p.add_argument("--set", required=True)
+    p.add_argument("--expect-revision", type=revision_arg, required=True)
+    p.add_argument("--lane", required=True)
+    p.add_argument("--state", required=True, choices=("active", "ready", "integrated", "blocked"))
+    p.add_argument("--head")
+    p.add_argument("--note")
+    p.add_argument("--integration")
+    p = sub.add_parser("set-release", parents=[common])
+    p.add_argument("--set", required=True)
+    p.add_argument("--reason", default="")
+    p.add_argument("--abandon", action="store_true")
     try:
         args = ap.parse_args(argv)
+        if args.cmd == "set-plan" and args.amend != (args.expect_revision is not None):
+            ap.error("set-plan: --amend and --expect-revision go together")
     except SystemExit as err:
         if any(a == "hook" for a in (sys.argv[1:] if argv is None else argv)) and err.code:
             return 1  # a usage error is a failure (the launcher maps it), never a deny
@@ -4469,7 +6136,8 @@ def main(argv=None):
         if args.cmd in ("plan", "check"):
             return cmd_plan(args, args.cmd == "plan")
         return {"list": cmd_list, "release": cmd_release, "override": cmd_override, "hook": cmd_hook, "arm": cmd_arm, "disarm": cmd_disarm,
-                "install": cmd_install, "doctor": cmd_doctor, "version": cmd_version}[args.cmd](args)
+                "install": cmd_install, "doctor": cmd_doctor, "version": cmd_version, "set-plan": cmd_set_plan, "set-show": cmd_set_show,
+                "set-update": cmd_set_update, "set-release": cmd_set_release}[args.cmd](args)
     except GitFail as err:
         return fail(args, err.code, str(err), "MAGOS guard: %s: %s" % (err.code, err))
     except BaseException as err:  # never exit 1 silently: every failure is a deny-class exit
