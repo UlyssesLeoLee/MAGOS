@@ -8,13 +8,19 @@
   "also": [
     "lanes whose manifests overlap",
     "shared file owned by one lane",
-    "spec file and sheet of at most 4096 characters",
+    "spec file and sheet of at most 8192 characters",
     "record revision and base",
     "--expect-revision <n>",
     "target moved since base",
     "guard exit codes 19, 20, 21, 22, 23 and 24",
     "claim of the integration branch",
     "plain plan --amend and release of a claim of a set",
-    "guard older than 1.0.4"
+    "guard older than 1.0.4",
+    "requirements, serves and outcome of every lane",
+    "Requirements table and Lanes table",
+    "lane id as a topic slug",
+    "ordinal and generic lane ids",
+    "branch agent/<set>/<id> and worktree name ending -<set>-<id>",
+    "requirement that nobody serves"
   ]
 }

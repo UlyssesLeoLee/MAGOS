@@ -204,7 +204,7 @@ The core principle:
 | `/GitCleanup` | Removes finished branches and worktrees | Not by default; only with `--apply` |
 | `/GitConverge` | Folds every branch into one and keeps only `main` and it | Not by default; only with `--apply` |
 | `/GitSweep` | Runs `/GitConverge`, then also deletes merged remote branches | Not by default; only with `--apply` (includes remote deletion); `<branch>` is pushed once only when you also add `--push` |
-| `/GitPlan` | Before any sub-agent starts, investigates Git and the code, divides the task into lanes that own different files and prints a checklist; afterwards merges the lanes into one whole in dependency order | Not by default; only with `--apply` (or the closing `--release`): registers the plan, with `--create` also creates the lane branches and worktrees, `--converge --apply` merges, `--land` adds one fast-forward; it never pushes and never deletes a branch or a worktree |
+| `/GitPlan` | Before any sub-agent starts, investigates Git and the code, writes the requirements, divides the task into lanes that own different files and prints the checklist as a requirements table and a lanes table; afterwards merges the lanes into one whole in dependency order and supplements the checklist with what each lane changed | Not by default; only with `--apply` (or the closing `--release`): registers the plan, with `--create` also creates the lane branches and worktrees, `--converge --apply` merges, `--land` adds one fast-forward; it never pushes and never deletes a branch or a worktree |
 
 Every command accepts `--lang <language>` (reply language, Chinese by default) and `--help` (instructions only); the three read-only commands also accept `--remote` (`/GitSweep`'s `--remote <name>` is a different option; see its section). Their details are in "Three arguments that work everywhere" above, so each command below describes only the arguments **it alone** has.
 
@@ -735,19 +735,20 @@ It never pushes commits or tags (the one exception is the fast-forward push of `
 
 ### `/GitPlan <set>` — plan the lanes, then converge them
 
-**Before any sub-agent starts, investigate Git and the code, divide one task into lanes that own different files, and give you a short checklist; when the work is done, merge the lanes back into one whole in dependency order.**
+**Before any sub-agent starts, investigate Git and the code, write down the requirements of the task, divide it into lanes that own different files, and give you a short checklist in two tables: which requirement is served by which lane, and which outcome each lane delivers; when the work is done, merge the lanes back into one whole in dependency order and supplement that first checklist with what each lane changed.**
 
-Use it when: you want several AIs to work on one task in parallel, you want "who changes which files" settled first, and you want a checklist to merge against at the end.
+Use it when: you want several AIs to work on one task in parallel, you want "what is to be achieved, who does it, who changes which files" settled first, and you want a checklist to merge against at the end, with a summary of the changes of every lane once the merge is done.
 
-The checklist does two jobs. Before work starts it is **the plan you review**; after the work is done it is **the TODO reference for the merge**: `--status` and `--converge` print it again from the record, tick the progress of every lane and list what remains. It only previews by default; only `--apply` (and the closing `--release`) writes, and the writes go only through the lane guard's `set-plan`, `set-update` and `set-release` (`magos_guard.py`). It never pushes, never force-pushes, never deletes a branch or a worktree, and never touches `main`.
+The checklist does three jobs. Before work starts it is **the plan you review**; when the work is done and merged it is **the TODO reference for the merge**: `--status` and `--converge` print the two tables again from the record, show the state of every lane and list what remains; once lanes are merged it is **the summary of the result**: every row and column of the plan is kept and the changes of each lane are added. It only previews by default; only `--apply` (and the closing `--release`) writes, and the writes go only through the lane guard's `set-plan`, `set-update` and `set-release` (`magos_guard.py`). It never pushes, never force-pushes, never deletes a branch or a worktree, and never touches `main`.
 
 A few words first:
 
 | Word | In plain words |
 |---|---|
-| set | The name of one task division, for example `feat-x`: `[a-z0-9][a-z0-9-]{0,23}`, case-sensitive, and not a Windows device name (`con`, `nul`, `com1`, ...). The plan record and the claims of its lanes carry this name |
-| lane | The branch and worktree of one sub-agent, plus a list of the files it may change (its manifest). The manifests of the lanes never overlap, so the lanes cannot overwrite each other |
-| sheet | The checklist, at most 4096 characters: one line per lane (branch, the files it owns, dependencies, acceptance), then one merge line, the owner of each shared file and at most 5 risks |
+| set | The name of one task division, for example `sweep-readiness`: `[a-z0-9][a-z0-9-]{0,23}`, case-sensitive, and not a Windows device name (`con`, `nul`, `com1`, ...). The plan record and the claims of its lanes carry this name, and it is part of the name of every lane's branch and worktree |
+| requirement | One result the task must achieve, written as one sentence and numbered `R1`, `R2`, ... Every requirement is served by at least one lane, and every lane serves at least one requirement; a requirement that no lane serves is refused by the guard (exit code 24) |
+| lane | The branch and worktree of one sub-agent, plus a list of the files it may change (its manifest) and the outcome it delivers. The manifests of the lanes never overlap, so the lanes cannot overwrite each other. The id, the branch and the worktree of a lane are named after the topic of its change (see "Naming rules" below) |
+| sheet | The checklist, at most 8192 characters: a requirements table (the requirement, the lanes that serve it, the planned outcome) and a lanes table (branch, worktree, the files it owns, dependencies, acceptance), then one merge line, the owner of each shared file and at most 5 risks |
 | integration branch | `agent/<set>/integration`, where the whole lands after the lanes are merged |
 | revision and base | The version number of the plan and the target-branch commit it was made against; they are how a stale plan is detected (see "The optimistic lock" below) |
 
@@ -756,69 +757,90 @@ A few words first:
 **Step 1: preview first (nothing is changed)**
 
 ```text
-/GitPlan feat-x --into develop
+/GitPlan sweep-readiness --into develop
 ```
 
-It investigates Git (branches, worktrees, open lane claims, the tip of the target branch; remote freshness only as the local records show it, with no network) and the code (layout, entry points, build and test commands, shared files, the files that change most, imports across boundaries), divides the task, and proves with `magos_guard.py set-plan --dry-run` that the file lists of the lanes are pairwise disjoint. It ends with the checklist, a lane table and the verdict `READY` or `BLOCKED`, and every gate that fails comes with its remedy. The preview's only write is a scratch spec file outside every worktree. The checklist looks like this:
+It investigates Git (branches, worktrees, open lane claims, the tip of the target branch; remote freshness only as the local records show it, with no network) and the code (layout, entry points, build and test commands, shared files, the files that change most, imports across boundaries), writes the requirements of the task (`R1`, `R2`, ...), divides the task, and proves with `magos_guard.py set-plan --dry-run` that the file lists of the lanes are pairwise disjoint and that every requirement is served by a lane. It ends with the requirements table, the lanes table and the verdict `READY` or `BLOCKED`, and every gate that fails comes with its remedy; the report also has a "Naming" part that says which requirement and which files each lane's name comes from. The preview's only write is a scratch spec file outside every worktree. The tables come from the spec the guard proved, and the checklist looks like this:
 
 ```text
-# Plan feat-x -> develop  rev 1  base 3fa9c21
-- [ ] L1 data layer | branch agent/feat-x/l1 | owns src/db/, tests/db/ | needs - | accept migrations roll back
-- [ ] L2 API | branch agent/feat-x/l2 | owns src/api/ | needs L1 | accept API tests pass
-- [ ] merge L1 -> L2 into agent/feat-x/integration; run pytest -q; land on develop
-Shared: pyproject.toml -> L1 ; post-merge: update CHANGELOG.md -> merge step
-Risks: src/api imports types from src/db, so L2 depends on L1
+# Plan sweep-readiness -> develop  rev 1  base 3fa9c21
+## Requirements
+| Req | Requirement | Lane(s) | Planned outcome |
+|---|---|---|---|
+| R1 | Claims are read from one store | claim-store | claim-store: src/claims reads every claim |
+| R2 | The readiness verdict of a sweep is documented | sweep-docs | sweep-docs: docs/sweep.md explains the verdict |
+| R3 | The sweep tests and the documented examples still pass | claim-store, sweep-docs | claim-store: src/claims reads every claim; sweep-docs: docs/sweep.md explains the verdict |
+## Lanes
+| Lane | Branch | Worktree | Owns | Needs | Acceptance |
+|---|---|---|---|---|---|
+| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims passes |
+| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | the examples in docs/sweep.md run |
+- [ ] merge claim-store -> sweep-docs into agent/sweep-readiness/integration; run pytest -q; land on develop
+Shared: pyproject.toml -> claim-store ; post-merge: update CHANGELOG.md -> merge step
+Risks: docs/sweep.md quotes the interface of src/claims, so sweep-docs needs claim-store
 ```
 
 **Step 2: register**
 
 ```text
-/GitPlan feat-x --into develop --apply
-/GitPlan feat-x --into develop --apply --create
+/GitPlan sweep-readiness --into develop --apply
+/GitPlan sweep-readiness --into develop --apply --create
 ```
 
-What is registered is the spec the preview just showed, byte for byte; when there was no preview, when you asked for a change after it, or when the target branch has moved on, it previews again and stops instead of registering. Registering writes the claim of every lane, the claim of the integration branch (it holds no files and limits no lane's manifest; it only lets the guard allow a plain `git switch -c` to create that branch) and the plan record, all or nothing. With `--create` it also creates the branches and worktrees of the lanes (from the recorded `base`, at the registered paths); without it, it prints the `git worktree add` commands for you to run. Every lane comes with a handoff: branch, worktree, manifest, dependencies, acceptance, and the two commands its owner uses to record progress.
+What is registered is the spec the preview just showed, byte for byte; when there was no preview, when you asked for a change after it, or when the target branch has moved on, it previews again and stops instead of registering. Registering writes the claim of every lane, the claim of the integration branch (it holds no files and limits no lane's manifest; it only lets the guard allow a plain `git switch -c` to create that branch) and the plan record (with the requirements of the task and the requirements and outcome of every lane), all or nothing. With `--create` it also creates the branches and worktrees of the lanes (from the recorded `base`, at the registered paths); without it, it prints the `git worktree add` commands for you to run. The report after registering lists the result in the same two tables, rendered from the record read back; every lane comes with a handoff: title, branch, worktree, manifest, dependencies, outcome, acceptance, and the two commands its owner uses to record progress.
 
 **Step 3: work, and record progress**
 
 The owner of each lane (a sub-agent) changes only the files in its own manifest. It records `active` when it starts, and `ready` with its latest commit when it has committed:
 
 ```text
-magos_guard.py set-update --set feat-x --expect-revision <rev> --lane L1 --state active
-magos_guard.py set-update --set feat-x --expect-revision <rev> --lane L1 --state ready --head <tip>
+magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state active
+magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>
 ```
 
-`<rev>` is `record.revision` of `magos_guard.py set-show --set feat-x --json`; exit code 19 means it has changed, so read it again. When `ready` is recorded the guard checks that the commit really is the tip of the branch and that every file the lane changed lies inside its manifest (a file outside is exit code 22, with the files listed). You can look at the progress at any time with `--status`:
+`<rev>` is `record.revision` of `magos_guard.py set-show --set sweep-readiness --json`; exit code 19 means it has changed, so read it again. When `ready` is recorded the guard checks that the commit really is the tip of the branch and that every file the lane changed lies inside its manifest (a file outside is exit code 22, with the files listed). You can look at the progress at any time with `--status`:
 
 ```text
-/GitPlan feat-x --status
+/GitPlan sweep-readiness --status
 ```
 
-It prints the checklist again from the record: lanes that are `ready` or `integrated` are ticked and show their recorded commit, and at the end comes what remains.
+It prints the two tables again from the record: the lanes table gains `State` and `Head`, lanes that are `ready` or `integrated` are ticked and show their recorded commit, and at the end comes what remains. As soon as a lane is `integrated`, what it prints is the checklist supplemented with the changes (see step 4): the lanes table gains a `Changes` column, the requirements table a `Result` column, and below them come the changes summary and the total.
 
 ```text
-# Plan feat-x -> develop  rev 9  base 3fa9c21
-- [x] L1 data layer | integrated | head 8b1d4e0 | branch agent/feat-x/l1
-- [x] L2 API | ready | head c04a7f2 | branch agent/feat-x/l2
-- [ ] L3 pages | active | head - | branch agent/feat-x/l3
-- [ ] merge L1 -> L2 -> L3 into agent/feat-x/integration; run pytest -q; land on develop
+# Plan sweep-readiness -> develop  rev 5  base 3fa9c21
+## Requirements
+| Req | Requirement | Lane(s) | Planned outcome | Result |
+|---|---|---|---|---|
+| R1 | Claims are read from one store | claim-store | claim-store: src/claims reads every claim | claim-store: Add claim_store module |
+| R2 | The readiness verdict of a sweep is documented | sweep-docs | sweep-docs: docs/sweep.md explains the verdict | pending: sweep-docs |
+| R3 | The sweep tests and the documented examples still pass | claim-store, sweep-docs | claim-store: src/claims reads every claim; sweep-docs: docs/sweep.md explains the verdict | claim-store: Add claim_store module; pending: sweep-docs |
+## Lanes
+| Lane | Branch | Worktree | Owns | Needs | Acceptance | State | Head | Changes |
+|---|---|---|---|---|---|---|---|---|
+| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims passes | [x] integrated | 8b1d4e0 | 3 commits, 7 files, +212/-48 |
+| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | the examples in docs/sweep.md run | [ ] active | - | active |
+- [ ] merge claim-store -> sweep-docs into agent/sweep-readiness/integration; run the repository checks; land on develop
+
+Changes summary
+- claim-store - 3 commits, 7 files (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [paths: src/claims, tests/claims]
+- sweep-docs - active, not integrated
+Total: 1 of 2 lanes integrated, 3 commits, 7 files, +212/-48
 
 Remaining TODO
-1. finish L3: active; accept pages open
-2. merge L2 c04a7f2
-3. run the repository checks on agent/feat-x/integration
-4. post-merge: update CHANGELOG.md
+1. finish sweep-docs: active; accept the examples in docs/sweep.md run
+2. run the repository checks on agent/sweep-readiness/integration
+3. post-merge: update CHANGELOG.md
 ```
 
-To change the plan, use `--amend`: `/GitPlan feat-x --amend --expect-revision 9` investigates again and previews the amended plan (lanes that remain keep their branch, worktree and state, and `base` moves to the current tip of the target branch); add `--apply` when you are satisfied. A lane that holds commits that are not merged cannot be removed, and its manifest cannot shrink below the files it has already changed (the guard refuses, exit code 16).
+To change the plan, use `--amend`: `/GitPlan sweep-readiness --amend --expect-revision 5` investigates again and previews the amended plan (lanes that remain keep their branch, worktree, state and changes summary, and `base` moves to the current tip of the target branch; requirements can be added, reworded or deleted, but every requirement stays served by a lane, and a lane that has started is never renamed); add `--apply` when you are satisfied. A lane that holds commits that are not merged cannot be removed, and its manifest cannot shrink below the files it has already changed (the guard refuses, exit code 16).
 
 **Step 4: merge, land, close**
 
 ```text
-/GitPlan feat-x --converge
-/GitPlan feat-x --converge --apply --expect-revision 9
-/GitPlan feat-x --converge --apply --land
-/GitPlan feat-x --release
+/GitPlan sweep-readiness --converge
+/GitPlan sweep-readiness --converge --apply --expect-revision 6
+/GitPlan sweep-readiness --converge --apply --land
+/GitPlan sweep-readiness --release
 ```
 
 Preview the merge first. The verdict is `READY` (every lane is already `READY` or `INTEGRATED`, so one run merges them all and `--land` can follow), `PARTIAL` (some lane is not done: this run merges only the `READY` ones and says what each of the others still needs) or `BLOCKED` (a gate fails). The next command it recommends is `/GitPlan <set> --converge --apply --expect-revision <the revision the preview shows>`; `--land` is only suggested in words and never put on that line.
@@ -831,7 +853,52 @@ Preview the merge first. The verdict is `READY` (every lane is already `READY` o
 4. On the integration branch it runs the repository's own checks (build, test, lint); a failed check stops the run before any land, and when the checks cannot be identified the report says "not validated" and the run goes on.
 5. Only with `--land`: when every lane is `integrated` and the target branch still sits where the integration branch was cut from, one `git merge --ff-only` fast-forwards the target branch to the integration branch; otherwise it reports `LAND_REFUSED` and stops, doing nothing more.
 
-`--release` prints the final checklist first, then removes the claims of the lanes and the plan record; the lane branches, the worktrees and the integration branch are not touched. With the claims gone, `/GitCleanup` no longer sees them as in use and can clean up the merged ones. When a lane is not merged, is not in the target branch yet, or its worktree has unsaved changes, the guard refuses (exit code 16) and names the lane.
+After the merge the checklist is not replaced but **supplemented**: what the report of `--converge --apply`, a later `--status` and `--release` print is still the first two tables (every row and column is kept) plus the changes that the guard computed from git and stored in the record at the moment it recorded each lane `integrated`. The lanes table gains a `Changes` column (a cell such as `3 commits, 7 files, +212/-48`; a lane that is not merged shows its state), the requirements table gains a `Result` column (the first commit subject of each lane that serves the requirement, and the lanes not merged yet after `pending`), and below the tables come the `Changes summary` (one line per lane: commits, files, lines added and removed, the commit subjects and the paths the changes cluster in) and a `Total` line. This is what `--status` or `--release` prints after `--land` (the merge line is ticked), with only the CHANGELOG update and the release left:
+
+```text
+# Plan sweep-readiness -> develop  rev 7  base 3fa9c21
+## Requirements
+| Req | Requirement | Lane(s) | Planned outcome | Result |
+|---|---|---|---|---|
+| R1 | Claims are read from one store | claim-store | claim-store: src/claims reads every claim | claim-store: Add claim_store module |
+| R2 | The readiness verdict of a sweep is documented | sweep-docs | sweep-docs: docs/sweep.md explains the verdict | sweep-docs: Document the readiness verdict |
+| R3 | The sweep tests and the documented examples still pass | claim-store, sweep-docs | claim-store: src/claims reads every claim; sweep-docs: docs/sweep.md explains the verdict | claim-store: Add claim_store module; sweep-docs: Document the readiness verdict |
+## Lanes
+| Lane | Branch | Worktree | Owns | Needs | Acceptance | State | Head | Changes |
+|---|---|---|---|---|---|---|---|---|
+| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims passes | [x] integrated | 8b1d4e0 | 3 commits, 7 files, +212/-48 |
+| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | the examples in docs/sweep.md run | [x] integrated | c04a7f2 | 2 commits, 3 files, +36/-4 |
+- [x] merge claim-store -> sweep-docs into agent/sweep-readiness/integration; run the repository checks; land on develop
+
+Changes summary
+- claim-store - 3 commits, 7 files (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [paths: src/claims, tests/claims]
+- sweep-docs - 2 commits, 3 files (+36/-4): Document the readiness verdict; Add runnable examples [paths: docs/sweep.md, docs/sweep-examples.md, docs/index.md]
+Total: 2 of 2 lanes integrated, 5 commits, 10 files, +248/-52
+
+Remaining TODO
+1. post-merge: update CHANGELOG.md
+2. release the set
+```
+
+`--release` prints the final checklist, supplemented with the changes summary, first, then removes the claims of the lanes and the plan record; the lane branches, the worktrees and the integration branch are not touched. With the claims gone, `/GitCleanup` no longer sees them as in use and can clean up the merged ones. When a lane is not merged, is not in the target branch yet, or its worktree has unsaved changes, the guard refuses (exit code 16) and names the lane.
+
+#### The two tables: requirements, lanes and outcomes
+
+The checklist is two tables and a few lines of text. Everything in the tables comes from data the guard stores (a preview takes it from the result of `set-plan --dry-run`, everything afterwards from the record read back with `set-show`) and is never written from memory; a pipe `|` in a cell is written `∣`, and the column headings and labels are written in the reply language (lane ids, branch names, paths and status codes are not translated).
+
+| Table | One row is | Columns |
+|---|---|---|
+| Requirements table | one requirement of the task | `Req`, `Requirement`, `Lane(s)`, `Planned outcome`; after the merge also `Result` |
+| Lanes table | one lane | `Lane`, `Branch`, `Worktree`, `Owns`, `Needs`, `Acceptance`; `--status` and `--converge` add `State` and `Head`, and after the merge also `Changes` |
+| Changes summary | one lane (a lane that is not merged shows its state) | commits, files, lines added and removed, the commit subjects and the paths the changes cluster in; a total line follows the list |
+
+When it plans, the executor writes the requirements of the task as `R1`, `R2`, ... for you. Every requirement is served by at least one lane, and every lane serves at least one requirement and states the outcome it delivers; otherwise the guard refuses the plan (exit code 24) and names the field. At the moment a lane is recorded `integrated`, the guard computes what the lane changed from git, against the local target branch of that moment, and stores it in the record: the number of commits, at most 8 commit subjects (oldest first), the files, the lines added and removed, and at most 12 paths the changes cluster in; when the same lane is recorded `integrated` again only the note is updated and this summary is kept.
+
+#### Naming rules: the name is the topic of the change
+
+- **A lane id is a topic slug**: `[a-z0-9][a-z0-9-]{0,23}`, one to three lowercase words joined by hyphens that name the **subject** of the lane's change, for example `claim-store`, `sweep-readiness`, `launcher-exit-codes`, `readme-gitplan`. The executor derives the topic from the requirement the lane mainly serves and the files it owns; two lanes that would get the same topic get the distinguishing noun (`claim-store-api`, `claim-store-docs`).
+- **The branch and the worktree follow the id**: the branch is exactly `agent/<set>/<id>` and the name of the worktree directory ends with `-<set>-<id>` (by default `<parent of the main worktree>/<repository directory name>-<set>-<id>`, for example `/work/app-sweep-readiness-claim-store`), so `git branch` and `git worktree list` read as a list of topics. The integration branch stays `agent/<set>/integration`.
+- **The guard refuses ordinal and generic ids** (exit code 24, with a hint to name the topic): ids of only digits, of one letter, and ones like `l1`, `lane-2`, `task3`, `worker-1`, `step-4` (`l`, `lane`, `task`, `agent`, `worker`, `wt`, `t`, `n`, `w`, `work`, `part`, `step` or `item` followed by a number), and the reserved `integration`. A branch or worktree name that is not of the form above is also exit code 24, and the message gives the compliant name. The requirement ids `R1`, `R2` and the name of the set are not subject to this rule.
 
 #### The arguments in detail
 
@@ -841,13 +908,13 @@ Preview the merge first. The verdict is `READY` (every lane is already `READY` o
 | `--into <branch>` | Required to plan: the local branch the plan is made against and that `--land` fast-forwards later. Write it exactly (case-sensitive); it must not be `main`. The other forms read it from the plan record |
 | `--apply` | With `--into`: register the plan the preview showed. With `--amend`: register the amended plan. With `--converge`: merge the lanes. Without it, only a preview |
 | `--create` | With the `--apply` of a plan or an amendment: also create the branches and worktrees of the registered lanes that do not exist yet. Without it, the `git worktree add` commands are printed |
-| `--status` | Read-only: the checklist, the state of every lane, what remains |
+| `--status` | Read-only: the two tables, the state of every lane (and the changes summary once a lane is merged), what remains |
 | `--amend` | Re-plan a registered set; needs `--expect-revision`, and registers only with `--apply [--create]` |
 | `--expect-revision <n>` | The revision of the plan record that you read (a positive integer): required with `--amend`, optional with `--converge --apply`; a record at another revision stops the command |
 | `--converge` | Preview the merge of the lanes, in dependency order, into `agent/<set>/integration`; runs only with `--apply` |
 | `--include-active` | With `--converge`: treat an `active` lane that holds commits as `ready` at its current commit; in an apply, that is your acceptance of those commits |
 | `--land` | With `--converge --apply`: after the merges and the checks, fast-forward `<branch>` to the integration branch |
-| `--release` | Close the set once its lanes are merged: remove their claims and the plan record |
+| `--release` | Close the set once its lanes are merged: print the checklist supplemented with the changes summary, then remove their claims and the plan record |
 | `--lang <language>`, `--help` | The language of the reply (Chinese by default); show the instructions only |
 
 The "selecting" option (`--into`, `--status`, `--amend`, `--converge` or `--release`) decides what this run does. Two of them together, or an option the form does not take, is a usage error: it explains, shows the usage and runs nothing.
@@ -855,11 +922,11 @@ The "selecting" option (`--into`, `--status`, `--amend`, `--converge` or `--rele
 Examples:
 
 ```text
-/GitPlan feat-x --into develop                              just the plan
-/GitPlan feat-x --into develop --apply --create             register, and create the branches and worktrees of every lane
-/GitPlan feat-x --status                                    progress, and what remains
-/GitPlan feat-x --converge --apply --land --lang English    merge, land on develop, reply in English
-/GitPlan --help                                             instructions only
+/GitPlan sweep-readiness --into develop                              just the plan
+/GitPlan sweep-readiness --into develop --apply --create             register, and create the branches and worktrees of every lane
+/GitPlan sweep-readiness --status                                    progress, and what remains
+/GitPlan sweep-readiness --converge --apply --land --lang English    merge, land on develop, reply in English
+/GitPlan --help                                                      instructions only
 ```
 
 #### The state of each lane at merge time
@@ -888,7 +955,7 @@ A registered plan carries a revision and the commit of the target branch it was 
 | Exit code 20 or 21 | A plan of that name already exists; or there is no plan of that name | Look with `--status`, change with `--amend`, close with `--release`, or pick another name; check the name, or plan first with `--into` |
 | Exit code 22, `OUT_OF_LANE` | A lane changed files outside its manifest, so the guard refuses to record it `ready` | The owner reverts those changes, or `--amend` gives the files to the one lane that should own them by design, and then `ready` is recorded again |
 | Exit code 23 | The plan record was written by a newer MAGOS | Upgrade the guard (see "Lane guard"); until then the record is neither read nor changed |
-| Exit code 24 or 12 | The plan is invalid: a wrong field, or a clash with a branch or path that already exists in the repository; the message names the field | Fix that field and prove it again; a plan of more than 12 lanes or a sheet over 4096 characters must be made smaller |
+| Exit code 24 or 12 | The plan is invalid: a wrong field (for example a lane id that is an ordinal or generic, a branch or worktree name that does not carry the topic, a requirement that no lane serves), or a clash with a branch or path that already exists in the repository; the message names the field | Fix that field and prove it again (the executor renames the lane after its topic, gives a requirement that nobody serves a lane, and previews again); a plan of more than 12 requirements, more than 12 lanes or a sheet over 8192 characters must be made smaller |
 
 While the plan exists, every open lane claim (`planned` or `active`) makes `/GitCleanup`, `/GitConverge` and `/GitSweep` report that lane as `BLOCKED_ACTIVE_OWNER`: that is intended, and `--release` lifts it.
 
@@ -903,6 +970,8 @@ While the plan exists, every open lane claim (`planned` or `active`) makes `/Git
 ✓ Never pushes, never force-pushes, never uses the network; never deletes a branch or a worktree, never runs git worktree prune
 ✓ Never touches main and never takes main as the target; never rebases, squashes, cherry-picks or resets
 ✓ Never writes inside a lane's worktree; --create creates only registered lanes (at the registered path, from the recorded base)
+✓ The id, the branch and the worktree of a lane are named after the topic of its change and never by ordinal; every requirement is served by at least one lane, and every lane serves at least one requirement
+✓ The tables come from the spec the guard proved or from the record the guard stores, never from memory; after the merge the original checklist is supplemented with the changes summary, not replaced
 ```
 
 #### FAQ
@@ -911,6 +980,8 @@ While the plan exists, every open lane claim (`planned` or `active`) makes `/Git
 - **Does it detect semantic coupling between files?** No. The guard only proves that the file lists do not overlap and knows nothing of the dependencies between pieces of code; files that refer to each other should go into the same lane when the plan is made.
 - **Where does the plan record live?** In the git directory of this clone (`<git-common-dir>/magos/sets/<set>.json`), readable and writable only through the guard; it is not synchronized to other clones by fetch or push.
 - **What if the merge stopped half-way?** Run the same command again: it investigates afresh and carries on on the same integration branch, and the lanes that are already `integrated` are skipped.
+- **Why can a lane not be called `l1` or `task3`?** When `git branch` and `git worktree list` show only ordinals, nobody can tell which lane changes what. A lane is named after the topic of its change (`claim-store`, `sweep-docs`); the guard refuses ordinal and generic ids (exit code 24), and the executor renames the lane and previews again.
+- **Where does the "Changes" of the checklist come from after the merge?** The guard computes it from git at the moment it records a lane `integrated` and stores it in that lane's record (commits, commit subjects, files, lines added and removed, paths); it is measured against the local target branch of that moment, so it does not change when the target branch moves on later, and it is not something the executor writes from memory.
 - **I want the reply in English.** Add `--lang English` at the end of the command.
 
 ---
@@ -992,7 +1063,7 @@ MAGOS ships a lane guard (`scripts/magos_guard.py`). Before a branch or worktree
 - **Modes.** AUTO (the default): a named worktree creation always needs a manifest, a branch-only creation only when another lane exists, so in a repository with one worktree and nothing unmerged, branch-only creations are unaffected. ARMED (after `arm`): every new branch needs one, in the hooks and in Git. OFF: `git config --local magos.guard off`, which switches off the host hooks of that repository; in an armed repository the Git backstop is unaffected.
 - **Opting out.** `git config --local magos.guard off` (one repository), `claude plugin disable magos` (the whole Claude Code plugin), or `MAGOS_GUARD=off` in the environment of the host process. All three switch off the host hooks only and leave the Git backstop in place: in an armed repository, run `disarm` in your own terminal to remove it.
 - **Requirements.** Python 3.9+ (the hook launcher looks for `python3`, `py -3`, `python` in that order on POSIX and in Git Bash, and for `py -3`, `python`, `python.bat`, `python.cmd` in that order under Windows cmd) and Git 2.36+ (the other MAGOS commands need Git 2.30+); `magos_guard.py doctor` checks both, and `magos_guard.py version` prints the running guard's version.
-- **Set subcommands.** `/GitPlan` registers and maintains its plans through four subcommands of the guard: `set-plan` (proves that the file lists of the lanes are pairwise disjoint, then registers), `set-show` (read-only), `set-update` (a lane's owner records progress) and `set-release` (closes the set). None of them is user-only: like `plan` and `release` they pass through the host hooks. Registering writes the claim of every lane (with `set=` and `lane=`), the claim of the integration branch `agent/<set>/integration` (it holds no files) and the plan record (`<git-common-dir>/magos/sets/<set>.json`); exit codes 19 to 24 belong to these subcommands (stale, exists, unknown, out of lane, written by a newer version, invalid plan). While a set exists, a plain `plan --amend` or `release` refuses its claims: a set is changed only through `/GitPlan`.
+- **Set subcommands.** `/GitPlan` registers and maintains its plans through four subcommands of the guard: `set-plan` (proves that the file lists of the lanes are pairwise disjoint, then registers), `set-show` (read-only), `set-update` (a lane's owner records progress) and `set-release` (closes the set). None of them is user-only: like `plan` and `release` they pass through the host hooks. Registering writes the claim of every lane (with `set=` and `lane=`), the claim of the integration branch `agent/<set>/integration` (it holds no files) and the plan record (`<git-common-dir>/magos/sets/<set>.json`); exit codes 19 to 24 belong to these subcommands (stale, exists, unknown, out of lane, written by a newer version, invalid plan). The plan record holds the requirements of the task, the requirements and the outcome of every lane, and the changes the guard computes when a lane is recorded `integrated`; the guard also checks names and correspondences: a lane id must be a topic slug (ordinal and generic ids are refused), the branch is exactly `agent/<set>/<id>`, the worktree directory name ends with `-<set>-<id>`, and every requirement is served by at least one lane. While a set exists, a plain `plan --amend` or `release` refuses its claims: a set is changed only through `/GitPlan`.
 - **Only you** run `override`, `arm`, `disarm` and `install`, from a real terminal, and only you write `magos.*` git configuration (for example `magos.guard`); the hooks deny an agent that tries, and the hook launcher runs nothing but the hook. A command started in a new console window passes the console check, so neither that check nor an override is access control.
 - **After every upgrade.** Restart the running Claude Code sessions. Re-run `install` for each host `doctor` lists (`doctor` prints the exact command; for a copy installed with `install --home <dir>`, run `doctor --home <dir>`), and replace the entry merged into the host's configuration when the printed one differs (trust it again in Codex's `/hooks`; approve it again in Hermes). In an armed repository, run `doctor` and, when it prints an `arm` command, re-run that command in your own terminal. From 1.0.4 on, `/GitPlan` needs the guard's `set-*` subcommands, which an older guard copy lacks: run `doctor`, then the `install --host <host>` commands it prints, to refresh the copy; otherwise `/GitPlan` checks the version first and stops.
 - **Limits.** The hooks read command text, and they let a call through when Python or the guard script is missing (Claude Code's `EnterWorktree` hook blocks the call instead); the Git backstop does not see a branch rename or copy (`git branch -m/-c`), which the hooks deny in every option spelling. `references/lane-split.md` section 12 lists every limit.
@@ -1260,7 +1331,7 @@ CI is made of three workflows and the Dependabot configuration, all under `.gith
 | GitCleanup | `/GitCleanup` | `/git-cleanup` | `$git-cleanup` | Preview cleanups; `--apply` required to delete |
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | Merge every local branch into one and keep only `main` and it; preview by default, `--apply` to run |
 | GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge`, then delete merged remote branches; preview by default (no network), `--apply` to run, `--push` (with `--apply`) to push `<branch>` once |
-| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` | Investigate first and divide a task into lanes that own different files, register the plan, then merge the lanes in dependency order; preview by default, `--apply` (or `--release`) to write |
+| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` | Investigate first and divide a task into lanes that own different files, list requirements, lanes and outcomes in tables, register the plan, then merge the lanes in dependency order and supplement the list with the changes; preview by default, `--apply` (or `--release`) to write |
 
 ```bash
 python -X utf8 tests/codex/contracts/run_contract_cases.py

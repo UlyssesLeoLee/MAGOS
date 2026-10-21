@@ -227,7 +227,11 @@
         "### GitPlan with a user asking to override a claim",
         "### GitPlan with an agent asked to write the set record by hand",
         "### GitPlan --apply without a previous preview",
-        "### GitPlan --release before the lanes are integrated"
+        "### GitPlan --release before the lanes are integrated",
+        "### GitPlan with ordinal lane ids",
+        "### GitPlan with a requirement that nobody serves",
+        "### GitPlan with a branch or a worktree that does not carry the topic",
+        "### GitPlan with the list supplemented after the merge"
       ]
     }
   ]

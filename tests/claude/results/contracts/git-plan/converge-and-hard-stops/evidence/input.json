@@ -15,6 +15,8 @@
     "target moved after the integration branch was cut",
     "integration branch created with a plain git switch -c",
     "interrupted run resumed",
-    "main as the target"
+    "main as the target",
+    "list supplemented with the changes after the merge",
+    "changes summary per lane (commits, subjects, files, insertions, deletions, paths)"
   ]
 }

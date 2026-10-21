@@ -11,6 +11,7 @@
 - --help (and --lang) is handled first: the command shows its inline help and stops before any tool call, file read, skill load or repository inspection; a missing set name is asked for, and an unknown option, two selecting options or an option the form does not list is a usage error that executes nothing.
 - Without --apply (and without --release) the command only previews: nothing is registered, created or merged, nothing is fetched, and the only write is a scratch spec file outside every worktree.
 - The hosts spell the same forms (/GitPlan in Claude Code, /git-plan in Hermes, $git-plan in Codex) and the three READMEs show the same examples.
+- Every form that shows the plan prints the Requirements table and the Lanes table (with State and Head once the plan has state, and with the changes of every lane once a lane is integrated), rendered from the guard's result or from its record and never from memory; the inline help of the Claude Code command and of the Hermes and Codex adapters says so in every form.
 
 ## Contract checks
 
