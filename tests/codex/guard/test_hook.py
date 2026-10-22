@@ -61,6 +61,19 @@ def test_revalidation_denies_when_a_sibling_dirties_a_planned_file(repo, guard):
     assert "agent/sib" in reason and "src/a.py" in reason and "uncommitted" in reason
 
 
+def test_committed_evidence_is_read_from_the_top_under_diff_relative(repo, guard):
+    plan(guard, repo, "agent/late", "src/a.py")
+    repo.branch_with("agent/x", "src/a.py")
+    repo.git("config", "diff.relative", "true")  # git diff lists only the changes below the directory it starts in, relative to it
+    create = 'git worktree add "%s" -b agent/late' % (repo.path.parent / "w").as_posix()
+    for where in (repo.path, repo.path / "src"):
+        r = guard(where, "--json", "check", "--branch", "agent/late", "--paths", "src/a.py")
+        v = json.loads(r.out)
+        assert r.rc == 10 and [(c["branch"], [(e["kind"], e["files"]) for e in c["evidence"]]) for c in v["conflicts"]] == [("agent/x", [("committed", ["src/a.py"])])], (where, v)
+        reason = denied(hook(where, command=create))
+        assert reason and "agent/x" in reason and "src/a.py" in reason, (where, reason)
+
+
 def test_override_recorded_in_the_claim_survives_revalidation(repo, guard, monkeypatch):
     repo.branch_with("agent/x", "src/a.py")
     fp = json.loads(guard(repo, "--json", "plan", "--branch", "agent/ov", "--paths", "src/a.py").out)["fingerprint"]

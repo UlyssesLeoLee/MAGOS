@@ -4,9 +4,11 @@ from __future__ import annotations
 import importlib.util
 import io
 import os
+import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import namedtuple
 from pathlib import Path
 
@@ -40,6 +42,23 @@ def _find_sh(path=None):
 
 
 SH = _find_sh()  # None when no POSIX sh exists: the sh tests skip
+
+
+def crashed(text, code=0):
+    """Did the machine kill a child, not the code under test?  A Windows NTSTATUS (0xC0000000 and up, e.g. STATUS_DLL_INIT_FAILED or
+    STATUS_COMMITMENT_LIMIT when the machine runs low on virtual memory) as the exit `code` of a child the test ran or as `exit code N` in a
+    Git failure the guard reports, or `Out of memory` in the text of the child."""
+    return code >= 0xC0000000 or "Out of memory" in text or any(int(n) >= 0xC0000000 for n in re.findall(r"exit code (\d+)", text))
+
+
+def retried(call, failed, attempts=4, pause=0.5):
+    """call() made again, `attempts` times at most, while failed(its result) says the machine killed a child (a call that failed that way has
+    written nothing): -> the last result, so a failure that persists still fails the test."""
+    for attempt in range(attempts):
+        r = call()
+        if attempt == attempts - 1 or not failed(r):
+            return r
+        time.sleep(pause)
 
 
 def time_budget(seconds):
@@ -87,8 +106,9 @@ class Repo:
         self.path = Path(path)
 
     def git(self, *args, cwd=None, check=True, inp=None):
-        p = subprocess.run(["git", *args], cwd=str(cwd or self.path), capture_output=True, input=inp,
-                           stdin=None if inp is not None else subprocess.DEVNULL, env=os.environ.copy())
+        p = retried(lambda: subprocess.run(["git", *args], cwd=str(cwd or self.path), capture_output=True, input=inp,
+                                           stdin=None if inp is not None else subprocess.DEVNULL, env=os.environ.copy()),
+                    lambda p: crashed(p.stderr.decode("utf-8", "replace"), p.returncode))
         if check and p.returncode:
             raise AssertionError("git %s failed: %s" % (" ".join(args), p.stderr.decode("utf-8", "replace")))
         return p.stdout.decode("utf-8", "replace").strip()
@@ -131,7 +151,12 @@ def repo(tmp_path):
 
 
 def run(args, stdin=b"", cwd=None):
-    """Run magos_guard.main in process with captured streams; returns Result(rc, out, err)."""
+    """Run magos_guard.main in process with captured streams, again when the machine killed a git child of the guard (crashed); returns
+    Result(rc, out, err)."""
+    return retried(lambda: _run_once(args, stdin, cwd), lambda r: crashed(r.out + r.err))
+
+
+def _run_once(args, stdin, cwd):
     out, err = io.BytesIO(), io.BytesIO()
     streams = (sys.stdin, sys.stdout, sys.stderr)
     fin = io.TextIOWrapper(io.BytesIO(stdin), encoding="utf-8")

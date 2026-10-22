@@ -552,6 +552,89 @@ def test_write_claim_retries_replace(repo, monkeypatch):
         G.write_claim(g, "r2", {"branch": "r2", "entries": ["a"]})
 
 
+def busy_remove(monkeypatch, fails):
+    """os.remove raising PermissionError for a path while its count in `fails` is not used up (None: on every call); -> the calls per path."""
+    real, calls = os.remove, {}
+
+    def remove(path, *a, **kw):
+        key = os.path.normcase(str(path))
+        if key in fails:
+            calls[key] = calls.get(key, 0) + 1
+            if fails[key] is None or calls[key] <= fails[key]:
+                raise PermissionError(13, "injected: busy", str(path))
+        return real(path, *a, **kw)
+    monkeypatch.setattr(G.os, "remove", remove)
+    return calls
+
+
+def a_record_and_a_claim(tmp_path):
+    (tmp_path / "claims").mkdir()
+    rec, claim = tmp_path / "demo.json", tmp_path / "claims" / "docs.claim"
+    rec.write_bytes(b"old record\n")
+    claim.write_bytes(b"old claim\n")
+    return rec, claim
+
+
+def test_store_removal_retries_a_busy_file(tmp_path, monkeypatch):
+    rec, claim = a_record_and_a_claim(tmp_path)
+    key = os.path.normcase(str(claim))
+    monkeypatch.setattr(G.time, "sleep", lambda s: None)
+    calls = busy_remove(monkeypatch, {key: 2})
+    G.commit_store([(str(rec), b"new record\n", b"old record\n")], [(str(claim), b"old claim\n")])
+    assert rec.read_bytes() == b"new record\n" and not claim.exists() and calls[key] == 3
+    rec.write_bytes(b"old record\n")
+    claim.write_bytes(b"old claim\n")
+    calls = busy_remove(monkeypatch, {key: None})
+    with pytest.raises(PermissionError):
+        G.commit_store([(str(rec), b"new record\n", b"old record\n")], [(str(claim), b"old claim\n")])
+    assert calls[key] == 40 and rec.read_bytes() == b"old record\n" and claim.read_bytes() == b"old claim\n"
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="only Windows refuses to remove a file that a reader holds open")
+def test_store_removal_waits_for_a_reader(tmp_path):
+    rec, claim = a_record_and_a_claim(tmp_path)
+    reader = open(claim, "rb")
+    timer = threading.Timer(0.3, reader.close)
+    timer.start()
+    try:
+        G.commit_store([(str(rec), b"new record\n", b"old record\n")], [(str(claim), b"old claim\n")])
+    finally:
+        timer.join()
+        reader.close()
+    assert rec.read_bytes() == b"new record\n" and not claim.exists()
+
+
+def test_store_undo_retries_a_busy_removal(tmp_path, monkeypatch):
+    rec, claim = a_record_and_a_claim(tmp_path)
+    new = tmp_path / "claims" / "api.claim"
+    monkeypatch.setattr(G.time, "sleep", lambda s: None)
+    calls = busy_remove(monkeypatch, {os.path.normcase(str(claim)): None, os.path.normcase(str(new)): 2})
+    with pytest.raises(PermissionError) as err:
+        G.commit_store([(str(new), b"new claim\n", None), (str(rec), b"new record\n", b"old record\n")], [(str(claim), b"old claim\n")])
+    assert not isinstance(err.value, G.NotRestored) and "could not be put back" not in str(err.value)
+    assert not new.exists() and calls[os.path.normcase(str(new))] == 3
+    assert rec.read_bytes() == b"old record\n" and claim.read_bytes() == b"old claim\n" and not list(tmp_path.rglob("*.tmp"))
+
+
+def test_replace_files_undo_retries_a_busy_removal(tmp_path, monkeypatch):
+    new, old = tmp_path / "a.claim", tmp_path / "b.json"
+    old.write_bytes(b"old\n")
+    real = G._replace
+
+    def failing(tmp, path, tries=40):
+        if os.path.normcase(str(path)) == os.path.normcase(str(old)):
+            raise OSError("injected move failure")
+        return real(tmp, path, tries)
+    monkeypatch.setattr(G, "_replace", failing)
+    monkeypatch.setattr(G.time, "sleep", lambda s: None)
+    calls = busy_remove(monkeypatch, {os.path.normcase(str(new)): 2})
+    with pytest.raises(OSError) as err:
+        G.replace_files([(str(new), b"new\n", None, None), (str(old), b"new\n", b"old\n", None)])
+    assert not isinstance(err.value, G.NotRestored) and "injected move failure" in str(err.value)
+    assert not new.exists() and calls[os.path.normcase(str(new))] == 3 and old.read_bytes() == b"old\n" and not list(tmp_path.rglob("*.tmp"))
+
+
 def test_main_error_paths(repo, monkeypatch, capsys):
     monkeypatch.setattr(G, "cmd_list", lambda a: (_ for _ in ()).throw(G.GitFail("GIT_FAILED", "boom")))
     r = run(["--repo", str(repo.path), "list"])
@@ -616,6 +699,22 @@ def test_amend_updates_the_registered_worktree_path(repo, guard):
     assert r.rc == 14  # the registered path differs: an explicit amend is needed
     assert guard(repo, "plan", "--branch", "L", "--paths", "docs/", "--worktree", str(repo.path.parent / "two"), "--amend").rc == 0
     assert "two" in (claims_dir(repo) / "L.claim").read_text(encoding="utf-8")
+
+
+def test_a_re_plan_without_worktree_keeps_the_registered_path(repo, guard):
+    one = str(repo.path.parent / "one")
+    want = "worktree=" + os.path.abspath(one).replace("\\", "/")
+    assert guard(repo, "plan", "--branch", "L", "--paths", "docs/", "--worktree", one).rc == 0
+    assert guard(repo, "plan", "--branch", "L", "--paths", "docs/", "web/", "--amend").rc == 0  # an amend without --worktree
+    assert want in (claims_dir(repo) / "L.claim").read_text(encoding="utf-8").split("\n")
+    repo.branch_with("agent/x", "docs/d.md")  # a conflict the user overrides: the re-plan without --worktree stores the override
+    fp = verdict(guard, repo, "check", "--branch", "L", "--paths", "docs/", "web/")[1]["fingerprint"]
+    ov = claims_dir(repo).parent / "override" / (fp + ".json")
+    ov.parent.mkdir()
+    ov.write_text(json.dumps({"fp": fp, "reason": "test", "expires": "2099-01-01T00:00:00Z"}), encoding="utf-8")
+    rc, v = verdict(guard, repo, "plan", "--branch", "L", "--paths", "docs/", "web/")
+    lines = (claims_dir(repo) / "L.claim").read_text(encoding="utf-8").split("\n")
+    assert rc == 0 and v["code"] == "OVERRIDDEN" and want in lines and "override=" + fp in lines
 
 
 def test_remote_tracking_cap_warns_instead_of_denying(repo, guard, monkeypatch):

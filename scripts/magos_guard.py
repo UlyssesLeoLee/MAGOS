@@ -12,6 +12,7 @@ import base64
 import getpass
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -2625,7 +2626,10 @@ def extract(payload, aliases=None):
 _SCRUB = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE",
           "GIT_PREFIX", "GIT_QUARANTINE_PATH", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_LITERAL_PATHSPECS", "GIT_ICASE_PATHSPECS",
           "GIT_REPLACE_REF_BASE", "GIT_NO_REPLACE_OBJECTS", "GIT_SHALLOW_FILE", "GIT_GRAFT_FILE", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
-_PIN = ["-c", "core.quotepath=false", "-c", "core.longpaths=true", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "--no-optional-locks"]
+# Every git call: no fsmonitor program, no untracked cache written, and every path that diff and log print named from the top of the work tree
+# (diff.relative=false), whatever directory below it the call starts in: the hook's session directory or a --repo below the top.
+_PIN = ["-c", "core.quotepath=false", "-c", "core.longpaths=true", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "diff.relative=false",
+        "--no-optional-locks"]
 # The only subcommands Git.run starts, none of which talks to a remote (in a partial clone, git itself fetches the objects a diff needs
 # from the promisor remote).
 LOCAL_GIT = frozenset(("--version", "branch", "check-ref-format", "config", "diff", "for-each-ref", "log", "merge-base", "rev-list", "rev-parse", "status", "worktree"))
@@ -3139,6 +3143,17 @@ def _replace(tmp, path, tries=40):
             time.sleep(0.05)
 
 
+def _remove(path, tries=40):
+    """os.remove, retried while Windows reports the file busy (a reader holds it open)."""
+    for attempt in range(tries):
+        try:
+            return os.remove(path)
+        except PermissionError:
+            if attempt == tries - 1:
+                raise
+            time.sleep(0.05)
+
+
 def write_atomic(path, data, mode=None):
     """Write bytes to a temporary file beside `path` (with `mode` on POSIX when given), then move it into place: the file is replaced whole
     or not at all, and a failure leaves no temporary file behind."""
@@ -3295,9 +3310,10 @@ def deny(code, **kw):
     return dict({"decision": "deny", "code": code, "conflicts": [], "unknowns": [], "warnings": [], "fingerprint": None}, **kw)
 
 
-def judge(snap, claims, bad_claims, name, entries, override):
+def judge(snap, claims, bad_claims, name, entries, override, declared=None):
+    """`declared`: what with_declared returns for `name`, when the caller has computed it (set-plan computes it once for all its lanes)."""
     key = lane_key(name)
-    cl, bad = with_declared(snap["claimants"], claims, key, snap)
+    cl, bad = declared if declared is not None else with_declared(snap["claimants"], claims, key, snap)
     conflicts = evaluate(entries, cl, snap.get("deadline"))
     unknowns = list(snap["unknowns"]) + [{"code": "CLAIM_UNPARSEABLE", "text": b} for b in bad] + \
         [{"code": getattr(b, "code", "CLAIM_UNPARSEABLE"), "text": getattr(b, "text", b)} for b in bad_claims]
@@ -3373,7 +3389,10 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
             if v["decision"] == "deny" or v["unchanged"] and not v["overridden"]:
                 return v
             old = claims.get(fold(name))
-            doc = {"branch": name, "worktree": os.path.abspath(worktree).replace("\\", "/") if worktree else "", "target": snap["target"]["name"],
+            owner = claim_set_record(g, old) if old else None
+            if owner:  # a lane of a set: plan never writes its claim, not even the re-plan of an override that judge_now found unchanged
+                return deny("LANE_EXISTS", message=T(lang, "lane_in_set", b=name, s=owner), target=snap["target"])
+            doc = {"branch": name, "worktree": os.path.abspath(worktree).replace("\\", "/") if worktree else (old["worktree"] if old else ""), "target": snap["target"]["name"],
                    "base": snap["target"]["sha"], "created": now_iso(), "by": who(g), "override": v["fingerprint"] if v["overridden"] else "",
                    "entries": [e.raw for e in entries], "extra": old["extra"] if old and old.get("v") == CLAIM_FORMAT else []}
             try:
@@ -3668,7 +3687,7 @@ SPEC_TOP = ("v", "title", "requirements", "base", "sheet", "notes", "shared", "l
 SPEC_LANE = ("id", "title", "branch", "worktree", "paths", "depends_on", "serves", "outcome", "acceptance")
 SPEC_LANE_OPTIONAL = ("acceptance",)  # every other key of the spec is required
 RECORD_KEYS = ("v", "set", "target", "base", "revision", "created", "updated", "by", "title", "requirements", "sheet", "notes", "shared", "integration", "lanes")
-RECORD_LANE_KEYS = ("id", "title", "branch", "worktree", "paths", "depends_on", "serves", "outcome", "acceptance", "state", "head", "changes", "note", "updated")
+RECORD_LANE_KEYS = ("id", "title", "branch", "worktree", "paths", "depends_on", "serves", "outcome", "acceptance", "state", "head", "ready_target", "changes", "note", "updated")
 CHANGES_KEYS = ("commits", "subjects", "more", "files", "insertions", "deletions", "paths", "paths_more")
 _SURROGATE = re.compile(r"[\ud800-\udfff]")
 _SHEET_CTL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # the sheet may hold a newline and a tab
@@ -3772,8 +3791,9 @@ class _Obj(dict):
 
 
 def _loads(text):
-    """-> (value, number of repeated keys).  Parses with the hooks of the set formats: a repeated key is counted (the last value stays), NaN and
-    the infinities are refused, an integer of more than 4,000 digits stays text (_Digits).  Raises ValueError and RecursionError."""
+    """-> (value, number of repeated keys).  Parses with the hooks of the set formats: a repeated key is counted (the last value stays), NaN,
+    the infinities and a number literal beyond the range of a float (1e400) are refused, an integer of more than 4,000 digits stays text
+    (_Digits).  Raises ValueError and RecursionError."""
     seen = [0]
 
     def pairs(items):
@@ -3787,7 +3807,13 @@ def _loads(text):
 
     def constant(name):
         raise ValueError("%s is not allowed" % name)
-    return json.loads(text, object_pairs_hook=pairs, parse_int=_json_int, parse_constant=constant), seen[0]
+
+    def number(literal):
+        f = float(literal)
+        if math.isinf(f):
+            raise ValueError("%s is not a finite number" % _shown(literal, 40))
+        return f
+    return json.loads(text, object_pairs_hook=pairs, parse_int=_json_int, parse_float=number, parse_constant=constant), seen[0]
 
 
 def _kind(v):
@@ -3835,6 +3861,8 @@ def _record_shape(rec, name):
             return "%spaths, depends_on and serves are not lists of strings" % where
         if ln.get("state") not in LANE_STATES or (ln.get("head") is not None and not (_is_text(ln["head"]) and _BASE.fullmatch(ln["head"]))):
             return "%sstate or head is not valid" % where
+        if ln.get("ready_target") is not None and not (_is_text(ln["ready_target"]) and _BASE.fullmatch(ln["ready_target"])):
+            return "%sready_target is neither null nor a full object name" % where
         if ln.get("changes") is not None and not _changes_shape(ln["changes"]):
             return "%schanges is neither null nor a summary of changes" % where
     return None
@@ -3866,6 +3894,12 @@ def parse_set(name, path, text):
         raise SetNewer(name, v)
     if v < 1:
         raise SetUnreadable(name, path, "the format v is below 1")
+    todo = [x for k, x in rec.items() if k != "v"]  # the parser keeps a number of more than 4,000 digits as text: a write would quote it
+    while todo:
+        x = todo.pop()
+        if isinstance(x, _Digits):
+            raise SetUnreadable(name, path, "a number of more than 4,000 digits")
+        todo.extend(x.values() if isinstance(x, dict) else x if isinstance(x, list) else ())
     why = _record_shape(rec, name)
     if why:
         raise SetUnreadable(name, path, why)
@@ -3971,7 +4005,9 @@ def lane_worktree(p):
     Windows result for a rooted path without a drive differs from Python 3.13 on: a drive path (C:/x, C:\\x) or a UNC path on Windows, a
     path with a leading / elsewhere.  Git Bash drive spellings (/c/x) map to drive paths on Windows.  The spelling is os.path.normpath with
     / as the separator, as plan --worktree stores it; on POSIX the leading run of slashes is one (normpath keeps exactly two, which the
-    kernel reads as one), and a Win32 namespace path (\\\\?\\, \\\\.\\), which pkey never folds to the drive it names, is refused."""
+    kernel reads as one), and a Win32 namespace path (\\\\?\\, \\\\.\\), which pkey never folds to the drive it names, is refused; so is, on
+    Windows, a segment of the normpath spelling that ends in '.' or a space, which Win32 path resolution can drop (C:/x/repo./wt names
+    C:/x/repo/wt, which pkey keeps apart from it)."""
     if len(p) > MAX_DIR:
         return None, "longer than %d characters" % MAX_DIR
     if _CTL.search(p):
@@ -3990,7 +4026,10 @@ def lane_worktree(p):
         return None, "is not an absolute path"
     if ".." in re.split(r"[\\/]" if os.name == "nt" else "/", q):
         return None, "holds a '..' segment"
-    return os.path.normpath(q).replace("\\", "/"), None
+    stored = os.path.normpath(q).replace("\\", "/")
+    if os.name == "nt" and any(seg.endswith((".", " ")) for seg in stored.split("/")):
+        return None, "holds a segment that ends in '.' or a space, which Windows can drop when it resolves the path"
+    return stored, None
 
 
 def inside_path(path, root):
@@ -4032,8 +4071,8 @@ def _cycles(ids, deps):
 
 
 def _shown(text, limit=80):
-    """A value of the spec as a message shows it: control characters as spaces, cut to `limit` characters."""
-    text = _CTL.sub(" ", text)
+    """A value of the spec as a message shows it: control characters as spaces, a lone surrogate as U+FFFD, cut to `limit` characters."""
+    text = _SURROGATE.sub("\ufffd", _CTL.sub(" ", text))
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
@@ -4073,12 +4112,16 @@ class _Spec:
         self.lanes, self.reqs, self._main = {}, None, None
 
     def default_worktree(self, lid):
-        """<parent of the main worktree>/<repo dir name>-<set>-<id> with / separators (the main worktree is the first entry of git worktree list)."""
+        """<parent of the main worktree>/<repo dir name>-<set>-<id> with / separators (the main worktree is the first entry of git worktree list), an
+        absolute path: below a root the parent is that root (/repo gives /repo-<set>-<id>); a main worktree at a root has no name and gives
+        repo-<set>-<id> on that root (C:/ gives C:/repo-<set>-<id>), which lies inside it."""
         if self._main is None:
             wts = worktrees(self.g)
             self._main = wts[0]["path"].replace("\\", "/").rstrip("/") if wts else ""
-        parent, _, name = self._main.rpartition("/")
-        return "%s/%s-%s-%s" % (parent or ".", name or "repo", self.set, lid)
+        parent, sep, name = self._main.rpartition("/")
+        if not sep:  # the root of a drive (C:) or of the filesystem (empty)
+            parent, name = self._main, ""
+        return "%s/%s-%s-%s" % (parent, name or "repo", self.set, lid)
 
     def worktree_name_error(self, lid, norm):
         """The error of the directory name of the lane `lid` at the stored path `norm`: it must end with -<set>-<id> after a non-empty prefix (WORKTREE_FORM,
@@ -4244,7 +4287,9 @@ def _check_lane(ctx, errs, i, ln):
             seen, m["serves"] = set(), []
             for j, r in enumerate(raw[:SPEC_SERVES]):
                 where = "%s.serves[%d]" % (path, j)
-                if ctx.reqs is not None and (not _is_text(r) or r not in ctx.reqs):
+                if _is_text(r) and _SURROGATE.search(r):
+                    errs.add(where, "ENCODING", "holds a lone surrogate")
+                elif ctx.reqs is not None and (not _is_text(r) or r not in ctx.reqs):
                     errs.add(where, "UNKNOWN_REQUIREMENT", T(lang, "set_err_serves_unknown", r=_shown(r if _is_text(r) else ascii(r), 40), ids=", ".join(ctx.reqs)))
                 elif _is_text(r) and r in seen:
                     errs.add(where, "DUPLICATE", "%s is listed twice" % r)
@@ -4566,8 +4611,8 @@ def _new_dirs(paths):
 def commit_store(writes, deletes):
     """Change the store as one: `writes` [(path, bytes, previous bytes or None)] go in with replace_files (the record is the last one), then
     `deletes` [(path, previous bytes)] are removed; when a deletion fails, every deletion and write already made is undone from the previous
-    bytes (a file that had none is removed) and the error is raised, so the store never holds a mixture of two versions.  NotRestored when an
-    undo fails as well."""
+    bytes (a file that had none is removed) and the error is raised, so the store never holds a mixture of two versions.  Every removal goes
+    through _remove, retried while a reader holds the file open.  NotRestored when an undo fails as well."""
     new_dirs = _new_dirs([p for p, _d, _c in writes])
 
     def drop_dirs():
@@ -4584,7 +4629,7 @@ def commit_store(writes, deletes):
     gone = []
     try:
         for path, cur in deletes:
-            os.remove(path)
+            _remove(path)
             gone.append((path, cur))
     except BaseException as err:
         lost = []
@@ -4596,7 +4641,7 @@ def commit_store(writes, deletes):
         for path, _data, cur in reversed(writes):
             try:
                 if cur is None:
-                    os.remove(path)
+                    _remove(path)
                 else:
                     write_atomic(path, cur)
             except OSError:
@@ -4607,22 +4652,8 @@ def commit_store(writes, deletes):
         raise
 
 
-def _blocked_text(lang, op, blocked, branches):
-    """The refusal of exit 16: one reason per blocked lane (`branches`: lane id -> branch)."""
-    def why(b):
-        r = b["reason"]
-        if r == "UNMERGED_WORK":
-            return T(lang, "set_why_unmerged", l=b["lane"], b=branches.get(b["lane"], "?"))
-        if r == "DIRTY_WORKTREE":
-            return T(lang, "set_why_dirty", l=b["lane"])
-        if r == "SHRINK":
-            return T(lang, "set_why_shrink", l=b["lane"], files=_few(b["files"]))
-        return "%s %s" % (b["lane"], r)
-    return T(lang, "set_blocked", op=op, why="; ".join(why(b) for b in blocked))
-
-
-def _lane_checks(g, mdl, rec, snap, members, heads, wts):
-    """Step 10 of set-plan: the lanes of the record that were already started -> (errors for exit 24, blocked for exit 16, removed ids)."""
+def _lane_checks(g, lang, mdl, rec, snap, members, heads, wts):
+    """Step 10 of set-plan: the lanes of the record that were already started -> (errors for exit 24, the items of refuse16 for exit 16, removed ids)."""
     errs, blocked, removed = [], [], []
     by_id = {m["id"]: (i, m) for i, m in enumerate(mdl["lanes"])}
     for old in rec["lanes"]:
@@ -4635,11 +4666,11 @@ def _lane_checks(g, mdl, rec, snap, members, heads, wts):
         if hit is None:  # the lane is removed: refused while it holds work
             removed.append(old["id"])
             if branch is not None and "refs/heads/" + branch not in snap["merged"]:
-                blocked.append({"lane": old["id"], "reason": "UNMERGED_WORK", "files": []})
+                blocked.append((old["id"], "UNMERGED_WORK", T(lang, "set_why_unmerged", l=old["id"], b=old["branch"]), []))
             elif detached and detached["paths"]["committed"]:
-                blocked.append({"lane": old["id"], "reason": "UNMERGED_WORK", "files": sorted(detached["paths"]["committed"])[:SPEC_ERRORS]})
+                blocked.append((old["id"], "UNMERGED_WORK", T(lang, "set_why_unmerged", l=old["id"], b=old["branch"]), sorted(detached["paths"]["committed"])[:SPEC_ERRORS]))
             if uncommitted:
-                blocked.append({"lane": old["id"], "reason": "DIRTY_WORKTREE", "files": sorted(uncommitted)[:SPEC_ERRORS]})
+                blocked.append((old["id"], "DIRTY_WORKTREE", T(lang, "set_why_dirty", l=old["id"]), sorted(uncommitted)[:SPEC_ERRORS]))
             continue
         i, new = hit
         started = branch is not None or any(not w["bare"] and not w["prunable"] and (pkey(w["path"]) == pkey(old["worktree"]) or
@@ -4648,9 +4679,9 @@ def _lane_checks(g, mdl, rec, snap, members, heads, wts):
             errs.append(("lanes[%d].branch" % i, "STATE", "lane %s has a branch or a worktree: its branch %s cannot change" % (old["id"], old["branch"])))
         if started and pkey(new["worktree"]) != pkey(old["worktree"]):
             errs.append(("lanes[%d].worktree" % i, "STATE", "lane %s has a branch or a worktree: its worktree %s cannot change" % (old["id"], old["worktree"])))
-        outside = [p for p in changed if not any(path_hit(e, fpath(p)) for e in new["entries"])]
+        outside = ManifestIndex(new["paths"], g.deadline).outside(changed)
         if outside:
-            blocked.append({"lane": old["id"], "reason": "SHRINK", "files": outside[:200]})
+            blocked.append((old["id"], "SHRINK", T(lang, "set_why_shrink", l=old["id"], files=_few(outside)), outside[:200]))
     return errs, blocked, removed
 
 
@@ -4677,12 +4708,12 @@ def plan_set(g, args, mdl):
     heads, remotes, syms = list_refs(g)
     why = None
     if target not in heads:
-        why = "the target %s is not a local branch: plan against a local branch" % target
+        why = "the target %s is not a local branch: plan against a local branch" % _shown(target)
     else:
         try:
             tip, _ = resolve_target(g, heads, remotes, syms, target)
             if tip["sha"] != heads[target]:
-                why = "the local branch %s is behind or diverged from its remote-tracking copy: lanes cut from it would not descend from the sha the plan names" % target
+                why = "the local branch %s is behind or diverged from its remote-tracking copy: lanes cut from it would not descend from the sha the plan names" % _shown(target)
         except Uncertain as err:
             why = str(err)
     if why:
@@ -4690,12 +4721,12 @@ def plan_set(g, args, mdl):
     live = heads[target]
     if live != mdl["base"]:
         return set_deny(lang, "STALE", T(lang, "set_stale_base", t=target, live=live, base=mdl["base"]), kind="base", expected=mdl["base"], current=live)
-    own_claims = {k: d for k, d in claims.items() if rec is not None and claim_set(d) == name}  # a fresh registration has none: a remnant is refused like any claim
-    others = {k: d for k, d in claims.items() if k not in own_claims}
     ib = integration_branch(name)
+    registered = {fold(x) for x in [ln["branch"] for ln in rec["lanes"]] + [ib]} if rec is not None else set()  # a newer-format claim of one of these is the claim gate's (exit 11)
+    own_claims = {k: d for k, d in claims.items() if rec is not None and (claim_set(d) == name or claim_set(d) is None and k in registered)}  # a fresh registration has none: a remnant is refused like any claim; an amend rewrites a set-less claim of a branch of the record
+    others = {k: d for k, d in claims.items() if k not in own_claims}
     branches = [(m["id"], "lanes[%d].branch" % i, m["branch"]) for i, m in enumerate(mdl["lanes"])] + [("integration", "integration", ib)]
     pool = list(heads) + [d["branch"] for d in others.values()]
-    registered = {fold(x) for x in [ln["branch"] for ln in rec["lanes"]] + [ib]} if rec is not None else set()  # a newer-format claim of one of these is the claim gate's (exit 11)
     clashes, foreign, existing = [], [], []
     for lid, field, b in branches:
         reason = name_clash(b, pool)
@@ -4704,7 +4735,7 @@ def plan_set(g, args, mdl):
         gated = fold(b) in registered and newer_claim(bad_claims, b) is not None
         if fold(b) in others or (newer_claim(bad_claims, b) is not None and not gated):
             foreign.append((field, "LANE_EXISTS", T(lang, "set_lane_exists", l=lid, b=b)))
-        elif b in heads and fold(b) not in own_claims and not gated:
+        elif b in heads and fold(b) not in own_claims and fold(b) not in registered:  # an amend writes the missing claim of a branch of the record
             existing.append((field, "BRANCH_EXISTS", T(lang, "set_branch_exists", l=lid, b=b)))
     wts = worktrees(g)
     registered_wt = {ln["id"]: pkey(ln["worktree"]) for ln in rec["lanes"]} if rec is not None else {}
@@ -4732,14 +4763,18 @@ def plan_set(g, args, mdl):
     snap2 = dict(snap, claimants=[c for c in snap["claimants"] if c["key"] not in member_keys])
     removed = []
     if rec is not None:
-        errs, blocked, removed = _lane_checks(g, mdl, rec, snap, members, heads, wts)
+        errs, blocked, removed = _lane_checks(g, lang, mdl, rec, snap, members, heads, wts)
         if errs:
             return invalid_set(lang, errs)
         if blocked:
-            return set_deny(lang, "BLOCKED", _blocked_text(lang, "set-plan --amend", blocked, {ln["id"]: ln["branch"] for ln in rec["lanes"]}), blocked=blocked)
+            return refuse16(lang, "set-plan --amend", blocked)
     offending = []
+    shared, unparsed = with_declared(snap2["claimants"], others, None, snap2)  # the claims outside the set are parsed once for every lane
     for m in mdl["lanes"]:
-        v = judge(snap2, others, bad_claims, m["branch"], m["entries"], None)
+        # what with_declared gives for this lane alone, every claimant's files narrowed to those its manifest index matches (any other file is no evidence against the lane)
+        key, index = lane_key(m["branch"]), ManifestIndex(m["paths"], g.deadline)
+        cl = [dict(c, paths={k: {p for p in c["paths"][k] if index.hit(fpath(p))} for k in ("committed", "uncommitted")}) for c in shared if c["key"] != key]
+        v = judge(snap2, others, bad_claims, m["branch"], m["entries"], None, declared=(cl, [b for b in unparsed if lane_key(b) != key]))
         if v["decision"] == "deny":
             offending.append((m, v))
     if offending:
@@ -4762,12 +4797,13 @@ def plan_set(g, args, mdl):
         fresh = {"id": m["id"], "title": m["title"], "branch": m["branch"], "worktree": m["worktree"], "paths": list(m["paths"]),
                  "depends_on": list(m["depends_on"]), "serves": list(m["serves"]), "outcome": m["outcome"], "acceptance": m["acceptance"]}
         if old is None:
-            lane.update(fresh, state="planned", head=None, changes=None, note="", updated=now)
+            lane.update(fresh, state="planned", head=None, ready_target=None, changes=None, note="", updated=now)
         else:
             if any(old.get(k) != fresh[k] for k in fresh):
                 lane["updated"] = now
             lane.update(fresh)
-            lane.setdefault("changes", None)  # the state, the head, the changes and the note of a lane that survives stay
+            lane.setdefault("ready_target", None)
+            lane.setdefault("changes", None)  # the state, the head, the ready_target, the changes and the note of a lane that survives stay
         new_lanes.append(_ordered(lane, RECORD_LANE_KEYS))
     new = dict(rec) if rec else {}
     new.update(v=SET_FORMAT, set=name, target=rec["target"] if rec else target, base=mdl["base"], created=rec["created"] if rec else now, title=mdl["title"],
@@ -4905,9 +4941,10 @@ _TRANSITIONS = {"planned": ("active", "blocked"), "active": ("active", "ready", 
 
 
 def record_bytes(rec):
-    """The bytes of a set record as the guard writes it: the keys of RECORD_KEYS first, indented, LF, UTF-8 without a BOM.  Every write of a
-    record (set-plan, set-update) goes through this one serialiser, so the change of one field leaves every other byte as it was."""
-    return (json.dumps(_ordered(rec, RECORD_KEYS), ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    """The bytes of a set record as the guard writes it: the keys of RECORD_KEYS first, indented, LF, UTF-8 without a BOM; a non-finite number
+    (which _loads never reads) raises ValueError.  Every write of a record (set-plan, set-update) goes through this one serialiser, so the
+    change of one field leaves every other byte as it was."""
+    return (json.dumps(_ordered(rec, RECORD_KEYS), ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
 
 
 def _seg_glob(pat, name):
@@ -5172,9 +5209,10 @@ def cmd_set_show(args):
 
 
 def refuse16(lang, op, items):
-    """The denial of exit 16 for `op`: items [(lane, reason, the text of the reason)]; the JSON carries only lane and reason."""
-    return set_deny(lang, "BLOCKED", T(lang, "set_blocked", op=op, why="; ".join(why for _l, _r, why in items)),
-                    blocked=[{"lane": lane, "reason": reason} for lane, reason, _w in items])
+    """The denial of exit 16 for `op`, the one builder of exit 16 of set-plan --amend, set-update and set-release: items [(lane, reason, the text of
+    the reason[, the files the reason names])]; every item of `blocked` carries lane, reason and files (a list, empty when the item names none)."""
+    return set_deny(lang, "BLOCKED", T(lang, "set_blocked", op=op, why="; ".join(why for _l, _r, why, *_f in items)),
+                    blocked=[{"lane": lane, "reason": reason, "files": list(files[0]) if files else []} for lane, reason, _w, *files in items])
 
 
 def update_options(args):
@@ -5298,11 +5336,13 @@ def changes_summary(g, ref, head):
 
 def lane_changes(g, rec, lane, heads, landed, lang):
     """The summary of the changes of the lane that `set-update --state integrated` records -> (denial, summary).  The compare tip is the tip of the local
-    branch of the target, or the plan's base when the head is already in the target (`landed`), whose range against the tip would be empty.  Nothing is
-    recorded when it cannot be measured: the missing target is exit 11 (TARGET_UNCERTAIN), no common history exit 16 (NO_MERGE_BASE)."""
+    branch of the target, or, when the head is already in the target (`landed`), whose range against the tip would be empty, the lane's `ready_target`
+    (the commit its ready was measured against; the plan's base when it is null).  Nothing is recorded when it cannot be measured: the missing target is
+    exit 11 (TARGET_UNCERTAIN), no common history exit 16 (NO_MERGE_BASE)."""
     lid, target = lane["id"], rec["target"]
     if landed:
-        ref, shown = rec["base"], "the plan's base %s" % rec["base"]
+        ready = lane.get("ready_target")
+        ref, shown = (ready, "the commit %s its ready was measured against" % ready) if ready else (rec["base"], "the plan's base %s" % rec["base"])
     elif target in heads:
         ref, shown = heads[target], target
     else:  # the message of this exit 11 is the text itself
@@ -5337,18 +5377,21 @@ def update_set(g, args):
         if rec["integration"] is not None and args.integration not in (None, rec["integration"]):
             return invalid_args(lang, [("--integration", "STATE", "the record names the integration branch %s" % rec["integration"])])
     changes = lane.get("changes") if to == "integrated" else None  # a lane that leaves integrated no longer states that it was merged
+    ready_target = lane.get("ready_target")
     if to in ("ready", "integrated"):
         heads = list_refs(g)[0]
         denial, landed = update_checks(g, args, rec, lane, heads, worktrees(g))
         if denial:
             return denial
+        if to == "ready":  # the commit the ready check measured the lane against: the target tip, or the plan's base for a target that is gone
+            ready_target = heads.get(rec["target"]) or rec["base"]
         if to == "integrated" and lane["state"] == "ready":  # the first record of the merge: what the lane changed, measured now; a repeated update keeps it
             denial, changes = lane_changes(g, rec, lane, heads, landed, lang)
             if denial:
                 return denial
     now = now_iso()
     new_lane = dict(lane, state=to, updated=now, note=lane["note"] if args.note is None else args.note,
-                    head=args.head.lower() if to in ("ready", "integrated") else lane["head"], changes=changes)
+                    head=args.head.lower() if to in ("ready", "integrated") else lane["head"], ready_target=ready_target, changes=changes)
     by = who(g)
     new = dict(rec, revision=rec["revision"] + 1, updated=now, by=by, integration=rec["integration"] if to != "integrated" else args.integration or rec["integration"],
                lanes=[_ordered(new_lane, RECORD_LANE_KEYS) if x is lane else x for x in rec["lanes"]])
@@ -5388,9 +5431,10 @@ def worktree_dirty(g, wt):
 
 
 def release_set(g, args):
-    """set-release inside the claim lock -> the result dict.  The predicate is the one `release` uses for a lane, against the target of the
-    record: unmerged work (its branch exists and is not merged into the tip of the local target branch; no branch counts as merged when that
-    branch is gone) and a dirty worktree; without --abandon every lane must also be integrated.  Nothing is written while any lane blocks."""
+    """set-release inside the claim lock -> the result dict.  The predicate is the one `release` uses for a claim, against the target of the
+    record, for every lane and for the integration branch (`integration`): unmerged work (its branch exists and is not merged into the tip of the
+    local target branch; no branch counts as merged when that branch is gone) and a dirty worktree; without --abandon every lane must also be
+    integrated.  Nothing is written while anything blocks."""
     lang, name = args.lang, args.set
     rec, denial = set_lookup(g, args)
     if denial:
@@ -5410,6 +5454,14 @@ def release_set(g, args):
             if w["prunable"] or worktree_dirty(g, w["path"]):
                 items.append((lid, "DIRTY_WORKTREE", T(lang, "set_why_wt_missing" if w["prunable"] else "set_why_dirty", l=lid, w=w["path"].replace("\\", "/"))))
                 break
+    ib = real_branch({"branch": integration_branch(name)}, heads)  # the integration branch: the predicate of release, and no state
+    if ib is not None and "refs/heads/" + ib not in merged:
+        items.append(("integration", "UNMERGED_WORK", T(lang, "set_why_unmerged", l="integration", b=ib)))
+    for w in [w for w in wts if ib is not None and not w["bare"] and w["branch"] == ib]:  # every worktree on it, a prunable one included
+        if w["prunable"] or worktree_dirty(g, w["path"]):
+            items.append(("integration", "DIRTY_WORKTREE", T(lang, "set_why_wt_missing" if w["prunable"] else "set_why_dirty", l="integration",
+                                                             w=w["path"].replace("\\", "/"))))
+            break
     for lid, branch in [(x["id"], x["branch"]) for x in rec["lanes"]] + [("integration", integration_branch(name))]:
         rel = os.path.normcase(os.path.join(*branch.split("/")) + ".claim")
         if newer_claim(bad, branch) or any(os.path.normcase(b) == rel for b in bad):  # it cannot be read, so it cannot be known to be the set's own
@@ -6095,7 +6147,7 @@ def replace_files(items):
         for path, cur, mode in reversed(done):
             try:
                 if cur is None:
-                    os.remove(path)
+                    _remove(path)
                 else:
                     write_atomic(path, cur, mode)
             except OSError:

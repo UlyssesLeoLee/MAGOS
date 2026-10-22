@@ -13,12 +13,13 @@ import subprocess
 import sys
 import threading
 import time
+import types
 import unicodedata
 from pathlib import Path
 
 import pytest
 
-from conftest import G, ROOT, SCRIPT, Repo, run as _run, time_budget
+from conftest import G, ROOT, SCRIPT, Repo, crashed, retried, run, time_budget
 
 COMMON_KEYS = {"decision", "code", "message", "exit_code"}
 OK_KEYS = COMMON_KEYS | {"set", "target", "base", "revision", "dry_run", "unchanged", "integration_branch", "order", "requirements", "lanes", "written", "warnings"}
@@ -30,59 +31,19 @@ def P(path):
     return str(path).replace("\\", "/")
 
 
-def crashed(text):
-    """A git child killed by a Windows NTSTATUS (0xC0000000 and up, e.g. STATUS_DLL_INIT_FAILED when the machine runs low on virtual memory) or
-    that ran out of memory: the environment failed, not the guard.  Seen as `exit code N` or `Out of memory` in a Git failure of the guard."""
-    return "Out of memory" in text or any(int(n) >= 0xC0000000 for n in re.findall(r"exit code (\d+)", text))
-
-
-def run(args, stdin=b"", cwd=None):
-    """conftest.run again when a git child of the guard was killed by the machine (a call that fails that way has written nothing)."""
-    for _ in range(4):
-        r = _run(args, stdin=stdin, cwd=cwd)
-        if not crashed(r.out + r.err):
-            break
-    return r
-
-
-@pytest.fixture
-def guard(guard):
-    def call(repo, *args, stdin=b""):
-        for _ in range(4):
-            r = guard(repo, *args, stdin=stdin)
-            if not crashed(r.out + r.err):
-                break
-        return r
-    return call
-
-
-class SetsRepo(Repo):
-    """A repository whose git calls are repeated when the machine killed the child before it did anything (no message on stderr)."""
-
-    def git(self, *args, **kw):
-        for attempt in range(4):
-            try:
-                return super().git(*args, **kw)
-            except AssertionError as err:
-                if attempt == 3 or not (str(err).rstrip().endswith("failed:") or "Out of memory" in str(err)):
-                    raise
-                time.sleep(1)
+SetsRepo = Repo  # the repository of the set tests: conftest Repo, whose git calls are made again when the machine killed the child
 
 
 def sub(cmd, check=True, **kw):
-    """subprocess.run of a git command, repeated when the machine killed the child (an exit code of 0xC0000000 and up)."""
-    for attempt in range(4):
-        p = subprocess.run(cmd, **kw)
-        if p.returncode < 0xC0000000 or attempt == 3:
-            break
-        time.sleep(0.5)
+    """subprocess.run of a git command, made again when the machine killed the child (conftest.crashed)."""
+    p = retried(lambda: subprocess.run(cmd, **kw), lambda p: crashed(p.stderr.decode("utf-8", "replace") if p.stderr else "", p.returncode))
     if check and p.returncode:
         raise AssertionError("%s failed: %s" % (" ".join(cmd[:3]), p.stderr.decode("utf-8", "replace") if p.stderr else ""))
     return p
 
 
 def make_repo(tmp_path, name="repo", files=BASE_FILES):
-    r = SetsRepo(tmp_path / name)
+    r = Repo(tmp_path / name)
     r.path.mkdir()
     r.git("init", "-q")
     for rel in files:
@@ -335,9 +296,9 @@ def test_set_plan_registers_every_claim_and_the_record(demo, guard, tmp_path):
     assert rec["requirements"] == spec["requirements"] and list(G.RECORD_KEYS).index("requirements") == list(G.RECORD_KEYS).index("title") + 1
     assert rec["shared"] == [{"path": "package-lock.json", "owner": "api"}] and [x["id"] for x in rec["lanes"]] == ["api", "ui", "docs"]
     for x, want in zip(rec["lanes"], spec["lanes"]):
-        assert x["state"] == "planned" and x["head"] is None and x["changes"] is None and x["note"] == "" and list(x) == list(G.RECORD_LANE_KEYS)
+        assert x["state"] == "planned" and x["head"] is None and x["ready_target"] is None and x["changes"] is None and x["note"] == "" and list(x) == list(G.RECORD_LANE_KEYS)
         assert (x["serves"], x["outcome"], x["acceptance"]) == (want["serves"], want["outcome"], want.get("acceptance", ""))
-    assert list(G.RECORD_LANE_KEYS) == ["id", "title", "branch", "worktree", "paths", "depends_on", "serves", "outcome", "acceptance", "state", "head", "changes", "note", "updated"]
+    assert list(G.RECORD_LANE_KEYS) == ["id", "title", "branch", "worktree", "paths", "depends_on", "serves", "outcome", "acceptance", "state", "head", "ready_target", "changes", "note", "updated"]
     assert lane_of(rec, "api")["acceptance"] == "" and lane_of(rec, "ui")["acceptance"] == "it works"  # api omitted it: the empty string is stored
     assert lane_of(rec, "ui")["depends_on"] == ["api"]
     audit = audit_lines(demo)
@@ -612,7 +573,7 @@ def test_two_planners_racing_under_the_lock(tmp_path, guard):
     if rc_set == 0:
         assert "lane of set 'demo'" in json.loads(out_plan)["message"] and len(list((store_dir(r) / "claims").rglob("*.claim"))) == 4
     else:
-        assert json.loads(out_set)["errors"][0]["field"] == "lanes[0].branch" and not (store_dir(r) / "sets").exists() or not list((store_dir(r) / "sets").glob("*.json"))
+        assert json.loads(out_set)["errors"][0]["field"] == "lanes[0].branch" and not list((store_dir(r) / "sets").glob("*.json"))
         assert len(list((store_dir(r) / "claims").rglob("*.claim"))) == 1
 
 
@@ -1053,15 +1014,14 @@ def ready_lane(guard, repo, lid, tip):
     return upd_ok(guard, repo, lid, "ready", "--head", tip)
 
 
-def changed_keys(before, after):
-    """The keys of the lines in which two texts of a record differ."""
-    import difflib
-    keys = set()
-    for line in difflib.unified_diff(before.splitlines(), after.splitlines(), lineterm="", n=0):
-        if line[:1] in "+-" and not line.startswith(("+++", "---")):
-            m = re.match(r'[+-]\s*"([a-z_]+)":', line)
-            keys.add(m.group(1) if m else line)
-    return keys
+def only_changed(before, after, top, lid, lane_keys, ctx=None):
+    """Assert that `after` (the text of a record) is `before` with no other change than the values of the top-level keys `top` and of the keys
+    `lane_keys` of the lane `lid` (a key that `after` does not hold is skipped): `before` with those values taken from `after`, written as the
+    guard writes a record, is `after` byte for byte."""
+    want, got = json.loads(before), json.loads(after)
+    want.update((k, got[k]) for k in top if k in got)
+    lane_of(want, lid).update((k, lane_of(got, lid)[k]) for k in lane_keys if k in lane_of(got, lid))
+    assert json.dumps(want, ensure_ascii=False, indent=2) + "\n" == after, ctx
 
 
 def test_ready_checks_every_changed_file_against_the_manifest(demo, guard, tmp_path, monkeypatch):
@@ -1113,7 +1073,7 @@ def test_ready_checks_every_changed_file_against_the_manifest(demo, guard, tmp_p
     demo.git("update-ref", "refs/heads/" + LANES["ui"], orphan)
     upd_ok(guard, demo, "ui", "active")
     v = upd_refused(guard, demo, "ui", "ready", "--head", orphan, rc_want=16)
-    assert v["blocked"] == [{"lane": "ui", "reason": "NO_MERGE_BASE"}] and set(v) == COMMON_KEYS | {"blocked"} and "shares no history with the plan's base" in v["message"]
+    assert v["blocked"] == [{"lane": "ui", "reason": "NO_MERGE_BASE", "files": []}] and set(v) == COMMON_KEYS | {"blocked"} and "shares no history with the plan's base" in v["message"]
     # more files outside than the listing carries
     demo.git("update-ref", "-d", "refs/heads/" + LANES["ui"])
     fast_commit(demo, LANES["ui"], {"zz/f%03d.txt" % i: "x\n" for i in range(201)})
@@ -1143,7 +1103,7 @@ def test_ready_needs_the_branch_tip_a_clean_worktree_and_no_operation(demo, guar
     assert upd_ok(guard, demo, "api", "ready", "--head", tip)["state"] == "ready"
     main_tip = demo.git("rev-parse", "main")
     v = upd_refused(guard, demo, "api", "ready", "--head", main_tip, rc_want=16)
-    assert v["blocked"] == [{"lane": "api", "reason": "HEAD_MISMATCH"}] and ("--head %s is not the tip %s of branch agent/demo/api" % (main_tip, tip)) in v["message"]
+    assert v["blocked"] == [{"lane": "api", "reason": "HEAD_MISMATCH", "files": []}] and ("--head %s is not the tip %s of branch agent/demo/api" % (main_tip, tip)) in v["message"]
     for head in (tip[:7], tip + "0", "z" * 40):  # an abbreviation, 41 digits, not hexadecimal
         v = upd_refused(guard, demo, "api", "ready", "--head", head, rc_want=24)
         assert errors_of(v) == {("--head", "FORMAT")}
@@ -1156,11 +1116,11 @@ def test_ready_needs_the_branch_tip_a_clean_worktree_and_no_operation(demo, guar
     # no branch
     upd_ok(guard, demo, "ui", "active")
     v = upd_refused(guard, demo, "ui", "ready", "--head", main_tip, rc_want=16)
-    assert v["blocked"] == [{"lane": "ui", "reason": "BRANCH_MISSING"}] and "the branch agent/demo/ui of lane ui does not exist" in v["message"]
+    assert v["blocked"] == [{"lane": "ui", "reason": "BRANCH_MISSING", "files": []}] and "the branch agent/demo/ui of lane ui does not exist" in v["message"]
     # an uncommitted file
     stray = demo.write("src/api/stray.txt", "u\n", base=wt)
     v = upd_refused(guard, demo, "api", "ready", "--head", tip, rc_want=16)
-    assert v["blocked"] == [{"lane": "api", "reason": "DIRTY_WORKTREE"}] and "the worktree of lane api has uncommitted changes" in v["message"]
+    assert v["blocked"] == [{"lane": "api", "reason": "DIRTY_WORKTREE", "files": []}] and "the worktree of lane api has uncommitted changes" in v["message"]
     stray.unlink()
     # a merge in progress and a rebase in progress
     demo.commit("src/api/c.py", "lane\n", cwd=wt, msg="c")
@@ -1170,11 +1130,11 @@ def test_ready_needs_the_branch_tip_a_clean_worktree_and_no_operation(demo, guar
     demo.commit("src/api/c.py", "other\n", cwd=other, msg="other")
     demo.git("merge", "other", cwd=wt, check=False)
     v = upd_refused(guard, demo, "api", "ready", "--head", tip, rc_want=16)
-    assert {"lane": "api", "reason": "OPERATION_IN_PROGRESS"} in v["blocked"] and "has a merge in progress" in v["message"]
+    assert {"lane": "api", "reason": "OPERATION_IN_PROGRESS", "files": []} in v["blocked"] and "has a merge in progress" in v["message"]
     demo.git("merge", "--abort", cwd=wt)
     demo.git("rebase", "other", cwd=wt, check=False)
     v = upd_refused(guard, demo, "api", "ready", "--head", demo.git("rev-parse", "agent/demo/api"), rc_want=16)
-    assert {"lane": "api", "reason": "OPERATION_IN_PROGRESS"} in v["blocked"] and "rebase" in v["message"]
+    assert {"lane": "api", "reason": "OPERATION_IN_PROGRESS", "files": []} in v["blocked"] and "rebase" in v["message"]
     demo.git("rebase", "--abort", cwd=wt)
     assert demo.git("rev-parse", "agent/demo/api") == tip
     # no worktree at all is fine: a lane may be recorded from the branch alone
@@ -1202,13 +1162,13 @@ def test_integrated_needs_the_head_in_the_target_or_the_integration_branch(demo,
     assert upd_ok(guard, demo, "ui", "integrated", "--head", tips["ui"], "--integration", INTEGRATION, "--note", "again")["note"] == "again"  # integrated to integrated: a note
     assert lane_of(record(demo), "ui")["changes"] == ui_changes  # and the summary stays
     v = upd_refused(guard, demo, "ui", "integrated", "--head", tips["api"], rc_want=16)  # not the head recorded for the lane
-    assert v["blocked"] == [{"lane": "ui", "reason": "HEAD_MISMATCH"}] and ("is not the head %s recorded for lane ui at ready" % tips["ui"]) in v["message"]
+    assert v["blocked"] == [{"lane": "ui", "reason": "HEAD_MISMATCH", "files": []}] and ("is not the head %s recorded for lane ui at ready" % tips["ui"]) in v["message"]
     v = upd_refused(guard, demo, "docs", "integrated", "--head", tips["docs"], rc_want=16)  # in neither the target nor the integration branch
-    assert v["blocked"] == [{"lane": "docs", "reason": "NOT_MERGED"}] and ("commit %s is in neither main nor the integration branch" % tips["docs"]) in v["message"]
+    assert v["blocked"] == [{"lane": "docs", "reason": "NOT_MERGED", "files": []}] and ("commit %s is in neither main nor the integration branch" % tips["docs"]) in v["message"]
     zh = run(["--repo", str(demo.path), "--lang", "zh", *update_args("docs", "integrated", record(demo)["revision"], "--head", tips["docs"])])
     assert zh.rc == 16 and "拒绝 set-update" in zh.out and "既不在 main 中，也不在集成分支中" in zh.out
     v = upd_refused(guard, demo, "docs", "integrated", "--head", tips["api"], rc_want=16)
-    assert v["blocked"] == [{"lane": "docs", "reason": "HEAD_MISMATCH"}]
+    assert v["blocked"] == [{"lane": "docs", "reason": "HEAD_MISMATCH", "files": []}]
     edit_record(demo, lambda rec: rec.update(integration="agent/demo/old-name"))  # a record that names another branch: --integration must be that one
     v = upd_refused(guard, demo, "ui", "integrated", "--head", tips["ui"], "--integration", INTEGRATION, rc_want=24)
     assert errors_of(v) == {("--integration", "STATE")} and "agent/demo/old-name" in v["errors"][0]["text"]
@@ -1220,13 +1180,13 @@ def test_integrated_needs_the_head_in_the_target_or_the_integration_branch(demo,
     upd_ok(guard, demo, "docs", "ready", "--head", tips["docs"])
     demo.git("branch", "-m", INTEGRATION, "agent/demo/old")  # the integration branch is gone
     v = upd_refused(guard, demo, "docs", "integrated", "--head", tips["docs"], rc_want=16)
-    assert v["blocked"] == [{"lane": "docs", "reason": "BRANCH_MISSING"}] and "the integration branch agent/demo/integration does not exist" in v["message"]
+    assert v["blocked"] == [{"lane": "docs", "reason": "BRANCH_MISSING", "files": []}] and "the integration branch agent/demo/integration does not exist" in v["message"]
     demo.git("branch", "-m", "agent/demo/old", INTEGRATION)
     demo.git("merge", "-q", "--no-ff", "-m", "land docs", LANES["docs"])  # merged into main itself, not into the integration branch
     assert lane_of(record(demo), "docs")["changes"] is None
     landed = upd_ok(guard, demo, "docs", "integrated", "--head", tips["docs"])  # a head already in the target is accepted
     assert landed["state"] == "integrated"
-    assert landed["changes"] == {"commits": 1, "subjects": ["docs"], "more": 0, "files": 1, "insertions": 1, "deletions": 0, "paths": ["docs/d3.md"], "paths_more": 0}  # measured against the plan's base
+    assert landed["changes"] == {"commits": 1, "subjects": ["docs"], "more": 0, "files": 1, "insertions": 1, "deletions": 0, "paths": ["docs/d3.md"], "paths_more": 0}  # measured against its ready_target, the tip of main at its ready
     assert [lane_of(record(demo), x)["state"] for x in ("api", "ui", "docs")] == ["integrated"] * 3
 
 
@@ -1253,9 +1213,8 @@ def test_the_transition_table_and_the_option_rules(demo, guard, tmp_path, monkey
                 after = record(demo)
                 assert after["revision"] == 8 and lane_of(after, "api")["state"] == to and lane_of(after, "api")["note"] == "n"  # no --note: the note stays
                 assert lane_of(after, "api")["updated"] != lane_of(seeded, "api")["updated"] and after["updated"] != seeded["updated"]
-                keys = {k for k in changed_keys(before, path.read_text(encoding="utf-8")) if not k.startswith(("+", "-"))}  # a list item is a line of its own
-                assert keys <= {"revision", "updated", "by", "state", "head", "note", "integration", "changes", "commits", "subjects", "more", "files", "insertions", "deletions",
-                                "paths", "paths_more"}, (frm, to, keys)
+                only_changed(before, path.read_text(encoding="utf-8"), ("revision", "updated", "by", "integration"), "api",
+                             ("state", "head", "changes", "updated", "ready_target"), (frm, to))
                 lane_changes = lane_of(after, "api")["changes"]  # the summary: kept by a repeated integrated, computed by ready to integrated, null for every other state
                 if to != "integrated":
                     assert lane_changes is None, (frm, to)
@@ -1505,17 +1464,17 @@ def test_set_release_gating(demo, guard, tmp_path):
         assert rc == 16 and v["decision"] == "deny" and v["code"] == "BLOCKED" and set(v) == COMMON_KEYS | {"blocked"} and v["blocked"] == want, (rc, v)
         assert store_files(demo) == snapshot and len(audit_lines(demo)) == audits  # nothing is written
         return v
-    v = refused(want=[{"lane": "ui", "reason": "NOT_INTEGRATED"}])  # ui is still ready
+    v = refused(want=[{"lane": "ui", "reason": "NOT_INTEGRATED", "files": []}])  # ui is still ready
     assert v["message"] == "MAGOS: set-release refused: lane ui is ready, not integrated"
     zh = run(["--repo", str(demo.path), "--lang", "zh", "set-release", "--set", "demo"])
     assert zh.rc == 16 and zh.out.rstrip("\n") == "MAGOS：拒绝 set-release：lane ui 的状态是 ready，不是 integrated"
     upd_ok(guard, demo, "ui", "integrated", "--head", tips["ui"])
     demo.commit("docs/more.md", "m\n", cwd=wts["docs"], msg="more")  # a commit that main does not have
-    v = refused(want=[{"lane": "docs", "reason": "UNMERGED_WORK"}])
+    v = refused(want=[{"lane": "docs", "reason": "UNMERGED_WORK", "files": []}])
     assert "the branch agent/demo/docs of lane docs has unmerged work" in v["message"]
     demo.git("reset", "-q", "--hard", tips["docs"], cwd=wts["docs"])
     stray = demo.write("src/api/stray.txt", "u\n", base=wts["api"])
-    v = refused(want=[{"lane": "api", "reason": "DIRTY_WORKTREE"}])
+    v = refused(want=[{"lane": "api", "reason": "DIRTY_WORKTREE", "files": []}])
     assert "the worktree of lane api has uncommitted changes" in v["message"]
     stray.unlink()
     claims = store_dir(demo) / "claims" / "agent" / "demo"
@@ -1523,13 +1482,13 @@ def test_set_release_gating(demo, guard, tmp_path):
         good = (claims / (name + ".claim")).read_bytes()
         for bad in (good.replace(b"v=1\n", b"v=2\n"), b"state=active\nnot a claim\n"):  # a newer format, and one nobody can read
             (claims / (name + ".claim")).write_bytes(bad)
-            v = refused(want=[{"lane": lane_id, "reason": "CLAIM_UNUSABLE"}])
+            v = refused(want=[{"lane": lane_id, "reason": "CLAIM_UNUSABLE", "files": []}])
             assert "cannot be read or comes from a newer MAGOS" in v["message"]
         (claims / (name + ".claim")).write_bytes(good)
     demo.commit("docs/more.md", "m\n", cwd=wts["docs"], msg="more")  # every blocking lane is named, with every reason
     stray = demo.write("src/api/stray.txt", "u\n", base=wts["api"])
     upd_ok(guard, demo, "ui", "blocked")
-    refused(want=[{"lane": "api", "reason": "DIRTY_WORKTREE"}, {"lane": "ui", "reason": "NOT_INTEGRATED"}, {"lane": "docs", "reason": "UNMERGED_WORK"}])
+    refused(want=[{"lane": "api", "reason": "DIRTY_WORKTREE", "files": []}, {"lane": "ui", "reason": "NOT_INTEGRATED", "files": []}, {"lane": "docs", "reason": "UNMERGED_WORK", "files": []}])
     stray.unlink()
     demo.git("reset", "-q", "--hard", tips["docs"], cwd=wts["docs"])
     edit_record(demo, lambda rec: lane_of(rec, "ui").update(state="integrated"))
@@ -1573,7 +1532,7 @@ def test_set_release_abandon(tmp_path, guard):
     upd_ok(guard, r, "ui", "active")
     upd_ok(guard, r, "docs", "blocked", "--note", "waiting")
     rc, v = jrelease(guard, r)
-    assert rc == 16 and v["blocked"] == [{"lane": x, "reason": "NOT_INTEGRATED"} for x in ("api", "ui", "docs")]  # without --abandon
+    assert rc == 16 and v["blocked"] == [{"lane": x, "reason": "NOT_INTEGRATED", "files": []} for x in ("api", "ui", "docs")]  # without --abandon
     before = store_files(r)
     rc, v = jrelease(guard, r, "--abandon", "--reason", "plan dropped")
     assert rc == 0 and v["abandoned"] is True and len(v["released"]) == 4 and not record_file(r).exists() and not list((store_dir(r) / "claims").rglob("*.claim"))
@@ -1582,14 +1541,14 @@ def test_set_release_abandon(tmp_path, guard):
     branch_at(r, LANES["api"], {"src/api/n.py": "n\n"})
     before = store_files(r)
     rc, v = jrelease(guard, r, "--abandon")
-    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "UNMERGED_WORK"}] and store_files(r) == before
+    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "UNMERGED_WORK", "files": []}] and store_files(r) == before
     r = fresh("ab3")  # a dirty worktree at the registered path
     wt = wt_dir(tmp_path, "api", prefix="ab3")
     r.git("worktree", "add", "-q", "-b", LANES["api"], str(wt), "main")
     r.write("src/api/stray.txt", "u\n", base=wt)
     before = store_files(r)
     rc, v = jrelease(guard, r, "--abandon")
-    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "DIRTY_WORKTREE"}] and store_files(r) == before
+    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "DIRTY_WORKTREE", "files": []}] and store_files(r) == before
     (wt / "src" / "api" / "stray.txt").unlink()
     assert jrelease(guard, r, "--abandon")[0] == 0  # clean: the plan is dropped, the worktree and the branch stay
     assert wt.is_dir() and LANES["api"] in branches(r)
@@ -2307,7 +2266,7 @@ def test_the_target_must_be_a_local_branch_at_the_resolved_tip(tmp_path, guard):
     uncertain(attempt(tip, "nope"), "not a local branch")
     clone = tmp_path / "c2"
     sub(["git", "clone", "-q", str(bare), str(clone)], capture_output=True)
-    c2 = SetsRepo(clone)
+    c2 = Repo(clone)
     c2.commit("remote.txt", "r\n", msg="remote")
     c2.git("push", "-q", "origin", "main")
     r.git("fetch", "-q", "origin")
@@ -2331,7 +2290,7 @@ def test_the_target_must_be_a_local_branch_at_the_resolved_tip(tmp_path, guard):
     linked = tmp_path / "area3"
     r3.git("worktree", "add", "-q", "-b", "agent/other", str(linked), "main")
     f3 = write_spec(tmp_path, demo_spec(r3, tmp_path), "t3.json")
-    out = guard(SetsRepo(linked), "--json", *sp_args(f3))
+    out = guard(Repo(linked), "--json", *sp_args(f3))
     assert out.rc == 0, out
     assert (store_dir(r3) / "sets" / "demo.json").is_file() and (store_dir(r3) / "claims" / "agent" / "demo" / "api.claim").is_file()
 
@@ -2370,6 +2329,65 @@ def test_plain_plan_and_release_refuse_set_claims(demo, guard, tmp_path):
     assert "set=demo" in claim_lines(demo, "agent/demo/api")  # the amend keeps the keys it does not know
 
 
+def test_an_override_re_plan_of_a_set_lane_is_refused(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    paths = ["src/api/", "tests/api/", "package-lock.json"]
+    branch_at(demo, "other", {"src/api/a.py": "other\n"})  # a plain branch changes a file of api: the plan of api is denied
+    checked = guard(demo, "--json", "check", "--branch", "agent/demo/api", "--paths", *paths)
+    fp = json.loads(checked.out)["fingerprint"]
+    assert checked.rc == 10 and fp
+    ov = store_dir(demo) / "override" / (fp + ".json")  # the user's override of that denial
+    ov.parent.mkdir()
+    ov.write_text(json.dumps({"fp": fp, "reason": "test", "expires": "2099-01-01T00:00:00Z"}), encoding="utf-8")
+    before = store_files(demo)
+    for extra in ((), ("--worktree", wt_path(tmp_path, "api"))):  # the re-plan the override asks for, without and with the registered worktree
+        r = guard(demo, "--json", "plan", "--branch", "agent/demo/api", "--paths", *paths, *extra)
+        v = json.loads(r.out)
+        assert r.rc == 14 and v["code"] == "LANE_EXISTS" and "is a lane of set 'demo'; its claim cannot be changed on its own" in v["message"], (extra, r)
+        assert store_files(demo) == before  # the claim keeps its worktree, base and empty override, the record is not consumed, no audit line
+    (store_dir(demo) / "sets" / "demo.json").unlink()  # without a record the claim is an ordinary claim: the re-plan consumes the override
+    r = guard(demo, "--json", "plan", "--branch", "agent/demo/api", "--paths", *paths)
+    lines = claim_lines(demo, "agent/demo/api")
+    assert r.rc == 0 and json.loads(r.out)["code"] == "OVERRIDDEN" and not ov.exists()
+    assert "worktree=" + wt_path(tmp_path, "api") in lines and "override=" + fp in lines and "set=demo" in lines
+
+
+def test_amend_writes_the_missing_claim_of_a_started_lane_and_of_the_integration_branch(demo, guard, tmp_path):
+    f = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    plan_ok(guard, demo, f)
+    api, integration = (store_dir(demo) / "claims" / "agent" / "demo" / (x + ".claim") for x in ("api", "integration"))
+    good = {p: p.read_text(encoding="utf-8").split("\n") for p in (api, integration)}
+    start_lane(demo, tmp_path, "api")  # the branch and the worktree of api exist
+    demo.git("branch", INTEGRATION, "main")  # and the integration branch
+    for rev, gone in ((1, api), (2, integration)):
+        gone.unlink()  # the claim a 1.0.3 guard's release removed
+        if gone == api:
+            assert jshow(guard, demo)["view"]["lanes"][0]["claim"] == "missing"
+        rc, v = jplan(guard, demo, f, "--amend", "--expect-revision", str(rev), "--dry-run")
+        assert rc == 0 and v["unchanged"] is False and not gone.exists(), v  # writing the claim is a change; the dry run writes nothing
+        v = plan_ok(guard, demo, f, "--amend", "--expect-revision", str(rev))
+        assert v["revision"] == rev + 1 and P(gone) in v["written"]
+        lines = gone.read_text(encoding="utf-8").split("\n")
+        assert lines[:6] == good[gone][:6] and lines[8:] == good[gone][8:]  # branch, worktree, target, base, override, the set keys and the entries of the record
+    assert [x["claim"] for x in jshow(guard, demo)["view"]["lanes"]] == ["ok", "ok", "ok"]
+
+
+def test_amend_repairs_a_claim_of_the_record_without_its_set_line(demo, guard, tmp_path):
+    f = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    plan_ok(guard, demo, f)
+    api, integration = (store_dir(demo) / "claims" / "agent" / "demo" / (x + ".claim") for x in ("api", "integration"))
+    good = {p: p.read_bytes() for p in (api, integration)}
+    for p in (api, integration):
+        p.write_bytes(good[p].replace(b"set=demo\n", b""))  # the claims of a lane and of the integration branch of the record without their set= line
+    assert jshow(guard, demo)["view"]["lanes"][0]["claim"] == "mismatch"
+    v = plan_ok(guard, demo, f, "--amend", "--expect-revision", "1")
+    assert v["revision"] == 2 and api.read_bytes() == good[api] and integration.read_bytes() == good[integration]  # rewritten from the record, created kept
+    assert jshow(guard, demo)["view"]["lanes"][0]["claim"] == "ok"
+    api.write_bytes(good[api].replace(b"set=demo\n", b"set=other\n"))  # a claim of another set on a branch of the record stays foreign
+    rc, v = jplan(guard, demo, f, "--amend", "--expect-revision", "2", "--dry-run")
+    assert rc == 14 and errors_of(v) == {("lanes[0].branch", "LANE_EXISTS")}
+
+
 def test_one_snapshot_serves_every_lane(tmp_path, guard, monkeypatch):
     def twelve(repo, name):
         return write_spec(tmp_path, custom_spec(repo, tmp_path, [lane(tmp_path, "mod-%02d" % i, ["d%d/" % i]) for i in range(1, 13)]), name + ".json")
@@ -2400,8 +2418,8 @@ def test_one_snapshot_serves_every_lane(tmp_path, guard, monkeypatch):
     f2 = twelve(r2, "snap2")
     real_judge = G.judge
 
-    def judge(snap, claims, bad, name, entries, override):
-        v = real_judge(snap, claims, bad, name, entries, override)
+    def judge(snap, claims, bad, name, entries, override, **kw):
+        v = real_judge(snap, claims, bad, name, entries, override, **kw)
         if name in ("agent/demo/mod-02", "agent/demo/mod-05"):
             v = dict(v, decision="deny", code="UNKNOWN", unknowns=[{"code": "STATUS_FAILED", "text": "%s: status failed" % name}])
         return v
@@ -2794,17 +2812,20 @@ def test_a_twelve_lane_spec_is_registered_within_the_budget(tmp_path, guard, mon
     assert rc == 0 and time.monotonic() - started < time_budget(10), time.monotonic() - started
     assert sum(len(x["changed"]) for x in v["view"]["lanes"]) == 12 * 416 and v["view"]["drift"]["shared_changes"] == []
     assert all(x["out_of_lane"] == sorted("zz%d/o%d.txt" % (i, k) for k in range(16)) for i, x in enumerate(v["view"]["lanes"], 1))
-    # every entry in the wildcard group: the full comparison either completes or ends with BUDGET_EXCEEDED and no write, never a partial proof
+    # every entry in the wildcard group, the last entry of mod-11 naming the last file of mod-12 (the one pair, and the last comparison of the
+    # proof): the full comparison either finds that pair or ends with BUDGET_EXCEEDED, with no write either way, never a partial proof
     r2 = make_repo(tmp_path, "perf2")
-    wild = custom_spec(r2, tmp_path, [lane(tmp_path, "mod-%02d" % i, ["**/f_%d_%d.py" % (i, j) for j in range(200)]) for i in range(1, 13)])
+    wild = custom_spec(r2, tmp_path, [lane(tmp_path, "mod-%02d" % i, ["**/f_%d_%d.py" % (12 if (i, j) == (11, 199) else i, j) for j in range(200)]) for i in range(1, 13)])
     monkeypatch.setattr(G, "entries_overlap", real)
     monkeypatch.setattr(G.Git.__init__, "__defaults__", (4.0,))
     started = time.monotonic()
     rc, v = jplan(guard, r2, write_spec(tmp_path, wild, "wild.json"))
     assert time.monotonic() - started < time_budget(30)
-    assert rc in (0, 11), v
-    if rc == 11:
-        assert v["unknowns"][0]["code"] == "BUDGET_EXCEEDED" and store_files(r2) in (None, {})
+    assert rc in (10, 11) and store_files(r2) in (None, {}), v
+    if rc == 10:
+        assert v["overlaps"] == [{"a": "mod-11", "b": "mod-12", "entries": [["**/f_12_199.py", "**/f_12_199.py"]]}], v
+    else:
+        assert v["unknowns"][0]["code"] == "BUDGET_EXCEEDED", v
     # a spec of 4 MiB of nested lists is refused at once
     started = time.monotonic()
     rc, v = dry(guard, r, tmp_path, b"[" * 4194304, "nested.json")
@@ -3261,8 +3282,7 @@ def test_integrated_stores_the_changes_summary(guard, tmp_path, monkeypatch):
     stored = lane_of(record(repo), "api")["changes"]
     assert stored == summary and list(stored) == list(G.CHANGES_KEYS) and [lane_of(record(repo), x)["changes"] for x in ("ui", "docs")] == [None, None]
     after = record_file(repo).read_text(encoding="utf-8")
-    keys = {k for k in changed_keys(before, after) if not k.startswith(("+", "-"))}
-    assert keys <= {"revision", "updated", "by", "integration", "state", "changes", "commits", "subjects", "more", "files", "insertions", "deletions", "paths", "paths_more"}, keys
+    only_changed(before, after, ("revision", "updated", "by", "integration"), "api", ("state", "changes", "updated"))
     assert record(repo)["revision"] == rev + 1 and record(repo)["integration"] == INTEGRATION
     # the Git commands of the summary: after the conditions of integrated, with full object names and the current tip of main as the compare tip, nothing outside LOCAL_GIT
     ancestry = [i for i, c in enumerate(calls) if c[0] == "merge-base" and "--is-ancestor" in c]
@@ -3399,7 +3419,7 @@ def test_integrated_changes_fail_closed(demo, guard, tmp_path, monkeypatch):
         if code:
             assert v["unknowns"][0]["code"] == code, v
         if reason:
-            assert v["blocked"] == [{"lane": "api", "reason": reason}], v
+            assert v["blocked"] == [{"lane": "api", "reason": reason, "files": []}], v
         return v
 
     def succeeds():
@@ -3469,12 +3489,13 @@ def test_integrated_changes_fail_closed(demo, guard, tmp_path, monkeypatch):
     ui_args = update_args("ui", "integrated", record(demo)["revision"], "--head", orphan, "--integration", INTEGRATION)
     before = state()
     rc, v = jcall(guard, demo, *ui_args)
-    assert rc == 16 and v["blocked"] == [{"lane": "ui", "reason": "NO_MERGE_BASE"}] and set(v) == COMMON_KEYS | {"blocked"} and state() == before
+    assert rc == 16 and v["blocked"] == [{"lane": "ui", "reason": "NO_MERGE_BASE", "files": []}] and set(v) == COMMON_KEYS | {"blocked"} and state() == before
     assert v["message"] == "MAGOS: set-update refused: lane ui shares no history with main, so the summary of its changes cannot be computed"
     zh = run(["--repo", str(demo.path), "--lang", "zh", *ui_args])
     assert zh.rc == 16 and "lane ui 与 main 没有共同历史，无法计算改动摘要" in zh.out
     edit_record(demo, lambda rec: lane_of(rec, "ui").update(state="planned", head=None))
-    # a head that is already in main (the target fast-forwarded to the integration branch): measured against the plan's base, the real work and not zeros
+    # a head that is already in main (main moved by a commit of its own before the ready, then fast-forwarded to the integration branch): measured against the
+    # lane's ready_target, the tip of main at its ready: the real work, not zeros and not the commit of main
     other = make_repo(tmp_path, "landed")
     own = demo_spec(other, tmp_path)
     for x in own["lanes"]:
@@ -3482,15 +3503,18 @@ def test_integrated_changes_fail_closed(demo, guard, tmp_path, monkeypatch):
     plan_ok(guard, other, write_spec(tmp_path, own, "landed.json"))
     base = other.git("rev-parse", "main")
     other.git("branch", LANES["ui"], "main")  # a lane at the plan's base
+    other.commit("README.md", "moved\n", msg="main moves")
+    moved = other.git("rev-parse", "main")
     ready_lane(guard, other, "ui", base)
     _, api_head = start_lane(other, tmp_path, "api", {"src/api/new.py": "n\n", "src/api/n2.py": "n\n"}, msg="add the api", prefix="landed")
     ready_lane(guard, other, "api", api_head)
+    assert lane_of(record(other), "api")["ready_target"] == moved
     integrate(other, LANES["api"])
     other.git("merge", "-q", "--ff-only", INTEGRATION)
     calls = recorded_git(monkeypatch)
     v = upd_ok(guard, other, "api", "integrated", "--head", api_head, "--integration", INTEGRATION)
     assert v["changes"] == {"commits": 1, "subjects": ["add the api"], "more": 0, "files": 2, "insertions": 2, "deletions": 0, "paths": ["src/api"], "paths_more": 0}
-    assert ("rev-list", "--count", "--no-merges", "%s..%s" % (base, api_head)) in calls  # the plan's base is the compare tip
+    assert ("rev-list", "--count", "--no-merges", "%s..%s" % (moved, api_head)) in calls  # the tip of main at the ready is the compare tip
     calls.clear()
     v = upd_ok(guard, other, "ui", "integrated", "--head", base)
     assert v["changes"] == EMPTY_SUMMARY and "log" not in [c[0] for c in calls]  # a lane at the plan's base gives zeros
@@ -3694,7 +3718,7 @@ def test_drift_leaves_out_the_sets_own_land(demo, guard, tmp_path, monkeypatch):
         assert v["view"]["target_moved"] is True and v["view"]["drift"]["target_overlap"] == [] and v["view"]["drift"]["stale"] is False, v["view"]["drift"]
         assert logs == [drift_log(repo.git("rev-parse", "main"), base, itip, heads["api"], heads["ui"], heads["docs"])], logs
     own_work_only(demo)  # before the land, T1 is held by the integration branch
-    ff = SetsRepo(tmp_path / "landed-ff")  # one copy of the repository lands by a fast-forward
+    ff = Repo(tmp_path / "landed-ff")  # one copy of the repository lands by a fast-forward
     shutil.copytree(str(demo.path), str(ff.path))
     ff.git("merge", "-q", "--ff-only", INTEGRATION)
     assert ff.git("rev-parse", "main") == itip
@@ -3835,7 +3859,7 @@ def test_set_plan_success_creates_the_example_lane_from_the_base(tmp_path, guard
         head = message.split("\n")[0]
         assert head == G.T(lang, "set_ok_plan", s="demo", n=3, t="main", base=base, rev=1, example=example) and head.endswith(words[lang] + example), head
         assert "'\\''" in example and shlex.split(example) == ["git", "worktree", "add", stored, "-b", "agent/demo/api", base]
-        assert "main" not in example and base in head  # the example cuts the lane from the base, never from the target
+        assert "main" not in shlex.split(example)[4:] and base in head  # the example cuts the lane from the base, never from the target
     r, f = fresh("r328amend")
     plan_ok(guard, r, f)
     v = plan_ok(guard, r, spec_file(r, "r328amend2", docs=["docs/", "notes/"]), "--amend", "--expect-revision", "1")
@@ -4144,11 +4168,11 @@ def test_a_missing_lane_worktree_counts_as_dirty(demo, guard, tmp_path):
     missing = {lid: G.T("en", "set_why_wt_missing", l=lid, w=P(path)) for lid, path in (("docs", docs), ("ui", ui))}
     before = store_files(demo)
     rc, v = jrelease(guard, demo, "--abandon")
-    assert rc == 16 and v["blocked"] == [{"lane": "ui", "reason": "DIRTY_WORKTREE"}, {"lane": "docs", "reason": "DIRTY_WORKTREE"}], v
+    assert rc == 16 and v["blocked"] == [{"lane": "ui", "reason": "DIRTY_WORKTREE", "files": []}, {"lane": "docs", "reason": "DIRTY_WORKTREE", "files": []}], v
     assert missing["docs"] in v["message"] and missing["ui"] in v["message"] and store_files(demo) == before, v
     for lid, head in (("docs", tip), ("ui", ui_tip)):
         w = upd_refused(guard, demo, lid, "ready", "--head", head, rc_want=16)
-        assert w["blocked"] == [{"lane": lid, "reason": "DIRTY_WORKTREE"}] and missing[lid] in w["message"], w
+        assert w["blocked"] == [{"lane": lid, "reason": "DIRTY_WORKTREE", "files": []}] and missing[lid] in w["message"], w
     rows = {x["id"]: x for x in jshow(guard, demo)["view"]["lanes"]}
     assert [(rows[x]["worktree_present"], rows[x]["worktree_clean"]) for x in ("docs", "ui")] == [(False, None), (False, None)]
     os.rename(str(away), str(docs))
@@ -4209,6 +4233,104 @@ def test_record_revisions_must_be_object_names(demo, guard, tmp_path):
     assert jshow(guard, demo)["record"]["lanes"][0]["head"] == good["base"]
 
 
+def test_landed_lane_changes_are_measured_against_the_ready_target(demo, guard, tmp_path, monkeypatch):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    base = demo.git("rev-parse", "main")
+    api_wt, _ = start_lane(demo, tmp_path, "api")  # no commit of its own
+    ui_wt, _ = start_lane(demo, tmp_path, "ui", {"src/ui/u2.py": "ui\n"})
+    _, docs_head = start_lane(demo, tmp_path, "docs", {"docs/d3.md": "docs\n"})
+    demo.commit("README.md", "moved\n", msg="someone else")  # main moves by a commit that is no lane's
+    moved = demo.git("rev-parse", "main")
+    demo.git("merge", "-q", "--ff-only", "main", cwd=api_wt)  # the owner takes the target tip in by a fast-forward
+    demo.git("merge", "-q", "--no-edit", "main", cwd=ui_wt)  # and by a merge
+    heads = {"api": demo.git("rev-parse", LANES["api"]), "ui": demo.git("rev-parse", LANES["ui"]), "docs": docs_head}
+    assert heads["api"] == moved
+    for lid in ("api", "ui", "docs"):
+        ready_lane(guard, demo, lid, heads[lid])
+        assert lane_of(record(demo), lid)["ready_target"] == moved
+    integrate(demo, LANES["api"], LANES["ui"], LANES["docs"])
+    calls = recorded_git(monkeypatch)
+    v = upd_ok(guard, demo, "api", "integrated", "--head", heads["api"], "--integration", INTEGRATION)  # its head is the tip of main: already landed
+    assert v["changes"] == EMPTY_SUMMARY and "log" not in [c[0] for c in calls]  # the commit of main is no lane work
+    assert ("rev-list", "--count", "--no-merges", "%s..%s" % (moved, heads["api"])) in calls
+    demo.git("merge", "-q", "--ff-only", INTEGRATION)  # the set lands
+    calls.clear()
+    v = upd_ok(guard, demo, "ui", "integrated", "--head", heads["ui"])
+    assert v["changes"] == {"commits": 1, "subjects": ["ui"], "more": 0, "files": 1, "insertions": 1, "deletions": 0, "paths": ["src/ui"], "paths_more": 0}
+    assert ("rev-list", "--count", "--no-merges", "%s..%s" % (moved, heads["ui"])) in calls
+    calls.stop()
+    orphan = demo.git("commit-tree", demo.git("mktree", inp=b""), "-m", "orphan")
+    edit_record(demo, lambda rec: lane_of(rec, "docs").update(ready_target=orphan))  # a commit of unrelated history
+    v = upd_refused(guard, demo, "docs", "integrated", "--head", docs_head, rc_want=16)
+    assert [(b["lane"], b["reason"]) for b in v["blocked"]] == [("docs", "NO_MERGE_BASE")]
+    assert ("lane docs shares no history with the commit %s its ready was measured against" % orphan) in v["message"], v
+    edit_record(demo, lambda rec: lane_of(rec, "docs").update(ready_target=None))  # a lane without the value: the plan's base
+    calls = recorded_git(monkeypatch)
+    v = upd_ok(guard, demo, "docs", "integrated", "--head", docs_head)
+    assert v["changes"]["subjects"] == ["docs"] and ("rev-list", "--count", "--no-merges", "%s..%s" % (base, docs_head)) in calls
+
+
+def test_ready_records_the_commit_it_measured_against(demo, guard, tmp_path):
+    base = plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))["base"]
+    for x in record(demo)["lanes"]:
+        assert x["ready_target"] is None and list(x) == list(G.RECORD_LANE_KEYS)
+    assert list(G.RECORD_LANE_KEYS).index("ready_target") == list(G.RECORD_LANE_KEYS).index("head") + 1
+    _, tip = start_lane(demo, tmp_path, "api", {"src/api/a1.py": "a\n"})
+    demo.commit("README.md", "m1\n", msg="main moves")
+    m1 = demo.git("rev-parse", "main")
+    ready_lane(guard, demo, "api", tip)
+    assert lane_of(record(demo), "api")["ready_target"] == m1 and m1 != base and re.fullmatch(r"[0-9a-f]{40}", m1)
+    demo.commit("README.md", "m2\n", msg="main moves again")
+    m2 = demo.git("rev-parse", "main")
+    upd_ok(guard, demo, "api", "ready", "--head", tip)  # a repeated ready stores the tip of that moment
+    assert lane_of(record(demo), "api")["ready_target"] == m2
+    upd_refused(guard, demo, "api", "ready", "--head", base, rc_want=16)  # a refused ready writes nothing
+    for state in ("active", "blocked", "active"):
+        upd_ok(guard, demo, "api", state)
+        assert lane_of(record(demo), "api")["ready_target"] == m2, state  # kept, as the head is
+    demo.git("switch", "-q", "-c", "scratch")
+    demo.git("branch", "-q", "-D", "main")  # the target branch is gone: the plan's base stands in for it
+    upd_ok(guard, demo, "api", "ready", "--head", tip)
+    assert lane_of(record(demo), "api")["ready_target"] == base
+    demo.git("branch", "main", m2)
+    demo.git("switch", "-q", "main")
+    amend = demo_spec(demo, tmp_path)  # against the tip of main: the amend moves base
+    amend["lanes"].append(lane(tmp_path, "tools", ["tools/"], serves=["R1"]))
+    plan_ok(guard, demo, write_spec(tmp_path, amend, "amend.json"), "--amend", "--expect-revision", str(record(demo)["revision"]))
+    rec = record(demo)
+    assert rec["base"] == m2 and lane_of(rec, "api")["ready_target"] == base and lane_of(rec, "api")["head"] == tip
+    assert lane_of(rec, "tools")["ready_target"] is None and list(lane_of(rec, "tools")) == list(G.RECORD_LANE_KEYS)
+
+
+def test_record_ready_target_must_be_an_object_name(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    good = record(demo)
+    out = tmp_path / "out"
+    out.mkdir()
+    calls = [("set-show", "--set", "demo", "--drift"), tuple(update_args("api", "active", 1)), ("set-release", "--set", "demo", "--abandon")]
+
+    def with_target(value, drop=False):
+        ln = dict(good["lanes"][0], state="ready", head=good["base"], ready_target=value)
+        if drop:
+            del ln["ready_target"]
+        write_record(demo, dict(good, lanes=[ln] + good["lanes"][1:]))
+    for value in ("--output=%s/PWNED" % P(out), "HEAD", good["base"][:39], 5, ["x"]):
+        with_target(value)
+        for args in calls:
+            rc, v = jcall(guard, demo, *args)
+            assert rc == 11 and v["unknowns"][0]["code"] == "SET_UNREADABLE" and "lanes[0].ready_target is neither null nor a full object name" in v["unknowns"][0]["text"], \
+                (value, args, v)
+        rc, v = jplan(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path), "amend.json"), "--amend", "--expect-revision", "1")
+        assert rc == 11 and v["unknowns"][0]["code"] == "SET_UNREADABLE", (value, v)
+        assert record_file(demo).exists() and not any(out.iterdir())  # nothing written, and git never read a value as an option
+    with_target(good["base"].upper())
+    assert jshow(guard, demo)["record"]["lanes"][0]["ready_target"] == good["base"].upper()
+    with_target(None, drop=True)  # a lane without the key reads as null
+    assert "ready_target" not in jshow(guard, demo)["record"]["lanes"][0]
+    upd_ok(guard, demo, "api", "active")
+    assert lane_of(record(demo), "api")["ready_target"] is None and list(lane_of(record(demo), "api")) == list(G.RECORD_LANE_KEYS)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="the POSIX spelling of a worktree path")
 def test_worktree_spelling_folds_leading_slashes_on_posix(demo, guard, tmp_path):
     for p in ("//home/u/x-demo-api", "///home/u/x-demo-api", "/home//u/x-demo-api"):
@@ -4228,6 +4350,39 @@ def test_worktree_spelling_refuses_win32_namespace_paths(demo, guard, tmp_path):
     s = custom_spec(demo, tmp_path, [lane(tmp_path, "api", ["src/"], worktree="\\\\?\\" + str(wt_dir(tmp_path, "api")))])
     rc, v = dry(guard, demo, tmp_path, s)
     assert rc == 24 and [e["field"] for e in v["errors"]] == ["lanes[0].worktree"] and "Win32 namespace path" in v["errors"][0]["text"], v
+
+
+def test_worktree_spelling_refuses_a_segment_ending_in_a_dot_or_a_space(demo, guard, tmp_path):
+    if os.name != "nt":  # a POSIX name keeps a trailing dot or space: the path names the directory it spells
+        for p in ("/x/repo./wt-demo-api", "/x/repo /wt-demo-api"):
+            assert G.lane_worktree(p) == (p, None), p
+        return
+    for p in ("C:/x/repo./wt-demo-api", "C:/x/repo /wt-demo-api", "C:/x/a.../wt-demo-api", "C:\\x\\repo.\\wt-demo-api", "/c/x/repo./wt-demo-api", "//server/share./wt-demo-api"):
+        stored, why = G.lane_worktree(p)
+        assert stored is None and "ends in '.' or a space" in why, p
+    for p, want in (("C:\\x\\a\\.\\wt-demo-api", "C:/x/a/wt-demo-api"), ("C:/x/a.b/wt-demo-api", "C:/x/a.b/wt-demo-api"), ("C:/x/.a/wt-demo-api", "C:/x/.a/wt-demo-api")):
+        assert G.lane_worktree(p) == (want, None), p  # a `.` segment, and a dot inside or in front of a name, stay valid
+    main, api = P(demo.path), P(tmp_path / "wt" / "x-demo-api")  # Win32 resolves <main>./x-demo-api inside the main worktree, <api>./y-demo-ui inside api's
+    for lanes, field in (([lane(tmp_path, "api", ["src/api/"], worktree=main + "./x-demo-api")], "lanes[0].worktree"),
+                         ([lane(tmp_path, "api", ["src/api/"], worktree=api), lane(tmp_path, "ui", ["src/ui/"], worktree=api + "./y-demo-ui")], "lanes[1].worktree")):
+        rc, v = dry(guard, demo, tmp_path, custom_spec(demo, tmp_path, lanes))
+        assert rc == 24 and v["code"] == "INVALID_SPEC" and errors_of(v) == {(field, "WORKTREE")} and "ends in '.' or a space" in v["errors"][0]["text"], v
+    assert not store_dir(demo).exists()
+
+
+def test_the_default_worktree_keeps_the_root_above_the_main_worktree(monkeypatch):
+    below = (("/repo", "/repo-demo-api"), ("/workspace", "/workspace-demo-api"), ("C:/repo", "C:/repo-demo-api"), ("C:\\x\\repo", "C:/x/repo-demo-api"),
+             ("/home/u/repo", "/home/u/repo-demo-api"), ("//server/share/repo", "//server/share/repo-demo-api"))
+    at_root = (("/", "/repo-demo-api"), ("C:/", "C:/repo-demo-api"), ("C:\\", "C:/repo-demo-api"))
+    for main, want in below + at_root:
+        monkeypatch.setattr(G, "worktrees", lambda g, main=main: [{"path": main}])
+        ctx = G._Spec(None, "en", "demo", "main")
+        assert ctx.default_worktree("api") == want, main  # absolute: the root above the main worktree stays the parent
+        assert ctx.worktree_name_error("api", want) is None, main
+        assert ctx.worktree_name_error("api", "/x/repo-api") == ("WORKTREE_FORM", G.T("en", "set_err_worktree_form", l="api", s="demo", got="repo-api", want=want)), main
+        native = (want[1:2] == ":" or want.startswith("//")) if os.name == "nt" else (want.startswith("/") and not want.startswith("//"))
+        if native:  # where the platform spells such a main worktree the spelling passes, and only a main worktree at a root contains its default
+            assert G.lane_worktree(want) == (want, None) and G.inside_path(want, main) == ((main, want) in at_root), main
 
 
 def test_lane_overlaps_finds_every_pair_a_brute_force_finds(monkeypatch):
@@ -4278,3 +4433,392 @@ def test_lane_overlaps_stays_linear_below_a_shared_top_directory(demo, guard, tm
     started = time.monotonic()
     rc, v = jplan(guard, demo, f, "--dry-run")
     assert rc == 0 and v["dry_run"] is True and time.monotonic() - started < time_budget(10), (time.monotonic() - started, v.get("code"))
+
+
+# ---- TC-346, TC-347: the one shape of exit 16 ---------------------------------------------------------------------------------------------------
+def test_every_exit_16_item_carries_lane_reason_and_files(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    wt, tip = start_lane(demo, tmp_path, "api", {"src/api/n.py": "n\n"})
+    upd_ok(guard, demo, "api", "active")
+
+    def blocked(rc, v):
+        assert rc == 16 and v["code"] == "BLOCKED" and set(v) == COMMON_KEYS | {"blocked"}, v
+        assert all(list(b) == ["lane", "reason", "files"] and isinstance(b["files"], list) for b in v["blocked"]), v  # one shape, keys in this order
+        return v["blocked"]
+    v = upd_refused(guard, demo, "api", "ready", "--head", demo.git("rev-parse", "main"), rc_want=16)
+    assert blocked(16, v) == [{"lane": "api", "reason": "HEAD_MISMATCH", "files": []}]
+    demo.write("src/api/stray.txt", "u\n", base=wt)
+    v = upd_refused(guard, demo, "api", "ready", "--head", tip, rc_want=16)
+    assert blocked(16, v) == [{"lane": "api", "reason": "DIRTY_WORKTREE", "files": []}]  # the text of set-update names no file
+    assert blocked(*jrelease(guard, demo)) == [{"lane": "api", "reason": "NOT_INTEGRATED", "files": []}, {"lane": "api", "reason": "UNMERGED_WORK", "files": []},
+                                             {"lane": "api", "reason": "DIRTY_WORKTREE", "files": []}, {"lane": "ui", "reason": "NOT_INTEGRATED", "files": []},
+                                             {"lane": "docs", "reason": "NOT_INTEGRATED", "files": []}]
+    before = store_files(demo)
+    rc, v = jplan(guard, demo, write_spec(tmp_path, drop_lane(demo_spec(demo, tmp_path), "api"), "drop.json"), "--amend", "--expect-revision", "2")
+    assert blocked(rc, v) == [{"lane": "api", "reason": "UNMERGED_WORK", "files": []}, {"lane": "api", "reason": "DIRTY_WORKTREE", "files": ["src/api/stray.txt"]}]
+    assert v["message"] == "MAGOS: set-plan --amend refused: the branch agent/demo/api of lane api has unmerged work; the worktree of lane api has uncommitted changes"
+    assert store_files(demo) == before
+
+
+def test_refuse16_is_the_one_builder_of_exit_16():
+    v = G.refuse16("en", "set-update", [("api", "HEAD_MISMATCH", "first"), ("api", "DIRTY_WORKTREE", "second", ["src/api/x.py"])])
+    assert v == {"decision": "deny", "code": "BLOCKED", "blocked": [{"lane": "api", "reason": "HEAD_MISMATCH", "files": []},
+                                                                   {"lane": "api", "reason": "DIRTY_WORKTREE", "files": ["src/api/x.py"]}],
+                 "message": "MAGOS: set-update refused: first; second"}
+    assert list(v) == ["decision", "code", "blocked", "message"] and list(v["blocked"][0]) == ["lane", "reason", "files"]
+    zh = G.refuse16("zh", "set-plan --amend", [("ui", "SHRINK", "t", ["a", "b"])])
+    assert zh["blocked"] == [{"lane": "ui", "reason": "SHRINK", "files": ["a", "b"]}] and zh["message"] == "MAGOS：拒绝 set-plan --amend：t"
+
+
+# ---- TC-374, TC-375: the cost of an amend's shrink check and of the judgement of the lanes ------------------------------------------------------
+def test_amend_shrink_check_runs_on_the_manifest_index(demo, guard, tmp_path, monkeypatch):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    files = {"src/api/n%03d.py" % i: "n\n" for i in range(40)}
+    branch_at(demo, "agent/demo/api", files)  # the lane is started: its branch changed 40 files
+    before = store_files(demo)
+
+    def shrunk(paths, name):
+        s = demo_spec(demo, tmp_path)
+        s["lanes"][0]["paths"] = paths + ["tests/api/", "package-lock.json"]
+        return write_spec(tmp_path, s, name)
+    calls, real_hit = [0], G.path_hit
+
+    def counted(e, p):
+        calls[0] += 1
+        return real_hit(e, p)
+    monkeypatch.setattr(G, "path_hit", counted)
+    rc, v = jplan(guard, demo, shrunk(["src/api/keep%02d/" % j for j in range(10)], "literal.json"), "--amend", "--expect-revision", "1")
+    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "SHRINK", "files": sorted(files)}], v
+    assert calls[0] == 0  # literal entries: the index looks the files up, no file is compared with each entry
+    assert store_files(demo) == before
+    monkeypatch.setattr(G, "path_hit", real_hit)
+    real_index = G.ManifestIndex
+
+    def expired(raws, deadline=None):  # the index gets the call's deadline, here one that has passed
+        return real_index(raws, None if deadline is None else time.monotonic() - 1)
+    monkeypatch.setattr(G, "ManifestIndex", expired)
+    rc, v = jplan(guard, demo, shrunk(["src/api/k%02d*.md" % j for j in range(10)], "glob.json"), "--amend", "--expect-revision", "1")
+    assert rc == 11 and v["unknowns"][0]["code"] == "BUDGET_EXCEEDED" and "lane manifests" in v["unknowns"][0]["text"], v
+    assert store_files(demo) == before
+
+
+def test_set_plan_parses_other_claims_once_and_compares_only_matched_files(tmp_path, guard, monkeypatch):
+    r = make_repo(tmp_path, "cost")
+    files = {"vendor/v%02d.js" % i: "v\n" for i in range(60)}
+    files["d3/x.py"] = "x\n"
+    branch_at(r, "feature/deps", files)
+    assert guard(r, "plan", "--branch", "agent/x9", "--paths", "d9/x.py").rc == 0
+    assert guard(r, "plan", "--branch", "agent/other", "--paths", "other/").rc == 0
+    f = write_spec(tmp_path, custom_spec(r, tmp_path, [lane(tmp_path, "mod-%02d" % i, ["d%d/" % i]) for i in range(1, 13)]), "cost.json")
+    calls, compared = [0], []
+    real_wd, real_hit = G.with_declared, G.path_hit
+
+    def wd(*a, **k):
+        calls[0] += 1
+        return real_wd(*a, **k)
+
+    def hit(entry, path):
+        compared.append("/".join(path))
+        return real_hit(entry, path)
+    monkeypatch.setattr(G, "with_declared", wd)
+    monkeypatch.setattr(G, "path_hit", hit)
+    rc, v = jplan(guard, r, f, "--dry-run")
+    assert rc == 10 and v["code"] == "CONFLICT" and [x["id"] for x in v["lanes"]] == ["mod-03", "mod-09"], v
+    assert v["lanes"][0]["conflicts"] == [{"key": G.lane_key("feature/deps"), "branch": "feature/deps", "worktrees": [], "planned": False,
+                                           "evidence": [{"kind": "committed", "files": ["d3/x.py"], "matched": ["d3/"], "theirs": []}]}]
+    assert v["lanes"][1]["conflicts"] == [{"key": G.lane_key("agent/x9"), "branch": "agent/x9", "worktrees": [], "planned": True,
+                                           "evidence": [{"kind": "declared", "files": [], "matched": ["d9/"], "theirs": ["d9/x.py"]}]}]
+    assert calls[0] == 1  # the other claims are parsed once for the twelve lanes
+    assert "d3/x.py" in compared and not any(p.startswith("vendor/") for p in compared), sorted(set(compared))  # no lane's index matches a vendor file
+    bad = store_dir(r) / "claims" / "agent" / "badentry.claim"
+    bad.write_text("state=active\nbranch=agent/badentry\nentry=/abs\n", encoding="utf-8")
+    calls[0] = 0
+    rc, v = jplan(guard, r, f, "--dry-run")
+    assert rc == 10 and len(v["lanes"]) == 12 and all(x["unknowns"] == [{"code": "CLAIM_UNPARSEABLE", "text": "agent/badentry"}] for x in v["lanes"]), v
+    assert calls[0] == 1
+
+
+# ---- TC-362 .. TC-365: a lone surrogate in a --set value or a serves id, a number beyond the float range --------------------------------------
+def test_a_set_name_with_a_lone_surrogate_is_refused_on_set(demo, guard, tmp_path):
+    f = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    plan_ok(guard, demo, f)
+    before = store_files(demo)
+    assert G._shown("a\udcffb\x01c") == "a\ufffdb c" and G._shown("\ud800" * 100, 40) == "\ufffd" * 39 + "…"
+    for bad in ("\udcff", "x\udcff"):  # a non-UTF-8 argv byte arrives as \udcXX on POSIX (surrogateescape)
+        shown = bad.replace("\udcff", "\ufffd")
+        calls = dict(set_commands(bad, f), **{"set-plan-dry-run": sp_args(f, bad, "main", "--dry-run")})
+        for sub_name, args in calls.items():
+            frame = "set_invalid" if sub_name.startswith("set-plan") else "set_invalid_args"
+            r = guard(demo, "--json", *args)
+            v = json.loads(r.out)
+            want = G.T("en", "set_err_set_name", s=shown, rule=G.SLUG_RULE)
+            assert r.rc == 24 and r.err == "" and v["code"] == "INVALID_SPEC" and [(e["field"], e["code"], e["text"]) for e in v["errors"]] == [("--set", "FORMAT", want)], (sub_name, r)
+            assert v["message"] == G.T("en", frame, errors="  [FORMAT] --set: " + want)
+            r = guard(demo, *args)
+            assert r.rc == 24 and r.err == "" and r.out.rstrip("\n") == G.T("en", frame, errors="  [FORMAT] --set: " + want), (sub_name, r)
+            zh = run(["--repo", str(demo.path), "--lang", "zh", *args])
+            assert zh.rc == 24 and zh.err == "" and zh.out.rstrip("\n") == G.T("zh", frame, errors="  [FORMAT] --set: " + G.T("zh", "set_err_set_name", s=shown, rule=G.SLUG_RULE)), (sub_name, zh)
+    assert store_files(demo) == before
+
+
+def test_a_serves_id_with_a_lone_surrogate_is_an_encoding_error(demo, guard, tmp_path):
+    spec = demo_spec(demo, tmp_path)
+    spec["lanes"][0]["serves"] = ["R1", "\ud800"]  # json.dumps writes the escape \ud800
+    f = write_spec(tmp_path, spec, "surrogate.json")
+    rc, v = jplan(guard, demo, f)
+    assert rc == 24 and v["code"] == "INVALID_SPEC" and [(e["field"], e["code"], e["text"]) for e in v["errors"]] == [("lanes[0].serves[1]", "ENCODING", "holds a lone surrogate")], v
+    for lang in ("en", "zh"):  # the text of ENCODING is English in both languages
+        r = run(["--repo", str(demo.path), "--lang", lang, *sp_args(f)])
+        assert r.rc == 24 and r.err == "" and "[ENCODING] lanes[0].serves[1]: holds a lone surrogate" in r.out, (lang, r)
+    twice = custom_spec(demo, tmp_path, [lane(tmp_path, "api", ["src/api/"], serves=["\ud800", "\ud800"])], requirements=[])
+    rc, v = jplan(guard, demo, write_spec(tmp_path, twice, "twice.json"))
+    assert rc == 24 and [(e["field"], e["code"]) for e in v["errors"]] == [("requirements", "RANGE"), ("lanes[0].serves[0]", "ENCODING"), ("lanes[0].serves[1]", "ENCODING")], v
+    assert store_files(demo) in (None, {})
+
+
+def test_a_number_beyond_the_float_range_is_not_valid_json(demo, guard, tmp_path):
+    for literal in ("1e400", "-1e400", "1E+400", "-0.5e999"):
+        with pytest.raises(ValueError, match="^%s is not a finite number$" % re.escape(literal)):
+            G._loads('{"a": [%s]}' % literal)
+    with pytest.raises(ValueError) as err:
+        G._loads("9" * 400 + ".0")
+    assert str(err.value) == "9" * 39 + "… is not a finite number"
+    assert G._loads('{"a": 1.5, "b": 1e308, "c": -0.0, "d": 2.5e-400}') == ({"a": 1.5, "b": 1e308, "c": 0.0, "d": 0.0}, 0)
+    text = json.dumps(demo_spec(demo, tmp_path))
+    for body, literal in ((text.replace('"notes": ["note one"]', '"notes": [1e400]'), "1e400"), (text.replace('{"v": 1, ', '{"v": -1e400, ', 1), "-1e400")):
+        assert literal in body
+        rc, v = dry(guard, demo, tmp_path, body, "infinite.json")
+        assert rc == 24 and [(e["field"], e["code"], e["text"]) for e in v["errors"]] == [("spec", "JSON", "not valid JSON: %s is not a finite number" % literal)], v
+    assert store_files(demo) in (None, {})
+
+
+def test_a_record_with_a_non_finite_number_is_unreadable_and_never_rewritten(demo, guard, tmp_path):
+    f = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    plan_ok(guard, demo, f)
+    path = store_dir(demo) / "sets" / "demo.json"
+    good = path.read_bytes()
+    text = good.decode("utf-8")
+    calls = {"show": ["set-show", "--set", "demo"], "show-drift": ["set-show", "--set", "demo", "--drift"], "update": update_args("api", "active", 1),
+             "release": ["set-release", "--set", "demo"], "release-abandon": ["set-release", "--set", "demo", "--abandon"], "plan": sp_args(f),
+             "amend": sp_args(f, "demo", "main", "--amend", "--expect-revision", "1")}
+    for body in (text.replace('"v": 1,', '"v": 1,\n  "x_big": 1e400,', 1), text.replace('"id": "api",', '"id": "api", "x_lane": -1e400,', 1)):  # keys this guard does not know
+        assert body != text
+        path.write_bytes(body.encode("utf-8"))
+        for label, args in calls.items():
+            r = guard(demo, "--json", *args)
+            v = json.loads(r.out)
+            assert r.rc == 11 and v["unknowns"][0]["code"] == "SET_UNREADABLE" and "is not a finite number" in v["unknowns"][0]["text"], (label, r)
+            assert path.read_bytes() == body.encode("utf-8")  # never rewritten as the token Infinity
+        d = guard(demo, "doctor")
+        assert d.rc == 1 and "sets: 0, unreadable: 1, newer-format: 0" in d.out and "unreadable set record sets/demo.json" in d.out
+    for bad in (float("inf"), float("-inf"), float("nan")):  # the writer refuses a non-finite number
+        with pytest.raises(ValueError):
+            G.record_bytes(dict(json.loads(text), x=bad))
+    path.write_bytes(good)
+    upd_ok(guard, demo, "api", "active", rev=1)
+    assert b"Infinity" not in path.read_bytes() and record(demo)["revision"] == 2
+
+
+# ---- TC-402, TC-403: a number of more than 4,000 digits in a record, a target with a lone surrogate ----------------------------------------------
+def test_a_record_with_a_number_of_more_than_4000_digits_is_unreadable(demo, guard, tmp_path):
+    f = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    plan_ok(guard, demo, f)
+    path = record_file(demo)
+    text = path.read_bytes().decode("utf-8")
+    calls = {"show": ["set-show", "--set", "demo"], "update": update_args("api", "active", 1), "amend": sp_args(f, "demo", "main", "--amend", "--expect-revision", "1")}
+    big = "1" * 4001
+    for body in (text.replace('"v": 1,', '"v": 1,\n  "x_big": %s,' % big, 1), text.replace('"id": "api",', '"id": "api", "x_lane": [{"n": -%s}],' % big, 1)):  # keys this guard does not know
+        assert body != text
+        path.write_bytes(body.encode("utf-8"))
+        for label, args in calls.items():
+            r = guard(demo, "--json", *args)
+            v = json.loads(r.out)
+            assert r.rc == 11 and v["code"] == "UNKNOWN" and [u["code"] for u in v["unknowns"]] == ["SET_UNREADABLE"] and r.err == "", (label, r)
+            assert v["unknowns"][0]["text"].endswith("demo.json: a number of more than 4,000 digits") and "demo.json" in v["message"], (label, v)
+            assert path.read_bytes() == body.encode("utf-8")  # never rewritten with the number as a string
+    path.write_bytes(text.replace('"v": 1,', '"v": 1,\n  "x_big": %s,' % ("1" * 4000), 1).encode("utf-8"))
+    upd_ok(guard, demo, "api", "active", rev=1)
+    assert re.search(rb'"x_big": 1{4000}[,\n]', path.read_bytes()) and record(demo)["revision"] == 2  # written back as a number
+
+
+def test_a_target_with_a_lone_surrogate_is_target_uncertain(demo, guard, tmp_path):
+    f = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    target = "ma\udcffin"  # a non-UTF-8 argv byte arrives as \udcXX on POSIX (surrogateescape)
+    why = "the target ma\ufffdin is not a local branch: plan against a local branch"
+    for extra in (("--dry-run",), ()):
+        for lang in ("en", "zh"):
+            r = run(["--repo", str(demo.path), "--lang", lang, "--json", *sp_args(f, "demo", target, *extra)])
+            v = json.loads(r.out)
+            assert r.rc == 11 and r.err == "" and v["code"] == "UNKNOWN" and v["unknowns"] == [{"code": "TARGET_UNCERTAIN", "text": why}], (extra, lang, r)
+            r = run(["--repo", str(demo.path), "--lang", lang, *sp_args(f, "demo", target, *extra)])
+            assert r.rc == 11 and r.err == "" and why in r.out, (extra, lang, r)
+    assert store_files(demo) in (None, {})
+
+
+# ---- TC-382, TC-383: every path is read from the top of the work tree, whatever directory --repo names -----------------------------------------
+def test_drift_reads_the_paths_from_the_top_under_diff_relative(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    start_lane(demo, tmp_path, "api", {"src/api/b.py": "b\n"})
+    demo.write("src/api/a.py", "main\n")
+    demo.write("src/ui/new.py", "n\n")
+    demo.git("add", "-A")
+    demo.git("commit", "-q", "-m", "the target changes files of api and ui")
+    demo.git("config", "diff.relative", "true")  # git diff and git log list only the changes below the directory they start in, relative to it
+    want = jshow(guard, demo, "--drift")["view"]
+    assert want["drift"]["target_overlap"] == [{"path": "src/api/a.py", "lanes": ["api"]}, {"path": "src/ui/new.py", "lanes": ["ui"]}] and want["drift"]["stale"] is True
+    assert (want["lanes"][0]["changed"], want["lanes"][0]["out_of_lane"]) == (["src/api/b.py"], [])
+    for below in (demo.path / "src", demo.path / "src" / "api", wt_dir(tmp_path, "api") / "src"):
+        assert jshow(guard, below, "--drift")["view"] == want, below
+
+
+def test_ready_and_integrated_read_the_paths_from_the_top_under_diff_relative(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    _, tip = start_lane(demo, tmp_path, "api", {"src/api/b.py": "b\n", "tests/api/t2.py": "t\n"})
+    demo.git("config", "diff.relative", "true")
+    below = demo.path / "src"
+
+    def update(state, *extra):
+        return jcall(guard, below, *update_args("api", state, record(demo)["revision"], *extra))
+    assert update("active")[0] == 0
+    rc, v = update("ready", "--head", tip)  # both files lie in the manifest of api: no OUT_OF_LANE
+    assert rc == 0 and v["state"] == "ready" and lane_of(record(demo), "api")["head"] == tip, v
+    integrate(demo, LANES["api"])
+    demo.git("merge", "-q", "--ff-only", INTEGRATION)
+    rc, v = update("integrated", "--head", tip, "--integration", INTEGRATION)
+    assert rc == 0 and (v["changes"]["files"], v["changes"]["paths"]) == (2, ["src/api", "tests/api"]) and lane_of(record(demo), "api")["changes"] == v["changes"], v
+
+
+# ---- TC-390, TC-391: set-release judges the integration branch as release judges its claim ---------------------------------------------
+def one_lane_integrated(guard, repo, tmp_path, land):
+    """The set demo of the one lane api (src/api/): one commit, ready, merged --no-ff into the integration branch and recorded integrated; with `land`
+    main is fast-forwarded to the integration branch: -> the lane worktree."""
+    plan_ok(guard, repo, write_spec(tmp_path, custom_spec(repo, tmp_path, [lane(tmp_path, "api", ["src/api/"])])))
+    wt, tip = start_lane(repo, tmp_path, "api", {"src/api/n.py": "n\n"})
+    ready_lane(guard, repo, "api", tip)
+    integrate(repo, LANES["api"])
+    if land:
+        repo.git("merge", "-q", "--ff-only", INTEGRATION)
+    upd_ok(guard, repo, "api", "integrated", "--head", tip, "--integration", INTEGRATION)
+    return wt
+
+
+def test_set_release_refuses_an_unmerged_integration_branch(demo, guard, tmp_path):
+    wt = one_lane_integrated(guard, demo, tmp_path, land=False)
+    demo.git("worktree", "remove", str(wt))
+    demo.git("branch", "-q", "-D", LANES["api"])  # the lane branch is gone: its commits are only on the integration branch, which main lacks
+    before, audits = store_files(demo), len(audit_lines(demo))
+    for extra in ([], ["--abandon"]):
+        rc, v = jrelease(guard, demo, "--reason", "integrated", *extra)
+        assert rc == 16 and v["code"] == "BLOCKED" and [(b["lane"], b["reason"]) for b in v["blocked"]] == [("integration", "UNMERGED_WORK")], (extra, v)
+        assert "the branch agent/demo/integration of lane integration has unmerged work" in v["message"], v
+        assert store_files(demo) == before and len(audit_lines(demo)) == audits  # the record and both claims stay
+    zh = run(["--repo", str(demo.path), "--lang", "zh", "set-release", "--set", "demo"])
+    assert zh.rc == 16 and "lane integration 的分支 agent/demo/integration 有未合并的工作" in zh.out, zh
+    demo.git("merge", "-q", "--ff-only", INTEGRATION)  # landed: main holds the integration branch
+    rc, v = jrelease(guard, demo, "--reason", "integrated")
+    assert rc == 0 and v["released"] == [LANES["api"], INTEGRATION] and not record_file(demo).exists() and INTEGRATION in branches(demo), v
+
+
+def test_set_release_refuses_a_dirty_worktree_on_the_integration_branch(demo, guard, tmp_path):
+    one_lane_integrated(guard, demo, tmp_path, land=True)
+    iwt = tmp_path / "wt" / "int-demo"
+    demo.git("worktree", "add", "-q", str(iwt), INTEGRATION)  # a worktree on the integration branch, which main holds
+    stray = demo.write("stray.txt", "u\n", base=iwt)
+    before = store_files(demo)
+    for extra in ([], ["--abandon"]):
+        rc, v = jrelease(guard, demo, *extra)
+        assert rc == 16 and [(b["lane"], b["reason"]) for b in v["blocked"]] == [("integration", "DIRTY_WORKTREE")], (extra, v)
+        assert "the worktree of lane integration has uncommitted changes" in v["message"] and store_files(demo) == before, v
+    claim = store_dir(demo) / "claims" / "agent" / "demo" / "integration.claim"
+    good = claim.read_bytes()
+    claim.write_bytes(b"state=active\nnot a claim\n")  # an unreadable integration claim is named after the predicate's item
+    rc, v = jrelease(guard, demo)
+    assert rc == 16 and [(b["lane"], b["reason"]) for b in v["blocked"]] == [("integration", "DIRTY_WORKTREE"), ("integration", "CLAIM_UNUSABLE")], v
+    claim.write_bytes(good)
+    stray.unlink()
+    shutil.rmtree(str(iwt))  # removed without git worktree remove: prunable, so it is not known to be clean
+    rc, v = jrelease(guard, demo)
+    assert rc == 16 and [(b["lane"], b["reason"]) for b in v["blocked"]] == [("integration", "DIRTY_WORKTREE")], v
+    assert G.T("en", "set_why_wt_missing", l="integration", w=P(iwt)) in v["message"], v
+    demo.git("worktree", "prune")
+    rc, v = jrelease(guard, demo, "--reason", "integrated")
+    assert rc == 0 and v["released"] == [LANES["api"], INTEGRATION] and INTEGRATION in branches(demo), v
+
+
+# ---- TC-350: the order of the spec errors ------------------------------------------------------------------------------------------------
+def test_spec_errors_come_in_the_documented_order(demo, guard, tmp_path):
+    # the keys of the top level, its fields in schema order without shared, each lane; then the depends_on ids, the cycles, shared entry by entry,
+    # the unserved requirements, the nesting of lane worktrees and the position of the spec file
+    home = P(tmp_path / "x-demo-api")
+    api = lane(tmp_path, "api", ["src/api/"], ["ghost", "api", "docs"], title="", worktree=home)
+    docs = lane(tmp_path, "docs", ["docs/"], ["api", "api"], worktree=home + "/y-demo-docs")
+    spec = custom_spec(demo, tmp_path, [api, docs], requirements=[{"id": "R1", "text": "the task is done"}, {"id": "R2", "text": "nobody serves it"}],
+                       notes=[""], shared=[{"path": "nope/x.py", "owner": "api"}, {"path": "a/*", "owner": "zzz"}])
+    spec["zz"] = 1
+    f = tmp_path / "x-demo-api" / "spec.json"
+    f.parent.mkdir()
+    f.write_bytes(json.dumps(spec).encode("utf-8"))
+    rc, v = jplan(guard, demo, f, "--dry-run")
+    assert rc == 24 and [(e["field"], e["code"]) for e in v["errors"]] == [
+        ("zz", "UNKNOWN_KEY"), ("notes[0]", "RANGE"), ("lanes[0].title", "RANGE"), ("lanes[0].depends_on[0]", "UNKNOWN_LANE"), ("lanes[0].depends_on[1]", "CYCLE"),
+        ("lanes[1].depends_on[1]", "DUPLICATE"), ("lanes[0].depends_on", "CYCLE"), ("shared[0].path", "NOT_IN_OWNER"), ("shared[1].path", "BAD_GLOB"),
+        ("shared[1].owner", "UNKNOWN_LANE"), ("requirements[1]", "UNSERVED"), ("lanes[1].worktree", "WORKTREE"), ("--spec", "SPEC_IN_WORKTREE")], v
+    assert v["message"].splitlines()[1:] == ["  [%s] %s: %s" % (e["code"], e["field"], e["text"]) for e in v["errors"]]  # the text prints the same order
+    # the 20 lines are the first 20 of that order: 24 lane errors and 2 shared errors print the first 20 lane errors and no shared one
+    lanes = [lane(tmp_path, "mod-%02d" % i, ["src/m%02d/" % i], title="", outcome="") for i in range(1, 13)]
+    rc, v = dry(guard, demo, tmp_path, custom_spec(demo, tmp_path, lanes, shared=[{"path": "a/*", "owner": "zzz"}]), "cap.json")
+    assert rc == 24 and len(v["errors"]) == 20 and all(e["field"].startswith("lanes[") for e in v["errors"]), v
+    assert v["errors"][-1]["field"] == "lanes[9].outcome" and v["message"].splitlines()[-1] == "  ... and 6 more"
+    assert not store_dir(demo).exists()
+
+
+def test_lane_overlaps_never_returns_a_partial_proof(monkeypatch):
+    lanes = [{"id": "a", "entries": [G.parse_entry(p) for p in ("**/f_0.py", "**/f_1.py")]},
+             {"id": "b", "entries": [G.parse_entry("**/g_%d.py" % j) for j in range(40)] + [G.parse_entry("**/f_1.py")]}]
+    assert G.lane_overlaps(lanes, time.monotonic() + 60) == ([("a", "**/f_1.py", "b", "**/f_1.py")], 1)  # in time: the one pair, its entries compared last
+    now, calls, real = [0.0], [], G.entries_overlap
+
+    def compare(a, b):
+        calls.append((a.raw, b.raw))
+        if len(calls) == 20:
+            now[0] = 2.0  # the deadline passes while the first entry of lane a is compared
+        return real(a, b)
+    monkeypatch.setattr(G, "time", types.SimpleNamespace(monotonic=lambda: now[0]))  # the clock of the guard is the test's
+    monkeypatch.setattr(G, "entries_overlap", compare)
+    for deadline in (-1.0, 1.0):  # passed before the proof starts; passing during it
+        now[0], calls[:] = 0.0, []
+        with pytest.raises(G.GitFail) as err:
+            G.lane_overlaps(lanes, deadline)
+        assert err.value.code == "BUDGET_EXCEEDED" and "ran out of time" in str(err.value), deadline
+        assert (len(calls) == 0) if deadline < 0 else (20 <= len(calls) <= 41 and ("**/f_1.py", "**/f_1.py") not in calls), (deadline, len(calls))
+
+
+def test_a_child_the_machine_killed_is_run_again(repo, guard, monkeypatch):
+    assert crashed("", 0xC0000142) and crashed("MAGOS guard: GIT_FAILED: git status: exit code 3221225794") and crashed("fatal: Out of memory, malloc failed")
+    assert not any((crashed("", 1), crashed("git merge-base: exit code 128"), crashed("fatal: not a git repository", 128)))
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    real, killed = subprocess.run, []
+
+    def once(cmd, *a, **k):  # the first git child dies of STATUS_DLL_INIT_FAILED before it writes anything
+        if not killed:
+            killed.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0xC0000142, b"", b"")
+        return real(cmd, *a, **k)
+    monkeypatch.setattr(subprocess, "run", once)
+    assert repo.git("rev-parse", "--is-inside-work-tree") == "true" and len(killed) == 1  # Repo.git
+    killed.clear()
+    assert sub(["git", "rev-parse", "--is-inside-work-tree"], cwd=str(repo.path), capture_output=True).stdout.strip() == b"true" and len(killed) == 1
+    monkeypatch.setattr(subprocess, "run", real)
+    calls = []
+    assert retried(lambda: calls.append(1) or 0xC0000142, lambda rc: crashed("", rc)) == 0xC0000142 and len(calls) == 4  # a crash that persists still fails
+    real_main, argv = G.main, []
+
+    def main(args):  # the first guard call reports the crash of its git child
+        argv.append(args)
+        if len(argv) == 1:
+            sys.stderr.write("MAGOS guard: GIT_FAILED: git status: exit code 3221225794\n")
+            return 11
+        return real_main(args)
+    monkeypatch.setattr(G, "main", main)
+    r = guard(repo, "list")
+    assert r.rc == 0 and len(argv) == 2 and "exit code" not in r.err, r  # the guard fixture, through conftest.run

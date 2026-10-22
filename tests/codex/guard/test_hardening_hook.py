@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import G, ROOT, SCRIPT, SH, Repo, payload, run, time_budget
+from conftest import G, ROOT, SCRIPT, SH, Repo, crashed, payload, retried, run, time_budget
 
 NOMAN = "a planned file manifest must be registered"
 UNPARSE = "cannot tell which branch this creates"
@@ -44,27 +44,14 @@ def make(tmp_path, name):
     return r
 
 
-def crashed(text):
-    """A git child killed by a Windows NTSTATUS (0xC0000000 and up, e.g. STATUS_COMMITMENT_LIMIT when the machine runs low on virtual
-    memory): the environment failed, not the guard.  Seen as `exit code N` in a warning or a deny reason."""
-    return any(int(n) >= 0xC0000000 for n in re.findall(r"exit code (\d+)", text))
-
-
 def hook_body(body):
-    for _ in range(3):  # a transient crash of git is retried; a failure that persists still fails the test
-        r = run(["--lang", "en", "hook", "claude", "pre-tool"], stdin=body)
-        if not crashed(r.out + r.err):
-            break
+    r = run(["--lang", "en", "hook", "claude", "pre-tool"], stdin=body)  # conftest.run makes a call again whose git child the machine killed
     assert r.rc == 0, r
     return r
 
 
 def hook(cwd, command=None, tool="Bash", host="claude", **tool_input):
-    body = payload(tool, command, cwd, **tool_input)
-    for _ in range(3):
-        r = run(["--lang", "en", "hook", host, "pre-tool"], stdin=json.dumps(body).encode("utf-8"))
-        if not crashed(r.out + r.err):
-            break
+    r = run(["--lang", "en", "hook", host, "pre-tool"], stdin=json.dumps(payload(tool, command, cwd, **tool_input)).encode("utf-8"))
     assert r.rc == 0, r
     return r
 
@@ -870,11 +857,9 @@ def test_hook_verdicts_agree_under_the_launchers_interpreter(target, guard, tmp_
         out = []
         for tool, cmd, cwd in cases:
             body = json.dumps(payload(tool, cmd, cwd)).encode("utf-8")
-            for _ in range(3):  # a transient crash of git is retried
-                p = subprocess.run(python + ["-X", "utf8", "-B", str(SCRIPT), "--lang", "en", "hook", "claude", "pre-tool"], input=body, capture_output=True,
-                                   cwd=str(tmp_path), env=dict(os.environ), creationflags=NO_WINDOW, timeout=120)
-                if not crashed((p.stdout + p.stderr).decode("utf-8", "replace")):
-                    break
+            p = retried(lambda: subprocess.run(python + ["-X", "utf8", "-B", str(SCRIPT), "--lang", "en", "hook", "claude", "pre-tool"], input=body,
+                                               capture_output=True, cwd=str(tmp_path), env=dict(os.environ), creationflags=NO_WINDOW, timeout=120),
+                        lambda p: crashed((p.stdout + p.stderr).decode("utf-8", "replace"), p.returncode))  # a transient crash of git is retried
             assert p.returncode == 0, (python, cmd, p.stderr)
             out.append(p.stdout)
         return out
@@ -2533,7 +2518,9 @@ def demo_set(guard, repo, tmp_path, wtbase=None):
 
 
 def raw_git(repo, *args, cwd=None):
-    return subprocess.run(["git", *args], cwd=str(cwd or repo.path), capture_output=True, stdin=subprocess.DEVNULL, env=os.environ.copy())
+    """subprocess.run of git in `repo` without a check, made again when the machine killed the child (conftest.crashed)."""
+    return retried(lambda: subprocess.run(["git", *args], cwd=str(cwd or repo.path), capture_output=True, stdin=subprocess.DEVNULL, env=os.environ.copy()),
+                   lambda p: crashed(p.stderr.decode("utf-8", "replace"), p.returncode))
 
 
 def test_set_subcommands_are_not_user_only(guard, tmp_path):
