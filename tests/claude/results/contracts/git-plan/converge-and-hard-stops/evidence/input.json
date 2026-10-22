@@ -17,6 +17,8 @@
     "interrupted run resumed",
     "main as the target",
     "list supplemented with the changes after the merge",
-    "changes summary per lane (commits, subjects, files, insertions, deletions, paths)"
+    "changes summary per lane (commits, subjects, files, insertions, deletions, paths)",
+    "land prediction of the converge preview",
+    "untracked files written by the repository checks before the land"
   ]
 }

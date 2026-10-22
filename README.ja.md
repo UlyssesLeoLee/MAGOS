@@ -765,10 +765,10 @@ flowchart TD
 /GitPlan sweep-readiness --into develop
 ```
 
-まず Git（ブランチ、ワークツリー、既存のレーンの登録、ターゲットブランチの最新コミット。リモートの新しさはローカルの記録だけで判断し、ネットワークには接続しません）とコード（ディレクトリ構成、エントリポイント、ビルドとテストのコマンド、共有ファイル、変更の多いファイル、ファイル同士の参照）を調べます。そのうえでタスクの要件（`R1`、`R2`……）を書き出してタスクを分け、`magos_guard.py set-plan --dry-run` で各レーンのファイル一覧が互いに重ならないこと、どの要件も担当するレーンがあることを証明します。最後に、要件の表、レーンの表、`READY` か `BLOCKED` の結論を出し、通らなかったゲートにはそれぞれ対処法が付きます。レポートには「命名」の段もあり、各レーンの名前がどの要件とどのファイルから来たかを説明します。プレビューで唯一書き込まれるのは、すべてのワークツリーの外に置かれる一時的な spec ファイルです。表の中身はガードが証明した spec から取ります。チェックリストはこのような見た目です：
+まず Git（ブランチ、ワークツリー、既存のレーンの登録、ターゲットブランチの最新コミット。リモートの新しさはローカルの記録だけで判断し、ネットワークには接続しません）とコード（ディレクトリ構成、エントリポイント、ビルドとテストのコマンド、共有ファイル、変更の多いファイル、ファイル同士の参照）を調べます。そのうえでタスクの要件（`R1`、`R2`……）を書き出してタスクを分け、`magos_guard.py set-plan --dry-run` で各レーンのファイル一覧が互いに重ならないこと、どの要件も担当するレーンがあることを証明します。最後に、要件の表、レーンの表、`READY` か `BLOCKED` の結論を出し、通らなかったゲートにはそれぞれ対処法が付きます。レポートには「命名」の段もあり、各レーンの名前がどの要件とどのファイルから来たかを説明します。「修正」の段は、ガードに拒否されたあとに実行者が spec のどこを直したかを並べます。プレビューで唯一書き込まれるのは、すべてのワークツリーの外に置かれる一時的な spec ファイルです。表の中身はガードが証明した spec から取ります。チェックリストはこのような見た目です：
 
 ```text
-# 計画 sweep-readiness -> develop  rev 1  base 3fa9c21
+# 計画 sweep-readiness -> develop  base 3fa9c21
 ## 要件
 | 番号 | 要件 | 担当レーン | 計画された成果 |
 |---|---|---|---|
@@ -778,8 +778,8 @@ flowchart TD
 ## レーン
 | レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 |
 |---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims が通る |
-| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | docs/sweep.md のサンプルが動く |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims が通る |
+| sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md のサンプルが動く |
 - [ ] claim-store -> sweep-docs を agent/sweep-readiness/integration にマージ；pytest -q を実行；develop へ反映
 共有ファイル: pyproject.toml -> claim-store ; post-merge: CHANGELOG.md を更新 -> マージの手順
 リスク: docs/sweep.md は src/claims のインターフェースを引用するため、sweep-docs は claim-store に依存する
@@ -799,20 +799,20 @@ flowchart TD
 各レーンの担当者（サブエージェント）は、自分のマニフェストにあるファイルだけを変更します。開始時に `active` を記録し、コミットしたら `ready` と最新のコミットを記録します：
 
 ```text
-magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state active
-magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>
+magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state active
+magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>
 ```
 
-`<rev>` は `magos_guard.py set-show --set sweep-readiness --json` の `record.revision` から取ります。終了コード 19 は、それが変わったことを示すので、もう一度読み直します。`ready` を記録するとき、ガードは次の点を確認します：そのコミットがブランチの最新のコミットであること、そしてこのレーンが変更したすべてのファイルがマニフェストの中にあること（範囲外なら終了コード 22 で、ファイルが列挙されます）。進み具合は `--status` でいつでも確認できます：
+`<rev>` は `magos_guard.py set-show --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --json` の `record.revision` から取ります（担当者はこれらの行をレーンのワークツリーで実行し、`--repo` はそのワークツリーを指します。リポジトリのどのワークツリーでもかまいません）。終了コード 19 は、それが変わったことを示すので、もう一度読み直します。`ready` を記録するとき、ガードは次の点を確認します：そのコミットがブランチの最新のコミットであること、そしてこのレーンが変更したすべてのファイルがマニフェストの中にあること（範囲外なら終了コード 22 で、ファイルが列挙されます）。進み具合は `--status` でいつでも確認できます：
 
 ```text
 /GitPlan sweep-readiness --status
 ```
 
-記録からこの 2 つの表をもう一度表示します：レーンの表には `状態` と `コミット` の 2 列が加わり、`ready` または `integrated` のレーンにはチェックが付いて、記録されたコミットが添えられます。最後が「残りの作業」です。1 つでも `integrated` のレーンがあれば、表示されるのは変更内容で補足されたチェックリストです（ステップ 4 を参照）：レーンの表に列 `変更`、要件の表に列 `結果` が加わり、その下に変更内容の概要と合計が付きます。
+記録からこの 2 つの表をもう一度表示します：レーンの表には `状態` と `コミット` の 2 列が加わり、`ready` または `integrated` のレーンにはチェックが付いて、記録されたコミットが添えられます。最後が「残りの作業」です。1 つでも `integrated` のレーンがあれば、表示されるのは変更内容で補足されたチェックリストです（ステップ 4 を参照）：レーンの表に列 `変更`、要件の表に列 `結果` が加わり、その下に変更内容の概要と合計が付きます。レポートの見出しの行に revision が書かれ（この例では 5）、チェックリスト自体は revision を持ちません。
 
 ```text
-# 計画 sweep-readiness -> develop  rev 5  base 3fa9c21
+# 計画 sweep-readiness -> develop  base 3fa9c21
 ## 要件
 | 番号 | 要件 | 担当レーン | 計画された成果 | 結果 |
 |---|---|---|---|---|
@@ -822,12 +822,12 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 ## レーン
 | レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 | 状態 | コミット | 変更 |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |
-| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | docs/sweep.md のサンプルが動く | [ ] active | - | active |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |
+| sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md のサンプルが動く | [ ] active | - | active |
 - [ ] claim-store -> sweep-docs を agent/sweep-readiness/integration にマージ；リポジトリのチェックを実行；develop へ反映
 
 変更内容の概要
-- claim-store - 3 コミット, 7 ファイル (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [パス: src/claims, tests/claims]
+- claim-store - 3 コミット, 7 ファイル (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [パス: `src/claims`, `tests/claims`]
 - sweep-docs - active, 未マージ
 合計: 2 レーン中 1 レーンがマージ済み, 3 コミット, 7 ファイル, +212/-48
 
@@ -837,7 +837,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 3. post-merge: CHANGELOG.md を更新
 ```
 
-計画を変えるときは `--amend` を使います：`/GitPlan sweep-readiness --amend --expect-revision 5` は、もう一度調査して、変更後の計画をプレビューします（残るレーンはブランチ、ワークツリー、状態、変更内容の概要を保ち、`base` はターゲットブランチの現在の位置へ移ります。要件は追加・書き換え・削除できますが、どの要件も引き続きレーンが担当する必要があり、作業を始めたレーンの名前は変えられません）。問題なければ `--apply` を付けます。まだマージされていないコミットを持つレーンは削除できず、そのマニフェストも、すでに変更したファイルより小さくはできません（ガードが拒否し、終了コードは 16 です）。
+計画を変えるときは `--amend` を使います：`/GitPlan sweep-readiness --amend --expect-revision 5` は、もう一度調査して、変更後の計画をプレビューします（残るレーンはブランチ、ワークツリー、状態、変更内容の概要を保ち、`base` はターゲットブランチの現在の位置へ移ります。要件は追加・書き換え・削除できますが、どの要件も引き続きレーンが担当する必要があり、作業を始めたレーンの名前は変えられません）。問題なければ `--apply` を付けます。何も変わらない変更はそう伝え、何も登録せず、revision も変わりません。まだマージされていないコミットを持つレーンは削除できず、そのマニフェストも、すでに変更したファイルより小さくはできません（ガードが拒否し、終了コードは 16 です）。
 
 **ステップ 4：マージ、反映、締めくくり**
 
@@ -848,7 +848,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 /GitPlan sweep-readiness --release
 ```
 
-まずマージをプレビューします。結論は `READY`（すべてのレーンがすでに `READY` か `INTEGRATED` で、1 回の実行ですべてマージでき、続けて `--land` もできる）、`PARTIAL`（まだ終わっていないレーンがあり、今回は `READY` のものだけをマージし、終わっていない各レーンに何が足りないかを書く）、`BLOCKED`（通らなかったゲートがある）のどれかです。次に実行するコマンドの推奨は `/GitPlan <set> --converge --apply --expect-revision <プレビューに表示された revision>` です。`--land` は文章で勧めるだけで、その行には含めません。
+まずマージをプレビューします。結論は `READY`（すべてのレーンがすでに `READY` か `INTEGRATED` で、1 回の実行ですべてマージできる）、`PARTIAL`（まだ終わっていないレーンがあり、今回は `READY` のものだけをマージし、終わっていない各レーンに何が足りないかを書く）、`BLOCKED`（通らなかったゲートがある）のどれかです。`READY` はマージについてだけの結論です。プレビューは、同じ実行で反映までできるかも予測します（すべてのレーンが完了し、ターゲットブランチがまだ統合ブランチの起点、またはこれから切り出す位置にあり、ほかのワークツリーでチェックアウトされていない）。次に実行するコマンドの推奨は `/GitPlan <set> --converge --apply --expect-revision <プレビューに表示された revision>` で、この予測が成り立つときだけ `--land` が付きます。成り立たなければ、どの反映の条件が満たされないか、どうすれば解消するかをレポートに書き、その項目は「残りの作業」にも残ります。
 
 `--converge --apply` は、レポートにあるその計画をあなたが受け入れる、という意味です：まず改めて調査し、今回の計画（レーンの順序、各レーンに登録されたコミット、ターゲットブランチのコミット、revision）を記録します。以前にあなたがプレビューしたものと違っていれば、停止して新しいプレビューを出します。そのあと次のように進みます：
 
@@ -856,12 +856,12 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 2. 統合ブランチがなければ、コマンドを実行しているワークツリー（ターゲットブランチにいて、クリーンである必要があります）で、通常の `git switch -c agent/<set>/integration <ターゲットブランチの現在のコミット>` で作成します。
 3. 依存関係の順に、`READY` のレーンに登録されたコミットを 1 つずつ `git merge --no-ff` でマージし、マージするたびに `set-update` で `integrated` と記録します。
 4. 統合ブランチ上で、リポジトリ自身のチェック（ビルド、テスト、lint）を実行します。チェックが失敗したら、反映の前に停止します。チェックを特定できない場合は「未検証」とレポートに書いて続行します。
-5. `--land` を付けたときだけ：すべてのレーンが `integrated` で、ターゲットブランチがまだ統合ブランチの起点にあるとき、`git merge --ff-only` を 1 回行って、ターゲットブランチを統合ブランチまで早送りします。そうでなければ `LAND_REFUSED` と報告して停止し、それ以上は何もしません。
+5. `--land` を付けたときだけ：すべてのレーンが `integrated` で、ターゲットブランチがまだ統合ブランチの起点にあるとき、`git merge --ff-only` を 1 回行って、ターゲットブランチを統合ブランチまで早送りします。そうでなければ `LAND_REFUSED` と報告して停止し、それ以上は何もしません。ワークツリーの中の Git が追跡していないファイル（たとえばチェックが書き出したファイル）は反映を妨げず、レポートに一覧されます。追跡されているファイルの変更は妨げになります。Git がそのような未追跡のファイルの上書きを拒否したときも `LAND_REFUSED` です：一覧されたファイルを削除するか移動してから、`--land` を付けてもう一度実行します。
 
 マージが終わると、チェックリストは置き換えられるのではなく、**元のものに補足されます**：`--converge --apply` のレポート、そのあとの `--status`、そして `--release` が表示するのは、最初の 2 つの表（すべての行と列がそのまま）に、ガードがレーンを `integrated` と記録するその時点で git から計算して記録に保存した変更内容を足したものです。レーンの表には列 `変更` が加わり（`3 コミット, 7 ファイル, +212/-48` のような 1 マス。まだマージされていないレーンには、その状態が入ります）、要件の表には列 `結果` が加わります（その要件を担当する各レーンの先頭のコミット件名。まだマージされていないものは `未マージ` の後ろに並びます）。表の下には `変更内容の概要`（レーンごとに 1 行：コミット数、ファイル数、追加・削除行数、コミットの件名、変更が集中したパス）と `合計` の行が付きます。次は `--land` のあとに `--status` または `--release` が表示する姿で（マージの行にはチェックが付いています）、残るのは CHANGELOG の更新と締めくくりの 2 つだけです：
 
 ```text
-# 計画 sweep-readiness -> develop  rev 7  base 3fa9c21
+# 計画 sweep-readiness -> develop  base 3fa9c21
 ## 要件
 | 番号 | 要件 | 担当レーン | 計画された成果 | 結果 |
 |---|---|---|---|---|
@@ -871,13 +871,13 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 ## レーン
 | レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 | 状態 | コミット | 変更 |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |
-| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | docs/sweep.md のサンプルが動く | [x] integrated | c04a7f2 | 2 コミット, 3 ファイル, +36/-4 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |
+| sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md のサンプルが動く | [x] integrated | c04a7f2 | 2 コミット, 3 ファイル, +36/-4 |
 - [x] claim-store -> sweep-docs を agent/sweep-readiness/integration にマージ；リポジトリのチェックを実行；develop へ反映
 
 変更内容の概要
-- claim-store - 3 コミット, 7 ファイル (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [パス: src/claims, tests/claims]
-- sweep-docs - 2 コミット, 3 ファイル (+36/-4): Document the readiness verdict; Add runnable examples [パス: docs/sweep.md, docs/sweep-examples.md, docs/index.md]
+- claim-store - 3 コミット, 7 ファイル (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [パス: `src/claims`, `tests/claims`]
+- sweep-docs - 2 コミット, 3 ファイル (+36/-4): Document the readiness verdict; Add runnable examples [パス: `docs/sweep.md`, `docs/sweep-examples.md`, `docs/index.md`]
 合計: 2 レーン中 2 レーンがマージ済み, 5 コミット, 10 ファイル, +248/-52
 
 残りの作業
@@ -889,7 +889,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 
 #### 2 つの表：要件、レーン、成果
 
-チェックリストは、2 つの表といくつかの説明の行でできています。表の中身はすべて、ガードが保存したデータから取ります（プレビューでは `set-plan --dry-run` の結果、そのあとは `set-show` で読み直した記録）。記憶で書くことはありません。セルの中の縦線 `|` は `∣` と書き、列の見出しとラベルは返信の言語で書きます（レーンの id、ブランチ名、パス、状態コードは翻訳しません）。
+チェックリストは、2 つの表といくつかの説明の行でできています。表の中身はすべて、ガードが保存したデータから取ります（プレビューでは `set-plan --dry-run` の結果、そのあとは `set-show` で読み直した記録）。記憶で書くことはありません。セルの中の縦線 `|` は `∣` と書き、マニフェストの項目とパスはバッククォートでコードとして書きます（例：`src/claims/`）。見出し、列の見出し、ラベル、決まった語（コミット、ファイル、パス、マージの行、リポジトリのチェック）は返信の言語で書き、保存されるチェックリストも、プレビューのときの言語で書かれます。チェックリスト自体は revision を持たず、revision は各レポートの見出しの行に書かれます（レーンの id、ブランチ名、パス、コマンド、SHA、状態コードは翻訳しません）。
 
 | 表 | 1 行が表すもの | 列 |
 |---|---|---|
@@ -897,7 +897,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 | レーンの表 | レーン 1 つ | `レーン`、`ブランチ`、`ワークツリー`、`担当ファイル`、`依存`、`受け入れ基準`。`--status` と `--converge` では `状態`、`コミット` の 2 列が加わり、マージのあとにさらに列 `変更` が加わります |
 | 変更内容の概要 | レーン 1 つ（マージ前のレーンは状態を書く） | コミット数、ファイル数、追加・削除行数、コミットの件名、変更が集中したパス。表の下に合計の行が付きます |
 
-計画を立てるとき、実行者があなたに代わってタスクの要件 `R1`、`R2`……を書き出します。どの要件も少なくとも 1 つのレーンが担当し、どのレーンも少なくとも 1 つの要件を担当して、届ける成果を書く必要があります。そうでなければ、ガードはこの計画を拒否し（終了コード 24）、どのフィールドかを示します。ガードは、レーンが `integrated` と記録されるその時点で、そのときのローカルのターゲットブランチと比べて git からそのレーンの変更内容を計算し、記録に保存します：コミット数、コミットの件名（古い順に最大 8 件）、ファイル数、追加・削除行数、変更が集中したパス（最大 12 件）。同じレーンがもう一度 `integrated` と記録されたときは、メモだけを更新し、この概要は変えません。
+計画を立てるとき、実行者があなたに代わってタスクの要件 `R1`、`R2`……を書き出します。どの要件も少なくとも 1 つのレーンが担当し、どのレーンも少なくとも 1 つの要件を担当して、届ける成果を書く必要があります。そうでなければ、ガードはこの計画を拒否し（終了コード 24）、どのフィールドかを示します。ガードは、レーンが `integrated` と記録されるその時点で、そのときのローカルのターゲットブランチと比べて git からそのレーンの変更内容を計算し、記録に保存します：コミット数（マージコミットは数えません）、コミットの件名（古い順に最大 8 件）、ファイル数、追加・削除行数、変更が集中したパス（最大 12 件）。同じレーンがもう一度 `integrated` と記録されたときは、メモだけを更新し、この概要は変えません。
 
 #### 命名規則：名前は変更内容のトピック
 
@@ -943,7 +943,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 | `NOT_READY`、`BLOCKED`、`WAITING` | 記録がまだ `planned` か `active`。記録が `blocked`。依存するレーンがマージ済みでも `READY` でもない | いいえ。このレーンが今回加わらないだけで、ほかのレーンは止めません（`--include-active` を付けたときは、コミットのある `active` のレーンが現在のコミットで加わります） |
 | `MISSING_BRANCH`、`DIRTY`、`IN_PROGRESS`、`NO_MERGE_BASE` | ブランチがない。ワークツリーに未保存の変更がある。ワークツリーにマージやリベースなどのやりかけの操作がある。ブランチがターゲットブランチと共通の履歴を持たない | 失敗。コマンド全体が停止します |
 | `OUT_OF_LANE`、`SHARED_CHANGE`、`MOVED`、`CLAIM_DRIFT` | マニフェストの外のファイルを変更した。2 つのレーンが同じファイルを変更した。`ready` を記録したあとに新しいコミットが増えた。レーンの登録が計画の記録と合わない | 失敗。コマンド全体が停止します |
-| `STALE_PLAN` | ターゲットブランチが進み、それが変更したファイルがあるレーンのマニフェストと重なる。各レーンは、すでに入った内容から独立していなくなった | 失敗。コマンド全体が停止します |
+| `STALE_PLAN` | ターゲットブランチが進み、その新しいコミットが変更したファイルがあるレーンのマニフェストと重なる。各レーンは、すでに入った内容から独立していなくなった（この計画自身のレーンは、マージや反映のあとも数えない） | 失敗。コマンド全体が停止します |
 | `PREDICTED_CONFLICT` | 試しマージ（`git merge-tree --write-tree`）でコンフリクトが予測される。ヒントにすぎず、2 つのレーンの間のコンフリクトは見つけられない | ヒント。それでも試みます |
 
 待機の状態は、そのレーンを今回だけ加えないだけです。失敗の状態はコマンド全体を停止させます。すでに `ready` なのに一貫していないレーンを、避けて通ってマージしてはならないからです。どの項目にも対処法が付きます。コマンド自身はそれを実行しません：レーンの担当者（またはあなた）が行い、終わったらもう一度実行します。
@@ -956,7 +956,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 |---|---|---|
 | 終了コード 19、`kind` が `base` | プレビューのあとにターゲットブランチが進み、計画の元になったコミットが現在の位置ではない | もう一度実行します：新しいプレビューが新しい位置を調べます |
 | 終了コード 19、`kind` が `revision`、または `--expect-revision` が合わない | あなたが読んだあとに計画の記録が変更された。たとえば、あるレーンの担当者が進み具合を記録した | まず `--status` を実行し、表示された revision でやり直します |
-| `STALE_PLAN` | 上の表を参照：ターゲットブランチに入った内容が、あるレーンのマニフェストと重なる | `--amend --expect-revision <n>`：新しいプレビューは新しい位置を基にし、変更で `base` がそこへ移ります。重なったレーンの担当者は、ターゲットブランチのコミットを自分のブランチにマージし、もう一度 `ready` を記録します |
+| `STALE_PLAN` | 上の表を参照：ターゲットブランチに入った内容が、あるレーンのマニフェストと重なる | `--amend --expect-revision <n>`：新しいプレビューは新しい位置を基にし、変更で `base` がそこへ移ります。そのあと、重なった各レーンの担当者は、ターゲットブランチの新しいコミットを自分のブランチにマージし、もう一度 `ready` を記録します。変更でこの項目が消えても、これは必須です。そうしないとマージがコンフリクトで止まります |
 | 終了コード 20、21 | その名前の計画がすでにある。またはその名前の計画がない | `--status` で見る、`--amend` で変える、`--release` で締めくくる、または別の名前にします。名前を確認するか、先に `--into` で計画を立てます |
 | 終了コード 22、`OUT_OF_LANE` | あるレーンがマニフェストの外のファイルを変更したため、ガードが `ready` の記録を拒否した | 担当者がその変更を元に戻すか、`--amend` でそれらのファイルを設計上持つべき 1 つのレーンに割り当て直し、もう一度 `ready` を記録します |
 | 終了コード 23 | 計画の記録が、より新しいバージョンの MAGOS によって書かれている | ガードをアップグレードします（「レーンガード」を参照）。それまでこの記録は読まれず、変更もされません |

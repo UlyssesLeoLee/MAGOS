@@ -30,19 +30,26 @@
       "lane id as a topic slug",
       "ordinal and generic lane ids",
       "branch agent/<set>/<id> and worktree name ending -<set>-<id>",
-      "requirement that nobody serves"
+      "requirement that nobody serves",
+      "two lanes of the plan that overlap",
+      "a manifest entry repeated after normalisation",
+      "an amendment that changes nothing",
+      "the result shapes of set-*, version, list and doctor"
     ]
   },
   "expected": [
     "The plan has at most 12 lanes with exclusive file ownership: manifests are pairwise disjoint (proved by magos_guard.py set-plan --dry-run, exact glob intersection), every shared file lies inside exactly one lane or is a post-merge task, depends_on forms a DAG, lane ids are topic slugs such as claim-store and sweep-docs and never ordinal, and coupled files go into one lane because the guard does not detect semantic coupling.",
     "The sheet (at most 8192 characters) is a checklist of two tables, the Requirements table (Req, Requirement, Lane(s), Planned outcome) and the Lanes table (Lane, Branch, Worktree, Owns, Needs, Acceptance), a merge line, the owner of every shared file and at most five risks; --status and --converge regenerate the tables from the record with State and Head, followed by Remaining TODO.",
     "--apply registers exactly the spec of the latest preview of the same set and target, byte for byte, and makes a new preview and stops when there is none, when the user asked for a change since, or when its base differs from the live target tip; the guard writes every lane claim, the claim of the integration branch and the record at revision 1 in one atomic operation, or nothing.",
-    "Nobody holds a lock while the lanes work: the record carries a revision and the base the plan was made against, a stale plan is refused and never overwritten (exit 19 with kind base or revision, a failed --expect-revision check, the finding STALE_PLAN when the target moved onto a lane manifest), and --amend moves base to the live target tip.",
+    "Nobody holds a lock while the lanes work: the record carries a revision and the base the plan was made against, a stale plan is refused and never overwritten (exit 19 with kind base or revision, a failed --expect-revision check, the finding STALE_PLAN when target commits outside the set's own work changed files of a lane manifest), and --amend moves base to the live target tip.",
     "The exit codes 19 STALE, 20 SET_EXISTS, 21 SET_UNKNOWN, 22 OUT_OF_LANE, 23 SET_NEWER_FORMAT and 24 INVALID_SPEC each have a remedy that the command never performs; set-plan never reads an override.",
     "While the record exists, a plain plan --amend of a lane claim (exit 14, lane_in_set) and a plain release of any claim of the set (exit 16, blocked_set) are refused, and the open lane claims make /GitCleanup, /GitConverge and /GitSweep report their branches as BLOCKED_ACTIVE_OWNER until --release.",
     "The guard must report version 1.0.4 or later; an older guard has no set-* subcommands and the command stops and says to refresh it.",
     "Every requirement is served by at least one lane and every lane serves at least one requirement and states its outcome (the guard refuses a requirement that nobody serves with exit 24, UNSERVED); the tables are rendered from the spec the guard proved or from the record it stores, never from memory.",
-    "Names show the topic of the change: a lane id is a topic slug of one to three words, the branch is exactly agent/<set>/<id> and the worktree directory name ends with -<set>-<id>; the guard refuses ordinal and generic ids (GENERIC_ID), the reserved integration (RESERVED), another form (FORMAT) and a branch or worktree name of another form (BRANCH_FORM, WORKTREE_FORM) with exit 24."
+    "Names show the topic of the change: a lane id is a topic slug of one to three words, the branch is exactly agent/<set>/<id> and the worktree directory name ends with -<set>-<id>; the guard refuses ordinal and generic ids (GENERIC_ID), the reserved integration (RESERVED), another form (FORMAT) and a branch or worktree name of another form (BRANCH_FORM, WORKTREE_FORM) with exit 24.",
+    "The stored sheet carries no revision (its header is # Plan <set> -> <branch>  base <sha7>, and the revision is printed in the report header), so an amendment that changes nothing is unchanged, writes nothing and keeps the revision, while rewriting a drifted or missing claim is a change that makes the revision <n>+1.",
+    "Two lanes of the plan that overlap (exit 10 with overlaps) are repaired in the partition: each overlapping path goes to exactly one lane, the lane whose requirement changes it, and the report lists the change under Repairs; another claimant (exit 10 with lanes) is not the plan's to fix; a manifest entry repeated after normalisation is exit 24 DUPLICATE at lanes[i].paths[j].",
+    "Only the set-* subcommands return the one object with decision, code, message and exit_code (a denial with exit 10 carries overlaps or lanes); version --json and list --json have shapes of their own and doctor is read as text."
   ],
   "checks": [
     {
@@ -59,11 +66,11 @@
         "- **Plan and amendment.** `--apply` registers exactly the spec of the latest preview of the same set and target earlier in this conversation, byte for byte, and nothing else.",
         "1. A plan has at most 12 lanes, and aims at 2 to 6.",
         "3. Tests go with the code they test, and coupled files (imports across a boundary, a hot spot, files that must change together) go into the same lane.",
-        "4. Every shared file (lockfile, generated file, registry, barrel file, migration numbering, version file, changelog) belongs to exactly one lane and lies inside that lane's manifest, or it is a post-merge task of the integration step, listed in the sheet and in `notes`.",
+        "4. Every shared file (lockfile, generated file, registry, barrel file, migration numbering, version file, changelog) that the task changes or will likely change (a version bump, a changelog entry) belongs to exactly one lane and lies inside that lane's manifest, or it is a post-merge task of the integration step, listed in the sheet and in `notes`; a shared file that the task leaves untouched stays unclaimed.",
         "an empty list written `nothing remains`",
         "3. **Prove** the plan: `<guard> set-plan --set <set> --target '<branch>' --spec '<file>' --dry-run`.",
         "2. **Register**: `<guard> set-plan --set <set> --target '<branch>' --spec '<file>'`. Exit 0 writes every lane claim (each with `set=<set>` and `lane=<id>`), the claim of the integration branch and the record at revision 1, every lane `planned`, atomically: on any failure the guard leaves no partial state.",
-        "One plan-level finding, `STALE_PLAN` (failing), is added when `drift.stale` is true: the target moved since `base` and the files it changed intersect a lane manifest (`target_overlap`), so the lanes are no longer independent of what landed.",
+        "One plan-level finding, `STALE_PLAN` (failing), is added when `drift.stale` is true: the target moved since `base` and the files changed by its commits that are not the set's own work intersect a lane manifest (`target_overlap`), so the lanes are no longer independent of what landed.",
         "| exit 20 (set exists; the preview finds it with `set-show`) |",
         "| exit 21 (set unknown) |",
         "| exit 23 (a record written by a newer MAGOS) | upgrade the guard (`references/installation.md`); the record is never read or changed meanwhile |",
@@ -85,7 +92,7 @@
         "{\"v\":1,\"title\":\"<the task, one line, at most 120 characters>\",\"base\":\"<target sha>\",\"sheet\":\"<the sheet text, at most 8192 characters>\",\"notes\":[\"<risk, or post-merge: task>\"],",
         "\"requirements\":[{\"id\":\"R1\",\"text\":\"<one sentence, at most 200 characters>\"}],",
         "\"lanes\":[{\"id\":\"claim-store\",\"title\":\"<at most 80 characters>\",\"serves\":[\"R1\"],\"outcome\":\"<the result the lane delivers, at most 300 characters>\",\"branch\":\"agent/<set>/claim-store\",\"worktree\":\"<absolute path>\",\"paths\":[\"<manifest entry>\"],\"depends_on\":[\"<lane id>\"],\"acceptance\":\"<how the outcome is checked, at most 300 characters>\"}]}",
-        "# Plan <set> -> <branch>  rev <n>  base <sha7>\n## Requirements\n| Req | Requirement | Lane(s) | Planned outcome |\n|---|---|---|---|\n| R1 | <text> | claim-store, sweep-docs | claim-store: <outcome>; sweep-docs: <outcome> |\n## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance |\n|---|---|---|---|---|---|\n| claim-store | agent/<set>/claim-store | <worktree> | <paths> | - | <acceptance> |\n| sweep-docs | agent/<set>/sweep-docs | <worktree> | <paths> | claim-store | <acceptance> |\n- [ ] merge claim-store -> sweep-docs into agent/<set>/integration; run <repository checks>; land on <branch>\nShared: <file> -> claim-store ; <post-merge task> -> merge step\nRisks: <at most 5 short items>",
+        "# Plan <set> -> <branch>  base <sha7>\n## Requirements\n| Req | Requirement | Lane(s) | Planned outcome |\n|---|---|---|---|\n| R1 | <text> | claim-store, sweep-docs | claim-store: <outcome>; sweep-docs: <outcome> |\n## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance |\n|---|---|---|---|---|---|\n| claim-store | agent/<set>/claim-store | `<worktree>` | `<entry>`, `<entry>` | - | <acceptance> |\n| sweep-docs | agent/<set>/sweep-docs | `<worktree>` | `<entry>` | claim-store | <acceptance> |\n- [ ] merge claim-store -> sweep-docs into agent/<set>/integration; run <repository checks>; land on <branch>\nShared: <file> -> claim-store ; <post-merge task> -> merge step\nRisks: <at most 5 short items>",
         "| `sheet` | 1 to 8192 characters |",
         "| `requirements` | 1 to 12 items, each exactly `id` and `text`:",
         "| lane `id` | a topic slug, unique",
@@ -109,7 +116,19 @@
         "Naming (per lane: the topic its id names, the requirement and paths it comes from; a name the user gave that was replaced by the compliant one)",
         "Lane handoff (per lane: title, branch, worktree, manifest, dependencies, outcome, acceptance, the set-update lines)",
         "12. Requirements: from the task and what steps 7 to 11 found",
-        "Tables (plan form: Requirements table, Lanes table, merge line, Shared, Risks)"
+        "Tables (plan form: Requirements table, Lanes table, merge line, Shared, Risks)",
+        "The result of a `set-*` subcommand is one JSON object with `decision` (`allow` or `deny`)",
+        "`overlaps` (exit 10 between two lanes of this plan: each item names the lanes `a` and `b` and their overlapping `entries`) or `lanes` (exit 10 against another claimant, and an exit 11 that the judgement against other claimants causes)",
+        "The other subcommands have shapes of their own: `version --json` prints one object with `version`, `sha256`, `path` and `python`, `list --json` prints a JSON array of claim rows (**Investigation** step 4), and `doctor` prints text, which the command reads as text.",
+        "| exit 10 with `overlaps` from `set-plan` (two lanes of this plan overlap: the guard names both lanes and the overlapping entries) | the executor gives each overlapping path to exactly one lane, the lane whose requirement changes it (**Partition rules** 3 and 6), removes it from the other lane's manifest",
+        "| exit 10 with `lanes`, or exit 11, from `set-plan` (a lane conflicts with, or could not be compared with, another claimant) |",
+        "- The sheet carries no revision: the revision is printed only in the header of a report (**Output**), so an amendment that changes nothing renders the stored sheet again and the guard reports it `unchanged`.",
+        "(a header line that names no revision, two tables, a merge line, the shared files and the risks; at most 8192 characters)",
+        "| `CLAIM_DRIFT` | `--amend --expect-revision <n>` with the lanes unchanged rewrites the claim from the record (a rewrite is a change: the dry-run is not `unchanged`, and the apply makes the revision `<n>+1`) |",
+        "(the later of two equal entries is exit 24 `DUPLICATE` at `lanes[<i>].paths[<j>]`), so the guard stores them as written",
+        "`target_overlap` holds the files that the target commits since `base` changed and that lie in a lane manifest, leaving out the set's own work: every commit reachable from the integration branch tip (when that branch exists) or from the recorded head of a lane in state `ready` or `integrated`, so the land of the set itself adds nothing to it",
+        "This merge is required although the amendment clears the finding: otherwise the convergence stops at the conflict |",
+        "The stored sheet is written in the reply language of the preview that rendered it, so an amendment previewed in another language changes the sheet and is not `unchanged`."
       ]
     },
     {
@@ -164,20 +183,22 @@
         "计划存在期间，每个未结束的车道登记（`planned` 或 `active`）都会让 `/GitCleanup`、`/GitConverge`、`/GitSweep` 把这个车道报告为 `BLOCKED_ACTIVE_OWNER`：这是有意的，`--release` 之后解除。",
         "有引用关系的文件，规划时应该放进同一个车道。",
         "- **守卫版本不够怎么办？** `/GitPlan` 一开始就检查守卫的版本，需要 1.0.4 或更新；",
-        "# 计划 sweep-readiness -> develop  rev 1  base 3fa9c21",
+        "# 计划 sweep-readiness -> develop  base 3fa9c21",
         "## 需求\n| 编号 | 需求 | 承担的车道 | 计划成果 |\n|---|---|---|---|\n| R1 | 所有 claim 都从同一个存储读取 | claim-store | claim-store: src/claims 读取所有 claim |",
         "| R3 | 现有的清扫测试和文档里的示例仍然通过 | claim-store, sweep-docs | claim-store: src/claims 读取所有 claim; sweep-docs: docs/sweep.md 讲清就绪结论 |",
-        "## 车道\n| 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims 通过 |",
+        "## 车道\n| 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims 通过 |",
         "| requirement（需求） | 任务要达成的一个结果",
         "| 清单（sheet） | 不超过 8192 个字符的简明清单",
-        "magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
+        "magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
         "#### 命名规则：名字就是修改内容的主题",
         "- **车道 id 是主题 slug**：`[a-z0-9][a-z0-9-]{0,23}`",
         "- **分支和工作区跟着 id**：分支恰好是 `agent/<set>/<id>`，工作区的目录名以 `-<set>-<id>` 结尾",
         "- **守卫拒绝序号式和泛称的 id**（退出码 24，提示按主题命名）",
         "| 退出码 24 或 12 | 计划无效：字段写错（比如车道 id 是序号或泛称",
         "✓ 车道的 id、分支和工作区都以修改内容的主题命名，从不用序号",
-        "#### 两张表：需求、车道与成果"
+        "#### 两张表：需求、车道与成果",
+        "清单本身不带 revision，revision 写在每份报告的标题行里",
+        "没有任何变化的修改会直接说明，不登记任何东西，revision 也不变。"
       ]
     },
     {
@@ -195,20 +216,22 @@
         "While the plan exists, every open lane claim (`planned` or `active`) makes `/GitCleanup`, `/GitConverge` and `/GitSweep` report that lane as `BLOCKED_ACTIVE_OWNER`: that is intended, and `--release` lifts it.",
         "files that refer to each other should go into the same lane when the plan is made.",
         "- **What if the guard is too old?** `/GitPlan` checks the version of the guard first and needs 1.0.4 or later;",
-        "# Plan sweep-readiness -> develop  rev 1  base 3fa9c21",
+        "# Plan sweep-readiness -> develop  base 3fa9c21",
         "## Requirements\n| Req | Requirement | Lane(s) | Planned outcome |\n|---|---|---|---|\n| R1 | Claims are read from one store | claim-store | claim-store: src/claims reads every claim |",
         "| R3 | The sweep tests and the documented examples still pass | claim-store, sweep-docs | claim-store: src/claims reads every claim; sweep-docs: docs/sweep.md explains the verdict |",
-        "## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims passes |",
+        "## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims passes |",
         "| requirement | One result the task must achieve",
         "| sheet | The checklist, at most 8192 characters",
-        "magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
+        "magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
         "#### Naming rules: the name is the topic of the change",
         "- **A lane id is a topic slug**: `[a-z0-9][a-z0-9-]{0,23}`",
         "- **The branch and the worktree follow the id**: the branch is exactly `agent/<set>/<id>`",
         "- **The guard refuses ordinal and generic ids** (exit code 24",
         "| Exit code 24 or 12 | The plan is invalid: a wrong field (for example a lane id that is an ordinal or generic",
         "✓ The id, the branch and the worktree of a lane are named after the topic of its change and never by ordinal",
-        "#### The two tables: requirements, lanes and outcomes"
+        "#### The two tables: requirements, lanes and outcomes",
+        "The checklist carries no revision: the revision stands in the header of each report",
+        "an amendment that changes nothing says so, registers nothing, and the revision stays."
       ]
     },
     {
@@ -226,27 +249,29 @@
         "計画が存在する間は、終わっていないレーンの登録（`planned` か `active`）があるたびに、`/GitCleanup`、`/GitConverge`、`/GitSweep` がそのレーンを `BLOCKED_ACTIVE_OWNER` と報告します：これは意図したもので、`--release` のあとに解除されます。",
         "参照し合うファイルは、計画の段階で同じレーンに入れてください。",
         "- **ガードのバージョンが足りないときは？** `/GitPlan` は最初にガードのバージョンを確認し、1.0.4 以降が必要です。",
-        "# 計画 sweep-readiness -> develop  rev 1  base 3fa9c21",
+        "# 計画 sweep-readiness -> develop  base 3fa9c21",
         "## 要件\n| 番号 | 要件 | 担当レーン | 計画された成果 |\n|---|---|---|---|\n| R1 | すべての claim が 1 つのストアから読まれる | claim-store | claim-store: src/claims がすべての claim を読む |",
         "| R3 | 既存の清掃テストと文書内のサンプルが引き続き通る | claim-store, sweep-docs | claim-store: src/claims がすべての claim を読む; sweep-docs: docs/sweep.md が判定を説明する |",
-        "## レーン\n| レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims が通る |",
+        "## レーン\n| レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims が通る |",
         "| requirement（要件） | タスクが達成すべき結果 1 つ",
         "| チェックリスト（sheet） | 8192 文字以内の簡潔な一覧",
-        "magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
+        "magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
         "#### 命名規則：名前は変更内容のトピック",
         "- **レーンの id はトピックの slug です**：`[a-z0-9][a-z0-9-]{0,23}`",
         "- **ブランチとワークツリーは id に従います**：ブランチはちょうど `agent/<set>/<id>`",
         "- **ガードは連番や汎用的な id を拒否します**（終了コード 24",
         "| 終了コード 24 または 12 | 計画が無効：フィールドの誤り（たとえば、レーンの id が連番や汎用的な名前",
         "✓ レーンの id、ブランチ、ワークツリーは変更内容のトピックで名付け、連番は使わない",
-        "#### 2 つの表：要件、レーン、成果"
+        "#### 2 つの表：要件、レーン、成果",
+        "チェックリスト自体は revision を持たず、revision は各レポートの見出しの行に書かれます",
+        "何も変わらない変更はそう伝え、何も登録せず、revision も変わりません。"
       ]
     },
     {
       "file": "CHANGELOG.md",
       "contains": [
         "- **Optimistic lock.** Nobody holds a lock while the lanes work. The record carries a `revision` that every change compares and increments and the target tip the plan was made against (`base`), and a lane records the head it was marked `ready` at.",
-        "A stale plan is detected and refused, never overwritten: `--amend` and, optionally, `--converge --apply` take `--expect-revision <n>`, a target that moved so that the files it changed intersect a lane manifest makes the finding `STALE_PLAN`, and an amendment moves `base` to the live target tip.",
+        "A stale plan is detected and refused, never overwritten: `--amend` and, optionally, `--converge --apply` take `--expect-revision <n>`, a target that moved so that the files changed by its commits outside the set's own work (what the integration branch and the recorded lane heads hold) intersect a lane manifest makes the finding `STALE_PLAN`, and an amendment moves `base` to the live target tip.",
         "- **Exit codes 19 to 24.** `19` `STALE` (the `kind` of a denial is `base` or `revision`, with `expected` and `current`), `20` `SET_EXISTS`, `21` `SET_UNKNOWN`, `22` `OUT_OF_LANE`, `23` `SET_NEWER_FORMAT` and `24` `INVALID_SPEC`",
         "- **The integration claim.** `set-plan` registers a claim for `agent/<set>/integration`",
         "- **Plain `plan --amend` and `release` refuse the claims of an open set.**",
@@ -288,7 +313,9 @@
         "### GitPlan with a branch or a worktree that does not carry the topic",
         "Expected: `set-plan --dry-run` exits 24 and names each field (`lanes[<i>].id`) with the code `GENERIC_ID`, matching the id with its letters lower-cased, so `L1` and `Task3` are refused as well as `lane-2`, `7` and `a`;",
         "`UNSERVED` at `requirements[2]`",
-        "`BRANCH_FORM` at `lanes[<i>].branch`, `WORKTREE_FORM` at `lanes[<i>].worktree`"
+        "`BRANCH_FORM` at `lanes[<i>].branch`, `WORKTREE_FORM` at `lanes[<i>].worktree`",
+        "the command gives each overlapping path to exactly one lane, the lane whose requirement changes it",
+        "an amendment that changes nothing at all reports `unchanged`, writes nothing and keeps the revision, because the stored sheet carries no revision"
       ]
     }
   ]

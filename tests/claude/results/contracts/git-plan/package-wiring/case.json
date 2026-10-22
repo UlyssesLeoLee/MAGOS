@@ -231,7 +231,8 @@
         "### GitPlan with ordinal lane ids",
         "### GitPlan with a requirement that nobody serves",
         "### GitPlan with a branch or a worktree that does not carry the topic",
-        "### GitPlan with the list supplemented after the merge"
+        "### GitPlan with the list supplemented after the merge",
+        "### GitPlan --land with files written by the checks"
       ]
     }
   ]

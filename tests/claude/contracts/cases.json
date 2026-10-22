@@ -2074,19 +2074,26 @@
         "lane id as a topic slug",
         "ordinal and generic lane ids",
         "branch agent/<set>/<id> and worktree name ending -<set>-<id>",
-        "requirement that nobody serves"
+        "requirement that nobody serves",
+        "two lanes of the plan that overlap",
+        "a manifest entry repeated after normalisation",
+        "an amendment that changes nothing",
+        "the result shapes of set-*, version, list and doctor"
       ]
     },
     "expected": [
       "The plan has at most 12 lanes with exclusive file ownership: manifests are pairwise disjoint (proved by magos_guard.py set-plan --dry-run, exact glob intersection), every shared file lies inside exactly one lane or is a post-merge task, depends_on forms a DAG, lane ids are topic slugs such as claim-store and sweep-docs and never ordinal, and coupled files go into one lane because the guard does not detect semantic coupling.",
       "The sheet (at most 8192 characters) is a checklist of two tables, the Requirements table (Req, Requirement, Lane(s), Planned outcome) and the Lanes table (Lane, Branch, Worktree, Owns, Needs, Acceptance), a merge line, the owner of every shared file and at most five risks; --status and --converge regenerate the tables from the record with State and Head, followed by Remaining TODO.",
       "--apply registers exactly the spec of the latest preview of the same set and target, byte for byte, and makes a new preview and stops when there is none, when the user asked for a change since, or when its base differs from the live target tip; the guard writes every lane claim, the claim of the integration branch and the record at revision 1 in one atomic operation, or nothing.",
-      "Nobody holds a lock while the lanes work: the record carries a revision and the base the plan was made against, a stale plan is refused and never overwritten (exit 19 with kind base or revision, a failed --expect-revision check, the finding STALE_PLAN when the target moved onto a lane manifest), and --amend moves base to the live target tip.",
+      "Nobody holds a lock while the lanes work: the record carries a revision and the base the plan was made against, a stale plan is refused and never overwritten (exit 19 with kind base or revision, a failed --expect-revision check, the finding STALE_PLAN when target commits outside the set's own work changed files of a lane manifest), and --amend moves base to the live target tip.",
       "The exit codes 19 STALE, 20 SET_EXISTS, 21 SET_UNKNOWN, 22 OUT_OF_LANE, 23 SET_NEWER_FORMAT and 24 INVALID_SPEC each have a remedy that the command never performs; set-plan never reads an override.",
       "While the record exists, a plain plan --amend of a lane claim (exit 14, lane_in_set) and a plain release of any claim of the set (exit 16, blocked_set) are refused, and the open lane claims make /GitCleanup, /GitConverge and /GitSweep report their branches as BLOCKED_ACTIVE_OWNER until --release.",
       "The guard must report version 1.0.4 or later; an older guard has no set-* subcommands and the command stops and says to refresh it.",
       "Every requirement is served by at least one lane and every lane serves at least one requirement and states its outcome (the guard refuses a requirement that nobody serves with exit 24, UNSERVED); the tables are rendered from the spec the guard proved or from the record it stores, never from memory.",
-      "Names show the topic of the change: a lane id is a topic slug of one to three words, the branch is exactly agent/<set>/<id> and the worktree directory name ends with -<set>-<id>; the guard refuses ordinal and generic ids (GENERIC_ID), the reserved integration (RESERVED), another form (FORMAT) and a branch or worktree name of another form (BRANCH_FORM, WORKTREE_FORM) with exit 24."
+      "Names show the topic of the change: a lane id is a topic slug of one to three words, the branch is exactly agent/<set>/<id> and the worktree directory name ends with -<set>-<id>; the guard refuses ordinal and generic ids (GENERIC_ID), the reserved integration (RESERVED), another form (FORMAT) and a branch or worktree name of another form (BRANCH_FORM, WORKTREE_FORM) with exit 24.",
+      "The stored sheet carries no revision (its header is # Plan <set> -> <branch>  base <sha7>, and the revision is printed in the report header), so an amendment that changes nothing is unchanged, writes nothing and keeps the revision, while rewriting a drifted or missing claim is a change that makes the revision <n>+1.",
+      "Two lanes of the plan that overlap (exit 10 with overlaps) are repaired in the partition: each overlapping path goes to exactly one lane, the lane whose requirement changes it, and the report lists the change under Repairs; another claimant (exit 10 with lanes) is not the plan's to fix; a manifest entry repeated after normalisation is exit 24 DUPLICATE at lanes[i].paths[j].",
+      "Only the set-* subcommands return the one object with decision, code, message and exit_code (a denial with exit 10 carries overlaps or lanes); version --json and list --json have shapes of their own and doctor is read as text."
     ],
     "checks": [
       {
@@ -2103,11 +2110,11 @@
           "- **Plan and amendment.** `--apply` registers exactly the spec of the latest preview of the same set and target earlier in this conversation, byte for byte, and nothing else.",
           "1. A plan has at most 12 lanes, and aims at 2 to 6.",
           "3. Tests go with the code they test, and coupled files (imports across a boundary, a hot spot, files that must change together) go into the same lane.",
-          "4. Every shared file (lockfile, generated file, registry, barrel file, migration numbering, version file, changelog) belongs to exactly one lane and lies inside that lane's manifest, or it is a post-merge task of the integration step, listed in the sheet and in `notes`.",
+          "4. Every shared file (lockfile, generated file, registry, barrel file, migration numbering, version file, changelog) that the task changes or will likely change (a version bump, a changelog entry) belongs to exactly one lane and lies inside that lane's manifest, or it is a post-merge task of the integration step, listed in the sheet and in `notes`; a shared file that the task leaves untouched stays unclaimed.",
           "an empty list written `nothing remains`",
           "3. **Prove** the plan: `<guard> set-plan --set <set> --target '<branch>' --spec '<file>' --dry-run`.",
           "2. **Register**: `<guard> set-plan --set <set> --target '<branch>' --spec '<file>'`. Exit 0 writes every lane claim (each with `set=<set>` and `lane=<id>`), the claim of the integration branch and the record at revision 1, every lane `planned`, atomically: on any failure the guard leaves no partial state.",
-          "One plan-level finding, `STALE_PLAN` (failing), is added when `drift.stale` is true: the target moved since `base` and the files it changed intersect a lane manifest (`target_overlap`), so the lanes are no longer independent of what landed.",
+          "One plan-level finding, `STALE_PLAN` (failing), is added when `drift.stale` is true: the target moved since `base` and the files changed by its commits that are not the set's own work intersect a lane manifest (`target_overlap`), so the lanes are no longer independent of what landed.",
           "| exit 20 (set exists; the preview finds it with `set-show`) |",
           "| exit 21 (set unknown) |",
           "| exit 23 (a record written by a newer MAGOS) | upgrade the guard (`references/installation.md`); the record is never read or changed meanwhile |",
@@ -2129,7 +2136,7 @@
           "{\"v\":1,\"title\":\"<the task, one line, at most 120 characters>\",\"base\":\"<target sha>\",\"sheet\":\"<the sheet text, at most 8192 characters>\",\"notes\":[\"<risk, or post-merge: task>\"],",
           "\"requirements\":[{\"id\":\"R1\",\"text\":\"<one sentence, at most 200 characters>\"}],",
           "\"lanes\":[{\"id\":\"claim-store\",\"title\":\"<at most 80 characters>\",\"serves\":[\"R1\"],\"outcome\":\"<the result the lane delivers, at most 300 characters>\",\"branch\":\"agent/<set>/claim-store\",\"worktree\":\"<absolute path>\",\"paths\":[\"<manifest entry>\"],\"depends_on\":[\"<lane id>\"],\"acceptance\":\"<how the outcome is checked, at most 300 characters>\"}]}",
-          "# Plan <set> -> <branch>  rev <n>  base <sha7>\n## Requirements\n| Req | Requirement | Lane(s) | Planned outcome |\n|---|---|---|---|\n| R1 | <text> | claim-store, sweep-docs | claim-store: <outcome>; sweep-docs: <outcome> |\n## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance |\n|---|---|---|---|---|---|\n| claim-store | agent/<set>/claim-store | <worktree> | <paths> | - | <acceptance> |\n| sweep-docs | agent/<set>/sweep-docs | <worktree> | <paths> | claim-store | <acceptance> |\n- [ ] merge claim-store -> sweep-docs into agent/<set>/integration; run <repository checks>; land on <branch>\nShared: <file> -> claim-store ; <post-merge task> -> merge step\nRisks: <at most 5 short items>",
+          "# Plan <set> -> <branch>  base <sha7>\n## Requirements\n| Req | Requirement | Lane(s) | Planned outcome |\n|---|---|---|---|\n| R1 | <text> | claim-store, sweep-docs | claim-store: <outcome>; sweep-docs: <outcome> |\n## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance |\n|---|---|---|---|---|---|\n| claim-store | agent/<set>/claim-store | `<worktree>` | `<entry>`, `<entry>` | - | <acceptance> |\n| sweep-docs | agent/<set>/sweep-docs | `<worktree>` | `<entry>` | claim-store | <acceptance> |\n- [ ] merge claim-store -> sweep-docs into agent/<set>/integration; run <repository checks>; land on <branch>\nShared: <file> -> claim-store ; <post-merge task> -> merge step\nRisks: <at most 5 short items>",
           "| `sheet` | 1 to 8192 characters |",
           "| `requirements` | 1 to 12 items, each exactly `id` and `text`:",
           "| lane `id` | a topic slug, unique",
@@ -2153,7 +2160,19 @@
           "Naming (per lane: the topic its id names, the requirement and paths it comes from; a name the user gave that was replaced by the compliant one)",
           "Lane handoff (per lane: title, branch, worktree, manifest, dependencies, outcome, acceptance, the set-update lines)",
           "12. Requirements: from the task and what steps 7 to 11 found",
-          "Tables (plan form: Requirements table, Lanes table, merge line, Shared, Risks)"
+          "Tables (plan form: Requirements table, Lanes table, merge line, Shared, Risks)",
+          "The result of a `set-*` subcommand is one JSON object with `decision` (`allow` or `deny`)",
+          "`overlaps` (exit 10 between two lanes of this plan: each item names the lanes `a` and `b` and their overlapping `entries`) or `lanes` (exit 10 against another claimant, and an exit 11 that the judgement against other claimants causes)",
+          "The other subcommands have shapes of their own: `version --json` prints one object with `version`, `sha256`, `path` and `python`, `list --json` prints a JSON array of claim rows (**Investigation** step 4), and `doctor` prints text, which the command reads as text.",
+          "| exit 10 with `overlaps` from `set-plan` (two lanes of this plan overlap: the guard names both lanes and the overlapping entries) | the executor gives each overlapping path to exactly one lane, the lane whose requirement changes it (**Partition rules** 3 and 6), removes it from the other lane's manifest",
+          "| exit 10 with `lanes`, or exit 11, from `set-plan` (a lane conflicts with, or could not be compared with, another claimant) |",
+          "- The sheet carries no revision: the revision is printed only in the header of a report (**Output**), so an amendment that changes nothing renders the stored sheet again and the guard reports it `unchanged`.",
+          "(a header line that names no revision, two tables, a merge line, the shared files and the risks; at most 8192 characters)",
+          "| `CLAIM_DRIFT` | `--amend --expect-revision <n>` with the lanes unchanged rewrites the claim from the record (a rewrite is a change: the dry-run is not `unchanged`, and the apply makes the revision `<n>+1`) |",
+          "(the later of two equal entries is exit 24 `DUPLICATE` at `lanes[<i>].paths[<j>]`), so the guard stores them as written",
+          "`target_overlap` holds the files that the target commits since `base` changed and that lie in a lane manifest, leaving out the set's own work: every commit reachable from the integration branch tip (when that branch exists) or from the recorded head of a lane in state `ready` or `integrated`, so the land of the set itself adds nothing to it",
+          "This merge is required although the amendment clears the finding: otherwise the convergence stops at the conflict |",
+          "The stored sheet is written in the reply language of the preview that rendered it, so an amendment previewed in another language changes the sheet and is not `unchanged`."
         ]
       },
       {
@@ -2208,20 +2227,22 @@
           "计划存在期间，每个未结束的车道登记（`planned` 或 `active`）都会让 `/GitCleanup`、`/GitConverge`、`/GitSweep` 把这个车道报告为 `BLOCKED_ACTIVE_OWNER`：这是有意的，`--release` 之后解除。",
           "有引用关系的文件，规划时应该放进同一个车道。",
           "- **守卫版本不够怎么办？** `/GitPlan` 一开始就检查守卫的版本，需要 1.0.4 或更新；",
-          "# 计划 sweep-readiness -> develop  rev 1  base 3fa9c21",
+          "# 计划 sweep-readiness -> develop  base 3fa9c21",
           "## 需求\n| 编号 | 需求 | 承担的车道 | 计划成果 |\n|---|---|---|---|\n| R1 | 所有 claim 都从同一个存储读取 | claim-store | claim-store: src/claims 读取所有 claim |",
           "| R3 | 现有的清扫测试和文档里的示例仍然通过 | claim-store, sweep-docs | claim-store: src/claims 读取所有 claim; sweep-docs: docs/sweep.md 讲清就绪结论 |",
-          "## 车道\n| 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims 通过 |",
+          "## 车道\n| 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims 通过 |",
           "| requirement（需求） | 任务要达成的一个结果",
           "| 清单（sheet） | 不超过 8192 个字符的简明清单",
-          "magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
+          "magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
           "#### 命名规则：名字就是修改内容的主题",
           "- **车道 id 是主题 slug**：`[a-z0-9][a-z0-9-]{0,23}`",
           "- **分支和工作区跟着 id**：分支恰好是 `agent/<set>/<id>`，工作区的目录名以 `-<set>-<id>` 结尾",
           "- **守卫拒绝序号式和泛称的 id**（退出码 24，提示按主题命名）",
           "| 退出码 24 或 12 | 计划无效：字段写错（比如车道 id 是序号或泛称",
           "✓ 车道的 id、分支和工作区都以修改内容的主题命名，从不用序号",
-          "#### 两张表：需求、车道与成果"
+          "#### 两张表：需求、车道与成果",
+          "清单本身不带 revision，revision 写在每份报告的标题行里",
+          "没有任何变化的修改会直接说明，不登记任何东西，revision 也不变。"
         ]
       },
       {
@@ -2239,20 +2260,22 @@
           "While the plan exists, every open lane claim (`planned` or `active`) makes `/GitCleanup`, `/GitConverge` and `/GitSweep` report that lane as `BLOCKED_ACTIVE_OWNER`: that is intended, and `--release` lifts it.",
           "files that refer to each other should go into the same lane when the plan is made.",
           "- **What if the guard is too old?** `/GitPlan` checks the version of the guard first and needs 1.0.4 or later;",
-          "# Plan sweep-readiness -> develop  rev 1  base 3fa9c21",
+          "# Plan sweep-readiness -> develop  base 3fa9c21",
           "## Requirements\n| Req | Requirement | Lane(s) | Planned outcome |\n|---|---|---|---|\n| R1 | Claims are read from one store | claim-store | claim-store: src/claims reads every claim |",
           "| R3 | The sweep tests and the documented examples still pass | claim-store, sweep-docs | claim-store: src/claims reads every claim; sweep-docs: docs/sweep.md explains the verdict |",
-          "## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims passes |",
+          "## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims passes |",
           "| requirement | One result the task must achieve",
           "| sheet | The checklist, at most 8192 characters",
-          "magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
+          "magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
           "#### Naming rules: the name is the topic of the change",
           "- **A lane id is a topic slug**: `[a-z0-9][a-z0-9-]{0,23}`",
           "- **The branch and the worktree follow the id**: the branch is exactly `agent/<set>/<id>`",
           "- **The guard refuses ordinal and generic ids** (exit code 24",
           "| Exit code 24 or 12 | The plan is invalid: a wrong field (for example a lane id that is an ordinal or generic",
           "✓ The id, the branch and the worktree of a lane are named after the topic of its change and never by ordinal",
-          "#### The two tables: requirements, lanes and outcomes"
+          "#### The two tables: requirements, lanes and outcomes",
+          "The checklist carries no revision: the revision stands in the header of each report",
+          "an amendment that changes nothing says so, registers nothing, and the revision stays."
         ]
       },
       {
@@ -2270,27 +2293,29 @@
           "計画が存在する間は、終わっていないレーンの登録（`planned` か `active`）があるたびに、`/GitCleanup`、`/GitConverge`、`/GitSweep` がそのレーンを `BLOCKED_ACTIVE_OWNER` と報告します：これは意図したもので、`--release` のあとに解除されます。",
           "参照し合うファイルは、計画の段階で同じレーンに入れてください。",
           "- **ガードのバージョンが足りないときは？** `/GitPlan` は最初にガードのバージョンを確認し、1.0.4 以降が必要です。",
-          "# 計画 sweep-readiness -> develop  rev 1  base 3fa9c21",
+          "# 計画 sweep-readiness -> develop  base 3fa9c21",
           "## 要件\n| 番号 | 要件 | 担当レーン | 計画された成果 |\n|---|---|---|---|\n| R1 | すべての claim が 1 つのストアから読まれる | claim-store | claim-store: src/claims がすべての claim を読む |",
           "| R3 | 既存の清掃テストと文書内のサンプルが引き続き通る | claim-store, sweep-docs | claim-store: src/claims がすべての claim を読む; sweep-docs: docs/sweep.md が判定を説明する |",
-          "## レーン\n| レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims が通る |",
+          "## レーン\n| レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 |\n|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims が通る |",
           "| requirement（要件） | タスクが達成すべき結果 1 つ",
           "| チェックリスト（sheet） | 8192 文字以内の簡潔な一覧",
-          "magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
+          "magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>",
           "#### 命名規則：名前は変更内容のトピック",
           "- **レーンの id はトピックの slug です**：`[a-z0-9][a-z0-9-]{0,23}`",
           "- **ブランチとワークツリーは id に従います**：ブランチはちょうど `agent/<set>/<id>`",
           "- **ガードは連番や汎用的な id を拒否します**（終了コード 24",
           "| 終了コード 24 または 12 | 計画が無効：フィールドの誤り（たとえば、レーンの id が連番や汎用的な名前",
           "✓ レーンの id、ブランチ、ワークツリーは変更内容のトピックで名付け、連番は使わない",
-          "#### 2 つの表：要件、レーン、成果"
+          "#### 2 つの表：要件、レーン、成果",
+          "チェックリスト自体は revision を持たず、revision は各レポートの見出しの行に書かれます",
+          "何も変わらない変更はそう伝え、何も登録せず、revision も変わりません。"
         ]
       },
       {
         "file": "CHANGELOG.md",
         "contains": [
           "- **Optimistic lock.** Nobody holds a lock while the lanes work. The record carries a `revision` that every change compares and increments and the target tip the plan was made against (`base`), and a lane records the head it was marked `ready` at.",
-          "A stale plan is detected and refused, never overwritten: `--amend` and, optionally, `--converge --apply` take `--expect-revision <n>`, a target that moved so that the files it changed intersect a lane manifest makes the finding `STALE_PLAN`, and an amendment moves `base` to the live target tip.",
+          "A stale plan is detected and refused, never overwritten: `--amend` and, optionally, `--converge --apply` take `--expect-revision <n>`, a target that moved so that the files changed by its commits outside the set's own work (what the integration branch and the recorded lane heads hold) intersect a lane manifest makes the finding `STALE_PLAN`, and an amendment moves `base` to the live target tip.",
           "- **Exit codes 19 to 24.** `19` `STALE` (the `kind` of a denial is `base` or `revision`, with `expected` and `current`), `20` `SET_EXISTS`, `21` `SET_UNKNOWN`, `22` `OUT_OF_LANE`, `23` `SET_NEWER_FORMAT` and `24` `INVALID_SPEC`",
           "- **The integration claim.** `set-plan` registers a claim for `agent/<set>/integration`",
           "- **Plain `plan --amend` and `release` refuse the claims of an open set.**",
@@ -2332,7 +2357,9 @@
           "### GitPlan with a branch or a worktree that does not carry the topic",
           "Expected: `set-plan --dry-run` exits 24 and names each field (`lanes[<i>].id`) with the code `GENERIC_ID`, matching the id with its letters lower-cased, so `L1` and `Task3` are refused as well as `lane-2`, `7` and `a`;",
           "`UNSERVED` at `requirements[2]`",
-          "`BRANCH_FORM` at `lanes[<i>].branch`, `WORKTREE_FORM` at `lanes[<i>].worktree`"
+          "`BRANCH_FORM` at `lanes[<i>].branch`, `WORKTREE_FORM` at `lanes[<i>].worktree`",
+          "the command gives each overlapping path to exactly one lane, the lane whose requirement changes it",
+          "an amendment that changes nothing at all reports `unchanged`, writes nothing and keeps the revision, because the stored sheet carries no revision"
         ]
       }
     ]
@@ -2365,17 +2392,20 @@
         "interrupted run resumed",
         "main as the target",
         "list supplemented with the changes after the merge",
-        "changes summary per lane (commits, subjects, files, insertions, deletions, paths)"
+        "changes summary per lane (commits, subjects, files, insertions, deletions, paths)",
+        "land prediction of the converge preview",
+        "untracked files written by the repository checks before the land"
       ]
     },
     "expected": [
       "A converge preview evaluates every lane (INTEGRATED, READY, the pending BLOCKED, NOT_READY and WAITING, the failing MISSING_BRANCH, DIRTY, IN_PROGRESS, NO_MERGE_BASE, OUT_OF_LANE, SHARED_CHANGE, MOVED, CLAIM_DRIFT and STALE_PLAN, and the hint PREDICTED_CONFLICT); a failing finding stops the whole command so that a ready lane that is inconsistent is never merged around, and the readiness is READY, PARTIAL or BLOCKED with the next command and the remedy of every failed gate.",
       "--converge --apply is the user's acceptance of the recorded lane heads it puts in its report: it re-surveys, stops when a lane head, the target tip or the revision differs from the earlier preview, creates agent/<set>/integration with a plain git switch -c from the current target tip in the invoking worktree, merges each READY lane's recorded head with git merge --no-ff in dependency order, records each with set-update, and runs the repository checks before any land.",
       "A conflict lists the unmerged paths, runs git merge --abort and stops; it is never resolved with ours, theirs or by hand, the completed merges stay on the integration branch only, and the report names the lane, the files, the error text and the integration start SHA.",
-      "--land adds one git merge --ff-only of the integration branch into the target, only while every lane is integrated and the target still sits at the integration start SHA (otherwise LAND_REFUSED with both SHAs and nothing else); --release prints the final supplemented tables and then removes only the claims and the record.",
+      "--land adds one git merge --ff-only of the integration branch into the target, only while every lane is integrated and the target still sits at the integration start SHA (otherwise LAND_REFUSED with both SHAs and nothing else); untracked files of the invoking worktree, such as files the repository checks wrote, do not block the land and are listed, a tracked change or an operation in progress does, and a refusal of git switch or git merge --ff-only to overwrite an untracked file is LAND_REFUSED with the remedy to remove or move the listed files and rerun with --land; --release prints the final supplemented tables and then removes only the claims and the record.",
       "The hard stops: never push, fetch, force, delete a branch or a worktree, touch main, use override, arm, disarm or install, edit .git/magos or write the record other than through set-plan, set-update and set-release, rebase, squash, cherry-pick, reset, resolve a conflict with ours or theirs, write inside a lane worktree, or merge anything but a recorded lane head; every git and guard command is an argument list.",
       "Every gate, finding, guard exit code and stop of an apply is followed by its remedy, which the command never performs; a rerun after an interruption resumes on the same integration branch and skips the lanes that are already integrated.",
-      "After the merge the original list is supplemented, not replaced: when a lane is recorded integrated the guard stores the changes of the lane (commits, subjects, files, insertions, deletions, paths) computed from git against the local target branch of that moment, and the converge apply report, --status and --release print the same tables with a Changes column on the Lanes table, a Result column on the Requirements table, the Changes summary (one line per lane) and a Total line."
+      "After the merge the original list is supplemented, not replaced: when a lane is recorded integrated the guard stores the changes of the lane (non-merge commits, subjects, files, insertions, deletions, paths) computed from git against the local target branch of that moment, and the converge apply report, --status and --release print the same tables with a Changes column on the Lanes table, a Result column on the Requirements table, the Changes summary (one line per lane) and a Total line.",
+      "READY speaks for the merges only: the converge preview gives a land prediction (every lane READY or INTEGRATED, the target tip an ancestor of the integration branch tip or no integration branch yet, the heads of the integrated lanes in it, the target checked out in no other worktree), and its next command carries --land only when the prediction holds; otherwise the report states the failed condition with its remedy and Remaining TODO carries it."
     ],
     "checks": [
       {
@@ -2397,8 +2427,8 @@
           "CLAIM_DRIFT         failing   claim is missing or mismatch",
           "PREDICTED_CONFLICT  hint      git merge-tree --write-tree exits 1 for its tip against the current target tip",
           "### Converge preview (`--converge [--include-active]`, read-only)",
-          "4. **Readiness**: `READY` when no gate fails and every lane is `READY` or `INTEGRATED`: one run of the next command merges all of them, and `--land` can follow in the same run. `PARTIAL` when no gate fails but some lane is pending: the next command merges the `READY` lanes and the report lists what each pending lane needs. `BLOCKED` when a gate fails.",
-          "`--land` is only suggested in words, never added to the line.",
+          "4. **Readiness**: `READY` when no gate fails and every lane is `READY` or `INTEGRATED`: one run of the next command merges all of them. `READY` speaks for the merges only; whether the same run can land is the land prediction. `PARTIAL` when no gate fails but some lane is pending: the next command merges the `READY` lanes and the report lists what each pending lane needs. `BLOCKED` when a gate fails.",
+          "and with `--land` only when the land prediction holds; when it fails while every lane is `READY` or `INTEGRATED`, the report states the failed condition with its remedy, and **Remaining TODO** carries it.",
           "### Converge apply (`--converge --apply [--include-active] [--land] [--expect-revision <n>]`)",
           "2. **Include active lanes** (only with `--include-active`): for each such lane run `<guard> set-update --set <set> --expect-revision <rev> --lane <id> --state ready --head '<tip>'`",
           "run `git -C <top> switch -c 'agent/<set>/integration' '<target sha>'` (the CURRENT target tip; that SHA is the integration start SHA).",
@@ -2406,7 +2436,8 @@
           "5. Record it: `<guard> set-update --set <set> --expect-revision <rev> --lane <id> --state integrated --head '<recorded head>' --integration 'agent/<set>/integration'`.",
           "On a conflict list the unmerged paths (`git -C <top> diff --name-only --diff-filter=U`), run `git -C <top> merge --abort`, and stop; never resolve it with ours or theirs, and never by hand. Completed merges stay on the integration branch only.",
           "6. **Land** (only with `--land`, after step 5 did not fail)",
-          "`git -C <top> merge --ff-only '<integration tip sha>'`, and confirm that `git rev-parse refs/heads/<target>` equals that SHA. When a condition fails, report `LAND_REFUSED` with the failed condition and both SHAs and do nothing else (**Remedies**); the invoking worktree stays on the integration branch.",
+          "`git -C <top> merge --ff-only '<integration tip sha>'`, and confirm that `git rev-parse refs/heads/<target>` equals that SHA.",
+          "When a condition fails, report `LAND_REFUSED` with the failed condition and both SHAs and do nothing else (**Remedies**); the invoking worktree stays on the integration branch, except after a refused `merge --ff-only`, which leaves it on the target at its unchanged tip.",
           "A rerun after an interruption or a conflict starts from a fresh survey and resumes on the same integration branch: lanes already `integrated` are skipped",
           "3. Report the released claims (`released`), and that the lane branches, their worktrees and the integration branch are not touched",
           "| apply stopped by a conflict | the report names the lane, the files, the error text and the integration start SHA; completed merges stay on the integration branch and their lanes stay `integrated`.",
@@ -2426,7 +2457,7 @@
           "Tables (supplemented form: State, Head, Changes and Result columns, the Changes summary with its total line) and Remaining TODO",
           "Tables (supplemented form, with the Changes summary and its total line) and Remaining TODO (printed before the record is removed)",
           "- **changes**: the summary of what a lane changed, stored in `record.lanes[].changes`",
-          "Its keys are `commits` (the number of commits of the lane), `subjects` (the first lines of at most 8 of them, oldest first, each at most 100 characters), `more` (`commits` minus the subjects listed), `files`, `insertions`, `deletions` (the net change from the merge base to the head: a rename is one file, a binary file one file without lines), `paths` (at most 12 distinct keys: the first two path segments of a changed file, and a file in the repository root as itself) and `paths_more` (the keys not listed).",
+          "Its keys are `commits` (the number of non-merge commits of the lane: a merge, such as the owner's merge of the target tip into the lane branch, is no lane commit), `subjects` (the first lines of at most 8 of them, oldest first, each at most 100 characters), `more` (`commits` minus the subjects listed), `files`, `insertions`, `deletions` (the net change from the merge base to the head: a rename is one file, a binary file one file without lines), `paths` (at most 12 distinct keys: the first two path segments of a changed file, and a file in the repository root as itself) and `paths_more` (the keys not listed).",
           "`set-update --state integrated` computes it from git when the lane was `ready`, against the tip of the local branch `refs/heads/<target>` of that moment (the lane is not yet in the target)",
           "- **Supplemented form** (the converge apply report and `--release` always;",
           "a `Changes` column at the end of the Lanes table: `<commits> commits, <files> files, +<insertions>/-<deletions>`, or the lane's state for a lane whose `changes` is null;",
@@ -2435,7 +2466,14 @@
           "the total line `Total: <k> of <n> lanes integrated, <commits> commits, <files> files, +<insertions>/-<deletions>`, summed over the integrated lanes.",
           "the supplemented tables with **Remaining TODO** (read the record again with `<guard> set-show --set <set> --json` after the last `set-update`, which is when the guard records each lane's `changes`;",
           "A repeated `integrated` update of a lane that is already `integrated` replaces its note only and keeps `changes` as stored;",
-          "| exit 11, `unknowns` code `TARGET_UNCERTAIN` from `set-update --state integrated`"
+          "| exit 11, `unknowns` code `TARGET_UNCERTAIN` from `set-update --state integrated`",
+          "the invoking worktree has no tracked change and no operation in progress, and the target is checked out nowhere else.",
+          "Untracked files (for example files the repository checks of step 5 wrote) do not block the land, and the report lists them.",
+          "Both refuse by themselves to overwrite an untracked file (the switch also an ignored one), and such a refusal is `LAND_REFUSED` with git's error text and the files it names.",
+          "| remove or move the listed files (keep a copy of what you need), then rerun with `--land`; the merges and their records stay, and nothing was landed |",
+          "The preview also gives the **land prediction**, the conditions of **Converge apply** step 6 that can be known before the merges:",
+          "in a converge preview where every lane is `READY` or `INTEGRATED` and the land prediction fails, the failed condition with its remedy (**Converge preview** step 3)",
+          "Land result (only with --land), with the untracked files of the invoking worktree"
         ]
       },
       {
@@ -2487,11 +2525,11 @@
       {
         "file": "README.md",
         "contains": [
-          "先预览合并：结论 `READY`（每个车道都已经 `READY` 或 `INTEGRATED`，一次运行就能全部合并，`--land` 可以接着做）、`PARTIAL`（有车道还没好，这次只合并 `READY` 的，并写明每个没好的车道还缺什么）或 `BLOCKED`（有门槛没通过）。",
-          "`--land` 只在文字里建议，不写进那一行。",
+          "先预览合并：结论 `READY`（每个车道都已经 `READY` 或 `INTEGRATED`，一次运行就能全部合并）、`PARTIAL`（有车道还没好，这次只合并 `READY` 的，并写明每个没好的车道还缺什么）或 `BLOCKED`（有门槛没通过）。",
+          "只有这个预测成立时才加上 `--land`；否则报告写明哪个落地条件不满足、怎样解除，“还剩什么”里也留着这一项。",
           "`--converge --apply` 是你对报告里那份计划的接受",
           "否则报告 `LAND_REFUSED` 并停下，什么也不再做。",
-          "| `STALE_PLAN` | 目标分支前进了，而且它改动的文件与某个车道的清单有交集，各车道不再独立于已经落下的内容 | 失败，整个命令停下 |",
+          "| `STALE_PLAN` | 目标分支前进了，而且它新提交改动的文件与某个车道的清单有交集，各车道不再独立于已经落下的内容（这个计划自己的车道合并或落地之后从不算在内） | 失败，整个命令停下 |",
           "| `PREDICTED_CONFLICT` | 预演合并（`git merge-tree --write-tree`）预计会冲突；只是提示，看不出两个车道之间的冲突 | 提示，仍会尝试 |",
           "✓ 默认只预览。不加 --apply（也不是 --release）就不会登记、创建或合并任何东西，也不联网",
           "✓ 登记和进度只经过车道守卫的 set-plan、set-update、set-release；从不手改 .git/magos，从不用 override",
@@ -2503,24 +2541,26 @@
           "- **合并到一半断了怎么办？** 重新运行同一条命令：它重新调查，在同一条集成分支上接着做，已经 `integrated` 的车道会跳过。",
           "合并完成后，清单不是被替换，而是**在原来的基础上补充**",
           "`--release` 先打印补充了修改内容概要的最终清单，再移除各车道的登记和计划记录；",
-          "# 计划 sweep-readiness -> develop  rev 5  base 3fa9c21\n## 需求\n| 编号 | 需求 | 承担的车道 | 计划成果 | 结果 |\n|---|---|---|---|---|\n| R1 | 所有 claim 都从同一个存储读取 | claim-store | claim-store: src/claims 读取所有 claim | claim-store: Add claim_store module |\n| R2 | 清扫的就绪结论有文档说明 | sweep-docs | sweep-docs: docs/sweep.md 讲清就绪结论 | 待合并: sweep-docs |\n| R3 | 现有的清扫测试和文档里的示例仍然通过 | claim-store, sweep-docs | claim-store: src/claims 读取所有 claim; sweep-docs: docs/sweep.md 讲清就绪结论 | claim-store: Add claim_store module; 待合并: sweep-docs |\n## 车道\n| 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 | 状态 | 提交 | 修改 |\n|---|---|---|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |\n| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | docs/sweep.md 里的示例可以运行 | [ ] active | - | active |",
+          "# 计划 sweep-readiness -> develop  base 3fa9c21\n## 需求\n| 编号 | 需求 | 承担的车道 | 计划成果 | 结果 |\n|---|---|---|---|---|\n| R1 | 所有 claim 都从同一个存储读取 | claim-store | claim-store: src/claims 读取所有 claim | claim-store: Add claim_store module |\n| R2 | 清扫的就绪结论有文档说明 | sweep-docs | sweep-docs: docs/sweep.md 讲清就绪结论 | 待合并: sweep-docs |\n| R3 | 现有的清扫测试和文档里的示例仍然通过 | claim-store, sweep-docs | claim-store: src/claims 读取所有 claim; sweep-docs: docs/sweep.md 讲清就绪结论 | claim-store: Add claim_store module; 待合并: sweep-docs |\n## 车道\n| 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 | 状态 | 提交 | 修改 |\n|---|---|---|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |\n| sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md 里的示例可以运行 | [ ] active | - | active |",
           "| 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 | 状态 | 提交 | 修改 |\n|---|---|---|---|---|---|---|---|---|",
-          "修改内容概要\n- claim-store - 3 个提交, 7 个文件 (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [路径: src/claims, tests/claims]\n- sweep-docs - active, 未合并\n合计: 2 个车道中 1 个已合并, 3 个提交, 7 个文件, +212/-48",
+          "修改内容概要\n- claim-store - 3 个提交, 7 个文件 (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [路径: `src/claims`, `tests/claims`]\n- sweep-docs - active, 未合并\n合计: 2 个车道中 1 个已合并, 3 个提交, 7 个文件, +212/-48",
           "还剩什么\n1. 完成 sweep-docs: active; 验收 docs/sweep.md 里的示例可以运行\n2. 在 agent/sweep-readiness/integration 上运行仓库检查\n3. post-merge: 更新 CHANGELOG.md",
-          "- sweep-docs - 2 个提交, 3 个文件 (+36/-4): Document the readiness verdict; Add runnable examples [路径: docs/sweep.md, docs/sweep-examples.md, docs/index.md]\n合计: 2 个车道中 2 个已合并, 5 个提交, 10 个文件, +248/-52",
+          "- sweep-docs - 2 个提交, 3 个文件 (+36/-4): Document the readiness verdict; Add runnable examples [路径: `docs/sweep.md`, `docs/sweep-examples.md`, `docs/index.md`]\n合计: 2 个车道中 2 个已合并, 5 个提交, 10 个文件, +248/-52",
           "还剩什么\n1. post-merge: 更新 CHANGELOG.md\n2. 收尾（release）",
           "| `--release` | 各车道都已合并之后收尾：先打印补充了修改内容概要的清单",
-          "- **合并之后，清单里的“修改”是怎么来的？**"
+          "- **合并之后，清单里的“修改”是怎么来的？**",
+          "`READY` 只针对合并；预览还会预测同一次运行能不能落地",
+          "工作区里没有被 Git 跟踪的文件（比如检查生成的文件）不会挡住落地，报告会列出它们"
         ]
       },
       {
         "file": "README.en.md",
         "contains": [
-          "Preview the merge first. The verdict is `READY` (every lane is already `READY` or `INTEGRATED`, so one run merges them all and `--land` can follow), `PARTIAL` (some lane is not done: this run merges only the `READY` ones and says what each of the others still needs) or `BLOCKED` (a gate fails).",
-          "`--land` is only suggested in words and never put on that line.",
+          "Preview the merge first. The verdict is `READY` (every lane is already `READY` or `INTEGRATED`, so one run merges them all), `PARTIAL` (some lane is not done: this run merges only the `READY` ones and says what each of the others still needs) or `BLOCKED` (a gate fails).",
+          "with `--land` added only when that prediction holds; otherwise the report names the land condition that fails and what lifts it, and Remaining TODO keeps it.",
           "`--converge --apply` is your acceptance of the plan the report shows",
           "otherwise it reports `LAND_REFUSED` and stops, doing nothing more.",
-          "| `STALE_PLAN` | The target branch moved on, and the files it changed overlap a lane's manifest, so the lanes are no longer independent of what landed | Fails: the whole command stops |",
+          "| `STALE_PLAN` | The target branch moved on, and the files changed by its new commits overlap a lane's manifest, so the lanes are no longer independent of what landed (the plan's own lanes, once merged or landed, never count) | Fails: the whole command stops |",
           "| `PREDICTED_CONFLICT` | The trial merge (`git merge-tree --write-tree`) predicts a conflict; only a hint, and it cannot see a conflict between two lanes | A hint; it still tries |",
           "✓ Preview by default. Without --apply (or --release) nothing is registered, created or merged, and the network is not used",
           "✓ Registration and progress go only through the guard's set-plan, set-update and set-release; .git/magos is never edited by hand and override is never used",
@@ -2532,24 +2572,26 @@
           "- **What if the merge stopped half-way?** Run the same command again: it investigates afresh and carries on on the same integration branch, and the lanes that are already `integrated` are skipped.",
           "After the merge the checklist is not replaced but **supplemented**:",
           "`--release` prints the final checklist, supplemented with the changes summary, first, then removes the claims of the lanes and the plan record;",
-          "# Plan sweep-readiness -> develop  rev 5  base 3fa9c21\n## Requirements\n| Req | Requirement | Lane(s) | Planned outcome | Result |\n|---|---|---|---|---|\n| R1 | Claims are read from one store | claim-store | claim-store: src/claims reads every claim | claim-store: Add claim_store module |\n| R2 | The readiness verdict of a sweep is documented | sweep-docs | sweep-docs: docs/sweep.md explains the verdict | pending: sweep-docs |\n| R3 | The sweep tests and the documented examples still pass | claim-store, sweep-docs | claim-store: src/claims reads every claim; sweep-docs: docs/sweep.md explains the verdict | claim-store: Add claim_store module; pending: sweep-docs |\n## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance | State | Head | Changes |\n|---|---|---|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims passes | [x] integrated | 8b1d4e0 | 3 commits, 7 files, +212/-48 |\n| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | the examples in docs/sweep.md run | [ ] active | - | active |",
+          "# Plan sweep-readiness -> develop  base 3fa9c21\n## Requirements\n| Req | Requirement | Lane(s) | Planned outcome | Result |\n|---|---|---|---|---|\n| R1 | Claims are read from one store | claim-store | claim-store: src/claims reads every claim | claim-store: Add claim_store module |\n| R2 | The readiness verdict of a sweep is documented | sweep-docs | sweep-docs: docs/sweep.md explains the verdict | pending: sweep-docs |\n| R3 | The sweep tests and the documented examples still pass | claim-store, sweep-docs | claim-store: src/claims reads every claim; sweep-docs: docs/sweep.md explains the verdict | claim-store: Add claim_store module; pending: sweep-docs |\n## Lanes\n| Lane | Branch | Worktree | Owns | Needs | Acceptance | State | Head | Changes |\n|---|---|---|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims passes | [x] integrated | 8b1d4e0 | 3 commits, 7 files, +212/-48 |\n| sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | the examples in docs/sweep.md run | [ ] active | - | active |",
           "| Lane | Branch | Worktree | Owns | Needs | Acceptance | State | Head | Changes |\n|---|---|---|---|---|---|---|---|---|",
-          "Changes summary\n- claim-store - 3 commits, 7 files (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [paths: src/claims, tests/claims]\n- sweep-docs - active, not integrated\nTotal: 1 of 2 lanes integrated, 3 commits, 7 files, +212/-48",
+          "Changes summary\n- claim-store - 3 commits, 7 files (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [paths: `src/claims`, `tests/claims`]\n- sweep-docs - active, not integrated\nTotal: 1 of 2 lanes integrated, 3 commits, 7 files, +212/-48",
           "Remaining TODO\n1. finish sweep-docs: active; accept the examples in docs/sweep.md run\n2. run the repository checks on agent/sweep-readiness/integration\n3. post-merge: update CHANGELOG.md",
-          "- sweep-docs - 2 commits, 3 files (+36/-4): Document the readiness verdict; Add runnable examples [paths: docs/sweep.md, docs/sweep-examples.md, docs/index.md]\nTotal: 2 of 2 lanes integrated, 5 commits, 10 files, +248/-52",
+          "- sweep-docs - 2 commits, 3 files (+36/-4): Document the readiness verdict; Add runnable examples [paths: `docs/sweep.md`, `docs/sweep-examples.md`, `docs/index.md`]\nTotal: 2 of 2 lanes integrated, 5 commits, 10 files, +248/-52",
           "Remaining TODO\n1. post-merge: update CHANGELOG.md\n2. release the set",
           "| `--release` | Close the set once its lanes are merged: print the checklist supplemented with the changes summary",
-          "- **Where does the \"Changes\" of the checklist come from after the merge?**"
+          "- **Where does the \"Changes\" of the checklist come from after the merge?**",
+          "`READY` speaks for the merges only; the preview also predicts whether the same run could land",
+          "Files that are not tracked in your worktree (for example files the checks wrote) do not block the land and are listed in the report"
         ]
       },
       {
         "file": "README.ja.md",
         "contains": [
-          "まずマージをプレビューします。結論は `READY`（すべてのレーンがすでに `READY` か `INTEGRATED` で、1 回の実行ですべてマージでき、続けて `--land` もできる）、`PARTIAL`（まだ終わっていないレーンがあり、今回は `READY` のものだけをマージし、終わっていない各レーンに何が足りないかを書く）、`BLOCKED`（通らなかったゲートがある）のどれかです。",
-          "`--land` は文章で勧めるだけで、その行には含めません。",
+          "まずマージをプレビューします。結論は `READY`（すべてのレーンがすでに `READY` か `INTEGRATED` で、1 回の実行ですべてマージできる）、`PARTIAL`（まだ終わっていないレーンがあり、今回は `READY` のものだけをマージし、終わっていない各レーンに何が足りないかを書く）、`BLOCKED`（通らなかったゲートがある）のどれかです。",
+          "この予測が成り立つときだけ `--land` が付きます。成り立たなければ、どの反映の条件が満たされないか、どうすれば解消するかをレポートに書き、その項目は「残りの作業」にも残ります。",
           "`--converge --apply` は、レポートにあるその計画をあなたが受け入れる、という意味です",
           "そうでなければ `LAND_REFUSED` と報告して停止し、それ以上は何もしません。",
-          "| `STALE_PLAN` | ターゲットブランチが進み、それが変更したファイルがあるレーンのマニフェストと重なる。各レーンは、すでに入った内容から独立していなくなった | 失敗。コマンド全体が停止します |",
+          "| `STALE_PLAN` | ターゲットブランチが進み、その新しいコミットが変更したファイルがあるレーンのマニフェストと重なる。各レーンは、すでに入った内容から独立していなくなった（この計画自身のレーンは、マージや反映のあとも数えない） | 失敗。コマンド全体が停止します |",
           "| `PREDICTED_CONFLICT` | 試しマージ（`git merge-tree --write-tree`）でコンフリクトが予測される。ヒントにすぎず、2 つのレーンの間のコンフリクトは見つけられない | ヒント。それでも試みます |",
           "✓ デフォルトはプレビューのみ。--apply（または --release）がなければ、何も登録・作成・マージせず、ネットワークにも接続しない",
           "✓ 登録と進み具合の記録は、レーンガードの set-plan、set-update、set-release だけを経由する。.git/magos は手で編集せず、override も使わない",
@@ -2561,14 +2603,16 @@
           "- **マージの途中で止まったら？** 同じコマンドをもう一度実行します。改めて調査し、同じ統合ブランチの続きから進めます。すでに `integrated` のレーンは飛ばされます。",
           "マージが終わると、チェックリストは置き換えられるのではなく、**元のものに補足されます**",
           "`--release` は、まず変更内容の概要で補足された最終的なチェックリストを表示してから、",
-          "# 計画 sweep-readiness -> develop  rev 5  base 3fa9c21\n## 要件\n| 番号 | 要件 | 担当レーン | 計画された成果 | 結果 |\n|---|---|---|---|---|\n| R1 | すべての claim が 1 つのストアから読まれる | claim-store | claim-store: src/claims がすべての claim を読む | claim-store: Add claim_store module |\n| R2 | 清掃の準備完了の判定が文書化されている | sweep-docs | sweep-docs: docs/sweep.md が判定を説明する | 未マージ: sweep-docs |\n| R3 | 既存の清掃テストと文書内のサンプルが引き続き通る | claim-store, sweep-docs | claim-store: src/claims がすべての claim を読む; sweep-docs: docs/sweep.md が判定を説明する | claim-store: Add claim_store module; 未マージ: sweep-docs |\n## レーン\n| レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 | 状態 | コミット | 変更 |\n|---|---|---|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |\n| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | docs/sweep.md のサンプルが動く | [ ] active | - | active |",
+          "# 計画 sweep-readiness -> develop  base 3fa9c21\n## 要件\n| 番号 | 要件 | 担当レーン | 計画された成果 | 結果 |\n|---|---|---|---|---|\n| R1 | すべての claim が 1 つのストアから読まれる | claim-store | claim-store: src/claims がすべての claim を読む | claim-store: Add claim_store module |\n| R2 | 清掃の準備完了の判定が文書化されている | sweep-docs | sweep-docs: docs/sweep.md が判定を説明する | 未マージ: sweep-docs |\n| R3 | 既存の清掃テストと文書内のサンプルが引き続き通る | claim-store, sweep-docs | claim-store: src/claims がすべての claim を読む; sweep-docs: docs/sweep.md が判定を説明する | claim-store: Add claim_store module; 未マージ: sweep-docs |\n## レーン\n| レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 | 状態 | コミット | 変更 |\n|---|---|---|---|---|---|---|---|---|\n| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |\n| sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md のサンプルが動く | [ ] active | - | active |",
           "| レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 | 状態 | コミット | 変更 |\n|---|---|---|---|---|---|---|---|---|",
-          "変更内容の概要\n- claim-store - 3 コミット, 7 ファイル (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [パス: src/claims, tests/claims]\n- sweep-docs - active, 未マージ\n合計: 2 レーン中 1 レーンがマージ済み, 3 コミット, 7 ファイル, +212/-48",
+          "変更内容の概要\n- claim-store - 3 コミット, 7 ファイル (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [パス: `src/claims`, `tests/claims`]\n- sweep-docs - active, 未マージ\n合計: 2 レーン中 1 レーンがマージ済み, 3 コミット, 7 ファイル, +212/-48",
           "残りの作業\n1. sweep-docs を完了する: active; 受け入れ基準 docs/sweep.md のサンプルが動く\n2. agent/sweep-readiness/integration でリポジトリのチェックを実行\n3. post-merge: CHANGELOG.md を更新",
-          "- sweep-docs - 2 コミット, 3 ファイル (+36/-4): Document the readiness verdict; Add runnable examples [パス: docs/sweep.md, docs/sweep-examples.md, docs/index.md]\n合計: 2 レーン中 2 レーンがマージ済み, 5 コミット, 10 ファイル, +248/-52",
+          "- sweep-docs - 2 コミット, 3 ファイル (+36/-4): Document the readiness verdict; Add runnable examples [パス: `docs/sweep.md`, `docs/sweep-examples.md`, `docs/index.md`]\n合計: 2 レーン中 2 レーンがマージ済み, 5 コミット, 10 ファイル, +248/-52",
           "残りの作業\n1. post-merge: CHANGELOG.md を更新\n2. 締めくくり（release）",
           "| `--release` | すべてのレーンがマージされたあとの締めくくり：変更内容の概要で補足したチェックリストを表示してから",
-          "- **マージのあとにチェックリストの「変更」はどこから来ますか？**"
+          "- **マージのあとにチェックリストの「変更」はどこから来ますか？**",
+          "`READY` はマージについてだけの結論です。プレビューは、同じ実行で反映までできるかも予測します",
+          "ワークツリーの中の Git が追跡していないファイル（たとえばチェックが書き出したファイル）は反映を妨げず、レポートに一覧されます。"
         ]
       },
       {
@@ -2604,7 +2648,10 @@
           "### GitPlan with an agent asked to write the set record by hand",
           "### GitPlan --release before the lanes are integrated",
           "### GitPlan with the list supplemented after the merge",
-          "The Lanes table gains `State`, `Head` and `Changes` (`3 commits, 7 files, +212/-48`); the Requirements table gains `Result` (`<lane>: <first commit subject>` for each integrated lane that serves the requirement, then `pending: <lane>` for the others); below the tables come the **Changes summary** (one bullet per lane in merge order: `- <lane> - <commits> commits, <files> files (+<insertions>/-<deletions>): <subject>; <subject>` with the `[paths: ...]` suffix, and `- <lane> - <state>, not integrated` for a lane that is not integrated), the `Total` line (`Total: 2 of 2 lanes integrated, 5 commits, 10 files, +248/-52`)"
+          "The Lanes table gains `State`, `Head` and `Changes` (`3 commits, 7 files, +212/-48`); the Requirements table gains `Result` (`<lane>: <first commit subject>` for each integrated lane that serves the requirement, then `pending: <lane>` for the others); below the tables come the **Changes summary** (one bullet per lane in merge order: `- <lane> - <commits> commits, <files> files (+<insertions>/-<deletions>): <subject>; <subject>` with the `[paths: ...]` suffix, and `- <lane> - <state>, not integrated` for a lane that is not integrated), the `Total` line (`Total: 2 of 2 lanes integrated, 5 commits, 10 files, +248/-52`)",
+          "### GitPlan --land with files written by the checks",
+          "Expected: the untracked files do not block the land.",
+          "A converge preview made after this refusal says `READY` for the merges only: its land prediction fails"
         ]
       }
     ]
@@ -2842,7 +2889,8 @@
           "### GitPlan with ordinal lane ids",
           "### GitPlan with a requirement that nobody serves",
           "### GitPlan with a branch or a worktree that does not carry the topic",
-          "### GitPlan with the list supplemented after the merge"
+          "### GitPlan with the list supplemented after the merge",
+          "### GitPlan --land with files written by the checks"
         ]
       }
     ]

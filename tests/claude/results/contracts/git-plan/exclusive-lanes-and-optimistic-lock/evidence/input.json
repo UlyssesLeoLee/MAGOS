@@ -21,6 +21,10 @@
     "lane id as a topic slug",
     "ordinal and generic lane ids",
     "branch agent/<set>/<id> and worktree name ending -<set>-<id>",
-    "requirement that nobody serves"
+    "requirement that nobody serves",
+    "two lanes of the plan that overlap",
+    "a manifest entry repeated after normalisation",
+    "an amendment that changes nothing",
+    "the result shapes of set-*, version, list and doctor"
   ]
 }

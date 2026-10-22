@@ -765,10 +765,10 @@ flowchart TD
 /GitPlan sweep-readiness --into develop
 ```
 
-它先调查 Git（分支、工作区、已有的车道登记、目标分支的最新提交；远端新旧只按本地记录判断，不联网）和代码（目录结构、入口、构建与测试命令、共享文件、最常被改动的文件、文件之间的引用），再写出任务的需求（`R1`、`R2`……）并拆分任务，用 `magos_guard.py set-plan --dry-run` 证明各车道的文件清单两两不相交、每条需求都有车道承担；最后给出需求表、车道表和结论 `READY` 或 `BLOCKED`，每个没通过的门槛都附带处理办法，报告里还有一段“命名”，说明每个车道的名字取自哪条需求和哪些文件。预览唯一的写入，是放在所有工作区之外的一个临时 spec 文件。表格取自守卫证明过的 spec，清单长这样：
+它先调查 Git（分支、工作区、已有的车道登记、目标分支的最新提交；远端新旧只按本地记录判断，不联网）和代码（目录结构、入口、构建与测试命令、共享文件、最常被改动的文件、文件之间的引用），再写出任务的需求（`R1`、`R2`……）并拆分任务，用 `magos_guard.py set-plan --dry-run` 证明各车道的文件清单两两不相交、每条需求都有车道承担；最后给出需求表、车道表和结论 `READY` 或 `BLOCKED`，每个没通过的门槛都附带处理办法，报告里还有一段“命名”，说明每个车道的名字取自哪条需求和哪些文件，以及一段“修正”，列出守卫拒绝之后执行者改了 spec 的哪些地方。预览唯一的写入，是放在所有工作区之外的一个临时 spec 文件。表格取自守卫证明过的 spec，清单长这样：
 
 ```text
-# 计划 sweep-readiness -> develop  rev 1  base 3fa9c21
+# 计划 sweep-readiness -> develop  base 3fa9c21
 ## 需求
 | 编号 | 需求 | 承担的车道 | 计划成果 |
 |---|---|---|---|
@@ -778,8 +778,8 @@ flowchart TD
 ## 车道
 | 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 |
 |---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims 通过 |
-| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | docs/sweep.md 里的示例可以运行 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims 通过 |
+| sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md 里的示例可以运行 |
 - [ ] 合并 claim-store -> sweep-docs 到 agent/sweep-readiness/integration；运行 pytest -q；落到 develop
 共享文件: pyproject.toml -> claim-store ; post-merge: 更新 CHANGELOG.md -> 合并步骤
 风险: docs/sweep.md 引用 src/claims 的接口，所以 sweep-docs 依赖 claim-store
@@ -799,20 +799,20 @@ flowchart TD
 各车道的负责人（子 Agent）只改自己清单里的文件。开始时记 `active`，提交之后记 `ready` 并附上它的最新提交：
 
 ```text
-magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state active
-magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>
+magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state active
+magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --expect-revision <rev> --lane claim-store --state ready --head <tip>
 ```
 
-`<rev>` 取自 `magos_guard.py set-show --set sweep-readiness --json` 里的 `record.revision`；退出码 19 表示它已经变了，重新读一次。记 `ready` 时守卫会核对：这个提交确实是分支的最新提交，而且这个车道改过的每一个文件都在它的清单里（越界就是退出码 22，并列出文件）。随时可以用 `--status` 看进度：
+`<rev>` 取自 `magos_guard.py set-show --repo /work/app-sweep-readiness-claim-store --set sweep-readiness --json` 里的 `record.revision`（负责人在车道的工作区里运行这几行，`--repo` 写的就是它；仓库的任何一个工作区都可以）；退出码 19 表示它已经变了，重新读一次。记 `ready` 时守卫会核对：这个提交确实是分支的最新提交，而且这个车道改过的每一个文件都在它的清单里（越界就是退出码 22，并列出文件）。随时可以用 `--status` 看进度：
 
 ```text
 /GitPlan sweep-readiness --status
 ```
 
-它按记录重新打印这两张表：车道表多出 `状态` 和 `提交` 两列，`ready` 或 `integrated` 的车道打勾并附上记录的提交，最后是“还剩什么”。只要有车道已经 `integrated`，它打印的就是补充了修改内容的清单（见第 4 步）：车道表多一列 `修改`，需求表多一列 `结果`，下面是修改内容概要和合计。
+它按记录重新打印这两张表：车道表多出 `状态` 和 `提交` 两列，`ready` 或 `integrated` 的车道打勾并附上记录的提交，最后是“还剩什么”。只要有车道已经 `integrated`，它打印的就是补充了修改内容的清单（见第 4 步）：车道表多一列 `修改`，需求表多一列 `结果`，下面是修改内容概要和合计。报告的标题行写着 revision（这个例子里是 5），清单本身不带 revision。
 
 ```text
-# 计划 sweep-readiness -> develop  rev 5  base 3fa9c21
+# 计划 sweep-readiness -> develop  base 3fa9c21
 ## 需求
 | 编号 | 需求 | 承担的车道 | 计划成果 | 结果 |
 |---|---|---|---|---|
@@ -822,12 +822,12 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 ## 车道
 | 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 | 状态 | 提交 | 修改 |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |
-| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | docs/sweep.md 里的示例可以运行 | [ ] active | - | active |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |
+| sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md 里的示例可以运行 | [ ] active | - | active |
 - [ ] 合并 claim-store -> sweep-docs 到 agent/sweep-readiness/integration；运行仓库检查；落到 develop
 
 修改内容概要
-- claim-store - 3 个提交, 7 个文件 (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [路径: src/claims, tests/claims]
+- claim-store - 3 个提交, 7 个文件 (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [路径: `src/claims`, `tests/claims`]
 - sweep-docs - active, 未合并
 合计: 2 个车道中 1 个已合并, 3 个提交, 7 个文件, +212/-48
 
@@ -837,7 +837,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 3. post-merge: 更新 CHANGELOG.md
 ```
 
-计划要改，就用 `--amend`：`/GitPlan sweep-readiness --amend --expect-revision 5` 重新调查并预览修改后的计划（还在的车道保留分支、工作区、状态和修改内容概要，`base` 移到目标分支的当前位置；需求可以增加、改写或删除，但每条需求仍要有车道承担，开了工的车道不能改名），满意再加 `--apply`。已经有未合并提交的车道不能被删掉，它的清单也不能缩小到少于它已经改过的文件（守卫会拒绝，退出码 16）。
+计划要改，就用 `--amend`：`/GitPlan sweep-readiness --amend --expect-revision 5` 重新调查并预览修改后的计划（还在的车道保留分支、工作区、状态和修改内容概要，`base` 移到目标分支的当前位置；需求可以增加、改写或删除，但每条需求仍要有车道承担，开了工的车道不能改名），满意再加 `--apply`；没有任何变化的修改会直接说明，不登记任何东西，revision 也不变。已经有未合并提交的车道不能被删掉，它的清单也不能缩小到少于它已经改过的文件（守卫会拒绝，退出码 16）。
 
 **第 4 步：合并、落地、收尾**
 
@@ -848,7 +848,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 /GitPlan sweep-readiness --release
 ```
 
-先预览合并：结论 `READY`（每个车道都已经 `READY` 或 `INTEGRATED`，一次运行就能全部合并，`--land` 可以接着做）、`PARTIAL`（有车道还没好，这次只合并 `READY` 的，并写明每个没好的车道还缺什么）或 `BLOCKED`（有门槛没通过）。推荐的下一条命令是 `/GitPlan <set> --converge --apply --expect-revision <预览里显示的 revision>`；`--land` 只在文字里建议，不写进那一行。
+先预览合并：结论 `READY`（每个车道都已经 `READY` 或 `INTEGRATED`，一次运行就能全部合并）、`PARTIAL`（有车道还没好，这次只合并 `READY` 的，并写明每个没好的车道还缺什么）或 `BLOCKED`（有门槛没通过）。`READY` 只针对合并；预览还会预测同一次运行能不能落地（每个车道都已完成，目标分支仍停在集成分支的起点或将要切出的位置，而且没有在别的工作区检出）。推荐的下一条命令是 `/GitPlan <set> --converge --apply --expect-revision <预览里显示的 revision>`，只有这个预测成立时才加上 `--land`；否则报告写明哪个落地条件不满足、怎样解除，“还剩什么”里也留着这一项。
 
 `--converge --apply` 是你对报告里那份计划的接受：先重新调查，记下这次的计划（车道顺序、各车道登记的提交、目标分支的提交、revision）；和你之前预览过的不一样就停下，给你新的预览。然后：
 
@@ -856,12 +856,12 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 2. 集成分支不存在时，在你运行命令的工作区（必须停在目标分支上，且是干净的）用普通的 `git switch -c agent/<set>/integration <目标分支的当前提交>` 创建它。
 3. 按依赖顺序，逐个用 `git merge --no-ff` 合并 `READY` 车道登记的那个提交，每合并一个就用 `set-update` 记成 `integrated`。
 4. 在集成分支上运行仓库自己的检查（构建、测试、lint）；检查失败就在落地之前停下，认不出检查时报告“未校验”并继续。
-5. 只有写了 `--land`：每个车道都已 `integrated`、而目标分支还停在集成分支的起点时，用一次 `git merge --ff-only` 把目标分支快进到集成分支；否则报告 `LAND_REFUSED` 并停下，什么也不再做。
+5. 只有写了 `--land`：每个车道都已 `integrated`、而目标分支还停在集成分支的起点时，用一次 `git merge --ff-only` 把目标分支快进到集成分支；否则报告 `LAND_REFUSED` 并停下，什么也不再做。工作区里没有被 Git 跟踪的文件（比如检查生成的文件）不会挡住落地，报告会列出它们；被跟踪文件的改动则会挡住。Git 拒绝覆盖其中某个未跟踪的文件时，同样是 `LAND_REFUSED`：删除或移走列出的文件，再加 `--land` 重新运行。
 
 合并完成后，清单不是被替换，而是**在原来的基础上补充**：`--converge --apply` 的报告、之后的 `--status` 和 `--release` 打印的，仍是最初那两张表（每一行、每一列都在），再加上守卫在把车道记为 `integrated` 的那一刻用 git 算出并存进记录的修改内容：车道表多一列 `修改`（`3 个提交, 7 个文件, +212/-48` 这样的一格；还没合并的车道写它的状态），需求表多一列 `结果`（承担这条需求的各车道的第一条提交标题，还没合并的列在 `待合并` 后面），表格下面是 `修改内容概要`（每个车道一行：提交数、文件数、增删行数、提交标题，以及改动集中在哪些路径）和一行 `合计`。下面是 `--land` 之后 `--status` 或 `--release` 打印的样子（合并那一行已经打勾），只剩更新 CHANGELOG 和收尾两件事：
 
 ```text
-# 计划 sweep-readiness -> develop  rev 7  base 3fa9c21
+# 计划 sweep-readiness -> develop  base 3fa9c21
 ## 需求
 | 编号 | 需求 | 承担的车道 | 计划成果 | 结果 |
 |---|---|---|---|---|
@@ -871,13 +871,13 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 ## 车道
 | 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 | 状态 | 提交 | 修改 |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | /work/app-sweep-readiness-claim-store | src/claims/, tests/claims/ | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |
-| sweep-docs | agent/sweep-readiness/sweep-docs | /work/app-sweep-readiness-sweep-docs | docs/ | claim-store | docs/sweep.md 里的示例可以运行 | [x] integrated | c04a7f2 | 2 个提交, 3 个文件, +36/-4 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |
+| sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md 里的示例可以运行 | [x] integrated | c04a7f2 | 2 个提交, 3 个文件, +36/-4 |
 - [x] 合并 claim-store -> sweep-docs 到 agent/sweep-readiness/integration；运行仓库检查；落到 develop
 
 修改内容概要
-- claim-store - 3 个提交, 7 个文件 (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [路径: src/claims, tests/claims]
-- sweep-docs - 2 个提交, 3 个文件 (+36/-4): Document the readiness verdict; Add runnable examples [路径: docs/sweep.md, docs/sweep-examples.md, docs/index.md]
+- claim-store - 3 个提交, 7 个文件 (+212/-48): Add claim_store module; Read every claim through src/claims; Test the claim store [路径: `src/claims`, `tests/claims`]
+- sweep-docs - 2 个提交, 3 个文件 (+36/-4): Document the readiness verdict; Add runnable examples [路径: `docs/sweep.md`, `docs/sweep-examples.md`, `docs/index.md`]
 合计: 2 个车道中 2 个已合并, 5 个提交, 10 个文件, +248/-52
 
 还剩什么
@@ -889,7 +889,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 
 #### 两张表：需求、车道与成果
 
-清单由两张表和几行说明组成。表里的内容都取自守卫保存的数据（预览取自 `set-plan --dry-run` 的结果，其后取自 `set-show` 读回的记录），不凭记忆书写；单元格里的竖线 `|` 写成 `∣`，列标题和标签用回复语言写（车道 id、分支名、路径和状态码不翻译）。
+清单由两张表和几行说明组成。表里的内容都取自守卫保存的数据（预览取自 `set-plan --dry-run` 的结果，其后取自 `set-show` 读回的记录），不凭记忆书写；单元格里的竖线 `|` 写成 `∣`，清单项和路径用反引号写成代码，例如 `src/claims/`。标题、列标题、标签和固定的词（提交、文件、路径、合并那一行、仓库检查）都用回复语言写，保存下来的清单也一样，用预览时的语言。清单本身不带 revision，revision 写在每份报告的标题行里（车道 id、分支名、路径、命令、SHA 和状态码不翻译）。
 
 | 表 | 每一行 | 列 |
 |---|---|---|
@@ -897,7 +897,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 | 车道表 | 一个车道 | `车道`、`分支`、`工作区`、`负责的文件`、`依赖`、`验收`；`--status` 与 `--converge` 多 `状态`、`提交` 两列，合并之后再多一列 `修改` |
 | 修改内容概要 | 一个车道（没合并的写它的状态） | 提交数、文件数、增删行数、提交标题，以及改动集中在哪些路径；表格下面还有一行合计 |
 
-规划时，执行者替你写出任务的需求 `R1`、`R2`……；每条需求至少由一个车道承担，每个车道至少承担一条需求并写明它交付的成果，否则守卫拒绝这份计划（退出码 24），并指出是哪个字段。守卫在车道被记为 `integrated` 的那一刻，用 git 对照当时本地的目标分支算出它的修改内容并存进记录：提交数、最多 8 条提交标题（从旧到新）、文件数、增删行数，以及最多 12 个改动集中的路径；同一个车道再次被记为 `integrated` 时只更新备注，不改这份摘要。
+规划时，执行者替你写出任务的需求 `R1`、`R2`……；每条需求至少由一个车道承担，每个车道至少承担一条需求并写明它交付的成果，否则守卫拒绝这份计划（退出码 24），并指出是哪个字段。守卫在车道被记为 `integrated` 的那一刻，用 git 对照当时本地的目标分支算出它的修改内容并存进记录：提交数（不算合并提交）、最多 8 条提交标题（从旧到新）、文件数、增删行数，以及最多 12 个改动集中的路径；同一个车道再次被记为 `integrated` 时只更新备注，不改这份摘要。
 
 #### 命名规则：名字就是修改内容的主题
 
@@ -943,7 +943,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 | `NOT_READY`、`BLOCKED`、`WAITING` | 记录里还是 `planned` 或 `active`；记录里是 `blocked`；它依赖的车道既没有合并、也不是 `READY` | 不会，只是这个车道不参加这一次，不拦别的车道（写了 `--include-active` 时，有提交的 `active` 车道按当前提交参加） |
 | `MISSING_BRANCH`、`DIRTY`、`IN_PROGRESS`、`NO_MERGE_BASE` | 分支不见了；工作区有未保存的修改；工作区里有做到一半的合并、变基等操作；分支与目标分支没有共同历史 | 失败，整个命令停下 |
 | `OUT_OF_LANE`、`SHARED_CHANGE`、`MOVED`、`CLAIM_DRIFT` | 改了清单之外的文件；两个车道改了同一个文件；记 `ready` 之后又有了新提交；车道的登记与计划记录对不上 | 失败，整个命令停下 |
-| `STALE_PLAN` | 目标分支前进了，而且它改动的文件与某个车道的清单有交集，各车道不再独立于已经落下的内容 | 失败，整个命令停下 |
+| `STALE_PLAN` | 目标分支前进了，而且它新提交改动的文件与某个车道的清单有交集，各车道不再独立于已经落下的内容（这个计划自己的车道合并或落地之后从不算在内） | 失败，整个命令停下 |
 | `PREDICTED_CONFLICT` | 预演合并（`git merge-tree --write-tree`）预计会冲突；只是提示，看不出两个车道之间的冲突 | 提示，仍会尝试 |
 
 排队的状态只让那个车道这一次不参加；失败的状态会让整个命令停下，因为一个已经 `ready` 却不一致的车道不能被绕过去合并。每一项都附带处理办法，命令自己从不去做：车道的负责人（或你）去做，处理完重新运行。
@@ -956,7 +956,7 @@ magos_guard.py set-update --set sweep-readiness --expect-revision <rev> --lane c
 |---|---|---|
 | 退出码 19，`kind` 是 `base` | 预览之后目标分支前进了，计划依据的提交不是它现在的位置 | 重新运行：新的预览会调查新的位置 |
 | 退出码 19，`kind` 是 `revision`，或 `--expect-revision` 对不上 | 计划记录在你读取之后被改过，比如某个车道的负责人记录了进度 | 先运行 `--status`，按它显示的 revision 重做 |
-| `STALE_PLAN` | 见上表：目标分支上落下的内容与某个车道的清单有交集 | `--amend --expect-revision <n>`：新的预览基于新的位置，修改会把 `base` 移过去；有交集的车道由负责人把目标分支的提交合并进自己的分支，再记一次 `ready` |
+| `STALE_PLAN` | 见上表：目标分支上落下的内容与某个车道的清单有交集 | `--amend --expect-revision <n>`：新的预览基于新的位置，修改会把 `base` 移过去；修改之后，有交集的每个车道由负责人把目标分支的新提交合并进自己的分支，再记一次 `ready`；即使修改已经让这一项消失，这一步也必须做，否则合并会停在冲突上 |
 | 退出码 20、21 | 这个名字的计划已经存在；或者不存在这个名字的计划 | 用 `--status` 看，用 `--amend` 改，用 `--release` 收尾，或换个名字；检查名字，或先用 `--into` 规划 |
 | 退出码 22，`OUT_OF_LANE` | 某个车道改了清单之外的文件，守卫拒绝把它记成 `ready` | 负责人撤销这些改动，或用 `--amend` 把这些文件划给设计上拥有它们的那一个车道，然后重新记 `ready` |
 | 退出码 23 | 计划记录由更新版本的 MAGOS 写入 | 升级守卫（见“车道守卫”）；在此之前这份记录不会被读取或修改 |
