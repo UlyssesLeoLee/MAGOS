@@ -438,7 +438,8 @@ def test_the_hook_code_opens_no_network_connection(monkeypatch, tmp_path):
     run = _enclosing(launches[0], ast.FunctionDef)
     assert 'cmd = ["git"] + _PIN' in ast.get_source_segment(source, run) and launches[0].parent.args[0].id == "cmd"
     assert G._PIN == ["-c", "core.quotepath=false", "-c", "core.longpaths=true", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
-                      "-c", "diff.relative=false", "--no-optional-locks"]  # no fsmonitor program, no untracked cache, every path from the top of the work tree
+                      "-c", "diff.relative=false", "-c", "diff.ignoreSubmodules=none", "--no-optional-locks"]  # no fsmonitor program, no untracked cache, every path from
+    # the top of the work tree, and no setting that hides a submodule's changes in the status git runs inside it
 
     # Git.run refuses every subcommand outside the local set before it starts git, whatever call shape reaches it.
     assert G.LOCAL_GIT and not G.LOCAL_GIT & NETWORK_GIT, sorted(G.LOCAL_GIT)

@@ -2626,10 +2626,11 @@ def extract(payload, aliases=None):
 _SCRUB = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE",
           "GIT_PREFIX", "GIT_QUARANTINE_PATH", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_LITERAL_PATHSPECS", "GIT_ICASE_PATHSPECS",
           "GIT_REPLACE_REF_BASE", "GIT_NO_REPLACE_OBJECTS", "GIT_SHALLOW_FILE", "GIT_GRAFT_FILE", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
-# Every git call: no fsmonitor program, no untracked cache written, and every path that diff and log print named from the top of the work tree
-# (diff.relative=false), whatever directory below it the call starts in: the hook's session directory or a --repo below the top.
+# Every git call: no fsmonitor program, no untracked cache written, every path that diff and log print named from the top of the work tree
+# (diff.relative=false), whatever directory below it the call starts in: the hook's session directory or a --repo below the top, and
+# diff.ignoreSubmodules=none, which git passes on to the status it runs inside each submodule checkout, so no setting hides a nested change.
 _PIN = ["-c", "core.quotepath=false", "-c", "core.longpaths=true", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "diff.relative=false",
-        "--no-optional-locks"]
+        "-c", "diff.ignoreSubmodules=none", "--no-optional-locks"]
 # Every diff, log and status call carries --ignore-submodules=none right after its subcommand: a changed gitlink is a changed path, and a submodule
 # checkout whose commit differs from its gitlink or that holds changes is an uncommitted change of that path, whatever diff.ignoreSubmodules,
 # submodule.<name>.ignore or the ignore of .gitmodules says (the option on the command line overrides all three, a -c pin only the first).
@@ -3362,7 +3363,7 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
     def judge_now(claims, bad_claims):
         old = claims.get(fold(name))
         same = bool(old) and {e.raw for e in entries} == set(old["entries"]) and (not worktree or pkey(old["worktree"] or ".") == pkey(os.path.abspath(worktree)))
-        owner = branch_set(g, name, old) if write and not same else None
+        owner = branch_set(g, name, old) if write and not same and newer_claim(bad_claims, name) is None else None  # a newer-format claim is the claim gate's
         if owner:  # a branch of a set, its claim missing or set-less included: its claim is written only by set-plan
             return deny("LANE_EXISTS", message=T(lang, "lane_in_set", b=name, s=owner), target=snap["target"])
         if not old and name in snap["heads"]:
@@ -3379,7 +3380,7 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
         if shrink:
             v = dict(v, decision="allow", code="OK", conflicts=[], unknowns=[], overridden=False)
         v["unchanged"] = same
-        v["worktree"] = os.path.abspath(worktree).replace("\\", "/") if worktree else (old["worktree"] if old else "")  # what the claim registers
+        v["worktree"] = old["worktree"] if same else os.path.abspath(worktree).replace("\\", "/") if worktree else (old["worktree"] if old else "")  # what the claim registers
         return v
     if not write:
         return judge_now(claims, bad_claims)

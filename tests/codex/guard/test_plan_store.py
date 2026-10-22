@@ -748,6 +748,11 @@ def test_the_plan_example_names_the_registered_worktree(repo, guard):
     assert allowed.out.strip() == "{}", allowed  # the printed command is the creation the hook lets through
     bare = guard(repo, "plan", "--branch", "M", "--paths", "src/")
     assert bare.rc == 0 and bare.out.splitlines()[0].endswith('e.g.: git worktree add "<path>" -b M main')  # a claim that registers no worktree
+    if os.name == "nt":  # an identical re-plan typed in another case writes nothing and names the spelling the claim stores
+        claim = (Path(repo.git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "magos" / "claims" / "L.claim").read_bytes()
+        r = guard(repo, "plan", "--branch", "L", "--paths", "docs/", "web/", "--worktree", one.upper())
+        assert r.rc == 0 and r.out.splitlines()[0].endswith("e.g.: " + example), r
+        assert (Path(repo.git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "magos" / "claims" / "L.claim").read_bytes() == claim
 
 
 def test_remote_tracking_cap_warns_instead_of_denying(repo, guard, monkeypatch):

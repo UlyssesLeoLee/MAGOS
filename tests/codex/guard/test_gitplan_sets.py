@@ -5194,3 +5194,19 @@ def test_a_child_the_machine_killed_is_run_again(repo, guard, monkeypatch):
     monkeypatch.setattr(G, "main", main)
     r = guard(repo, "list")
     assert r.rc == 0 and len(argv) == 2 and "exit code" not in r.err, r  # the guard fixture, through conftest.run
+
+
+# ---- TC-430: a newer-format claim of a set lane is the claim gate's, not the set gate's -------------------------------------------------------
+def test_a_newer_format_claim_of_a_set_lane_is_the_claim_gates(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    p = store_dir(demo) / "claims" / "agent" / "demo" / "api.claim"
+    p.write_text("state=active\nv=99\nbranch=agent/demo/api\nentry=src/api/\n", encoding="utf-8")
+    before = store_files(demo)
+    for extra in ((), ("--amend",)):
+        args = ["plan", "--branch", "agent/demo/api", "--paths", "src/api/", "tests/api/", *extra]
+        r = guard(demo, *args)
+        v = json.loads(guard(demo, "--json", *args).out)
+        assert r.rc == 11 and v["exit_code"] == 11 and v["code"] == "UNKNOWN", (extra, r, v)
+        assert [u["code"] for u in v["unknowns"]] == ["CLAIM_NEWER_FORMAT"] and "agent/demo/api" in v["unknowns"][0]["text"], v
+        assert "lane_in_set" not in json.dumps(v) and "is a lane of set" not in r.out, r
+        assert store_files(demo) == before  # the claim file and the record stay byte-identical
