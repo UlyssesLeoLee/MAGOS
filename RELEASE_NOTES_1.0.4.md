@@ -28,9 +28,11 @@ A feature release: the new command `/GitPlan`, which plans, before any sub-agent
 
 ## Changed
 
-- While the record of a set exists, a plain `plan --amend` of one of its lane claims is refused (exit 14, `lane_in_set`) and so is a plain `release` of any claim of the set (exit 16, `blocked_set`): a set is changed only through `/GitPlan`.
+- While the record of a set exists, a plain `plan` that would write the claim of a branch of the set (a lane branch or the integration branch, also when that claim is missing or lacks its `set=` line: an amend, other entries, the re-plan after an override) is refused (exit 14, `lane_in_set`) and so is a plain `release` of any claim of the set (exit 16, `blocked_set`): a set is changed only through `/GitPlan`, whose `--amend` writes a missing or set-less claim of the set again.
+- A `plan` without `--worktree` (an amend, the re-plan after an override) keeps the worktree path the claim registers, which the host hooks enforce, and prints the creation command with that path (`<path>` when the claim registers none).
 - The open lane claims of a set make `/GitCleanup`, `/GitConverge` and `/GitSweep` report their branches as `BLOCKED_ACTIVE_OWNER` while the set is open; `--release` lifts it.
 - Every git call of the guard carries `-c diff.relative=false`: under `diff.relative=true`, the hook in a session directory below the top of the work tree and `plan`, `check` and the set subcommands with a `--repo` below the top read every committed path from the top and judge it against the manifests.
+- Every `diff`, `log` and `status` call of the guard carries `--ignore-submodules=none`: whatever `diff.ignoreSubmodules`, `submodule.<name>.ignore` or the `ignore` of `.gitmodules` says, a changed submodule pointer (gitlink) or a submodule checkout that differs from it is evidence for `plan`, `check` and the hook, and a changed file for the set subcommands.
 - `GUARD_VERSION` is 1.0.4, and `/GitPlan` stops when the guard is older.
 - Every text that enumerates the commands says eight; the five write adapters (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`) set `disable-model-invocation: true` in Claude Code.
 
@@ -47,6 +49,6 @@ Claim files of 1.0.0 to 1.0.3 are read unchanged; a claim of a set carries the e
 - Sets live in one clone: the set record and the claims of its lanes are in the git directory that registered them, and fetch and push do not share them.
 - Topic names are checked for form, not for meaning: the guard refuses the ordinal and generic ids and checks that an id is a topic slug, but it neither counts the words nor judges whether the name fits the change.
 - Semantic coupling between files is not detected: the guard proves that the file lists are disjoint, not that the code of two lanes is independent, so files that import each other belong in one lane.
-- A guard of 1.0.3 cannot see the set record: it has no `set-*` subcommand, does not show sets in `list` or `doctor`, judges the marker entry of the integration claim as a lane manifest, and cannot refuse `release` or `plan --amend` of a claim of a set. Refresh the guard copy.
+- A guard of 1.0.3 cannot see the set record: it has no `set-*` subcommand, does not show sets in `list` or `doctor`, judges the marker entry of the integration claim as a lane manifest, and cannot refuse `release` or `plan --amend` of a claim of a set, or its re-plan after an override; `set-show` and `doctor` report a claim it changed (an emptied worktree and a stored override fingerprint included) as `mismatch` or `missing`. Refresh the guard copy.
 - Every host receives the whole repository (including `tests/`, `.quality/`, `.github/`) because the marketplace source is the repo root; a slim runtime payload is not part of 1.0.4.
 - The lane guard's own limits, unchanged since 1.0.3, are listed in `references/lane-split.md`, section 12.

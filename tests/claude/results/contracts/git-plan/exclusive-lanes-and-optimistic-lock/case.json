@@ -43,7 +43,7 @@
     "--apply registers exactly the spec of the latest preview of the same set and target, byte for byte, and makes a new preview and stops when there is none, when the user asked for a change since, when its base differs from the live target tip, or, for an amendment, when it was built from another record revision; the guard writes every lane claim, the claim of the integration branch and the record at revision 1 in one atomic operation, or nothing.",
     "Nobody holds a lock while the lanes work: the record carries a revision and the base the plan was made against, a stale plan is refused and never overwritten (exit 19 with kind base or revision, a failed --expect-revision check, the finding STALE_PLAN when target commits outside the set's own work changed files of a lane manifest), and --amend moves base to the live target tip.",
     "The exit codes 19 STALE, 20 SET_EXISTS, 21 SET_UNKNOWN, 22 OUT_OF_LANE, 23 SET_NEWER_FORMAT and 24 INVALID_SPEC each have a remedy that the command never performs; set-plan never reads an override.",
-    "While the record exists, a plain plan --amend of a lane claim (exit 14, lane_in_set) and a plain release of any claim of the set (exit 16, blocked_set) are refused, and the open lane claims make /GitCleanup, /GitConverge and /GitSweep report their branches as BLOCKED_ACTIVE_OWNER until --release.",
+    "While the record exists, a plain plan that would write the claim of a lane or of the integration branch (an amend, the re-plan after an override; exit 14, lane_in_set) and a plain release of any claim of the set (exit 16, blocked_set) are refused, and the open lane claims make /GitCleanup, /GitConverge and /GitSweep report their branches as BLOCKED_ACTIVE_OWNER until --release.",
     "The guard must report version 1.0.4 or later; an older guard has no set-* subcommands and the command stops and says to refresh it.",
     "Every requirement is served by at least one lane and every lane serves at least one requirement and states its outcome (the guard refuses a requirement that nobody serves with exit 24, UNSERVED); the tables are rendered from the spec the guard proved or from the record it stores, never from memory.",
     "Names show the topic of the change: a lane id is a topic slug of one to three words, the branch is exactly agent/<set>/<id> and the worktree directory name ends with -<set>-<id>; the guard refuses ordinal and generic ids (GENERIC_ID), the reserved integration (RESERVED), another form (FORMAT) and a branch or worktree name of another form (BRANCH_FORM, WORKTREE_FORM) with exit 24.",
@@ -57,7 +57,7 @@
       "contains": [
         "- **set**: one plan, named `<set>`. Its **record** is the file `<git-common-dir>/magos/sets/<set>.json`.",
         "that claim is why a plain `git switch -c` may create `agent/<set>/integration` in a guarded repository. It is exempt from overlap judgement in both directions: it claims no files, so it restricts no lane manifest and is never a claimant",
-        "While the record exists, a plain `plan --amend` of a lane claim is refused (exit 14, `lane_in_set`) and so is a plain `release` of any claim of the set (exit 16, `blocked_set`): a set is changed only through this command.",
+        "While the record exists, a plain `plan` that would write the claim of one of its lanes or of its integration branch (an amend, the re-plan after an override, and also where that claim is missing or carries no `set=`) is refused (exit 14, `lane_in_set`) and so is a plain `release` of any claim of the set (exit 16, `blocked_set`): a set is changed only through this command.",
         "An open lane claim (`planned` or `active` in `<guard> list`) is active-owner evidence, so `/GitCleanup`, `/GitConverge` and `/GitSweep` report its lane as `BLOCKED_ACTIVE_OWNER`; `--release` removes the claims.",
         "It must report version 1.0.4 or later (`<guard> version --json`, field `version`), because older guards lack the `set-*` subcommands; no guard, or an older one, is a gate failure.",
         "The only retry is one repeat of a call that exited 13. The record and the claim files are never read or written except through the guard.",
@@ -77,7 +77,7 @@
         "| exit 19, `kind` `base` (the target moved since the investigation, so `base` is not its live tip) | rerun: the new preview investigates the new tip |",
         "| exit 19, `kind` `revision` (the record changed after it was read), or a failed `--expect-revision` check |",
         "`set-plan` never reads an override",
-        "| exit 14 `lane_in_set` or exit 16 `blocked_set` from a plain `plan --amend` or `release` of a claim of a set | use the set's own forms: `/GitPlan <set> --amend --expect-revision <n>`, `/GitPlan <set> --release` |",
+        "| exit 14 `lane_in_set` or exit 16 `blocked_set` from a plain `plan` that would write the claim of a lane or of the integration branch of a set (an amend, the re-plan after an override) or a plain `release` of a claim of a set | use the set's own forms: `/GitPlan <set> --amend --expect-revision <n>`, `/GitPlan <set> --release` |",
         "| gate: no guard, or a guard older than 1.0.4 |",
         "| `STALE_PLAN` | `--amend --expect-revision <n>`: the new preview investigates the new tip and the amendment moves `base` to it;",
         "Plan preview and amend preview (`--into`, `--amend`):",
@@ -125,12 +125,14 @@
         "- The sheet carries no revision: the revision is printed only in the header of a report (**Output**), so an amendment that changes nothing renders the stored sheet again and the guard reports it `unchanged`.",
         "(a header line that names no revision, two tables, a merge line, the shared files and the risks; at most 8192 characters)",
         "| `CLAIM_DRIFT` | `--amend --expect-revision <n>` with the lanes unchanged rewrites the claim from the record (a rewrite is a change: the dry-run is not `unchanged`, and the apply makes the revision `<n>+1`) |",
-        "(the later of two equal entries is exit 24 `DUPLICATE` at `lanes[<i>].paths[<j>]`), so the guard stores them as written",
+        "(the later of two equal entries is exit 24 `DUPLICATE` at `lanes[<i>].paths[<j>]`), so the guard stores one entry per entry of the spec, in its order, each with the blanks at its ends removed",
         "`target_overlap` holds the files that the target commits since `base` changed and that lie in a lane manifest, leaving out the set's own work: every commit reachable from the integration branch tip (when that branch exists) or from the recorded head of a lane in state `ready` or `integrated`, so the land of the set itself adds nothing to it",
         "This merge is required although the amendment clears the finding: otherwise the convergence stops at the conflict. A named lane that is `integrated` keeps its branch as it is",
         "or, for an amendment, when the record revision it was built from (its `--expect-revision`) differs from the record's current revision, the command makes a new preview and stops",
         "run `--status`, then redo with the revision it shows: an amendment is then previewed again, built from the current record, before its apply (**Acceptance rules**)",
         "the owner of each lane that `target_overlap` named and that is not `integrated` merges the new target tip `'<target sha>'` into the lane branch in its worktree",
+        "a `blocked` lane, and a `planned` lane whose branch exists, records `--state active` first, because the guard refuses `ready` from either (exit 24 `STATE`), while an `active` or `ready` lane records `ready` directly.",
+        "A named lane that is `integrated` keeps its branch as it is: it cannot be recorded `ready` directly (exit 24 `STATE`)",
         "The stored sheet is written in the reply language of the preview that rendered it, so an amendment previewed in another language changes the sheet and is not `unchanged`.",
         "12. The lanes are listed in merge order, dependencies before dependents, so that the guard's `merge_order` is the listed order."
       ]
@@ -278,7 +280,8 @@
         "A stale plan is detected and refused, never overwritten: `--amend` and, optionally, `--converge --apply` take `--expect-revision <n>`, a target that moved so that the files changed by its commits outside the set's own work (what the integration branch and the recorded lane heads hold) intersect a lane manifest makes the finding `STALE_PLAN`, and an amendment moves `base` to the live target tip.",
         "- **Exit codes 19 to 24.** `19` `STALE` (the `kind` of a denial is `base` or `revision`, with `expected` and `current`), `20` `SET_EXISTS`, `21` `SET_UNKNOWN`, `22` `OUT_OF_LANE`, `23` `SET_NEWER_FORMAT` and `24` `INVALID_SPEC`",
         "- **The integration claim.** `set-plan` registers a claim for `agent/<set>/integration`",
-        "- **Plain `plan --amend` and `release` refuse the claims of an open set.**",
+        "- **Plain `plan` and `release` refuse the claims of an open set.**",
+        "- **`plan` keeps the registered worktree path.**",
         "- **Open lane claims of a set block cleanup.**",
         "- **Sets live in one clone.**",
         "- **Semantic coupling is not detected.**",
@@ -320,7 +323,9 @@
         "`BRANCH_FORM` at `lanes[<i>].branch`, `WORKTREE_FORM` at `lanes[<i>].worktree`",
         "the command gives each overlapping path to exactly one lane, the lane whose requirement changes it",
         "an amendment that changes nothing at all reports `unchanged`, writes nothing and keeps the revision, because the stored sheet carries no revision",
-        "The redo `--amend --expect-revision 4 --apply` registers nothing either: the preview was built from revision 3, so it is no acceptance"
+        "The redo `--amend --expect-revision 4 --apply` registers nothing either: the preview was built from revision 3, so it is no acceptance",
+        "while another conversation amends the same set (it adds the lane `sweep-api` and a requirement that lane serves), which makes the record revision 4",
+        "so the lane `sweep-api` and its requirement, which an amendment built from revision 3 would remove, are kept."
       ]
     }
   ]
