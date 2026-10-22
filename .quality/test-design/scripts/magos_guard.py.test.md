@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `06e5c1fbdef0ac877c5182f2e4f7bfd13d44756dac6a53043a4f4ef3ffd98784`
+Source-SHA256: `68997f80967fe3296be12fe2b43c68875a48644ef4667311f49e4e7d961db61d`
 
 ## Test Strategy
 

@@ -122,6 +122,7 @@ M = {
     "need_tty": ("MAGOS：这条命令只能由用户在真实终端里执行（当前标准输入不是控制台）。", "MAGOS: only the user may run this, in a real terminal (stdin is not a console)."),
     # ---- sets (1.0.4): set-plan, set-show, set-update, set-release, and the plain plan / release refusing the claims of a set
     "set_invalid": ("MAGOS：set 规划无效，未登记也未创建任何东西：\n{errors}", "MAGOS: the set plan is invalid, nothing registered or created:\n{errors}"),
+    "set_invalid_args": ("MAGOS：参数无效，未做任何修改：\n{errors}", "MAGOS: invalid arguments, nothing was changed:\n{errors}"),
     "set_stale_base": ("MAGOS：计划已过期，未写入任何东西：目标 {t} 现在位于 {live}，而计划基于 {base}。请重新调查仓库后再规划。",
                        "MAGOS: the plan is stale, nothing was written: target {t} is now at {live}, but the plan was made against {base}. Investigate the repository again and re-plan."),
     "set_stale_revision": ("MAGOS：计划已过期，未写入任何东西：set「{s}」现在是修订 {cur}，而你基于修订 {exp}。请先用 set-show 重新读取。",
@@ -129,8 +130,8 @@ M = {
     "set_exists": ("MAGOS：set「{s}」已存在（修订 {rev}）。用 --amend --expect-revision {rev} 修改，或先 set-release。",
                    "MAGOS: set '{s}' already exists (revision {rev}). Change it with --amend --expect-revision {rev}, or release it first with set-release."),
     "set_unknown": ("MAGOS：没有名为「{s}」的 set。", "MAGOS: there is no set named '{s}'."),
-    "set_out_of_lane": ("MAGOS：拒绝把 lane {l} 标记为 ready：下列文件在它的 manifest 之外：{files}。请撤销这些改动，或用 set-plan --amend 调整归属。",
-                        "MAGOS: refused to mark lane {l} ready: these files lie outside its manifest: {files}. Revert them, or move the ownership with set-plan --amend."),
+    "set_out_of_lane": ("MAGOS：拒绝把 lane {l} 标记为 ready：下列文件在它的 manifest 之外：{files}。请在该 lane 中撤销这些改动，或用 /GitPlan {s} --amend 修改计划。",
+                        "MAGOS: refused to mark lane {l} ready: these files lie outside its manifest: {files}. Revert them in the lane, or amend the plan with /GitPlan {s} --amend."),
     "set_newer": ("MAGOS：set「{s}」由更新版本的 MAGOS 写入（v={v}）：请升级本守卫（doctor 显示版本，install 刷新副本），或用写入它的那个 MAGOS 执行这条命令。",
                   "MAGOS: set '{s}' was written by a newer MAGOS (v={v}): upgrade this guard (doctor shows its version, install refreshes the copy), or run this command with the MAGOS that wrote it."),
     "set_unreadable": ("MAGOS：set 记录 {f} 无法读取，未做任何修改；请用户检查该文件。", "MAGOS: the set record {f} cannot be read; nothing was changed. The user must inspect the file."),
@@ -145,10 +146,11 @@ M = {
                           "MAGOS: the branch '{b}' of lane {l} already exists without a claim; it cannot be registered after the fact. Choose a new branch name."),
     "set_lane_exists": ("MAGOS：lane {l} 的分支「{b}」已有一份不属于这个 set 的登记。请先 release 它，或换一个分支名。",
                         "MAGOS: the branch '{b}' of lane {l} already has a claim that is not this set's. Release it first, or choose another branch name."),
-    "set_ok_plan": ("MAGOS：已登记 set「{s}」：{n} 个 lane，目标 {t}，基线 {base}，修订 {rev}。现在可以逐个创建 lane，例如：{example}",
-                    "MAGOS: registered set '{s}': {n} lanes, target {t}, base {base}, revision {rev}. You may now create the lanes, e.g.: {example}"),
+    "set_ok_plan": ("MAGOS：已登记 set「{s}」：{n} 个 lane，目标 {t}，基线 {base}，修订 {rev}。现在可以从基线逐个创建 lane，例如：{example}",
+                    "MAGOS: registered set '{s}': {n} lanes, target {t}, base {base}, revision {rev}. You may now create the lanes from the base, e.g.: {example}"),
     "set_ok_amend": ("MAGOS：已修改 set「{s}」：修订 {old} → {rev}，{n} 个 lane。", "MAGOS: amended set '{s}': revision {old} -> {rev}, {n} lanes."),
-    "set_ok_check": ("MAGOS：预览通过，没有发现重叠（set「{s}」未登记）。", "MAGOS: preview passed, no overlap found (set '{s}' not registered)."),
+    "set_ok_check": ("MAGOS：set「{s}」的预览通过，没有发现重叠；这是 --dry-run，未写入任何东西。",
+                     "MAGOS: the preview of set '{s}' passed, no overlap found; this was a --dry-run and nothing was written."),
     "set_unchanged": ("MAGOS：set「{s}」没有变化（修订 {rev}），未写入任何东西。", "MAGOS: set '{s}' is unchanged (revision {rev}); nothing was written."),
     "set_ok_update": ("MAGOS：set「{s}」的 lane {l} 现在是 {st}，修订 {rev}。", "MAGOS: lane {l} of set '{s}' is now {st}, revision {rev}."),
     "set_released": ("MAGOS：已释放 set「{s}」及其 {n} 份登记。", "MAGOS: released set '{s}' and its {n} claims."),
@@ -191,9 +193,9 @@ M = {
                            "lane id '{id}' is an ordinal or generic name and does not show the topic of the change. Name the topic with 1 to 3 words in kebab-case, "
                            "for example claim-store, sweep-readiness, readme-gitplan."),
     "set_err_reserved_id": ("lane id「{id}」是保留名：integration 属于集成分支 agent/<set>/integration，con、prn、aux、nul、com1 至 com9、lpt1 至 lpt9 是 Windows 设备名。"
-                            "请改用改动的主题命名，例如 integration-docs。",
+                            "请另选一个说明这个 lane 改动内容的主题 slug。",
                             "lane id '{id}' is reserved: integration belongs to the integration branch agent/<set>/integration, and con, prn, aux, nul, com1 to com9 "
-                            "and lpt1 to lpt9 are Windows device names. Name the topic of the change instead, for example integration-docs."),
+                            "and lpt1 to lpt9 are Windows device names. Choose another topic slug that names what the lane changes."),
     "set_err_id_form": ("lane id「{id}」不是主题 slug：必须匹配 {rule}（小写字母、数字、连字符，1 到 24 个字符，不以连字符开头），并用 1 到 3 个单词说明改动的主题，例如 claim-store。{hint}",
                         "lane id '{id}' is not a topic slug: it must match {rule} (lowercase letters, digits and hyphens, 1 to 24 characters, not starting with a hyphen) "
                         "and name the topic of the change in 1 to 3 words, for example claim-store.{hint}"),
@@ -204,11 +206,17 @@ M = {
                               "the worktree directory of lane {l} must have a name ending with -{s}-{l}, which '{got}' does not. Use, for example: {want}."),
     "set_err_worktree_device": ("lane {l} 的工作树目录名「{got}」在第一个点之前是 Windows 设备名 {dev}。请改用，例如：{want}。",
                                 "the worktree directory name '{got}' of lane {l} is the Windows device name {dev} before its first dot. Use, for example: {want}."),
-    "set_err_unserved": ("需求 {r}（{t}）没有任何 lane 负责。请把 {r} 加入某个 lane 的 serves，或删除这条需求。",
-                         "requirement {r} ({t}) is served by no lane. Add {r} to the serves of a lane, or remove the requirement."),
+    "set_err_unserved": ("需求 {r}（{t}）没有任何 lane 负责。请用一个 lane 负责它：把 {r} 加入某个 lane 的 serves，或为它新增一个 lane。不要删除用户提出的需求。",
+                         "requirement {r} ({t}) is served by no lane. Serve it with a lane: add {r} to the serves of a lane, or add a lane for it. "
+                         "Never drop a requirement the user stated."),
     "set_err_serves_unknown": ("serves 里的「{r}」不是本规划 requirements 中的编号（已有：{ids}；编号逐字匹配，区分大小写）。",
                                "'{r}' in serves is no requirement id of this spec (known: {ids}; ids are matched exactly, case included)."),
     "set_err_serves_count": ("lane {l} 的 serves 需要 1 到 12 个需求编号（现在 {n} 个）。", "the serves of lane {l} needs 1 to 12 requirement ids ({n} given)."),
+    "set_err_set_name": ("set 名称「{s}」无效：必须匹配 {rule}（小写字母、数字、连字符，1 到 24 个字符，不以连字符开头），并说明任务的主题。",
+                         "the set name '{s}' is invalid: it must match {rule} (lowercase letters, digits and hyphens, 1 to 24 characters, not starting with a hyphen) "
+                         "and name the topic of the task."),
+    "set_err_set_device": ("set 名称「{s}」是 Windows 设备名，不能用作记录文件 sets/{s}.json 的名称。请另选一个说明任务主题的名称。",
+                           "the set name '{s}' is a Windows device name and cannot name the record file sets/{s}.json. Choose another name that names the topic of the task."),
     "show_changes": ("    改动 {l}：{commits} 个提交，{files} 个文件，+{ins}/-{del}；路径 {paths}；{subjects}",
                      "    changes {l}: {commits} commits, {files} files, +{ins}/-{del}; paths {paths}; {subjects}"),
     "show_more": ("另有 {n} 项", "+{n} more"),
@@ -3648,13 +3656,13 @@ _SHEET_CTL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # the sheet may hold a new
 _BASE = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
 
 
-def set_name_problem(name):
-    """-> why `name` is no set name, or None: [a-z0-9][a-z0-9-]{0,23} and no Windows device name (the record is the file sets/<name>.json,
-    and a device name with any extension is a device on Windows)."""
+def set_name_problem(name, lang="en"):
+    """-> why `name` is no set name, in `lang` (set_err_set_name, set_err_set_device), or None: [a-z0-9][a-z0-9-]{0,23} and no Windows device name
+    (the record is the file sets/<name>.json, and a device name with any extension is a device on Windows)."""
     if not SET_NAME.fullmatch(name):
-        return "a set name is [a-z0-9][a-z0-9-]{0,23}"
+        return T(lang, "set_err_set_name", s=_shown(name), rule=SLUG_RULE)
     if _DEVICE.fullmatch(name):
-        return "%s is a Windows device name" % name
+        return T(lang, "set_err_set_device", s=_shown(name))
     return None
 
 
@@ -4173,7 +4181,7 @@ def _check_lane(ctx, errs, i, ln):
         else:
             if len(raw) > MAX_ENTRIES:
                 errs.add(path + ".paths", "TOO_MANY", "more than %d entries" % MAX_ENTRIES)
-            seen, m["paths"] = set(), []
+            seen, m["paths"] = {}, []  # the normalised alternatives of each valid entry -> the index of its first spelling
             for j, p in enumerate(raw[:MAX_ENTRIES]):
                 where = "%s.paths[%d]" % (path, j)
                 if not _is_text(p):
@@ -4188,10 +4196,12 @@ def _check_lane(ctx, errs, i, ln):
                     except ManifestError as err:
                         errs.add(where, err.code, str(err))
                         continue
-                    if e.alts not in seen:  # equal after normalisation: collapsed into the first
-                        seen.add(e.alts)
-                        m["entries"].append(e)
-                        m["paths"].append(e.raw)
+                    if e.alts in seen:  # equal after normalisation: every later spelling is refused on its own field
+                        errs.add(where, "DUPLICATE", "the entry equals %s.paths[%d] after normalisation" % (path, seen[e.alts]))
+                        continue
+                    seen[e.alts] = j
+                    m["entries"].append(e)
+                    m["paths"].append(e.raw)
     if "depends_on" in ln:
         if not isinstance(ln["depends_on"], list):
             errs.add(path + ".depends_on", "TYPE", "must be a list, not %s" % _kind(ln["depends_on"]))
@@ -4428,10 +4438,16 @@ def error_lines(errors):
     return lines + (["  ... and %d more" % (len(errors) - SPEC_ERRORS)] if len(errors) > SPEC_ERRORS else [])
 
 
-def invalid_set(lang, errors, code="INVALID_SPEC"):
-    """The denial of exit 24 (a spec or option value that is invalid in itself) or 12 (a name or worktree that clashes with the repository)."""
-    return set_deny(lang, code, T(lang, "set_invalid", errors="\n".join(error_lines(errors))),
+def invalid_set(lang, errors, code="INVALID_SPEC", frame="set_invalid"):
+    """The denial of exit 24 (a spec or option value that is invalid in itself) or 12 (a name or worktree that clashes with the repository).  `frame`
+    names what was refused: `set_invalid` (the set plan) for set-plan, `set_invalid_args` (invalid arguments) for set-show, set-update and set-release."""
+    return set_deny(lang, code, T(lang, frame, errors="\n".join(error_lines(errors))),
                     errors=[{"field": f, "code": c, "text": t} for f, c, t in errors[:SPEC_ERRORS]])
+
+
+def invalid_args(lang, errors):
+    """The exit 24 of set-show, set-update and set-release, in the neutral frame `set_invalid_args`, which speaks of no plan."""
+    return invalid_set(lang, errors, frame="set_invalid_args")
 
 
 def unknown_set(lang, code, text):
@@ -4771,7 +4787,8 @@ def plan_set(g, args, mdl):
                   "serves": ln["serves"], "outcome": ln["outcome"], "acceptance": ln["acceptance"], "state": ln["state"],
                   "create": 'git worktree add "%s" -b %s %s' % (ln["worktree"], ln["branch"], new["target"])} for ln in new_lanes]
     req_rows = requirement_rows(new)
-    first = lane_rows[0] if lane_rows else {"create": ""}
+    first = lane_rows[0] if lane_rows else None  # the example of set_ok_plan cuts the first lane from the recorded base, every argument one quoted word
+    example = "git worktree add %s -b %s %s" % (sh_quote(first["worktree"]), sh_quote(first["branch"]), sh_quote(mdl["base"])) if first else ""
     if args.dry_run:
         head = T(lang, "set_ok_check", s=name)
     elif unchanged:
@@ -4779,7 +4796,7 @@ def plan_set(g, args, mdl):
     elif rec is not None:
         head = T(lang, "set_ok_amend", s=name, old=rec["revision"], rev=revision, n=len(lane_rows))
     else:
-        head = T(lang, "set_ok_plan", s=name, n=len(lane_rows), t=new["target"], base=mdl["base"], rev=revision, example=first["create"])
+        head = T(lang, "set_ok_plan", s=name, n=len(lane_rows), t=new["target"], base=mdl["base"], rev=revision, example=example)
     lines = [head] + [T(lang, "set_line", l=r["id"], b=r["branch"], w=r["worktree"], n=len(r["entries"])) for r in lane_rows] + [T(lang, "set_line_integration", b=ib)]
     lines += ["(%s) %s" % (w["code"], w["text"]) for w in warns]
     return {"decision": "allow", "code": "OK", "set": name, "target": {"name": new["target"], "sha": live}, "base": mdl["base"], "revision": revision,
@@ -4815,7 +4832,7 @@ def cmd_set_plan(args):
         sys.stderr.write("not a git repository: %s\n" % args.repo)
         return 2
     lang, name = args.lang, args.set
-    why = set_name_problem(name)
+    why = set_name_problem(name, lang)
     if why:
         return set_emit(args, invalid_set(lang, [("--set", "FORMAT", why)]))
     text, spec_path, errs = read_spec(g, args.spec)
@@ -4986,10 +5003,26 @@ def set_lookup(g, args):
     return rec, None
 
 
+def target_paths(g, rec, heads, tip):
+    """The target's own changes of the drift view -> the distinct files, sorted, of the target's commits since the plan's base that the set's own work
+    does not hold: one `log` whose negative revisions are the base, the tip of the local integration branch when it exists and the recorded head of
+    every `ready` or `integrated` lane, in the record's lane order.  A merge names only its own changes (dense-combined), a rename both paths, and a
+    negative revision that no longer names an object excludes nothing (--ignore-missing).  Every revision is a full object name: a value of an edited
+    record that is none is left out like a missing object, so it never reaches git as an option."""
+    neg = [rec["base"]]
+    itip = heads.get(integration_branch(rec["set"]))
+    if itip:
+        neg.append(itip)
+    neg += [ln["head"] for ln in rec["lanes"] if ln["state"] in ("ready", "integrated") and ln["head"]]
+    out = g.run("log", "--no-show-signature", "-z", "--format=", "--name-only", "--no-renames", "--diff-merges=dense-combined", "--ignore-missing", tip,
+                "--not", *[x for x in neg if _BASE.fullmatch(x)])[1]
+    return sorted(_names_z(out))
+
+
 def set_view(g, rec, drift):
     """The view of a set record derived from the repository (Sets, set-show) -> (view, warnings).  It only reads: refs, worktrees, claims and,
-    with `drift`, the files each lane changed.  The target tip is the tip of the local branch of the record (never resolve_target, which a
-    remote-tracking copy can make uncertain)."""
+    with `drift`, the files each lane changed and the files of the target's commits that the set's own work does not hold (target_paths).  The
+    target tip is the tip of the local branch of the record (never resolve_target, which a remote-tracking copy can make uncertain)."""
     name, base, wts = rec["set"], rec["base"], worktrees(g)
     heads = list_refs(g)[0]
     claims, bad = read_claims(g)
@@ -5031,7 +5064,7 @@ def set_view(g, rec, drift):
                 by_file.setdefault(p, []).append(lane["id"])
         overlap = []
         if tip is not None and tip != base:
-            for n, p in enumerate(sorted(committed_paths(g, base, tip) or ()), 1):
+            for n, p in enumerate(target_paths(g, rec, heads, tip), 1):
                 if not n % 256 and time.monotonic() > g.deadline:
                     raise GitFail("BUDGET_EXCEEDED", "the comparison of the files with the lane manifests ran out of time")
                 ids = [ln["id"] for ln in rec["lanes"] if index[ln["id"]].hit(fpath(p))]
@@ -5086,9 +5119,9 @@ def cmd_set_show(args):
     if g is None:
         sys.stderr.write("not a git repository: %s\n" % args.repo)
         return 2
-    why = set_name_problem(args.set)
+    why = set_name_problem(args.set, args.lang)
     if why:
-        return set_emit(args, invalid_set(args.lang, [("--set", "FORMAT", why)]))
+        return set_emit(args, invalid_args(args.lang, [("--set", "FORMAT", why)]))
     rec, denial = set_lookup(g, args)  # no lock, and nothing is created
     if denial:
         return set_emit(args, denial)
@@ -5105,7 +5138,7 @@ def refuse16(lang, op, items):
 def update_options(args):
     """The errors of the option values of set-update that need no repository (exit 24), each (field, code, text)."""
     errs, to = [], args.state
-    why = set_name_problem(args.set)
+    why = set_name_problem(args.set, args.lang)
     if why:
         errs.append(("--set", "FORMAT", why))
     if args.head is not None and not _BASE.fullmatch(args.head):
@@ -5155,7 +5188,7 @@ def update_checks(g, args, rec, lane, heads, wts):
             return refuse16(lang, "set-update", [(lid, "NO_MERGE_BASE", T(lang, "set_why_base", l=lid))]), False
         outside = ManifestIndex(lane["paths"], g.deadline).outside(paths)
         if outside:
-            return set_deny(lang, "OUT_OF_LANE", T(lang, "set_out_of_lane", l=lid, files=_few(outside, 20)), lane=lid, files=outside[:SET_TEXT_MAX],
+            return set_deny(lang, "OUT_OF_LANE", T(lang, "set_out_of_lane", l=lid, s=rec["set"], files=_few(outside, 20)), lane=lid, files=outside[:SET_TEXT_MAX],
                             truncated=len(outside) > SET_TEXT_MAX), False
         return None, False
     integration = integration_branch(rec["set"])
@@ -5180,15 +5213,16 @@ def _subject(text):
 
 def changes_summary(g, ref, head):
     """What the lane at `head` changed against `ref` (full object names), from four read-only git commands -> the summary (CHANGES_KEYS, in that order), or
-    None when the two share no history (merge-base exits 1; any other failure raises GitFail).  The commits are those of `ref..head`; the files and lines are
-    the net change from the merge base of the two (`ref...head`), so a lane that merged `ref` into itself is not charged with its files."""
+    None when the two share no history (merge-base exits 1; any other failure raises GitFail).  The commits are the non-merge commits of `ref..head` (a
+    merge, such as the owner's merge of the target tip into the lane, is no lane commit); the files and lines are the net change from the merge base of the
+    two (`ref...head`), merges included, so a lane that merged `ref` into itself is not charged with its files."""
     if g.run("merge-base", ref, head, ok=(0, 1))[0] != 0:
         return None
     rng = "%s..%s" % (ref, head)
-    commits = int(g.text("rev-list", "--count", rng).strip() or "0")
+    commits = int(g.text("rev-list", "--count", "--no-merges", rng).strip() or "0")
     subjects = []
-    if commits:  # --skip and --max-count apply before --reverse: the oldest CHANGES_SUBJECTS commits of the range, oldest first
-        out = g.text("log", "--no-show-signature", "--encoding=UTF-8", "--format=%s", "--reverse", "--skip=%d" % max(commits - CHANGES_SUBJECTS, 0),
+    if commits:  # --no-merges filters first, --skip and --max-count apply before --reverse: the oldest CHANGES_SUBJECTS non-merge commits, oldest first
+        out = g.text("log", "--no-show-signature", "--encoding=UTF-8", "--format=%s", "--reverse", "--no-merges", "--skip=%d" % max(commits - CHANGES_SUBJECTS, 0),
                      "--max-count=%d" % CHANGES_SUBJECTS, rng)
         lines = out.split("\n")  # one line per commit: an empty message is an empty line, which splitlines() would not tell from the end of the text
         if lines and lines[-1] == "":
@@ -5247,16 +5281,16 @@ def update_set(g, args):
                         expected=args.expect_revision, current=rec["revision"])
     lane = next((x for x in rec["lanes"] if x["id"] == args.lane), None)
     if lane is None:
-        return invalid_set(lang, [("--lane", "UNKNOWN_LANE", "set %s has the lanes %s" % (name, ", ".join(x["id"] for x in rec["lanes"])))])
+        return invalid_args(lang, [("--lane", "UNKNOWN_LANE", "set %s has the lanes %s" % (name, ", ".join(x["id"] for x in rec["lanes"])))])
     to = args.state
     if to not in _TRANSITIONS[lane["state"]]:
-        return invalid_set(lang, [("--state", "STATE", "lane %s is %s: it cannot become %s (from %s: %s)" % (lane["id"], lane["state"], to, lane["state"],
-                                                                                                          ", ".join(_TRANSITIONS[lane["state"]])))])
+        return invalid_args(lang, [("--state", "STATE", "lane %s is %s: it cannot become %s (from %s: %s)" % (lane["id"], lane["state"], to, lane["state"],
+                                                                                                           ", ".join(_TRANSITIONS[lane["state"]])))])
     if to == "integrated":
         if rec["integration"] is None and args.integration is None:
-            return invalid_set(lang, [("--integration", "MISSING", "the record names no integration branch yet: pass --integration %s" % integration_branch(name))])
+            return invalid_args(lang, [("--integration", "MISSING", "the record names no integration branch yet: pass --integration %s" % integration_branch(name))])
         if rec["integration"] is not None and args.integration not in (None, rec["integration"]):
-            return invalid_set(lang, [("--integration", "STATE", "the record names the integration branch %s" % rec["integration"])])
+            return invalid_args(lang, [("--integration", "STATE", "the record names the integration branch %s" % rec["integration"])])
     changes = lane.get("changes") if to == "integrated" else None  # a lane that leaves integrated no longer states that it was merged
     if to in ("ready", "integrated"):
         heads = list_refs(g)[0]
@@ -5289,7 +5323,7 @@ def cmd_set_update(args):
         return 2
     errs = update_options(args)  # before the lock, so that an invalid call creates nothing
     if errs:
-        return set_emit(args, invalid_set(args.lang, errs))
+        return set_emit(args, invalid_args(args.lang, errs))
     try:
         with Lock(g):
             g.deadline = time.monotonic() + BUDGET_S  # the budget of the git calls starts when the lock is held
@@ -5355,11 +5389,11 @@ def cmd_set_release(args):
     if g is None:
         sys.stderr.write("not a git repository: %s\n" % args.repo)
         return 2
-    errs = [("--set", "FORMAT", why) for why in [set_name_problem(args.set)] if why]
+    errs = [("--set", "FORMAT", why) for why in [set_name_problem(args.set, args.lang)] if why]
     if len(args.reason) > SET_TEXT_MAX:
         errs.append(("--reason", "RANGE", "at most %d characters, not %d" % (SET_TEXT_MAX, len(args.reason))))
     if errs:
-        return set_emit(args, invalid_set(args.lang, errs))
+        return set_emit(args, invalid_args(args.lang, errs))
     try:
         with Lock(g):
             g.deadline = time.monotonic() + BUDGET_S  # the budget of the git calls starts when the lock is held
