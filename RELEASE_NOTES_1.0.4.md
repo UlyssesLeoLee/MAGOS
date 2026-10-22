@@ -30,6 +30,7 @@ A feature release: the new command `/GitPlan`, which plans, before any sub-agent
 
 - While the record of a set exists, a plain `plan --amend` of one of its lane claims is refused (exit 14, `lane_in_set`) and so is a plain `release` of any claim of the set (exit 16, `blocked_set`): a set is changed only through `/GitPlan`.
 - The open lane claims of a set make `/GitCleanup`, `/GitConverge` and `/GitSweep` report their branches as `BLOCKED_ACTIVE_OWNER` while the set is open; `--release` lifts it.
+- Every git call of the guard carries `-c diff.relative=false`: under `diff.relative=true`, the hook in a session directory below the top of the work tree and `plan`, `check` and the set subcommands with a `--repo` below the top read every committed path from the top and judge it against the manifests.
 - `GUARD_VERSION` is 1.0.4, and `/GitPlan` stops when the guard is older.
 - Every text that enumerates the commands says eight; the five write adapters (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`) set `disable-model-invocation: true` in Claude Code.
 

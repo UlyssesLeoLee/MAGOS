@@ -852,7 +852,7 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 
 `--converge --apply` 是你对报告里那份计划的接受：先重新调查，记下这次的计划（车道顺序、各车道登记的提交、目标分支的提交、revision）；和你之前预览过的不一样就停下，给你新的预览。然后：
 
-1. 只有写了 `--include-active`，才把有提交的 `active` 车道按当前提交记成 `ready`（这就是你对这些提交的接受），守卫同时核对它改过的文件都在清单里。
+1. 只有写了 `--include-active`，才把相对目标分支有自己改动的 `active` 车道按当前提交记成 `ready`（这就是你对这些提交的接受），守卫同时核对它改过的文件都在清单里。只接进了目标分支提交的车道没有自己的改动，不算在内。预览在 Head 列里显示被纳入车道的当前提交，标上 `(--include-active)`；这个提交在预览之后变了，运行就停下，给你新的预览。
 2. 集成分支不存在时，在你运行命令的工作区（必须停在目标分支上，被 Git 跟踪的文件没有改动）用普通的 `git switch -c agent/<set>/integration <目标分支的当前提交>` 创建它。
 3. 按依赖顺序，逐个用 `git merge --no-ff` 合并 `READY` 车道登记的那个提交，每合并一个就用 `set-update` 记成 `integrated`。
 4. 在集成分支上运行仓库自己的检查（构建、测试、lint）；检查失败就在落地之前停下，认不出检查时报告“未校验”并继续。
@@ -885,7 +885,7 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 2. 收尾（release）
 ```
 
-`--release` 先打印补充了修改内容概要的最终清单，再移除各车道的登记和计划记录；车道分支、工作区和集成分支都不动。登记没了，`/GitCleanup` 就不再把它们看作有人在用，可以去清理已经合并的那些。车道还没合并、还没进入目标分支，或工作区有未保存的修改时，守卫会拒绝（退出码 16），并指出是哪个车道。
+`--release` 先打印补充了修改内容概要的最终清单，再移除各车道的登记和计划记录；车道分支、工作区和集成分支都不动。登记没了，`/GitCleanup` 就不再把它们看作有人在用，可以去清理已经合并的那些。车道还没合并、还没进入目标分支，或工作区有未保存的修改时，以及集成分支还没进入目标分支、或它的某个工作区有未保存的修改时，守卫会拒绝（退出码 16），并指出是哪个车道或集成分支。
 
 #### 两张表：需求、车道与成果
 
@@ -917,7 +917,7 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 | `--amend` | 重新规划已登记的计划，必须写 `--expect-revision`；加 `--apply [--create]` 才登记 |
 | `--expect-revision <n>` | 你读到的计划记录的 revision（正整数）：配合 `--amend` 必填，配合 `--converge --apply` 可选；记录已经是别的 revision 就停下 |
 | `--converge` | 预览把各车道按依赖顺序合并进 `agent/<set>/integration`；加 `--apply` 才执行 |
-| `--include-active` | 配合 `--converge`：把有提交的 `active` 车道按当前提交当作 `ready`；执行时这就是你对这些提交的接受 |
+| `--include-active` | 配合 `--converge`：把相对目标分支有自己改动的 `active` 车道按当前提交当作 `ready`，预览把这个提交显示为它的 Head；执行时这就是你对这些提交的接受 |
 | `--land` | 配合 `--converge --apply`：合并并检查之后，把 `<branch>` 快进到集成分支 |
 | `--release` | 各车道都已合并之后收尾：先打印补充了修改内容概要的清单，再移除它们的登记和计划记录 |
 | `--lang <语言>`、`--help` | 回复语言（默认中文）；只看说明 |
@@ -940,7 +940,7 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 |---|---|---|
 | `INTEGRATED` | 记录里已经是 `integrated`，它的提交已经合并过 | 已完成，不会再合并 |
 | `READY` | 负责人记了 `ready`，而且一切一致 | 会，按依赖顺序 |
-| `NOT_READY`、`BLOCKED`、`WAITING` | 记录里还是 `planned` 或 `active`；记录里是 `blocked`；它依赖的车道既没有合并、也不是 `READY` | 不会，只是这个车道不参加这一次，不拦别的车道（写了 `--include-active` 时，有提交的 `active` 车道按当前提交参加） |
+| `NOT_READY`、`BLOCKED`、`WAITING` | 记录里还是 `planned` 或 `active`；记录里是 `blocked`；它依赖的车道既没有合并、也不是 `READY` | 不会，只是这个车道不参加这一次，不拦别的车道（写了 `--include-active` 时，相对目标分支有自己改动的 `active` 车道按当前提交参加） |
 | `MISSING_BRANCH`、`DIRTY`、`IN_PROGRESS`、`NO_MERGE_BASE` | 分支不见了；工作区有未保存的修改；工作区里有做到一半的合并、变基等操作；分支与目标分支没有共同历史 | 失败，整个命令停下 |
 | `OUT_OF_LANE`、`SHARED_CHANGE`、`MOVED`、`CLAIM_DRIFT` | 改了清单之外的文件；两个车道改了同一个文件；记 `ready` 之后又有了新提交；车道的登记与计划记录对不上 | 失败，整个命令停下 |
 | `STALE_PLAN` | 目标分支前进了，而且它新提交改动的文件与某个车道的清单有交集，各车道不再独立于已经落下的内容（这个计划自己的车道合并或落地之后从不算在内） | 失败，整个命令停下 |
@@ -955,8 +955,8 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 | 你会看到 | 白话意思 | 你该怎么办 |
 |---|---|---|
 | 退出码 19，`kind` 是 `base` | 预览之后目标分支前进了，计划依据的提交不是它现在的位置 | 重新运行：新的预览会调查新的位置 |
-| 退出码 19，`kind` 是 `revision`，或 `--expect-revision` 对不上 | 计划记录在你读取之后被改过，比如某个车道的负责人记录了进度 | 先运行 `--status`，按它显示的 revision 重做 |
-| `STALE_PLAN` | 见上表：目标分支上落下的内容与某个车道的清单有交集 | `--amend --expect-revision <n>`：新的预览基于新的位置，修改会把 `base` 移过去；修改之后，有交集的每个车道由负责人把目标分支的新提交合并进自己的分支，再记一次 `ready`；即使修改已经让这一项消失，这一步也必须做，否则合并会停在冲突上 |
+| 退出码 19，`kind` 是 `revision`，或 `--expect-revision` 对不上 | 计划记录在你读取之后被改过，比如某个车道的负责人记录了进度 | 先运行 `--status`，按它显示的 revision 重做；修改（`--amend`）会先按当前记录重新预览，再登记，所以期间记下的内容不会丢失 |
+| `STALE_PLAN` | 见上表：目标分支上落下的内容与某个车道的清单有交集 | `--amend --expect-revision <n>`：新的预览基于新的位置，修改会把 `base` 移过去；修改之后，有交集且还没有 `integrated` 的每个车道由负责人把目标分支的新提交合并进自己的分支，再记一次 `ready`；即使修改已经让这一项消失，这一步也必须做，否则合并会停在冲突上。有交集但已经 `integrated` 的车道保持分支不动：由你把目标分支的新提交合并进集成分支 `agent/<set>/integration`，在那里解决冲突，否则落地会停下 |
 | 退出码 20、21 | 这个名字的计划已经存在；或者不存在这个名字的计划 | 用 `--status` 看，用 `--amend` 改，用 `--release` 收尾，或换个名字；检查名字，或先用 `--into` 规划 |
 | 退出码 22，`OUT_OF_LANE` | 某个车道改了清单之外的文件，守卫拒绝把它记成 `ready` | 负责人撤销这些改动，或用 `--amend` 把这些文件划给设计上拥有它们的那一个车道，然后重新记 `ready` |
 | 退出码 23 | 计划记录由更新版本的 MAGOS 写入 | 升级守卫（见“车道守卫”）；在此之前这份记录不会被读取或修改 |

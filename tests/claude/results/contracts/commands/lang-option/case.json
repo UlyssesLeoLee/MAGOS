@@ -14,13 +14,15 @@
       "GitRecommend",
       "GitIntegrate",
       "GitCleanup",
-      "GitConverge"
+      "GitConverge",
+      "GitSweep",
+      "GitPlan"
     ],
     "default": "Chinese"
   },
   "expected": [
-    "All six Claude wrappers list --lang in the argument hint, the usage line, the options, and the execution step.",
-    "All six adapters list --lang in both host usage lines and in the execution section.",
+    "All eight Claude wrappers list --lang in the argument hint, the usage line, the options, and the execution step.",
+    "All eight adapters list --lang in both host usage lines and in the execution section.",
     "The canonical contract defines the option once and every command's argument table repeats it."
   ],
   "checks": [
@@ -97,6 +99,28 @@
       ]
     },
     {
+      "file": "commands/GitSweep.md",
+      "contains": [
+        "[--lang <language>] [--help]",
+        "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
+        "- `--lang <language>`: Language of the reply",
+        "Write every reply in the language selected by `--lang` (Chinese when absent).",
+        "Reply language: Chinese unless `--lang` selects another one; this includes the final report, however long the run was.",
+        "4. Before you write the final report, check the reply language again"
+      ]
+    },
+    {
+      "file": "commands/GitPlan.md",
+      "contains": [
+        "[--lang <language>] [--help]",
+        "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
+        "- `--lang <language>`: Language of the reply",
+        "Write every reply in the language selected by `--lang` (Chinese when absent).",
+        "Reply language: Chinese unless `--lang` selects another one; this includes the final report, however long the run was.",
+        "4. Before you write the final report, check the reply language again"
+      ]
+    },
+    {
       "file": "skills/git-recon/SKILL.md",
       "contains": [
         "[--lang <language>] [--help]`",
@@ -143,6 +167,24 @@
     },
     {
       "file": "skills/git-converge/SKILL.md",
+      "contains": [
+        "[--lang <language>] [--help]`",
+        "- `--lang <language>`: Language of the reply",
+        "Reply in the language selected by `--lang` (Chinese when absent)",
+        "Remove `--lang` and its value from the arguments before parsing the rest."
+      ]
+    },
+    {
+      "file": "skills/git-sweep/SKILL.md",
+      "contains": [
+        "[--lang <language>] [--help]`",
+        "- `--lang <language>`: Language of the reply",
+        "Reply in the language selected by `--lang` (Chinese when absent)",
+        "Remove `--lang` and its value from the arguments before parsing the rest."
+      ]
+    },
+    {
+      "file": "skills/git-plan/SKILL.md",
       "contains": [
         "[--lang <language>] [--help]`",
         "- `--lang <language>`: Language of the reply",

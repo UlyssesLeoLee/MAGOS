@@ -847,7 +847,7 @@ Preview the merge first. The verdict is `READY` (every lane is already `READY` o
 
 `--converge --apply` is your acceptance of the plan the report shows: it first investigates again and records this run's plan (the lane order, the commit each lane registered, the tip of the target branch, the revision); when that differs from a preview you saw earlier it stops and gives you a new one. Then:
 
-1. Only with `--include-active` does it record an `active` lane that holds commits as `ready` at its current commit (that is your acceptance of those commits), and the guard checks that every file the lane changed lies inside its manifest.
+1. Only with `--include-active` does it record an `active` lane that holds changes of its own against the target branch as `ready` at its current commit (that is your acceptance of those commits), and the guard checks that every file the lane changed lies inside its manifest. A lane that only took in commits of the target branch holds no change of its own and is not included. The preview shows the current commit of an included lane in the Head column, marked `(--include-active)`; when that commit has moved since the preview, the run stops and gives you a new preview.
 2. When the integration branch does not exist, it creates it with a plain `git switch -c agent/<set>/integration <current commit of the target branch>` in the worktree you ran the command in (which must be on the target branch, with no change to a tracked file).
 3. In dependency order, it merges the commit registered for each `READY` lane with `git merge --no-ff`, and records each lane `integrated` with `set-update` as it goes.
 4. On the integration branch it runs the repository's own checks (build, test, lint); a failed check stops the run before any land, and when the checks cannot be identified the report says "not validated" and the run goes on.
@@ -880,7 +880,7 @@ Remaining TODO
 2. release the set
 ```
 
-`--release` prints the final checklist, supplemented with the changes summary, first, then removes the claims of the lanes and the plan record; the lane branches, the worktrees and the integration branch are not touched. With the claims gone, `/GitCleanup` no longer sees them as in use and can clean up the merged ones. When a lane is not merged, is not in the target branch yet, or its worktree has unsaved changes, the guard refuses (exit code 16) and names the lane.
+`--release` prints the final checklist, supplemented with the changes summary, first, then removes the claims of the lanes and the plan record; the lane branches, the worktrees and the integration branch are not touched. With the claims gone, `/GitCleanup` no longer sees them as in use and can clean up the merged ones. When a lane is not merged, is not in the target branch yet, or its worktree has unsaved changes, or when the integration branch is not in the target branch yet or a worktree on it has unsaved changes, the guard refuses (exit code 16) and names the lane or the integration branch.
 
 #### The two tables: requirements, lanes and outcomes
 
@@ -912,7 +912,7 @@ When it plans, the executor writes the requirements of the task as `R1`, `R2`, .
 | `--amend` | Re-plan a registered set; needs `--expect-revision`, and registers only with `--apply [--create]` |
 | `--expect-revision <n>` | The revision of the plan record that you read (a positive integer): required with `--amend`, optional with `--converge --apply`; a record at another revision stops the command |
 | `--converge` | Preview the merge of the lanes, in dependency order, into `agent/<set>/integration`; runs only with `--apply` |
-| `--include-active` | With `--converge`: treat an `active` lane that holds commits as `ready` at its current commit; in an apply, that is your acceptance of those commits |
+| `--include-active` | With `--converge`: treat an `active` lane that holds changes of its own against the target branch as `ready` at its current commit, which the preview shows as its Head; in an apply, that is your acceptance of those commits |
 | `--land` | With `--converge --apply`: after the merges and the checks, fast-forward `<branch>` to the integration branch |
 | `--release` | Close the set once its lanes are merged: print the checklist supplemented with the changes summary, then remove their claims and the plan record |
 | `--lang <language>`, `--help` | The language of the reply (Chinese by default); show the instructions only |
@@ -935,7 +935,7 @@ Examples:
 |---|---|---|
 | `INTEGRATED` | The record already says `integrated`: its commit was merged | Done; never merged again |
 | `READY` | The owner recorded `ready`, and everything is consistent | Yes, in dependency order |
-| `NOT_READY`, `BLOCKED`, `WAITING` | The record still says `planned` or `active`; the record says `blocked`; a lane it depends on is neither merged nor `READY` | No: only this lane sits this run out, and the others are not held back (with `--include-active`, an `active` lane that holds commits takes part at its current commit) |
+| `NOT_READY`, `BLOCKED`, `WAITING` | The record still says `planned` or `active`; the record says `blocked`; a lane it depends on is neither merged nor `READY` | No: only this lane sits this run out, and the others are not held back (with `--include-active`, an `active` lane that holds changes of its own against the target branch takes part at its current commit) |
 | `MISSING_BRANCH`, `DIRTY`, `IN_PROGRESS`, `NO_MERGE_BASE` | The branch is gone; the worktree has unsaved changes; the worktree has a merge, rebase or similar operation half-way; the branch shares no history with the target branch | Fails: the whole command stops |
 | `OUT_OF_LANE`, `SHARED_CHANGE`, `MOVED`, `CLAIM_DRIFT` | A file outside the manifest was changed; two lanes changed the same file; new commits arrived after `ready` was recorded; the claim of the lane does not match the plan record | Fails: the whole command stops |
 | `STALE_PLAN` | The target branch moved on, and the files changed by its new commits overlap a lane's manifest, so the lanes are no longer independent of what landed (the plan's own lanes, once merged or landed, never count) | Fails: the whole command stops |
@@ -950,8 +950,8 @@ A registered plan carries a revision and the commit of the target branch it was 
 | You see | In plain words | What to do |
 |---|---|---|
 | Exit code 19, `kind` is `base` | The target branch moved on after the preview, so the commit the plan was made against is not where it is now | Run again: the new preview investigates the new position |
-| Exit code 19, `kind` is `revision`, or `--expect-revision` does not match | The plan record changed after you read it, for example because a lane owner recorded progress | Run `--status` first, then redo with the revision it shows |
-| `STALE_PLAN` | See the table above: what landed on the target branch overlaps a lane's manifest | `--amend --expect-revision <n>`: the new preview is based on the new position, and the amendment moves `base` there; after that, the owner of each overlapping lane merges the target branch's new commit into its own branch and records `ready` again; this is required even though the amendment clears the finding, because otherwise the merge stops at the conflict |
+| Exit code 19, `kind` is `revision`, or `--expect-revision` does not match | The plan record changed after you read it, for example because a lane owner recorded progress | Run `--status` first, then redo with the revision it shows; an amendment is previewed again from the current record before it registers, so nothing recorded in the meantime is lost |
+| `STALE_PLAN` | See the table above: what landed on the target branch overlaps a lane's manifest | `--amend --expect-revision <n>`: the new preview is based on the new position, and the amendment moves `base` there; after that, the owner of each overlapping lane that is not yet `integrated` merges the target branch's new commit into its own branch and records `ready` again; this is required even though the amendment clears the finding, because otherwise the merge stops at the conflict. An overlapping lane that is already `integrated` keeps its branch as it is: you merge the target branch's new commit into the integration branch `agent/<set>/integration` and resolve the clash there, otherwise the land stops |
 | Exit code 20 or 21 | A plan of that name already exists; or there is no plan of that name | Look with `--status`, change with `--amend`, close with `--release`, or pick another name; check the name, or plan first with `--into` |
 | Exit code 22, `OUT_OF_LANE` | A lane changed files outside its manifest, so the guard refuses to record it `ready` | The owner reverts those changes, or `--amend` gives the files to the one lane that should own them by design, and then `ready` is recorded again |
 | Exit code 23 | The plan record was written by a newer MAGOS | Upgrade the guard (see "Lane guard"); until then the record is neither read nor changed |

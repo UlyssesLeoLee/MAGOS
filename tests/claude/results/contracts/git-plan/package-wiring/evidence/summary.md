@@ -9,7 +9,7 @@
 - sync_hosts.py installs commands/GitPlan.md for Claude (the tail of COMMAND_NAMES is GitSweep, GitPlan) and the Codex and Hermes packages carry skills/git-plan with its openai.yaml.
 - The Hermes plugin index describes git-plan as a command that registers lane claims and merges the lanes and must never be loaded by the model.
 - The Claude Code adapter and the Hermes skill set disable-model-invocation: true, the Codex adapter sets allow_implicit_invocation: false, and the adapters read ../../references/commands.md sections 8 and 6 and never commands/*.md.
-- Docs list /GitPlan, /git-plan and $git-plan, say eight commands and eight Agent Skills (five of them write adapters), and pin examples name v1.0.4.
+- Docs list /GitPlan, /git-plan and $git-plan, say eight commands and eight Agent Skills (five of them write adapters), and pin examples name the version that plugin.yaml states.
 - The three READMEs describe /GitPlan, the changelog has a 1.0.4 section and the release notes of 1.0.4 exist; the pressure tests describe the GitPlan scenarios.
 - An older guard copy lacks the set-* subcommands: the install and upgrade notes say to refresh the guard copy with doctor and install.
 

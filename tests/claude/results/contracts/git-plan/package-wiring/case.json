@@ -30,7 +30,7 @@
     "sync_hosts.py installs commands/GitPlan.md for Claude (the tail of COMMAND_NAMES is GitSweep, GitPlan) and the Codex and Hermes packages carry skills/git-plan with its openai.yaml.",
     "The Hermes plugin index describes git-plan as a command that registers lane claims and merges the lanes and must never be loaded by the model.",
     "The Claude Code adapter and the Hermes skill set disable-model-invocation: true, the Codex adapter sets allow_implicit_invocation: false, and the adapters read ../../references/commands.md sections 8 and 6 and never commands/*.md.",
-    "Docs list /GitPlan, /git-plan and $git-plan, say eight commands and eight Agent Skills (five of them write adapters), and pin examples name v1.0.4.",
+    "Docs list /GitPlan, /git-plan and $git-plan, say eight commands and eight Agent Skills (five of them write adapters), and pin examples name the version that plugin.yaml states.",
     "The three READMEs describe /GitPlan, the changelog has a 1.0.4 section and the release notes of 1.0.4 exist; the pressure tests describe the GitPlan scenarios.",
     "An older guard copy lacks the set-* subcommands: the install and upgrade notes say to refresh the guard copy with doctor and install."
   ],
@@ -87,7 +87,7 @@
         "| `/GitPlan` | `/GitPlan` | `/git-plan` | `$git-plan` |",
         "discover the eight Agent Skills",
         "the write adapters (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`) enforce explicit invocation by instruction",
-        "Agent Plugins clients (the root `plugin.json`, specification 1.0.0) discover only these eight adapters in `skills/`"
+        "Agent Plugins clients (the root `plugin.json`, specification 1.0.0) discover only these eight adapters and the entry skill `git-orchestrator` in `skills/`"
       ]
     },
     {
@@ -130,8 +130,8 @@
         "共 8 个",
         "八个 `agents/openai.yaml`",
         "Claude Code 里，五个会写仓库的适配层（`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`、`git-plan`）设置了 `disable-model-invocation: true`",
-        "每个版本的发布提交带有标签 `v<版本号>`（例如 `v1.0.4`）",
-        "| 安装方式 | 固定到 `v1.0.4` |"
+        "每个版本的发布提交带有标签 `v<版本号>`（例如 `v{plugin.yaml version}`）",
+        "| 安装方式 | 固定到 `v{plugin.yaml version}` |"
       ]
     },
     {
@@ -145,8 +145,8 @@
         "| 八个命令 | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |",
         "| 哪些命令有 | 八个命令都有 |",
         "| Lane Planning |",
-        "claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.4",
-        "git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos",
+        "claude plugin marketplace add UlyssesLeoLee/MAGOS@v{plugin.yaml version}",
+        "git clone --branch v{plugin.yaml version} https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos",
         "- **Set 子命令。**",
         "1.0.4 起，`/GitPlan` 需要守卫的 `set-*` 子命令，较老的守卫副本没有它们：运行 `doctor`，再运行它打印的 `install --host <host>` 命令刷新副本，否则 `/GitPlan` 会在开头检查版本并停下。",
         "`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep` 与 `/git-plan` 在适配层中规定：未经用户显式调用时不写入仓库。"
@@ -160,8 +160,8 @@
         "| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` |",
         "| The eight commands | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |",
         "| Lane Planning |",
-        "claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.4",
-        "git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos",
+        "claude plugin marketplace add UlyssesLeoLee/MAGOS@v{plugin.yaml version}",
+        "git clone --branch v{plugin.yaml version} https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos",
         "- **Set subcommands.**",
         "From 1.0.4 on, `/GitPlan` needs the guard's `set-*` subcommands, which an older guard copy lacks:"
       ]
@@ -176,8 +176,8 @@
         "| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` |",
         "| 八つのコマンド | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |",
         "| Lane Planning |",
-        "claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.4",
-        "git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos",
+        "claude plugin marketplace add UlyssesLeoLee/MAGOS@v{plugin.yaml version}",
+        "git clone --branch v{plugin.yaml version} https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos",
         "- **Set サブコマンド**"
       ]
     },
