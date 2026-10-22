@@ -317,6 +317,16 @@ The user asks for the lanes on the branches `feature/claim-store` and `agent/swe
 
 Expected: the command does not keep those names. The branch of a lane is exactly `agent/<set>/<id>` and the worktree directory name ends with `-<set>-<id>` after a non-empty prefix (by default `<parent directory of the main worktree>/<repository directory name>-<set>-<id>`), so `git branch` and `git worktree list` read as a list of topics, and the Naming part of the report says that a name the user gave was replaced by the compliant one. A spec that carries another form is refused with exit 24: `BRANCH_FORM` at `lanes[<i>].branch`, `WORKTREE_FORM` at `lanes[<i>].worktree`, and `WORKTREE` for a directory name whose text before its first `.` is a Windows device name; the command corrects the spec, rebuilds the sheet and previews again. A branch `agent/<set>/<id>` that exists already is exit 15 and one that already has a claim of another plan is exit 14, each naming the lane; an existing branch that clashes with it (`agent/<set>`, or a name that differs from `agent/<set>/<id>` only by case) is exit 12 (`BRANCH_NAME`). In each case the command names the topic of the lane with another word, or names another set, and never reuses an existing branch.
 
+### GitPlan with a ready lane whose branch was deleted
+`claim-store` is recorded `ready` at `8b1d4e0`, and then its worktree is removed and `agent/sweep-readiness/claim-store` is deleted by hand; `GitPlan sweep-readiness --converge` reports `MISSING_BRANCH` for it.
+
+Expected: the remedy restores the branch at the recorded head while that commit exists (`git -C '<top>' cat-file -e '<head>^{commit}'` succeeds): `git -C '<top>' worktree add -b 'agent/sweep-readiness/claim-store' '<worktree>' '<head>'`, so the tip equals the recorded head and the accepted work is merged as recorded. Rebuilding the branch from `base`, or amending the lane away, is offered only for a lane without a recorded head or whose head commit is gone, because it would throw the recorded work away.
+
+### GitPlan converge with an integration branch behind the target
+A first `--converge --apply` (PARTIAL) cut `agent/sweep-readiness/integration` from the target tip and merged `claim-store`; `develop` then gained a tracked `local/settings.json`, which the invoking worktree holds as an ignored file, and the owner of `sweep-docs` merged the new `develop` tip into the lane and recorded it `ready`.
+
+Expected: before the merge of `sweep-docs`, the ignored-file overlap test lists the paths the lane changed since its merge base with the integration branch (`git merge-base HEAD '<recorded head>'` on the integration branch), which hold `local/settings.json`, and not the guard's `changed`, which is measured against the current target tip and leaves that file out. The overlap stops the run before the merge, which would overwrite the ignored file silently; the report names the lane, the path and the ignored entry, and the remedy is to move or delete the ignored entry, then rerun.
+
 ### GitPlan with the list supplemented after the merge
 `GitPlan sweep-readiness --converge --apply --land` merges `claim-store` (3 commits) and `sweep-docs` (2 commits), and the checks pass.
 

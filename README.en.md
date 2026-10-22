@@ -773,7 +773,7 @@ It investigates Git (branches, worktrees, open lane claims, the tip of the targe
 ## Lanes
 | Lane | Branch | Worktree | Owns | Needs | Acceptance |
 |---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims passes |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/`, `pyproject.toml` | - | tests/claims passes |
 | sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | the examples in docs/sweep.md run |
 - [ ] merge claim-store -> sweep-docs into agent/sweep-readiness/integration; run pytest -q; land on develop
 Shared: pyproject.toml -> claim-store ; post-merge: update CHANGELOG.md -> merge step
@@ -817,7 +817,7 @@ It prints the two tables again from the record: the lanes table gains `State` an
 ## Lanes
 | Lane | Branch | Worktree | Owns | Needs | Acceptance | State | Head | Changes |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims passes | [x] integrated | 8b1d4e0 | 3 commits, 7 files, +212/-48 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/`, `pyproject.toml` | - | tests/claims passes | [x] integrated | 8b1d4e0 | 3 commits, 7 files, +212/-48 |
 | sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | the examples in docs/sweep.md run | [ ] active | - | active |
 - [ ] merge claim-store -> sweep-docs into agent/sweep-readiness/integration; run the repository checks; land on develop
 
@@ -866,7 +866,7 @@ After the merge the checklist is not replaced but **supplemented**: what the rep
 ## Lanes
 | Lane | Branch | Worktree | Owns | Needs | Acceptance | State | Head | Changes |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims passes | [x] integrated | 8b1d4e0 | 3 commits, 7 files, +212/-48 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/`, `pyproject.toml` | - | tests/claims passes | [x] integrated | 8b1d4e0 | 3 commits, 7 files, +212/-48 |
 | sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | the examples in docs/sweep.md run | [x] integrated | c04a7f2 | 2 commits, 3 files, +36/-4 |
 - [x] merge claim-store -> sweep-docs into agent/sweep-readiness/integration; run the repository checks; land on develop
 

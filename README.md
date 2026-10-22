@@ -778,7 +778,7 @@ flowchart TD
 ## 车道
 | 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 |
 |---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims 通过 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/`, `pyproject.toml` | - | tests/claims 通过 |
 | sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md 里的示例可以运行 |
 - [ ] 合并 claim-store -> sweep-docs 到 agent/sweep-readiness/integration；运行 pytest -q；落到 develop
 共享文件: pyproject.toml -> claim-store ; post-merge: 更新 CHANGELOG.md -> 合并步骤
@@ -822,7 +822,7 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 ## 车道
 | 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 | 状态 | 提交 | 修改 |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/`, `pyproject.toml` | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |
 | sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md 里的示例可以运行 | [ ] active | - | active |
 - [ ] 合并 claim-store -> sweep-docs 到 agent/sweep-readiness/integration；运行仓库检查；落到 develop
 
@@ -871,7 +871,7 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 ## 车道
 | 车道 | 分支 | 工作区 | 负责的文件 | 依赖 | 验收 | 状态 | 提交 | 修改 |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/`, `pyproject.toml` | - | tests/claims 通过 | [x] integrated | 8b1d4e0 | 3 个提交, 7 个文件, +212/-48 |
 | sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md 里的示例可以运行 | [x] integrated | c04a7f2 | 2 个提交, 3 个文件, +36/-4 |
 - [x] 合并 claim-store -> sweep-docs 到 agent/sweep-readiness/integration；运行仓库检查；落到 develop
 

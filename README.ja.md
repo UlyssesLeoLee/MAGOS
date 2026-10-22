@@ -778,7 +778,7 @@ flowchart TD
 ## レーン
 | レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 |
 |---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims が通る |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/`, `pyproject.toml` | - | tests/claims が通る |
 | sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md のサンプルが動く |
 - [ ] claim-store -> sweep-docs を agent/sweep-readiness/integration にマージ；pytest -q を実行；develop へ反映
 共有ファイル: pyproject.toml -> claim-store ; post-merge: CHANGELOG.md を更新 -> マージの手順
@@ -822,7 +822,7 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 ## レーン
 | レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 | 状態 | コミット | 変更 |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/`, `pyproject.toml` | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |
 | sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md のサンプルが動く | [ ] active | - | active |
 - [ ] claim-store -> sweep-docs を agent/sweep-readiness/integration にマージ；リポジトリのチェックを実行；develop へ反映
 
@@ -871,7 +871,7 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 ## レーン
 | レーン | ブランチ | ワークツリー | 担当ファイル | 依存 | 受け入れ基準 | 状態 | コミット | 変更 |
 |---|---|---|---|---|---|---|---|---|
-| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/` | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |
+| claim-store | agent/sweep-readiness/claim-store | `/work/app-sweep-readiness-claim-store` | `src/claims/`, `tests/claims/`, `pyproject.toml` | - | tests/claims が通る | [x] integrated | 8b1d4e0 | 3 コミット, 7 ファイル, +212/-48 |
 | sweep-docs | agent/sweep-readiness/sweep-docs | `/work/app-sweep-readiness-sweep-docs` | `docs/` | claim-store | docs/sweep.md のサンプルが動く | [x] integrated | c04a7f2 | 2 コミット, 3 ファイル, +36/-4 |
 - [x] claim-store -> sweep-docs を agent/sweep-readiness/integration にマージ；リポジトリのチェックを実行；develop へ反映
 
