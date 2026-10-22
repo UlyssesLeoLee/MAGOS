@@ -658,7 +658,8 @@ read as well.
   2 usage; 11 (also a missing target branch or a failed Git call of that summary); 13; 16 refused by the repository state
   (also no common history for the summary); 19 stale; 21; 22 OUT_OF_LANE; 23; 24.
 - `set-release --set NAME [--reason R] [--abandon]`: retires a set and releases its claims (Sets, set-release). Exit 0;
-  2 usage; 11; 13; 16 blocked; 21; 23; 24 an invalid `--set` or a `--reason` of more than 200 characters.
+  2 usage; 11; 13; 16 blocked; 21; 23; 24 an invalid `--set` or an invalid `--reason` (more than 200 characters, a
+  lone surrogate or a control character).
 
 Repository of a creation. Each creation is judged in its own repository: the redirect target when the invocation has
 one, else the directory the invocation runs in at that point (after `cd`, `pushd`, `Set-Location`, `git -C`, `env -C`
@@ -994,12 +995,18 @@ the branch (exit 15) or of a claim for it that is not the set's own (exit 14).
 (whose Windows result for a rooted path without a drive differs from Python 3.13 on): after `_norm_path` (Git Bash
 drive spellings such as `/c/x` map to drive paths on Windows) it is a drive path (`C:/x`, `C:\x`) or a UNC path on
 Windows and a path with a leading `/` on POSIX; a leading `~`, a `..` segment, a control character, a backslash on
-POSIX or a length over `MAX_DIR` (4,096) is invalid (exit 24, field `lanes[i].worktree`). It is stored as
-`os.path.normpath` with `/` as the separator (the spelling `plan --worktree` stores) and compared with `pkey`, so case
-and separators fold where the platform folds them. Two lane worktrees are never equal and never one inside the other
+POSIX, a Win32 namespace path on Windows (`\\?\` or `\\.\`, which `pkey` would never fold to the drive spelling it
+names) or a length over `MAX_DIR` (4,096) is invalid (exit 24, field `lanes[i].worktree`). It is stored as
+`os.path.normpath` with `/` as the separator (the spelling `plan --worktree` stores), on POSIX with its leading run of
+slashes written as one (`os.path.normpath` keeps exactly two, which the kernel reads as one, so `//home/u/x` is stored
+as `/home/u/x` and is compared as the directory it names), and compared with `pkey`, so case and separators fold where
+the platform folds them. Two lane worktrees are never equal and never one inside the other
 (exit 24). Against the repository, a lane worktree is never inside a worktree of the repository (the main one
 included) or inside the git common directory, and no existing worktree lies inside it (exit 12, `[WORKTREE]`), except
-the worktree that is already checked out on the lane's own branch (an amend of a lane whose worktree exists). The guard
+the lane's own worktree: the worktree that is already checked out on the lane's own branch at the lane's path (an
+amend of a lane whose worktree exists) and, in an amend only, the worktree on a detached HEAD at the path that the
+record registers for the same lane id (an owner's rebase or bisect detaches it); a fresh plan still clashes with a
+detached worktree at a planned path. The guard
 validates the spelling and the position, not whether the directory is free: `git worktree add` decides that. The spec
 file is never inside a worktree of the repository or inside a lane worktree of the spec (exit 24, `SPEC_IN_WORKTREE`).
 
@@ -1117,7 +1124,9 @@ MAGOS that wrote it"); the check precedes every other field, so no field of a ne
 is parsed with the integer hook of the spec (a run of more than 4,000 digits stays text), so an integer `v` above
 `SET_FORMAT` of any length is a newer format on every interpreter, as `format_number` treats a long format line of a
 claim. A record that is not a JSON object, has no integer `v`, has `v` below 1 or is not valid JSON is
-unreadable: the command refuses with exit 11 (UNKNOWN, code `SET_UNREADABLE`, naming the file, `set_unreadable`), the
+unreadable, and so is a record of this format whose fields do not have their shape, among them a `base` that is not a
+full object name (40 or 64 hexadecimal digits) and a lane `head` that is neither null nor one: the set commands pass
+these values to Git as revisions, so a value shaped like an option never reaches Git. The command refuses with exit 11 (UNKNOWN, code `SET_UNREADABLE`, naming the file, `set_unreadable`), the
 file is never overwritten or removed by this guard, and the user inspects it. Readers list only `*.json` files of
 `sets/`, so a temporary file (`*.tmp`) never reads as a record. A claim of a newer format among the claims of the set is
 handled by the claim gate (UNKNOWN `CLAIM_NEWER_FORMAT`, never overwritten, never released).
@@ -1160,10 +1169,14 @@ first failing step ends the call, and a failure at any step writes nothing:
    worktree list, for the position of the spec file and for the default worktree path of the naming messages).
 4. **Pairwise disjointness (exit 10).** Only the lanes of the spec take part: the integration claim claims no files and
    its marker entry is not compared (Integration claim), so a lane entry whose first segment is a wildcard is valid. The
-   entries of every lane are indexed by the folded literal first segment of each of their alternatives; an alternative whose first segment holds `*` or `?`, or is `**`, goes to a wildcard group. An
-   entry of one lane is compared by `entries_overlap` (the exact glob intersection that `plan` uses) with the entries
-   of the other lanes in its own bucket and in the wildcard group only, and an entry in the wildcard group with every
-   entry of the other lanes, so the work is near-linear when lanes own distinct directories, and the call's deadline is
+   entries of every lane are indexed by the literal prefix of each of their alternatives: its folded leading segments
+   up to the first one that holds `*` or `?` or is `**` (empty for an alternative that starts with one). A path matches
+   an alternative only when its leading segments are that prefix, so two alternatives can match a common path only when
+   the literal prefix of one is a prefix of the other's (equal included). An entry of one lane is compared by
+   `entries_overlap` (the exact glob intersection that `plan` uses) only with the entries of the other lanes that have
+   an alternative whose prefix is a prefix of one of its own, or has one of its own as a prefix, so an entry with an
+   empty prefix is compared with every entry of the other lanes, and the work is near-linear when lanes own distinct
+   directories, also below one shared top directory (`src/<lane>/...`). The call's deadline is
    ticked between entries: when it runs out, the call ends with exit 11 (UNKNOWN, `BUDGET_EXCEEDED`) and nothing is
    written, never with a partial proof. Every overlapping pair is reported with both lane ids and both raw entries (at
    most 20 pairs, in lane order and entry order, then `... and N more`); the verdict is CONFLICT (exit 10) with the
@@ -1200,9 +1213,12 @@ first failing step ends the call, and a failure at any step writes nothing:
    set. The lanes were proven pairwise disjoint by step 4, so they are not compared with each other, and the commits of
    the lanes already merged into the integration branch never conflict with the set's own lanes; the evidence of the
    members is kept aside for step 10.
-10. **Amend only: lanes that were already started.** For every lane of the record, matched by id: a lane absent from the
+10. **Amend only: lanes that were already started.** The evidence of a lane of the record is that of its branch and
+    that of its registered worktree when that worktree is on a detached HEAD (its `wt:` key of the snapshot), joined. For
+    every lane of the record, matched by id: a lane absent from the
     spec is removed, and it is refused with exit 16 (BLOCKED, reason `UNMERGED_WORK` or `DIRTY_WORKTREE`, naming the lane)
-    when its branch exists with commits that are not in the target (`refs/heads/<b>` is not merged into the target) or
+    when its branch exists with commits that are not in the target (`refs/heads/<b>` is not merged into the target), when
+    its detached worktree holds commits that are not in the target (`UNMERGED_WORK` with their files), or when
     its worktree has uncommitted changes; a lane that survives keeps its branch and worktree when either exists (a
     changed `worktree` of a lane that has a branch or a worktree on disk is exit 24; its `branch` is fixed by its id), and it is refused with
     exit 16 (reason `SHRINK`, naming the lane and the files) when a file it already changed (committed over every merge
@@ -1228,8 +1244,8 @@ first failing step ends the call, and a failure at any step writes nothing:
     integration claim is written when it is missing or does not have the shape `set-plan` writes, its `created` kept).
     When an amend changes nothing (every record field except `revision`, `updated` and `by`, and every claim, equals
     what exists) the call ends with exit 0 and `unchanged: true`, the revision stays, and nothing is written.
-13. **Write** (not with `--dry-run`) with the transaction of Atomic write, then append the audit line and print the
-    result. `--dry-run` runs steps 1 to 12 against the same snapshot logic without the lock and prints the verdict the
+13. **Write** (not with `--dry-run`) with the transaction of Atomic write, then append the audit line (built before the
+    write, Compatibility, limits and cost) and print the result. `--dry-run` runs steps 1 to 12 against the same snapshot logic without the lock and prints the verdict the
     registration would give, with `dry_run: true` and the same exit code; it writes nothing and appends nothing. Its
     success text is `set_ok_check`, for a new plan and for an amend alike: the preview passed and, as a dry run,
     wrote nothing.
@@ -1283,9 +1299,12 @@ and never a `--state` value. `--note` is at most 200 characters without a contro
 combination is exit 24 on the option.
 
 - **ready.** The lane's branch must exist (else exit 16, `BRANCH_MISSING`) and `--head` must equal its tip (else exit 16,
-  `HEAD_MISMATCH`, naming both). The lane's worktree, when one exists, must be clean (`DIRTY_WORKTREE`) and in no
-  rebase, merge, cherry-pick, revert or sequencer operation (`OPERATION_IN_PROGRESS`), because uncommitted work is not in
-  the recorded head and would be left behind by a merge of it; both are exit 16, and a worktree that fails both names both reasons. The files the lane changed, measured
+  `HEAD_MISMATCH`, naming both). Every worktree of the lane (at its registered path or on its branch) must be clean
+  (`DIRTY_WORKTREE`) and in no rebase, merge, cherry-pick, revert or sequencer operation (`OPERATION_IN_PROGRESS`),
+  because uncommitted work is not in the recorded head and would be left behind by a merge of it; both are exit 16, and
+  a worktree that fails both names both reasons. A worktree of the lane whose directory is missing (prunable: a locked
+  worktree on an unmounted drive, or a directory removed without `git worktree remove`) cannot be read, so it counts as
+  dirty (`DIRTY_WORKTREE`, `set_why_wt_missing` naming its path). The files the lane changed, measured
   by `committed_paths(g, <target tip>, <tip>)` (the evidence function the guard uses everywhere, so a lane that merged
   the target into itself is not charged with the target's files; the plan's `base` stands in for the target tip when the
   target branch no longer exists), must all lie inside the lane's manifest by the exact glob intersection (`path_hit`); a
@@ -1408,8 +1427,9 @@ unknown, 23 newer, 11 unreadable, 24 an invalid `--set` in the neutral frame `se
   (`rev-list --count <base>..<tip>`; null without a branch), `descends_from_base` (the base is an ancestor of the tip;
   informational, since a lane need not descend from the base: an amendment moves the base and no command gates on it),
   `worktree_present` (a worktree at the lane's path or on its branch that is not prunable), `worktree_clean` (null when
-  none), `operation` (the operations in progress of that worktree as `operation` reads them, `["unreadable"]` when its
-  metadata cannot be read), `state`, `head` (as recorded), `claim` (`ok`, `missing`, or `mismatch` when the claim of
+  there is none; false when any of those worktrees has uncommitted changes or a `git status` of it exits non-zero),
+  `operation` (the operations in progress of every one of those worktrees as `operation` reads them, each named once,
+  with `unreadable` when the metadata of one cannot be read), `state`, `head` (as recorded), `claim` (`ok`, `missing`, or `mismatch` when the claim of
   the branch lacks `set=<name>` or `lane=<id>`, its entries differ from the record's `paths`, or it cannot be read or comes from a newer MAGOS)
   and `changes` (the lane's stored summary of The changes summary, the same object as `record.lanes[].changes`, or null
   until the lane is recorded `integrated`; it is read from the record, never recomputed);
@@ -1465,7 +1485,7 @@ git log --no-show-signature -z --format= --name-only --no-renames --diff-merges=
 - A failure of the command ends the call with exit 11 (`GIT_FAILED`), and an exhausted budget with exit 11
   (`BUDGET_EXCEEDED`), as for every Git command of `set-show`; nothing is written either way.
 
-Paths are tested against the lane manifests through an index like the one of the pairwise check, so a drift
+Paths are tested against the lane manifests through an index, so a drift
 view over thousands of files stays within the budget (exhausted: exit 11, `BUDGET_EXCEEDED`): an entry that names a literal file
 or directory is a lookup of the prefixes of the path, every other entry is indexed by the folded literal first segment of each
 alternative (an alternative that starts with a wildcard goes to a group that every path is tested against), and a path without
@@ -1485,9 +1505,11 @@ prints no table of requirements; the tables are the command's, built from the JS
 `set-release --set NAME [--reason R] [--abandon]` retires a set. Under the lock the record is read (exit 21, 23, 11),
 then for every lane the guard evaluates the same predicate `release` uses, against the record's target: the lane has
 **unmerged work** when its branch exists and is not merged into the tip of the local branch `target` of the record
-(when that branch no longer exists, no existing lane branch counts as merged), and a **dirty worktree** when the
-worktree on that branch or at the registered path has uncommitted changes (a `git status` that exits non-zero counts as dirty; a Git
-that cannot run at all, a working directory that is gone or an exhausted budget ends the call with exit 11). Without `--abandon` every lane must also be in
+(when that branch no longer exists, no existing lane branch counts as merged), and a **dirty worktree** when a
+worktree on that branch or at the registered path, a prunable one included, has uncommitted changes (a `git status`
+that exits non-zero counts as dirty, and a worktree whose directory is missing, such as a locked worktree on an
+unmounted drive, is dirty with the text `set_why_wt_missing`; a Git that cannot run at all, a working directory that is
+gone or an exhausted budget ends the call with exit 11). Without `--abandon` every lane must also be in
 state `integrated`; with `--abandon` the state does not matter. Each failing lane is named with its reason
 (`NOT_INTEGRATED`, `UNMERGED_WORK`, `DIRTY_WORKTREE`, `CLAIM_UNUSABLE` for a lane claim, or the integration claim (named `integration`), that is unreadable or of a newer
 format) and any of them is exit 16 (BLOCKED, `set_blocked`) with nothing written. A lane whose branch no longer exists
@@ -1498,8 +1520,9 @@ When nothing blocks, one transaction deletes the claim of every lane and the int
 exists, lies inside `<store>/claims`, carries `set=<name>` and is the claim of the stored branch, as `release` checks; a
 claim of that branch that belongs to another set or to none is left alone and reported as a warning) and then the record.
 The call prints `set_released` with the number of claims it removed, and appends the audit line with `--reason`.
-`--reason` is at most 200 characters; an invalid `--set` and an over-long `--reason` are checked before the lock and
-are exit 24 in the neutral frame `set_invalid_args`, as one denial when both fail. The guard never removes a branch, a
+`--reason` is at most 200 characters (`RANGE`) with no lone surrogate (`ENCODING`) and no control character (`FORMAT`),
+the rules of `--note`, so the audit line can always be written; an invalid `--set` and an invalid `--reason` are checked
+before the lock and are exit 24 in the neutral frame `set_invalid_args`, as one denial when both fail. The guard never removes a branch, a
 worktree or a file of the work tree. The claims
 of a set that is released stop blocking `/GitCleanup`, `/GitConverge` and `/GitSweep`; while the set is open they block
 them as `BLOCKED_ACTIVE_OWNER`, as every open lane claim does. Result (`--json`): `{decision, code, set, abandoned,
@@ -1560,6 +1583,7 @@ The messages are entries of the table `M` (`T(lang, key, **fields)`), zh first a
 | `set_why_state` | lane {l} 的状态是 {st}，不是 integrated | lane {l} is {st}, not integrated |
 | `set_why_unmerged` | lane {l} 的分支 {b} 有未合并的工作 | the branch {b} of lane {l} has unmerged work |
 | `set_why_dirty` | lane {l} 的工作树有未提交的修改 | the worktree of lane {l} has uncommitted changes |
+| `set_why_wt_missing` | lane {l} 的工作树 {w} 在磁盘上缺失（例如已锁定但所在驱动器未挂载），无法确认其中没有未提交的工作 | the worktree {w} of lane {l} is missing on disk (for example locked on an unmounted drive), so it cannot be known to hold no uncommitted work |
 | `set_why_operation` | lane {l} 的工作树正在进行 {op} | the worktree of lane {l} has a {op} in progress |
 | `set_why_missing` | lane {l} 的分支 {b} 不存在 | the branch {b} of lane {l} does not exist |
 | `set_why_head_tip` | --head {head} 不是分支 {b} 的当前提交 {tip} | --head {head} is not the tip {tip} of branch {b} |
@@ -1628,8 +1652,11 @@ exit 16 `NO_MERGE_BASE` at `integrated` (`set_blocked` with the operation `set-u
   or a branch command) is not a write to the guard's state and creates nothing. Direct writes stay denied: a writer or a
   redirect aimed at `.git/magos/sets/<set>.json` (relative or the absolute store path in any separator or case spelling) is
   `PROTECTED` once the repository is armed or holds a claim, like a write to a claim file. The creation of a lane branch
-  or worktree after `set-plan` is judged by the existing creation check against the lane's claim and its registered
-  worktree path (`path_mismatch` for another path). The creation of `agent/<set>/integration` is judged for its name and
+  or worktree after `set-plan` is judged by the existing creation check against the lane's claim, its registered
+  worktree path (`path_mismatch` for another path) and the set's target: for a claim that carries `set=`, the judgement
+  resolves the target stored in the claim (`target=`, the target `set-plan` proved the lanes against) instead of the
+  repository's default target, and a stored target that no longer resolves denies as UNKNOWN; a claim without `set=`
+  is judged against the default target as before. The creation of `agent/<set>/integration` is judged for its name and
   the existence of the integration claim only, in an AUTO-engaged and in an armed repository alike, whatever the
   manifests of the lanes (Integration claim); the git layer finds the claim file of each name. An overlapping creation
   of an unrelated branch, and the creation of a branch that has no claim, is still denied.
@@ -1665,7 +1692,7 @@ exit 16 `NO_MERGE_BASE` at `integrated` (`set_blocked` with the operation `set-u
   notes, a sheet of 8,192 characters, a spec of 4 MiB, 20 error lines, 20 overlap pairs, 200 files in an OUT_OF_LANE
   listing, a summary of changes of at most 8 subjects of 100 characters and 12 paths, revisions of 1 to 999,999,999 as
   an option. A set of 12 lanes with 200 entries each registers within the 18 s budget when the lanes own distinct
-  directories: validation and the pairwise proof are indexed, the snapshot is gathered once, and the judgement is one
+  directories, also when they all sit below one top directory: validation and the pairwise proof are indexed, the snapshot is gathered once, and the judgement is one
   `evaluate` per lane. A spec whose entries all start with a wildcard needs the full comparison and may exhaust the
   budget, which ends the call with exit 11 and no write. The summary of the changes of a lane costs four read-only Git
   calls of that call's budget; the output of `diff` grows with the number of changed files and is read whole, so an
@@ -1679,7 +1706,10 @@ exit 16 `NO_MERGE_BASE` at `integrated` (`set_blocked` with the operation `set-u
   `revision`, and `changes`: `{commits, files, insertions, deletions}` of the stored summary, null unless the lane is
   `integrated`; the subjects and paths are in the record) and `set-release` (`set`, `revision` (the record's),
   `reason`, `abandon`, `lanes` as ids, `claims` as the removed branches). A refusal, among them every fail-closed
-  refusal of the changes summary, appends none.
+  refusal of the changes summary, appends none. A set command builds its audit line, `by` and the UTF-8 bytes included,
+  before its write, so a field that cannot be encoded or a Git failure while reading the user ends the call before
+  anything is written; once the write is made, a failure to append the line leaves the change in place and adds the
+  warning `AUDIT_NOT_WRITTEN` (naming the error) to the success, which therefore never reads as a failed call.
 - Known limits are below and in `references/lane-split.md`: sets live in one clone; semantic coupling between files is
   not detected; the claims of an older guard cannot see the set.
 
@@ -1800,16 +1830,17 @@ the 1.0.3 product it:
   existing branch-name rules and the Windows alias rule against the repository), absolute worktrees that are distinct,
   nested in nothing and named `<prefix>-<set>-<id>`, the manifest syntax of every entry and no entry listed twice in one
   lane (`DUPLICATE`), a dependency graph without a cycle, shared files inside their owner's manifest, and the pairwise
-  disjointness of the lane manifests by the exact glob intersection through a first-segment index; the messages that
+  disjointness of the lane manifests by the exact glob intersection through a literal-prefix index; the messages that
   refuse a name, the set name included, are in Chinese and English and state the compliant form or ask for another
   topic slug, the refusals of `set-show`, `set-update` and `set-release` are framed as invalid arguments, and a
   registration prints the creation of a lane from the recorded base as its example;
 - refuses a plan made against another target tip (STALE, exit 19) and an amend or an update made against another revision
   (the same exit), judges every lane against every claimant outside the set from one snapshot, and never reads or
   consumes an override;
-- keeps the lane states of an amended set, refuses the removal of a lane that holds unmerged work and the shrinking of a
-  manifest below files the lane already changed, and checks at `ready` that the recorded head is the branch tip, that the
-  worktree is clean and idle and that every changed file lies inside the manifest (OUT_OF_LANE, exit 22), and at
+- keeps the lane states of an amended set, refuses the removal of a lane that holds unmerged or uncommitted work (on
+  its branch or in its detached worktree) and the shrinking of a manifest below files the lane already changed, and
+  checks at `ready` that the recorded head is the branch tip, that every worktree of the lane is clean and idle (one
+  missing on disk counts as dirty) and that every changed file lies inside the manifest (OUT_OF_LANE, exit 22), and at
   `integrated` that the head is in the target or in the integration branch;
 - stores at `integrated` an objective summary of what the lane changed (`changes`: the non-merge commits, at most 8 of
   their subjects, the files, the lines added and removed, at most 12 path keys) computed from `merge-base`, `rev-list`, `log` and `diff`
@@ -1818,9 +1849,11 @@ the 1.0.3 product it:
 - derives a view of a set (`set-show`, with the drift of the lanes, of the target (the files of its commits since the
   base that the set's own work does not hold, so the set's own land never makes the plan stale) and of the files two
   lanes changed, the requirements with their lanes and the `changes` of every lane), retires a set only when its lanes are integrated and
-  landed or, with `--abandon`, hold no unmerged work, and records every write in the audit log;
+  landed or, with `--abandon`, hold no unmerged work, never with a dirty or missing lane worktree, and records every
+  write in the audit log, with the line built before the write;
 - lists the set and lane of a claim in `list`, reports set problems in `doctor`, refuses `plan --amend` and `release` of
-  the claim of a lane that belongs to a set, and runs `rev-list`, `log` and `diff` (members of `LOCAL_GIT`) for the
+  the claim of a lane that belongs to a set, judges the creation of a lane of a set against the target stored in its
+  claim, and runs `rev-list`, `log` and `diff` (members of `LOCAL_GIT`) for the
   commits a lane is ahead of the plan's base, for the summary of an integrated lane and, `log` only, for the target's
   commits of the drift view.
 
