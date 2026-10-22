@@ -19,6 +19,8 @@
     "list supplemented with the changes after the merge",
     "changes summary per lane (commits, subjects, files, insertions, deletions, paths)",
     "land prediction of the converge preview",
-    "untracked files written by the repository checks before the land"
+    "untracked files written by the repository checks before the land",
+    "untracked files of the invoking worktree at the gates of the converge preview and apply",
+    "header of the release report"
   ]
 }
