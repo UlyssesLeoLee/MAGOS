@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `f4d7eb6a560527defdd2603c732063ba7f0e9c69c0fc73fb2ebb7d84d74a50a2`
+Source-SHA256: `c3a18cdfa7008b15ef7652aadb7a7831f8daa27785578c1f5746a0f0fbfa57a1`
 
 ## Responsibility
 
@@ -31,8 +31,9 @@ The file holds eight cooperating parts.
    formats, `--ignore-submodules=none` right after the subcommand of every `diff`, `log` and `status` call (so a changed
    gitlink is a changed path, and a submodule checkout whose commit differs from its gitlink or that holds modified or
    untracked files is an uncommitted change of that path, whatever `diff.ignoreSubmodules`, `submodule.<name>.ignore` or
-   the `ignore` of `.gitmodules` says: the option on the command line overrides all three, while a
-   `-c diff.ignoreSubmodules=none` pin overrides only the first), per-call timeout and a total deadline that every Git
+   the `ignore` of `.gitmodules` says: the option on the command line overrides all three, and the pinned
+   `-c diff.ignoreSubmodules=none`, which Git passes on to the `status` it runs inside each submodule checkout, keeps a
+   setting of the user or of a submodule from hiding a nested submodule's changes there), per-call timeout and a total deadline that every Git
    call of one hook
    invocation shares) enumerates claimants: every non-bare worktree, every local branch not merged into the target,
    every unmerged remote-tracking branch, and every open claim except the integration claim of a set (Sets,
@@ -521,8 +522,11 @@ read as well.
   branch that a record names, compared folded, as the branch of one of its lanes or as its integration branch, whatever
   its claim says (missing, without a `set=` line, or naming a set that has no record); of a record that cannot be read
   (`SET_UNREADABLE`, `SET_NEWER_FORMAT`) only the integration branch `agent/<set>/integration` is known, so its lanes
-  count only through the `set=` line of their claims. For a branch of a set, identical entries without an override
-  record are still a no-op, and every `plan` that would write its claim (a new claim, other entries or another
+  count only through the `set=` line of their claims. A claim of a newer format on such a branch is the claim gate's:
+  `plan` reports UNKNOWN `CLAIM_NEWER_FORMAT` (exit 11), as for any branch, before the set gate is asked. For a branch
+  of a set, identical entries without an override
+  record are still a no-op (its creation command names the path the claim stores, whatever spelling `--worktree` was
+  typed in), and every `plan` that would write its claim (a new claim, other entries or another
   `--worktree`, with or without `--amend`, and the re-plan that would store an override) is refused with exit 14 and
   the message that names the set (`lane_in_set`), before the test for an existing branch (exit 15), the override
   record left unconsumed, because the claims of a set are written only by `set-plan` (`set-plan --amend` writes a
@@ -1783,8 +1787,9 @@ exit 16 `NO_MERGE_BASE` at `integrated` (`set_blocked` with the operation `set-u
   an option. A set of 12 lanes with 200 entries each registers within the 18 s budget when the lanes own distinct
   directories, also when they all sit below one top directory: validation and the pairwise proof are indexed, the snapshot is gathered once, the claims outside the set are parsed once, and the judgement is one
   `evaluate` per lane over the files of the claimants that the lane's manifest index matches, so an unmerged branch of
-  thousands of files outside the lanes costs one index test per file and lane for the literal entries, while a glob
-  entry is tested against every such file under its literal first segment and an entry whose first segment holds a
+  thousands of files outside the lanes costs one index test per file and lane for the literal entries (no wildcard and
+  no `[...]` group), while a glob entry, or one that holds a `[...]` group (indexed like a glob through the alternative
+  that reads the group as `?`), is tested against every such file under its literal first segment and an entry whose first segment holds a
   wildcard or is `**` against every such file; an amend tests the files a started lane changed against its new
   manifest through the same index. Glob entries whose literal first segment holds many such files, and a spec whose
   entries all start with a wildcard, need that many comparisons and may exhaust the budget, which ends the call with
@@ -1952,8 +1957,8 @@ the 1.0.3 product it:
   claim, and runs `rev-list`, `log` and `diff` (members of `LOCAL_GIT`) for the
   commits a lane is ahead of the plan's base, for the summary of an integrated lane and, `log` only, for the target's
   commits of the drift view;
-- runs every `diff`, `log` and `status` call with `--ignore-submodules=none`, so `plan`, `check`, the hook and the set
-  subcommands count a changed gitlink, and a submodule checkout that differs from its gitlink or holds changes, as a
+- runs every `diff`, `log` and `status` call with `--ignore-submodules=none`, so `plan`, `check`, the hook, plain `release` (a lane
+  worktree holding such a change has uncommitted changes) and the set subcommands count a changed gitlink, and a submodule checkout that differs from its gitlink or holds changes, as a
   change of that path whatever `diff.ignoreSubmodules`, `submodule.<name>.ignore` or the `ignore` of `.gitmodules` says.
 
 Compatibility: claim files of format 1 written by 1.0.0 to 1.0.3 are read unchanged, and line 1 of every claim stays
