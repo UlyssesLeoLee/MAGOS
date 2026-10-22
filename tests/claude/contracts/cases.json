@@ -2143,7 +2143,7 @@
         "contains": [
           "- **set**: one plan, named `<set>`. Its **record** is the file `<git-common-dir>/magos/sets/<set>.json`.",
           "that claim is why a plain `git switch -c` may create `agent/<set>/integration` in a guarded repository. It is exempt from overlap judgement in both directions: it claims no files, so it restricts no lane manifest and is never a claimant",
-          "While the record exists, a plain `plan` that would write the claim of one of its lanes or of its integration branch (an amend, the re-plan after an override, and also where that claim is missing or carries no `set=`) is refused (exit 14, `lane_in_set`) and so is a plain `release` of any claim of the set (exit 16, `blocked_set`): a set is changed only through this command.",
+          "While the record exists, a plain `plan` that would write the claim of one of its lanes or of its integration branch (an amend, the re-plan after an override, and also where that claim is missing or carries no `set=`; of a record the guard cannot read or that a newer MAGOS wrote only the integration branch `agent/<set>/integration` is known, so a lane counts only through the `set=` line of its claim) is refused (exit 14, `lane_in_set`) and so is a plain `release` of any claim of the set (exit 16, `blocked_set`): a set is changed only through this command.",
           "An open lane claim (`planned` or `active` in `<guard> list`) is active-owner evidence, so `/GitCleanup`, `/GitConverge` and `/GitSweep` report its lane as `BLOCKED_ACTIVE_OWNER`; `--release` removes the claims.",
           "It must report version 1.0.4 or later (`<guard> version --json`, field `version`), because older guards lack the `set-*` subcommands; no guard, or an older one, is a gate failure.",
           "The only retry is one repeat of a call that exited 13. The record and the claim files are never read or written except through the guard.",
@@ -2257,7 +2257,7 @@
         "file": "SKILL.md",
         "contains": [
           "`/GitPlan <set> --into <branch> --apply` registers exactly the plan that a preview of the same set earlier in the conversation showed (its spec, byte for byte), writing the lane claims and the set record only through `magos_guard.py set-plan`",
-          "`set-plan` also registers a claim for the integration branch `agent/<set>/integration`, which is why a plain `git switch -c` may create that branch in a guarded repository; while the set exists, a plain `plan --amend` or `release` of one of its claims is refused (exit 14, exit 16), so the set changes only through this command."
+          "`set-plan` also registers a claim for the integration branch `agent/<set>/integration`, which is why a plain `git switch -c` may create that branch in a guarded repository; while the set exists, a plain `plan` that would write the claim of one of its lanes or of its integration branch (an amend, the re-plan after an override, and also where that claim is missing or carries no `set=`; of a record the guard cannot read or that a newer MAGOS wrote only the integration branch `agent/<set>/integration` is known, so a lane counts only through the `set=` line of its claim) or a plain `release` of one of its claims is refused (exit 14, exit 16), so the set changes only through this command."
         ]
       },
       {
