@@ -2647,7 +2647,7 @@ def test_lane_creation_after_set_plan(guard, tmp_path):
         l1, l3 = P(wt / "wt-demo-api"), P(wt / "wt-demo-docs")
         add = lambda path, branch: 'git worktree add "%s" -b %s main' % (path, branch)
         assert verdict(hook(r.path, add(l1, "agent/demo/api"))) is None, mode  # the registered path and branch
-        spellings = [l1.replace("/", "\\")] + ([l1.upper(), l1.lower()] if os.name == "nt" else [])
+        spellings = [l1.replace("/", "\\"), l1.upper(), l1.lower()] if os.name == "nt" else []  # the same directory only where the platform folds
         for spelled in spellings:
             assert verdict(hook(r.path, add(spelled, "agent/demo/api"))) is None, (mode, spelled)  # another separator style or case is the same path
         reason = verdict(hook(r.path, add(P(tmp_path / ("elsewhere-" + mode)), "agent/demo/api")))
@@ -2663,6 +2663,33 @@ def test_lane_creation_after_set_plan(guard, tmp_path):
         reason = verdict(hook(r.path, add(l3, "agent/demo/docs")))
         assert reason and OVERLAP in reason and "agent/demo/api" in reason, (mode, reason)  # denied, naming the sibling
         assert "agent/demo/docs" not in branches(r)
+
+
+def test_lane_creation_is_judged_against_the_set_target(guard, tmp_path):
+    # TC-341: develop is one commit ahead of main and changes src/api/a.py; the guard's default target is main
+    r = make(tmp_path, "target")
+    r.branch_with("develop", "src/api/a.py")
+    r.git("config", "magos.target", "main")
+    wt, base = tmp_path / "wt-target", r.git("rev-parse", "develop")
+    spec = {"v": 1, "title": "demo", "requirements": [{"id": "R1", "text": "the task is done"}], "base": base, "sheet": "sheet", "notes": [], "shared": [],
+            "lanes": [set_lane(wt, "demo", "api", ["src/api/"])]}
+    f = tmp_path / "spec-target.json"
+    f.write_text(json.dumps(spec), encoding="utf-8")
+    p = guard(r, "set-plan", "--set", "demo", "--target", "develop", "--spec", str(f))
+    assert p.rc == 0, p.out + p.err
+    add = 'git worktree add "%s" -b agent/demo/api %s' % (P(wt / "wt-demo-api"), base)
+    assert verdict(hook(r.path, add)) is None  # judged against develop, the target in the lane's claim, as set-plan judged it
+    plain = make(tmp_path, "plain")
+    plain.branch_with("develop", "src/api/a.py")
+    plain.git("config", "magos.target", "main")
+    assert guard(plain, "plan", "--branch", "feat/x", "--paths", "docs/").rc == 0
+    cf = Path(plain.git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "magos" / "claims" / "feat" / "x.claim"
+    cf.write_text(cf.read_text(encoding="utf-8").replace("target=main", "target=develop").replace("entry=docs/", "entry=src/api/"), encoding="utf-8")
+    reason = verdict(hook(plain.path, "git switch -c feat/x"))
+    assert reason and OVERLAP in reason and "develop" in reason, reason  # a claim without set= keeps the default target, whatever its target= says
+    r.git("branch", "-D", "develop")
+    reason = verdict(hook(r.path, add))
+    assert reason and "develop" in reason, reason  # a stored target that no longer resolves denies
 
 
 def test_integration_branch_creation_is_allowed_and_unrelated_creation_stays_denied(guard, tmp_path):

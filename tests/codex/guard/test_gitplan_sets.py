@@ -953,7 +953,7 @@ def test_worktree_classification_ignores_os_path_isabs(demo, guard, tmp_path, mo
         with monkeypatch.context() as m:
             m.setattr(G.os.path, "isabs", fake)
             assert [G.lane_worktree(s) for s in spellings] == expected
-            for value in ("wt/a", "/wt"):  # and the command, which reads the same spellings
+            for value in ("wt/wt-demo-api", "/tmp/wt-demo-api"):  # and the command, which reads the same spellings (named as the name rule asks)
                 s = custom_spec(demo, tmp_path, [lane(tmp_path, "api", ["src/"], worktree=value)])
                 r = guard(demo, "--json", *sp_args(write_spec(tmp_path, s), "demo", "main", "--dry-run"))
                 assert (r.rc == 24) == (G.lane_worktree(value)[0] is None), (value, r.out)
@@ -2778,7 +2778,7 @@ def test_a_twelve_lane_spec_is_registered_within_the_budget(tmp_path, guard, mon
         rc, v = jplan(guard, r, f, *extra)
         assert rc == 0 and v["revision"] == 1, v
         assert time.monotonic() - started < time_budget(10), time.monotonic() - started
-        assert len(calls) <= 4 * 2400, len(calls)  # the first-segment index: a small multiple of the entry count
+        assert len(calls) <= 4 * 2400, len(calls)  # the literal-prefix index: a small multiple of the entry count
     assert len(record(r)["lanes"]) == 12 and len(record(r)["lanes"][0]["paths"]) == 200
     # the drift view of the same set, its lanes having changed about 5,000 files: 400 files of each lane inside its manifest (literal directories,
     # one-level and recursive globs) and 16 outside it, every entry of a lane starting with the same literal directory
@@ -4023,3 +4023,258 @@ def test_dry_run_and_out_of_lane_texts(demo, guard, tmp_path):
         assert r.rc == 22 and r.out.rstrip("\n") == want and v["message"] == want and v["code"] == "OUT_OF_LANE" and v["files"] == ["src/ui/x.py"], (lang, r, v)
         assert "set-plan" not in want  # the way forward is the command that changes a set, not a guard subcommand
     assert record_file(demo).read_bytes() == before
+
+
+# ---- TC-334 .. TC-345: the reason and the audit line, detached and missing lane worktrees, the record's revisions, worktree spellings, the
+# pairwise index ------------------------------------------------------------------------------------------------------------------------------
+def test_set_release_refuses_a_reason_it_cannot_record(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    before = store_files(demo)
+    for reason, code in (("caf\udcff", "ENCODING"), ("two\nlines", "FORMAT"), ("a\ttab", "FORMAT"), ("r" * 201, "RANGE")):
+        for lang in ("zh", "en"):
+            args = ["set-release", "--set", "demo", "--abandon", "--reason", reason]
+            v = json.loads(run(["--repo", str(demo.path), "--lang", lang, "--json", *args]).out)
+            assert v["exit_code"] == 24 and [(e["field"], e["code"]) for e in v["errors"]] == [("--reason", code)], (reason, v)
+            assert v["message"].startswith(G.T(lang, "set_invalid_args", errors="").rstrip("\n")), v["message"]
+            assert run(["--repo", str(demo.path), "--lang", lang, *args]).rc == 24
+            assert store_files(demo) == before  # the record, every claim and audit.log as they were
+    v = json.loads(run(["--repo", str(demo.path), "--lang", "en", "--json", "set-release", "--set", "Bad", "--reason", "caf\udcff"]).out)
+    assert v["exit_code"] == 24 and errors_of(v) == {("--set", "FORMAT"), ("--reason", "ENCODING")}, v  # one denial for both
+    rc, v = jrelease(guard, demo, "--abandon", "--reason", "r" * 200)
+    assert rc == 0 and audit_lines(demo)[-1]["op"] == "set-release" and audit_lines(demo)[-1]["reason"] == "r" * 200, v
+
+
+def test_the_audit_line_is_built_before_the_write(demo, guard, tmp_path, monkeypatch):
+    f = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    real_who, real_line = G.who, G.audit_line
+
+    def no_user(g):
+        raise G.GitFail("BUDGET_EXCEEDED", "time budget exhausted")
+
+    def no_line(g, by=None, **rec):
+        raise UnicodeEncodeError("utf-8", "caf\udcff", 3, 4, "surrogates not allowed")
+
+    def calls():
+        yield lambda: jplan(guard, demo, f)
+        yield lambda: upd(guard, demo, "api", "active")
+        yield lambda: jrelease(guard, demo, "--abandon")
+    for step, call in enumerate(calls()):
+        for name, fake in (("who", no_user), ("audit_line", no_line)):
+            before = store_files(demo) or {}
+            with monkeypatch.context() as m:
+                m.setattr(G, name, fake)
+                rc, v = call()
+            assert rc == 11 and v["code"] == "UNKNOWN" and (store_files(demo) or {}) == before, (step, name, v)  # nothing was written
+        lines = len(audit_lines(demo))
+        with monkeypatch.context() as m:
+            def full_disk(g, line):
+                raise OSError(28, "No space left on device")
+            m.setattr(G, "append_audit", full_disk)
+            rc, v = call()
+        assert rc == 0 and v["code"] == "OK", (step, v)  # the change is made and is reported as made
+        warn = [w for w in v["warnings"] if w["code"] == "AUDIT_NOT_WRITTEN"]
+        assert len(warn) == 1 and "No space left on device" in warn[0]["text"] and "(AUDIT_NOT_WRITTEN)" in v["message"], (step, v)
+        assert len(audit_lines(demo)) == lines
+        if step == 0:
+            assert record(demo)["revision"] == 1 and claim_lines(demo, LANES["api"])[0] == "state=active"
+        elif step == 1:
+            assert lane_of(record(demo), "api")["state"] == "active" and record(demo)["revision"] == 2
+        else:
+            assert not record_file(demo).exists() and not (store_dir(demo) / "claims" / "agent" / "demo" / "api.claim").exists()
+    assert G.who is real_who and G.audit_line is real_line
+
+
+def test_amend_judges_the_detached_worktree_of_a_lane(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    wt, _ = start_lane(demo, tmp_path, "api")  # the branch stays at main: it holds no commit of its own
+    demo.git("checkout", "-q", "--detach", cwd=wt)
+    demo.write("src/api/a.py", "uncommitted\n", base=wt)
+    removed = write_spec(tmp_path, drop_lane(demo_spec(demo, tmp_path), "api"), "removed.json")
+    amend = ("--amend", "--expect-revision", "1")
+
+    def refused(spec_file, want):
+        before = store_files(demo)
+        rc, v = jplan(guard, demo, spec_file, *amend)
+        assert rc == 16 and v["code"] == "BLOCKED" and v["blocked"] == want and store_files(demo) == before, v
+        return v
+    refused(removed, [{"lane": "api", "reason": "DIRTY_WORKTREE", "files": ["src/api/a.py"]}])
+    demo.git("add", "-A", cwd=wt)
+    demo.git("commit", "-q", "-m", "work on the detached HEAD", cwd=wt)
+    refused(removed, [{"lane": "api", "reason": "UNMERGED_WORK", "files": ["src/api/a.py"]}])
+    shrunk = demo_spec(demo, tmp_path)
+    shrunk["lanes"][0]["paths"] = ["src/api/b.py", "tests/api/", "package-lock.json"]
+    refused(write_spec(tmp_path, shrunk, "shrunk.json"), [{"lane": "api", "reason": "SHRINK", "files": ["src/api/a.py"]}])
+    demo.git("checkout", "-q", LANES["api"], cwd=wt)  # back on the branch: the detached commit is no longer the lane's
+    rc, v = jplan(guard, demo, removed, *amend)
+    assert rc == 0 and v["revision"] == 2 and [x["id"] for x in record(demo)["lanes"]] == ["ui", "docs"], v
+    assert not (store_dir(demo) / "claims" / "agent" / "demo" / "api.claim").exists()
+
+
+def test_amend_keeps_a_detached_lane_worktree_its_own(demo, guard, tmp_path):
+    spec = demo_spec(demo, tmp_path)
+    f = write_spec(tmp_path, spec)
+    plan_ok(guard, demo, f)
+    wt, _ = start_lane(demo, tmp_path, "api")
+    demo.git("checkout", "-q", "--detach", cwd=wt)
+    amend = ("--amend", "--expect-revision", "1")
+    for extra in (("--dry-run",), ()):
+        rc, v = jplan(guard, demo, f, *amend, *extra)
+        assert rc == 0 and v["unchanged"] is True and v["revision"] == 1, v  # the lane's own worktree, detached by its owner, is no clash
+    spec["lanes"][1]["paths"] = ["src/ui/", "tests/ui/"]
+    rc, v = jplan(guard, demo, write_spec(tmp_path, spec, "changed.json"), *amend)
+    assert rc == 0 and v["revision"] == 2 and v["unchanged"] is False, v
+    other = wt_dir(tmp_path, "web", "other")
+    demo.git("worktree", "add", "-q", "--detach", str(other), "main")  # a fresh plan still clashes with a detached worktree at a planned path
+    s = custom_spec(demo, tmp_path, [lane(tmp_path, "web", ["web/"], set_name="other")])
+    rc, v = jplan(guard, demo, write_spec(tmp_path, s, "other.json"), name="other")
+    assert rc == 12 and ("lanes[0].worktree", "WORKTREE") in errors_of(v), v
+
+
+def test_a_missing_lane_worktree_counts_as_dirty(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    docs, tip = start_lane(demo, tmp_path, "docs")
+    ui, ui_tip = start_lane(demo, tmp_path, "ui")
+    for lid in ("docs", "ui"):
+        upd_ok(guard, demo, lid, "active")
+    demo.write("docs/d.md", "uncommitted\n", base=docs)
+    demo.git("worktree", "lock", "--reason", "usb", str(docs))
+    away = docs.with_name(docs.name + "-away")
+    os.rename(str(docs), str(away))  # the drive is unmounted: the worktree is locked and missing
+    shutil.rmtree(str(ui))  # removed without git worktree remove: prunable
+    missing = {lid: G.T("en", "set_why_wt_missing", l=lid, w=P(path)) for lid, path in (("docs", docs), ("ui", ui))}
+    before = store_files(demo)
+    rc, v = jrelease(guard, demo, "--abandon")
+    assert rc == 16 and v["blocked"] == [{"lane": "ui", "reason": "DIRTY_WORKTREE"}, {"lane": "docs", "reason": "DIRTY_WORKTREE"}], v
+    assert missing["docs"] in v["message"] and missing["ui"] in v["message"] and store_files(demo) == before, v
+    for lid, head in (("docs", tip), ("ui", ui_tip)):
+        w = upd_refused(guard, demo, lid, "ready", "--head", head, rc_want=16)
+        assert w["blocked"] == [{"lane": lid, "reason": "DIRTY_WORKTREE"}] and missing[lid] in w["message"], w
+    rows = {x["id"]: x for x in jshow(guard, demo)["view"]["lanes"]}
+    assert [(rows[x]["worktree_present"], rows[x]["worktree_clean"]) for x in ("docs", "ui")] == [(False, None), (False, None)]
+    os.rename(str(away), str(docs))
+    demo.git("checkout", "--", "docs/d.md", cwd=docs)
+    assert upd_ok(guard, demo, "docs", "ready", "--head", tip)["state"] == "ready"
+
+
+def test_set_show_judges_every_worktree_of_a_lane(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    wt, tip = start_lane(demo, tmp_path, "api", {"src/api/a.py": "lane\n"})
+    ready_lane(guard, demo, "api", tip)
+    demo.git("checkout", "-q", "--detach", cwd=wt)  # the registered worktree: detached and clean
+    second = tmp_path / "second"
+    demo.git("worktree", "add", "-q", str(second), LANES["api"])
+    demo.write("src/api/a.py", "uncommitted\n", base=second)
+
+    def view():
+        v = jshow(guard, demo, "--drift")
+        text = run(["--repo", str(demo.path), "--lang", "en", "set-show", "--set", "demo", "--drift"]).out
+        row = v["view"]["lanes"][0]
+        line = next(x for x in text.split("\n") if x.startswith("[x] api"))
+        return row["worktree_present"], row["worktree_clean"], row["operation"], line
+    present, clean, ops, line = view()
+    assert (present, clean, ops) == (True, False, []) and "worktree dirty" in line, line
+    demo.git("checkout", "--", "src/api/a.py", cwd=second)
+    gitdir = Path(demo.git("rev-parse", "--absolute-git-dir", cwd=second))
+    (gitdir / "MERGE_HEAD").write_text(tip + "\n", encoding="utf-8")  # a merge in progress in the second worktree, with no change
+    present, clean, ops, line = view()
+    assert (present, clean, ops) == (True, True, ["merge"]) and "worktree merge in progress" in line, line
+    (gitdir / "MERGE_HEAD").unlink()
+    present, clean, ops, line = view()
+    assert (present, clean, ops) == (True, True, []) and "worktree clean" in line, line
+
+
+def test_record_revisions_must_be_object_names(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    good = record(demo)
+    out = tmp_path / "out"
+    out.mkdir()
+    calls = [("set-show", "--set", "demo", "--drift"), tuple(update_args("api", "active", 1)), ("set-release", "--set", "demo", "--abandon")]
+
+    def unreadable(why):
+        for args in calls:
+            rc, v = jcall(guard, demo, *args)
+            assert rc == 11 and v["code"] == "UNKNOWN" and v["unknowns"][0]["code"] == "SET_UNREADABLE" and why in v["unknowns"][0]["text"], (args, v)
+        rc, v = jplan(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path), "amend.json"), "--amend", "--expect-revision", "1")
+        assert rc == 11 and v["unknowns"][0]["code"] == "SET_UNREADABLE", v
+        assert record_file(demo).exists() and not any(out.iterdir())  # nothing written, and git never read a value as an option
+    for base in ("--output=%s/PWNED" % P(out), "main", good["base"][:39]):
+        write_record(demo, dict(good, base=base))
+        unreadable("base is not a full object name")
+    write_record(demo, dict(good, base=good["base"].upper()))
+    assert jshow(guard, demo)["record"]["base"] == good["base"].upper()
+    for head in ("-x", "HEAD"):
+        write_record(demo, dict(good, lanes=[dict(good["lanes"][0], state="ready", head=head)] + good["lanes"][1:]))
+        unreadable("lanes[0].state or head is not valid")
+    write_record(demo, dict(good, lanes=[dict(good["lanes"][0], state="ready", head=good["base"])] + good["lanes"][1:]))
+    assert jshow(guard, demo)["record"]["lanes"][0]["head"] == good["base"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the POSIX spelling of a worktree path")
+def test_worktree_spelling_folds_leading_slashes_on_posix(demo, guard, tmp_path):
+    for p in ("//home/u/x-demo-api", "///home/u/x-demo-api", "/home//u/x-demo-api"):
+        assert G.lane_worktree(p) == ("/home/u/x-demo-api", None), p
+    for spelled in (P(demo.path / "x-demo-api"), "/" + P(demo.path / "x-demo-api")):  # inside the main worktree, however many slashes lead
+        s = custom_spec(demo, tmp_path, [lane(tmp_path, "api", ["src/"], worktree=spelled)])
+        rc, v = dry(guard, demo, tmp_path, s)
+        assert rc == 12 and ("lanes[0].worktree", "WORKTREE") in errors_of(v), (spelled, v)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the Win32 spelling of a worktree path")
+def test_worktree_spelling_refuses_win32_namespace_paths(demo, guard, tmp_path):
+    for p in ("\\\\?\\C:\\x\\wt-demo-api", "\\\\.\\C:\\x\\wt-demo-api", "//?/C:/x/wt-demo-api", "//./C:/x/wt-demo-api"):
+        stored, why = G.lane_worktree(p)
+        assert stored is None and "Win32 namespace path" in why, p
+    assert G.lane_worktree("\\\\server\\share\\wt-demo-api") == ("//server/share/wt-demo-api", None)
+    s = custom_spec(demo, tmp_path, [lane(tmp_path, "api", ["src/"], worktree="\\\\?\\" + str(wt_dir(tmp_path, "api")))])
+    rc, v = dry(guard, demo, tmp_path, s)
+    assert rc == 24 and [e["field"] for e in v["errors"]] == ["lanes[0].worktree"] and "Win32 namespace path" in v["errors"][0]["text"], v
+
+
+def test_lane_overlaps_finds_every_pair_a_brute_force_finds(monkeypatch):
+    import random
+    rnd = random.Random(104)
+    monkeypatch.setattr(G, "SPEC_PAIRS", 10 ** 6)
+    words = ["src", "SRC", "a", "A", "b", "x", "x.md", "*.py", "a?", "*", "**", "[ab]", "a*b", "?"]
+
+    def entry():
+        text = "/".join(rnd.choice(words) for _ in range(rnd.randint(1, 4)))
+        return text + "/" if rnd.random() < 0.3 else text
+    pairs_seen = 0
+    for _ in range(300):
+        lanes = []
+        for li in range(rnd.randint(2, 5)):
+            entries, want = [], rnd.randint(1, 6)
+            while len(entries) < want:
+                try:
+                    entries.append(G.parse_entry(entry()))
+                except G.ManifestError:
+                    continue
+            lanes.append({"id": "l%d" % li, "entries": entries})
+        brute, total = [], 0
+        for li, a in enumerate(lanes):
+            for ea in a["entries"]:
+                for b in lanes[li + 1:]:
+                    for eb in b["entries"]:
+                        if G.entries_overlap(ea, eb):
+                            total += 1
+                            brute.append((a["id"], ea.raw, b["id"], eb.raw))
+        assert G.lane_overlaps(lanes, time.monotonic() + 60) == (brute, total), lanes
+        pairs_seen += total
+    assert pairs_seen > 100  # the generator makes overlapping and disjoint sets alike
+
+
+def test_lane_overlaps_stays_linear_below_a_shared_top_directory(demo, guard, tmp_path, monkeypatch):
+    def paths(i):
+        return ["src/mod-%02d/dir%03d/" % (i, j) for j in range(199)] + ["src/mod-%02d/*.py" % i]
+    lanes = [{"id": "mod-%02d" % i, "entries": [G.parse_entry(p) for p in paths(i)]} for i in range(1, 13)]
+    calls = []
+    real = G.entries_overlap
+    monkeypatch.setattr(G, "entries_overlap", lambda a, b: calls.append(1) or real(a, b))
+    assert G.lane_overlaps(lanes, time.monotonic() + 60) == ([], 0) and calls == []  # no literal prefix is a prefix of another lane's
+    lanes[0]["entries"].append(G.parse_entry("src/*.cfg"))
+    assert G.lane_overlaps(lanes, time.monotonic() + 60) == ([], 0)
+    assert 0 < len(calls) <= sum(len(x["entries"]) for x in lanes[1:]), len(calls)
+    f = write_spec(tmp_path, custom_spec(demo, tmp_path, [lane(tmp_path, "mod-%02d" % i, paths(i)) for i in range(1, 13)]))
+    started = time.monotonic()
+    rc, v = jplan(guard, demo, f, "--dry-run")
+    assert rc == 0 and v["dry_run"] is True and time.monotonic() - started < time_budget(10), (time.monotonic() - started, v.get("code"))

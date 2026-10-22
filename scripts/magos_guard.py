@@ -158,6 +158,8 @@ M = {
     "set_why_state": ("lane {l} 的状态是 {st}，不是 integrated", "lane {l} is {st}, not integrated"),
     "set_why_unmerged": ("lane {l} 的分支 {b} 有未合并的工作", "the branch {b} of lane {l} has unmerged work"),
     "set_why_dirty": ("lane {l} 的工作树有未提交的修改", "the worktree of lane {l} has uncommitted changes"),
+    "set_why_wt_missing": ("lane {l} 的工作树 {w} 在磁盘上缺失（例如已锁定但所在驱动器未挂载），无法确认其中没有未提交的工作",
+                           "the worktree {w} of lane {l} is missing on disk (for example locked on an unmounted drive), so it cannot be known to hold no uncommitted work"),
     "set_why_operation": ("lane {l} 的工作树正在进行 {op}", "the worktree of lane {l} has a {op} in progress"),
     "set_why_missing": ("lane {l} 的分支 {b} 不存在", "the branch {b} of lane {l} does not exist"),
     "set_why_head_tip": ("--head {head} 不是分支 {b} 的当前提交 {tip}", "--head {head} is not the tip {tip} of branch {b}"),
@@ -3189,10 +3191,27 @@ def write_claim(g, name, doc):
     write_atomic(path, data)
 
 
-def audit(g, **rec):
+def audit_line(g, by=None, **rec):
+    """One line of audit.log as UTF-8 bytes; a set command builds it before its write, so that no field of it can fail after that write."""
+    return (json.dumps(dict(ts=now_iso(), by=who(g) if by is None else by, **rec), ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def append_audit(g, line):
     os.makedirs(store(g), exist_ok=True)
     with open(os.path.join(store(g), "audit.log"), "ab") as fh:
-        fh.write((json.dumps(dict(ts=now_iso(), by=who(g), **rec), ensure_ascii=False) + "\n").encode("utf-8"))
+        fh.write(line)
+
+
+def audit(g, **rec):
+    append_audit(g, audit_line(g, **rec))
+
+
+def audit_after(g, line, warns):
+    """Append the audit line of a set write that is already made: a failure leaves the change in place and adds the warning AUDIT_NOT_WRITTEN."""
+    try:
+        append_audit(g, line)
+    except OSError as err:
+        warns.append({"code": "AUDIT_NOT_WRITTEN", "text": "the change is made, but audit.log could not be appended: %s" % err})
 
 
 def read_override(g, fp):
@@ -3790,6 +3809,8 @@ def _record_shape(rec, name):
     if rec.get("set") != name:
         return "the field set is not the file name"
     why = texts(rec, ("target", "base", "created", "updated", "by", "title", "sheet"), "")
+    if not why and not _BASE.fullmatch(rec["base"]):  # the set commands pass it to git as a revision: never one shaped like an option
+        why = "base is not a full object name"
     rev = rec.get("revision")
     if why or isinstance(rev, bool) or not isinstance(rev, int) or rev < 1:
         return why or "revision is not a positive integer"
@@ -3812,7 +3833,7 @@ def _record_shape(rec, name):
             return why
         if not all(isinstance(ln.get(k), list) and all(_is_text(x) for x in ln[k]) for k in ("paths", "depends_on", "serves")):
             return "%spaths, depends_on and serves are not lists of strings" % where
-        if ln.get("state") not in LANE_STATES or (ln.get("head") is not None and not _is_text(ln["head"])):
+        if ln.get("state") not in LANE_STATES or (ln.get("head") is not None and not (_is_text(ln["head"]) and _BASE.fullmatch(ln["head"]))):
             return "%sstate or head is not valid" % where
         if ln.get("changes") is not None and not _changes_shape(ln["changes"]):
             return "%schanges is neither null nor a summary of changes" % where
@@ -3949,7 +3970,8 @@ def lane_worktree(p):
     """-> (the stored spelling of an absolute worktree path, None) or (None, reason).  Classified here and never with os.path.isabs, whose
     Windows result for a rooted path without a drive differs from Python 3.13 on: a drive path (C:/x, C:\\x) or a UNC path on Windows, a
     path with a leading / elsewhere.  Git Bash drive spellings (/c/x) map to drive paths on Windows.  The spelling is os.path.normpath with
-    / as the separator, as plan --worktree stores it."""
+    / as the separator, as plan --worktree stores it; on POSIX the leading run of slashes is one (normpath keeps exactly two, which the
+    kernel reads as one), and a Win32 namespace path (\\\\?\\, \\\\.\\), which pkey never folds to the drive it names, is refused."""
     if len(p) > MAX_DIR:
         return None, "longer than %d characters" % MAX_DIR
     if _CTL.search(p):
@@ -3958,9 +3980,12 @@ def lane_worktree(p):
         return None, "starts with ~: write the absolute path"
     q = _norm_path(p)
     if os.name == "nt":
+        if re.match(r"[\\/]{2}[?.][\\/]", q):
+            return None, "is a Win32 namespace path (\\\\?\\ or \\\\.\\), which is not a worktree path"
         absolute = re.match(r"[A-Za-z]:[\\/]", q) or re.match(r"[\\/]{2}[^\\/]", q)
     else:
         absolute = q.startswith("/") and "\\" not in q
+        q = "/" + q.lstrip("/") if absolute else q
     if not absolute:
         return None, "is not an absolute path"
     if ".." in re.split(r"[\\/]" if os.name == "nt" else "/", q):
@@ -4463,32 +4488,40 @@ def record_denial(lang, name, err):
     return set_deny(lang, "UNKNOWN", T(lang, "set_unreadable", f=path), unknowns=[{"code": "SET_UNREADABLE", "text": "%s: %s" % (path, err.why)}])
 
 
+def literal_prefix(alt):
+    """The folded leading segments of an alternative up to the first one that holds * or ? or is ** (empty when it starts with one)."""
+    return alt[:next((k for k, g in enumerate(alt) if g == GS or _WILD.search(g)), len(alt))]
+
+
 def lane_overlaps(lanes, deadline):
     """The pairs of manifest entries of two lanes that can match a common path -> (the first SPEC_PAIRS as (lane id, entry, lane id, entry), the
-    number of pairs).  The entries are indexed by the folded literal first segment of each of their alternatives; an alternative whose first
-    segment holds * or ? or is ** goes to the wildcard group.  An entry is compared (entries_overlap, the exact glob intersection) with the
-    entries of the later lanes in its own bucket and in the wildcard group, and an entry in the wildcard group with every entry of the later
-    lanes, so lanes that own distinct directories cost near-linear work.  Raises GitFail BUDGET_EXCEEDED when `deadline` passes: the proof
-    is never partial."""
+    number of pairs).  A path matches an alternative only when its leading segments are the alternative's literal prefix, so two alternatives
+    can match a common path only when the prefix of one is a prefix of the other's.  The entries are indexed by the prefix of each alternative
+    (`at`) and by every prefix of that prefix (`under`), and an entry is compared (entries_overlap, the exact glob intersection) only with the
+    entries of the later lanes whose prefix is a prefix of one of its own (`at`) or has one of its own as a prefix (`under`): an entry with an
+    empty prefix meets every entry, and lanes that own distinct directories, also below one top directory, cost near-linear work.  Raises
+    GitFail BUDGET_EXCEEDED when `deadline` passes: the proof is never partial."""
     def tick():
         if time.monotonic() > deadline:
             raise GitFail("BUDGET_EXCEEDED", "the proof that the lane manifests are disjoint ran out of time")
-    buckets, wild, every = {}, [], []
+    at, under = {}, {}
     for li, lane in enumerate(lanes):
         for ei, e in enumerate(lane["entries"]):
-            every.append((li, ei))
             for alt in e.alts:
-                if alt[0] == GS or _WILD.search(alt[0]):
-                    wild.append((li, ei))
-                else:
-                    buckets.setdefault(alt[0], []).append((li, ei))
+                p = literal_prefix(alt)
+                at.setdefault(p, set()).add((li, ei))
+                for k in range(len(p) + 1):
+                    under.setdefault(p[:k], set()).add((li, ei))
     pairs, total, n = [], 0, 0
     for li, lane in enumerate(lanes):
         for ei, e in enumerate(lane["entries"]):
             tick()
             cand = set()
             for alt in e.alts:
-                cand.update(every if alt[0] == GS or _WILD.search(alt[0]) else buckets.get(alt[0], []) + wild)
+                p = literal_prefix(alt)
+                cand.update(under.get(p, ()))
+                for k in range(len(p)):
+                    cand.update(at.get(p[:k], ()))
             for lj, ej in sorted(c for c in cand if c[0] > li):
                 n += 1
                 if not n % 16:
@@ -4593,16 +4626,20 @@ def _lane_checks(g, mdl, rec, snap, members, heads, wts):
     errs, blocked, removed = [], [], []
     by_id = {m["id"]: (i, m) for i, m in enumerate(mdl["lanes"])}
     for old in rec["lanes"]:
-        ev = members.get(lane_key(old["branch"]))
-        changed = sorted(ev["paths"]["committed"] | ev["paths"]["uncommitted"]) if ev else []
+        detached = members.get("wt:" + pkey(old["worktree"]))  # the registered worktree on a detached HEAD: its commits and changes are the lane's
+        evs = [ev for ev in (members.get(lane_key(old["branch"])), detached) if ev]
+        uncommitted = set().union(*(ev["paths"]["uncommitted"] for ev in evs))
+        changed = sorted(set().union(*(ev["paths"]["committed"] for ev in evs)) | uncommitted)
         branch = real_branch(old, heads)
         hit = by_id.get(old["id"])
         if hit is None:  # the lane is removed: refused while it holds work
             removed.append(old["id"])
             if branch is not None and "refs/heads/" + branch not in snap["merged"]:
                 blocked.append({"lane": old["id"], "reason": "UNMERGED_WORK", "files": []})
-            if ev and ev["paths"]["uncommitted"]:
-                blocked.append({"lane": old["id"], "reason": "DIRTY_WORKTREE", "files": sorted(ev["paths"]["uncommitted"])[:SPEC_ERRORS]})
+            elif detached and detached["paths"]["committed"]:
+                blocked.append({"lane": old["id"], "reason": "UNMERGED_WORK", "files": sorted(detached["paths"]["committed"])[:SPEC_ERRORS]})
+            if uncommitted:
+                blocked.append({"lane": old["id"], "reason": "DIRTY_WORKTREE", "files": sorted(uncommitted)[:SPEC_ERRORS]})
             continue
         i, new = hit
         started = branch is not None or any(not w["bare"] and not w["prunable"] and (pkey(w["path"]) == pkey(old["worktree"]) or
@@ -4670,10 +4707,12 @@ def plan_set(g, args, mdl):
         elif b in heads and fold(b) not in own_claims and not gated:
             existing.append((field, "BRANCH_EXISTS", T(lang, "set_branch_exists", l=lid, b=b)))
     wts = worktrees(g)
+    registered_wt = {ln["id"]: pkey(ln["worktree"]) for ln in rec["lanes"]} if rec is not None else {}
     for i, m in enumerate(mdl["lanes"]):
         for w in wts:
-            if not (w["branch"] and fold(w["branch"]) == fold(m["branch"]) and pkey(w["path"]) == pkey(m["worktree"])) and \
-                    (inside_path(m["worktree"], w["path"]) or inside_path(w["path"], m["worktree"])):
+            at = pkey(w["path"]) == pkey(m["worktree"])  # the lane's own worktree: on its branch, or (an amend) detached at the path the record registers
+            own = at and (w["branch"] and fold(w["branch"]) == fold(m["branch"]) or w["detached"] and registered_wt.get(m["id"]) == pkey(m["worktree"]))
+            if not own and (inside_path(m["worktree"], w["path"]) or inside_path(w["path"], m["worktree"])):
                 clashes.append(("lanes[%d].worktree" % i, "WORKTREE", "lane %s: %s is, lies inside or contains the worktree %s of the repository" % (m["id"], m["worktree"], w["path"])))
         if inside_path(m["worktree"], g.common):
             clashes.append(("lanes[%d].worktree" % i, "WORKTREE", "lane %s: %s lies inside the git directory" % (m["id"], m["worktree"])))
@@ -4778,11 +4817,12 @@ def plan_set(g, args, mdl):
         file_writes.append((rpath, record_bytes(new), _file_bytes(rpath)))
         written.append(rpath)
         if write:
-            commit_store(file_writes, deletes)
             lanes_audit = [{"id": ln["id"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"], "serves": ln["serves"]} for ln in new_lanes]
-            audit(g, op="set-amend" if rec else "set-plan", set=name, target=new["target"], base=mdl["base"], revision=revision,
-                  requirements=[r["id"] for r in new["requirements"]], lanes=lanes_audit, integration=ib, host="cli",
-                  **({"previous_revision": rec["revision"], "removed": removed} if rec else {}))
+            line = audit_line(g, by=by, op="set-amend" if rec else "set-plan", set=name, target=new["target"], base=mdl["base"], revision=revision,
+                              requirements=[r["id"] for r in new["requirements"]], lanes=lanes_audit, integration=ib, host="cli",
+                              **({"previous_revision": rec["revision"], "removed": removed} if rec else {}))
+            commit_store(file_writes, deletes)
+            audit_after(g, line, warns)
     lane_rows = [{"id": ln["id"], "title": ln["title"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"], "depends_on": ln["depends_on"],
                   "serves": ln["serves"], "outcome": ln["outcome"], "acceptance": ln["acceptance"], "state": ln["state"],
                   "create": 'git worktree add "%s" -b %s %s' % (ln["worktree"], ln["branch"], new["target"])} for ln in new_lanes]
@@ -4915,7 +4955,7 @@ def _path_glob(alt, path):
 class ManifestIndex:
     """The entries of one manifest, indexed for testing many paths.  The prefixes of the literal files and directories an entry names are
     looked up in sets; every other entry is indexed by the folded literal first segment of each of its alternatives, and an alternative whose
-    first segment holds * or ?, or is **, goes to a group that is tested for every path (the index of lane_overlaps).  A path without a
+    first segment holds * or ?, or is **, goes to a group that is tested for every path.  A path without a
     wildcard character is matched by a greedy glob walk, which takes time proportional to the size of the glob and the path; a path that
     holds * or ? is compared with the exact intersection.  hit(path) is exactly path_hit over the entries.  `deadline` (a monotonic time)
     ends a long test with GitFail BUDGET_EXCEEDED, never with a partial answer."""
@@ -4929,7 +4969,7 @@ class ManifestIndex:
                 continue
             self.entries.append(e)
             for alt in e.alts:  # a file that an entry names as a directory: the path is a proper prefix of the entry's literal part
-                lit = alt[:next((k for k, g in enumerate(alt) if g == GS or _WILD.search(g)), len(alt))]
+                lit = literal_prefix(alt)
                 self.proper.update(lit[:k] for k in range(1, len(lit)))
             alt = e.alts[0]
             if len(e.alts) == 1 and alt[-1] == GS and not any(g == GS or _WILD.search(g) for g in alt[:-1]):
@@ -4970,10 +5010,12 @@ class ManifestIndex:
         return sorted(p for p in files if not self.hit(fpath(p)))
 
 
-def lane_worktrees(wts, lane, branch):
-    """The worktrees a lane has: at its registered path or on its branch (`branch` is the real branch of the lane, or None), neither bare nor
-    prunable; the one at the registered path first."""
-    here = [w for w in wts if not w["bare"] and not w["prunable"] and (pkey(w["path"]) == pkey(lane["worktree"]) or (branch is not None and w["branch"] == branch))]
+def lane_worktrees(wts, lane, branch, missing=False):
+    """The worktrees a lane has: at its registered path or on its branch (`branch` is the real branch of the lane, or None), not bare and, unless
+    `missing`, not prunable (with `missing` also those whose directory is missing, which the callers that must not miss uncommitted work count
+    as dirty); the one at the registered path first."""
+    here = [w for w in wts if not w["bare"] and (missing or not w["prunable"]) and
+            (pkey(w["path"]) == pkey(lane["worktree"]) or (branch is not None and w["branch"] == branch))]
     return sorted(here, key=lambda w: pkey(w["path"]) != pkey(lane["worktree"]))
 
 
@@ -5007,8 +5049,8 @@ def target_paths(g, rec, heads, tip):
     """The target's own changes of the drift view -> the distinct files, sorted, of the target's commits since the plan's base that the set's own work
     does not hold: one `log` whose negative revisions are the base, the tip of the local integration branch when it exists and the recorded head of
     every `ready` or `integrated` lane, in the record's lane order.  A merge names only its own changes (dense-combined), a rename both paths, and a
-    negative revision that no longer names an object excludes nothing (--ignore-missing).  Every revision is a full object name: a value of an edited
-    record that is none is left out like a missing object, so it never reaches git as an option."""
+    negative revision that no longer names an object excludes nothing (--ignore-missing).  Every revision is a full object name: the format gate
+    refuses a record whose base or head is none (_record_shape), and the filter below keeps that true of every value passed."""
     neg = [rec["base"]]
     itip = heads.get(integration_branch(rec["set"]))
     if itip:
@@ -5033,11 +5075,11 @@ def set_view(g, rec, drift):
         branch = real_branch(lane, heads)
         lane_tip = heads[branch] if branch else None
         here = lane_worktrees(wts, lane, branch)
-        clean, ops = None, []
-        if here:
-            notes, unreadable = operation(here[0]["path"])
-            ops = notes + (["unreadable"] if unreadable else [])
-            clean = not dirty_paths(g, here[0]["path"])
+        ops = []
+        for w in here:  # every worktree of the lane, as set-update judges them: a second one may hold the uncommitted work
+            notes, unreadable = operation(w["path"])
+            ops += [x for x in notes + (["unreadable"] if unreadable else []) if x not in ops]
+        clean = not any(worktree_dirty(g, w["path"]) for w in here) if here else None
         ahead = g.run("rev-list", "--count", "%s..%s" % (base, lane_tip), ok=(0, 128)) if lane_tip else None
         row = {"id": lane["id"], "branch_exists": branch is not None, "tip": lane_tip,
                "ahead": int(ahead[1].decode().strip()) if ahead and ahead[0] == 0 else None,
@@ -5175,7 +5217,10 @@ def update_checks(g, args, rec, lane, heads, wts):
         if head != tip:
             return refuse16(lang, "set-update", [(lid, "HEAD_MISMATCH", T(lang, "set_why_head_tip", head=args.head, b=branch, tip=tip))]), False
         items = []
-        for w in lane_worktrees(wts, lane, branch):  # uncommitted work is not in the recorded head: a merge of it would leave that work behind
+        for w in lane_worktrees(wts, lane, branch, missing=True):  # uncommitted work is not in the recorded head: a merge of it would leave that work behind
+            if w["prunable"]:  # a worktree whose directory is missing (an unmounted drive) cannot be read: it is not known to be clean
+                items.append((lid, "DIRTY_WORKTREE", T(lang, "set_why_wt_missing", l=lid, w=w["path"].replace("\\", "/"))))
+                continue
             notes, unreadable = operation(w["path"])
             if notes or unreadable:
                 items.append((lid, "OPERATION_IN_PROGRESS", T(lang, "set_why_operation", l=lid, op="/".join(notes + (["unreadable"] if unreadable else [])))))
@@ -5304,16 +5349,19 @@ def update_set(g, args):
     now = now_iso()
     new_lane = dict(lane, state=to, updated=now, note=lane["note"] if args.note is None else args.note,
                     head=args.head.lower() if to in ("ready", "integrated") else lane["head"], changes=changes)
-    new = dict(rec, revision=rec["revision"] + 1, updated=now, by=who(g), integration=rec["integration"] if to != "integrated" else args.integration or rec["integration"],
+    by = who(g)
+    new = dict(rec, revision=rec["revision"] + 1, updated=now, by=by, integration=rec["integration"] if to != "integrated" else args.integration or rec["integration"],
                lanes=[_ordered(new_lane, RECORD_LANE_KEYS) if x is lane else x for x in rec["lanes"]])
+    counts = {k: changes[k] for k in ("commits", "files", "insertions", "deletions")} if changes else None
+    line = audit_line(g, by=by, op="set-update", set=name, lane=lane["id"], state=to, head=new_lane["head"], note=new_lane["note"], integration=new["integration"],
+                      revision=new["revision"], changes=counts, host="cli")
     path = set_path(g, name)
     commit_store([(path, record_bytes(new), _file_bytes(path))], [])
-    counts = {k: changes[k] for k in ("commits", "files", "insertions", "deletions")} if changes else None
-    audit(g, op="set-update", set=name, lane=lane["id"], state=to, head=new_lane["head"], note=new_lane["note"], integration=new["integration"], revision=new["revision"],
-          changes=counts, host="cli")
+    warns = []
+    audit_after(g, line, warns)
     return {"decision": "allow", "code": "OK", "set": name, "lane": lane["id"], "state": to, "head": new_lane["head"], "changes": changes, "note": new_lane["note"],
-            "integration": new["integration"], "revision": new["revision"], "warnings": [],
-            "message": T(lang, "set_ok_update", s=name, l=lane["id"], st=to, rev=new["revision"])}
+            "integration": new["integration"], "revision": new["revision"], "warnings": warns,
+            "message": "\n".join([T(lang, "set_ok_update", s=name, l=lane["id"], st=to, rev=new["revision"])] + ["(%s) %s" % (w["code"], w["text"]) for w in warns])}
 
 
 def cmd_set_update(args):
@@ -5358,8 +5406,10 @@ def release_set(g, args):
             items.append((lid, "NOT_INTEGRATED", T(lang, "set_why_state", l=lid, st=lane["state"])))
         if branch is not None and "refs/heads/" + branch not in merged:
             items.append((lid, "UNMERGED_WORK", T(lang, "set_why_unmerged", l=lid, b=branch)))
-        if any(worktree_dirty(g, w["path"]) for w in lane_worktrees(wts, lane, branch)):
-            items.append((lid, "DIRTY_WORKTREE", T(lang, "set_why_dirty", l=lid)))
+        for w in lane_worktrees(wts, lane, branch, missing=True):  # the predicate of release: a worktree missing on disk is not known to be clean
+            if w["prunable"] or worktree_dirty(g, w["path"]):
+                items.append((lid, "DIRTY_WORKTREE", T(lang, "set_why_wt_missing" if w["prunable"] else "set_why_dirty", l=lid, w=w["path"].replace("\\", "/"))))
+                break
     for lid, branch in [(x["id"], x["branch"]) for x in rec["lanes"]] + [("integration", integration_branch(name))]:
         rel = os.path.normcase(os.path.join(*branch.split("/")) + ".claim")
         if newer_claim(bad, branch) or any(os.path.normcase(b) == rel for b in bad):  # it cannot be read, so it cannot be known to be the set's own
@@ -5378,8 +5428,10 @@ def release_set(g, args):
         deletes.append((path, _file_bytes(path)))
         released.append(doc["branch"])
     record = set_path(g, name)
+    line = audit_line(g, op="set-release", set=name, revision=rec["revision"], reason=args.reason, abandon=args.abandon, lanes=[x["id"] for x in rec["lanes"]],
+                      claims=released, host="cli")
     commit_store([], deletes + [(record, _file_bytes(record))])  # the claims first, the record last: one transaction
-    audit(g, op="set-release", set=name, revision=rec["revision"], reason=args.reason, abandon=args.abandon, lanes=[x["id"] for x in rec["lanes"]], claims=released, host="cli")
+    audit_after(g, line, warns)
     lines = [T(lang, "set_released", s=name, n=len(released))] + ["(%s) %s" % (w["code"], w["text"]) for w in warns]
     return {"decision": "allow", "code": "OK", "set": name, "abandoned": args.abandon, "released": released, "warnings": warns, "message": "\n".join(lines)}
 
@@ -5390,8 +5442,12 @@ def cmd_set_release(args):
         sys.stderr.write("not a git repository: %s\n" % args.repo)
         return 2
     errs = [("--set", "FORMAT", why) for why in [set_name_problem(args.set, args.lang)] if why]
-    if len(args.reason) > SET_TEXT_MAX:
+    if len(args.reason) > SET_TEXT_MAX:  # the rules of --note: the audit line must be writable once the claims are gone
         errs.append(("--reason", "RANGE", "at most %d characters, not %d" % (SET_TEXT_MAX, len(args.reason))))
+    elif _SURROGATE.search(args.reason):
+        errs.append(("--reason", "ENCODING", "holds a lone surrogate"))
+    elif _CTL.search(args.reason):
+        errs.append(("--reason", "FORMAT", "holds a control character"))
     if errs:
         return set_emit(args, invalid_args(args.lang, errs))
     try:
@@ -5471,7 +5527,8 @@ def check_creation(g, name, cr, lang, mode):
         entries = [parse_entry(r) for r in doc["entries"]]
     except ManifestError:
         return deny("UNKNOWN", unknowns=[{"code": "CLAIM_UNPARSEABLE", "text": name}])
-    v = plan_core(g, name, entries, False, False, lang, stored=True)  # the claim exists: a name the alias rule refuses still allows its branch
+    target = (doc["target"] or None) if claim_set(doc) else None  # a lane of a set is judged against the target set-plan proved it against
+    v = plan_core(g, name, entries, False, False, lang, target_arg=target, stored=True)  # the claim exists: a name the alias rule refuses still allows its branch
     if v["code"] == "BRANCH_EXISTS":
         return None
     return v if v["decision"] == "deny" and v.get("fingerprint") != doc["override"] else None
