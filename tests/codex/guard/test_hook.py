@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
-from conftest import G, payload, run
+from conftest import G, HIDE_SUBMODULES, SCRIPT, check_out_submodule, gitlink, hide_submodules, payload, run, submodule_commits
 
 
 def hook(repo, tool="Bash", command=None, host="claude", env=None, **tool_input):
@@ -72,6 +73,39 @@ def test_committed_evidence_is_read_from_the_top_under_diff_relative(repo, guard
         assert r.rc == 10 and [(c["branch"], [(e["kind"], e["files"]) for e in c["evidence"]]) for c in v["conflicts"]] == [("agent/x", [("committed", ["src/a.py"])])], (where, v)
         reason = denied(hook(where, command=create))
         assert reason and "agent/x" in reason and "src/a.py" in reason, (where, reason)
+
+
+# ---- a gitlink change is evidence, whatever hides the changes of submodules (TC-408, TC-409) ----------------------------------------------------
+@pytest.mark.parametrize("how", HIDE_SUBMODULES)
+def test_a_committed_gitlink_is_evidence_whatever_hides_submodules(repo, guard, how):
+    hide_submodules(repo, how, {"x": "libs/x"})
+    plan(guard, repo, "agent/late", "libs/x")
+    wt = repo.worktree("tmp-x", "agent/x")
+    gitlink(repo, "libs/x", repo.git("rev-parse", "main"), cwd=wt)  # agent/x commits a submodule pointer at libs/x
+    repo.git("worktree", "remove", "--force", str(wt))
+    r = guard(repo, "--json", "check", "--branch", "agent/late", "--paths", "libs/x")
+    v = json.loads(r.out)
+    assert r.rc == 10 and [(c["branch"], [(e["kind"], e["files"]) for e in c["evidence"]]) for c in v["conflicts"]] == [("agent/x", [("committed", ["libs/x"])])], v
+    reason = denied(hook(repo, command='git worktree add "%s" -b agent/late' % (repo.path.parent / "w").as_posix()))
+    assert reason and "agent/x" in reason and "libs/x" in reason, reason
+    assert guard(repo, "plan", "--branch", "agent/late", "--paths", "libs/x").rc == 10
+    calls = re.findall(r'\(\s*"(diff|log|status)",\s*("[^"]*")', SCRIPT.read_text(encoding="utf-8"))  # every diff, log and status call of the guard
+    assert calls and all(flag == '"--ignore-submodules=none"' for _, flag in calls), calls
+
+
+@pytest.mark.parametrize("how", HIDE_SUBMODULES)
+def test_a_moved_submodule_checkout_is_uncommitted_evidence_whatever_hides_submodules(repo, guard, tmp_path, how):
+    sub, (first, second) = submodule_commits(tmp_path / "sub")
+    hide_submodules(repo, how, {"y": "libs/y"})
+    gitlink(repo, "libs/y", second)
+    plan(guard, repo, "agent/late", "libs/y")
+    wt = repo.worktree("wt-sib", "agent/sib")
+    check_out_submodule(repo, sub, wt / "libs" / "y", first)  # the checkout is one commit behind the gitlink: an uncommitted change of libs/y
+    r = guard(repo, "--json", "check", "--branch", "agent/late", "--paths", "libs/y")
+    v = json.loads(r.out)
+    assert r.rc == 10 and [(c["branch"], [(e["kind"], e["files"]) for e in c["evidence"]]) for c in v["conflicts"]] == [("agent/sib", [("uncommitted", ["libs/y"])])], v
+    reason = denied(hook(repo, command='git worktree add "%s" -b agent/late' % (repo.path.parent / "w").as_posix()))
+    assert reason and "agent/sib" in reason and "libs/y" in reason and "uncommitted" in reason, reason
 
 
 def test_override_recorded_in_the_claim_survives_revalidation(repo, guard, monkeypatch):

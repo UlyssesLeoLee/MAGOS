@@ -150,6 +150,49 @@ def repo(tmp_path):
     return r
 
 
+# The three settings that make a plain git diff, log and status hide the changes of a submodule (hide_submodules).
+HIDE_SUBMODULES = ("diff.ignoreSubmodules", "submodule.<name>.ignore", ".gitmodules")
+
+
+def hide_submodules(repo, how, subs):
+    """Commit on main a .gitmodules that names the submodules `subs` {name: path}, then hide their changes from a plain git diff, log and status the
+    way `how` (one of HIDE_SUBMODULES) says: diff.ignoreSubmodules=all or submodule.<name>.ignore=all in the repository's config, or ignore = all in
+    that .gitmodules."""
+    text = "".join('[submodule "%s"]\n\tpath = %s\n\turl = ../%s\n%s' % (n, p, n, "\tignore = all\n" if how == ".gitmodules" else "") for n, p in subs.items())
+    repo.commit(".gitmodules", text, msg="submodules")
+    if how == "diff.ignoreSubmodules":
+        repo.git("config", "diff.ignoreSubmodules", "all")
+    elif how == "submodule.<name>.ignore":
+        for name in subs:
+            repo.git("config", "submodule.%s.ignore" % name, "all")
+
+
+def gitlink(repo, rel, sha, cwd=None):
+    """Commit in `cwd` (the main worktree by default) a gitlink (a submodule pointer, mode 160000) at `rel` naming `sha`, and leave the empty
+    directory that a checkout leaves for a submodule that is not initialised."""
+    base = Path(cwd or repo.path)
+    repo.git("update-index", "--add", "--cacheinfo", "160000,%s,%s" % (sha, rel), cwd=base)
+    repo.git("commit", "-q", "-m", "gitlink " + rel, cwd=base)
+    (base / rel).mkdir(parents=True, exist_ok=True)
+
+
+def submodule_commits(path):
+    """A repository at `path` with two commits -> (its Repo, [first, second]): the history that a gitlink names and a checkout of it moves in."""
+    r = Repo(path)
+    r.path.mkdir(parents=True)
+    r.git("init", "-q")
+    for i in (1, 2):
+        r.commit("s.txt", "%d\n" % i, msg="s%d" % i)
+    return r, [r.git("rev-parse", "HEAD~1"), r.git("rev-parse", "HEAD")]
+
+
+def check_out_submodule(repo, sub, path, sha):
+    """Clone `sub` into the empty directory `path` of a gitlink and check out `sha` there: the checkout of the submodule."""
+    path.rmdir()
+    repo.git("clone", "-q", str(sub.path), str(path))
+    repo.git("checkout", "-q", sha, cwd=path)
+
+
 def run(args, stdin=b"", cwd=None):
     """Run magos_guard.main in process with captured streams, again when the machine killed a git child of the guard (crashed); returns
     Result(rc, out, err)."""

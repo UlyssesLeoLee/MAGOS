@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import SH, G, ROOT, SCRIPT, Repo, payload, run
+from conftest import SH, G, ROOT, SCRIPT, Repo, crashed, payload, retried, run
 from test_hook import denied, hook
 from test_plan_store import claims_dir, verdict
 
@@ -1303,7 +1303,9 @@ def test_claims_with_set_keys_round_trip_and_old_claims_stay_readable(repo, guar
     assert guard(repo, "arm").rc == 0
     orphan.write_bytes(claim_text(base, "agent/orphan", ["web/"], [("set", "ghost"), ("lane", "api"), ("role", "integration")]).encode("utf-8"))
     repo.git("branch", "agent/orphan", "main")
-    refused = subprocess.run(["git", "branch", "agent/unclaimed", "main"], cwd=str(repo.path), capture_output=True, env=os.environ.copy())
+    refused = retried(lambda: subprocess.run(["git", "branch", "agent/unclaimed", "main"], cwd=str(repo.path), capture_output=True,
+                                             stdin=subprocess.DEVNULL, env=os.environ.copy()),
+                      lambda p: crashed(p.stderr.decode("utf-8", "replace"), p.returncode))  # the git child the machine killed is run again
     assert refused.returncode != 0 and "MAGOS" in refused.stderr.decode("utf-8", "replace")
     assert "agent/orphan" in repo.git("branch", "--list", "agent/orphan") and not repo.git("branch", "--list", "agent/unclaimed")
 

@@ -19,7 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import G, ROOT, SCRIPT, Repo, crashed, retried, run, time_budget
+from conftest import (G, HIDE_SUBMODULES, ROOT, SCRIPT, Repo, check_out_submodule, crashed, gitlink, hide_submodules, retried, run, submodule_commits,
+                      time_budget)
 
 COMMON_KEYS = {"decision", "code", "message", "exit_code"}
 OK_KEYS = COMMON_KEYS | {"set", "target", "base", "revision", "dry_run", "unchanged", "integration_branch", "order", "requirements", "lanes", "written", "warnings"}
@@ -381,6 +382,37 @@ def test_a_failed_write_leaves_no_partial_state(demo, guard, tmp_path, monkeypat
     assert r.rc == 11 and "could not be put back" in r.err and "ui.claim" in r.err.replace("\\", "/"), r
     assert not [x for x in audit_lines(demo) if x["op"] == "set-amend"]
     monkeypatch.setattr(G, "_replace", real)
+
+
+def test_an_undo_that_fails_is_named_in_json_and_doctor_names_the_claim(demo, guard, tmp_path, monkeypatch):
+    spec_file = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    plan_ok(guard, demo, spec_file)
+    amend = demo_spec(demo, tmp_path)
+    amend["lanes"][1]["paths"] = ["src/ui/", "ui-docs/"]
+    amend_file = write_spec(tmp_path, amend, "amend.json")
+    record = record_file(demo).read_bytes()
+    real, failed = G._replace, []
+
+    def fake(tmp, path, tries=40):
+        name = os.path.basename(path)
+        if name == "demo.json" or (failed and name == "ui.claim"):  # the record, then the restore of the claim of ui moved before it
+            failed.append(name)
+            raise OSError("injected failure")
+        return real(tmp, path, tries)
+    monkeypatch.setattr(G, "_replace", fake)
+    r = guard(demo, "--json", *sp_args(amend_file, "demo", "main", "--amend", "--expect-revision", "1"))
+    monkeypatch.setattr(G, "_replace", real)
+    out = json.loads(r.out)
+    assert failed == ["demo.json", "ui.claim"], failed
+    assert r.rc == 11 and out["code"] == "UNKNOWN" and [u["code"] for u in out["unknowns"]] == ["INTERNAL_ERROR"], r
+    assert "could not be put back" in out["unknowns"][0]["text"] and "ui.claim" in P(out["unknowns"][0]["text"]), out
+    assert record_file(demo).read_bytes() == record  # the record is the old one, the claim of ui the new one
+    d = guard(demo, "doctor")
+    assert d.rc == 1 and "  set demo lane ui: claim differs" in d.out.splitlines(), d.out
+    assert jshow(guard, demo)["view"]["lanes"][1]["claim"] == "mismatch"
+    v = plan_ok(guard, demo, spec_file, "--amend", "--expect-revision", "1")  # the remedy of CLAIM_DRIFT: the lanes unchanged rewrite the claim
+    assert v["unchanged"] is False and v["revision"] == 2, v
+    assert jshow(guard, demo)["view"]["lanes"][1]["claim"] == "ok" and "claim differs" not in guard(demo, "doctor").out
 
 
 def test_dry_run_writes_nothing_and_takes_no_lock(demo, guard, tmp_path, monkeypatch):
@@ -1199,10 +1231,13 @@ def test_the_transition_table_and_the_option_rules(demo, guard, tmp_path, monkey
     integrate(demo, LANES["api"])  # the conditions of ready and of integrated hold for the lane
     path = record_file(demo)
     stored = {"commits": 4, "subjects": ["s1", "s2"], "more": 2, "files": 7, "insertions": 8, "deletions": 9, "paths": ["x"], "paths_more": 3}  # a summary the lane already holds
+    main = demo.git("rev-parse", "main")
+    assert tip != main  # the ready_target the lane already holds is not the commit a ready would store
     for frm in G.LANE_STATES:
         for to in ("active", "ready", "integrated", "blocked"):
             def seed(rec, frm=frm):
-                lane_of(rec, "api").update(state=frm, head=tip if frm in ("ready", "integrated") else None, note="n", changes=stored if frm == "integrated" else None)
+                lane_of(rec, "api").update(state=frm, head=tip if frm in ("ready", "integrated") else None, note="n", changes=stored if frm == "integrated" else None,
+                                           ready_target=None if frm == "planned" else tip)
                 rec.update(revision=7, integration=None)
             seeded = edit_record(demo, seed)
             before = path.read_text(encoding="utf-8")
@@ -1214,7 +1249,8 @@ def test_the_transition_table_and_the_option_rules(demo, guard, tmp_path, monkey
                 assert after["revision"] == 8 and lane_of(after, "api")["state"] == to and lane_of(after, "api")["note"] == "n"  # no --note: the note stays
                 assert lane_of(after, "api")["updated"] != lane_of(seeded, "api")["updated"] and after["updated"] != seeded["updated"]
                 only_changed(before, path.read_text(encoding="utf-8"), ("revision", "updated", "by", "integration"), "api",
-                             ("state", "head", "changes", "updated", "ready_target"), (frm, to))
+                             ("state", "head", "changes", "updated") + (("ready_target",) if to == "ready" else ()), (frm, to))
+                assert lane_of(after, "api")["ready_target"] == (main if to == "ready" else lane_of(seeded, "api")["ready_target"]), (frm, to)  # only ready stores it
                 lane_changes = lane_of(after, "api")["changes"]  # the summary: kept by a repeated integrated, computed by ready to integrated, null for every other state
                 if to != "integrated":
                     assert lane_changes is None, (frm, to)
@@ -2386,6 +2422,52 @@ def test_amend_repairs_a_claim_of_the_record_without_its_set_line(demo, guard, t
     api.write_bytes(good[api].replace(b"set=demo\n", b"set=other\n"))  # a claim of another set on a branch of the record stays foreign
     rc, v = jplan(guard, demo, f, "--amend", "--expect-revision", "2", "--dry-run")
     assert rc == 14 and errors_of(v) == {("lanes[0].branch", "LANE_EXISTS")}
+    api.unlink()
+    rec_file = store_dir(demo) / "sets" / "demo.json"
+    saved = rec_file.read_bytes()
+    rec_file.unlink()  # while the record is away, a plain plan writes an ordinary claim of the lane's branch in another case
+    assert guard(demo, "plan", "--branch", "Agent/Demo/Api", "--paths", "notes/").rc == 0
+    rec_file.write_bytes(saved)
+    before = store_files(demo)
+    for extra in (("--dry-run",), ()):
+        rc, v = jplan(guard, demo, f, "--amend", "--expect-revision", "2", *extra)
+        assert rc == 12 and v["code"] == "INVALID_MANIFEST" and errors_of(v) == {("lanes[0].branch", "BRANCH_NAME")}, (extra, v)
+        assert "agent/demo/api collides with Agent/Demo/Api" in v["message"]
+        assert store_files(demo) == before  # a set-less claim in another spelling is not adopted: nothing is rewritten or deleted
+
+
+def test_plain_plan_never_writes_the_claim_of_a_branch_of_a_record(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    api, integration = (store_dir(demo) / "claims" / "agent" / "demo" / (x + ".claim") for x in ("api", "integration"))
+    good = api.read_bytes()
+    paths = ["src/api/", "tests/api/", "package-lock.json"]
+
+    def refused(branch, *args):
+        before = store_files(demo)
+        r = guard(demo, "plan", "--branch", branch, "--paths", *args)
+        assert r.rc == 14 and r.out.rstrip("\n") == ("MAGOS: branch '%s' is a lane of set 'demo'; its claim cannot be changed on its own. "
+                                                     "Use set-plan --amend, or set-release first." % branch), (branch, args, r)
+        assert store_files(demo) == before  # no claim, no audit line, an override record left unconsumed
+    api.unlink()  # the claim of a lane is missing
+    refused("agent/demo/api", "notes/")
+    refused("agent/demo/api", *paths)
+    demo.git("branch", "agent/demo/api", "main")  # a started lane whose claim is missing: the set's refusal, not BRANCH_EXISTS
+    refused("agent/demo/api", "notes/")
+    api.write_bytes(good.replace(b"set=demo\n", b""))  # a claim of the lane without its set= line
+    refused("agent/demo/api", "notes/")
+    refused("agent/demo/api", "notes/", "--amend")
+    before = store_files(demo)
+    assert guard(demo, "plan", "--branch", "agent/demo/api", "--paths", *paths).rc == 0 and store_files(demo) == before  # identical: a no-op
+    branch_at(demo, "other", {"src/api/a.py": "other\n"})  # a denial the user overrides: the re-plan would store the override
+    fp = json.loads(guard(demo, "--json", "check", "--branch", "agent/demo/api", "--paths", *paths).out)["fingerprint"]
+    ov = store_dir(demo) / "override" / (fp + ".json")
+    ov.parent.mkdir()
+    ov.write_text(json.dumps({"fp": fp, "reason": "test", "expires": "2099-01-01T00:00:00Z"}), encoding="utf-8")
+    refused("agent/demo/api", *paths)
+    integration.unlink()  # the integration claim is missing
+    refused("agent/demo/integration", "x/")
+    (store_dir(demo) / "sets" / "demo.json").write_text("{", encoding="utf-8")  # a record this guard cannot read still names its integration branch
+    refused("agent/demo/integration", "x/")
 
 
 def test_one_snapshot_serves_every_lane(tmp_path, guard, monkeypatch):
@@ -3289,8 +3371,9 @@ def test_integrated_stores_the_changes_summary(guard, tmp_path, monkeypatch):
     assert len(ancestry) == 2 and calls[ancestry[0]][-1] == main_tip and calls[ancestry[1]][-1] == repo.git("rev-parse", INTEGRATION)  # main first, the integration branch second
     assert [c for c in summary_calls(calls)] == [
         ("merge-base", main_tip, head), ("rev-list", "--count", "--no-merges", "%s..%s" % (main_tip, head)),
-        ("log", "--no-show-signature", "--encoding=UTF-8", "--format=%s", "--reverse", "--no-merges", "--skip=0", "--max-count=8", "%s..%s" % (main_tip, head)),
-        ("diff", "--numstat", "-z", "--find-renames", "--no-ext-diff", "--no-textconv", "%s...%s" % (main_tip, head), "--")]
+        ("log", "--ignore-submodules=none", "--no-show-signature", "--encoding=UTF-8", "--format=%s", "--reverse", "--no-merges", "--skip=0", "--max-count=8",
+         "%s..%s" % (main_tip, head)),
+        ("diff", "--ignore-submodules=none", "--numstat", "-z", "--find-renames", "--no-ext-diff", "--no-textconv", "%s...%s" % (main_tip, head), "--")]
     assert all(c[0] in G.LOCAL_GIT for c in calls) and calls.index(summary_calls(calls)[0]) > ancestry[1]
     audits = [x for x in audit_lines(repo) if x["op"] == "set-update"]
     assert audits[-1]["state"] == "integrated" and audits[-1]["changes"] == {"commits": 3, "files": 2, "insertions": 15, "deletions": 0}
@@ -3670,8 +3753,8 @@ def test_manifest_index_agrees_with_path_hit():
 # ---- TC-325 .. TC-333: the drift of the set's own work, equal entries, the creation example, the texts and the non-merge commits ----------------
 def drift_log(tip, *negatives):
     """The one Git command of the drift of the target (set-show, The target's own changes), as Git.run receives it."""
-    return ("log", "--no-show-signature", "-z", "--format=", "--name-only", "--no-renames", "--diff-merges=dense-combined", "--ignore-missing", tip, "--not",
-            *negatives)
+    return ("log", "--ignore-submodules=none", "--no-show-signature", "-z", "--format=", "--name-only", "--no-renames", "--diff-merges=dense-combined",
+            "--ignore-missing", tip, "--not", *negatives)
 
 
 def drift_calls(guard, repo, monkeypatch):
@@ -3905,8 +3988,10 @@ def test_changes_summary_counts_non_merge_commits(demo, guard, tmp_path, monkeyp
                             "paths_more": 0}, v["changes"]  # the net diff does not charge the lane with src/api/m.py
     rng = "%s..%s" % (main_tip, head)
     assert summary_calls(calls) == [("merge-base", main_tip, head), ("rev-list", "--count", "--no-merges", rng),
-                                    ("log", "--no-show-signature", "--encoding=UTF-8", "--format=%s", "--reverse", "--no-merges", "--skip=0", "--max-count=8", rng),
-                                    ("diff", "--numstat", "-z", "--find-renames", "--no-ext-diff", "--no-textconv", "%s...%s" % (main_tip, head), "--")]
+                                    ("log", "--ignore-submodules=none", "--no-show-signature", "--encoding=UTF-8", "--format=%s", "--reverse", "--no-merges",
+                                     "--skip=0", "--max-count=8", rng),
+                                    ("diff", "--ignore-submodules=none", "--numstat", "-z", "--find-renames", "--no-ext-diff", "--no-textconv",
+                                     "%s...%s" % (main_tip, head), "--")]
     assert audit_lines(demo)[-1]["changes"] == {"commits": 3, "files": 3, "insertions": 3, "deletions": 0}
     # further lanes of another repository, each cut from its base
     r = make_repo(tmp_path, "r330", files=("README.md", "src/ui/u.py"))
@@ -3950,7 +4035,7 @@ def test_changes_summary_counts_non_merge_commits(demo, guard, tmp_path, monkeyp
     calls.stop()
     assert (s["commits"], s["subjects"], s["more"]) == (9, ["o%d" % i for i in range(1, 9)], 1), s
     logs = [c for c in summary_calls(calls) if c[0] == "log"]
-    assert len(logs) == 1 and logs[0][5:8] == ("--no-merges", "--skip=1", "--max-count=8"), logs
+    assert len(logs) == 1 and logs[0][6:9] == ("--no-merges", "--skip=1", "--max-count=8"), logs
 
 
 def test_set_name_refusal_is_localized_and_framed_by_its_subcommand(demo, guard, tmp_path):
@@ -4385,6 +4470,48 @@ def test_the_default_worktree_keeps_the_root_above_the_main_worktree(monkeypatch
             assert G.lane_worktree(want) == (want, None) and G.inside_path(want, main) == ((main, want) in at_root), main
 
 
+def test_worktree_spelling_refuses_an_8dot3_short_name_and_a_stream():
+    if os.name != "nt":  # a POSIX name keeps ~ and : as written: the path names the directory it spells
+        for p in ("/x/REPOSI~1/wt-demo-api", "/x/repo::$INDEX_ALLOCATION/wt-demo-api", "/x/a:b/wt-demo-api"):
+            assert G.lane_worktree(p) == (p, None), p
+        return
+    for p in ("C:/x/REPOSI~1/wt-demo-api", "C:\\x\\LONG-D~1.TXT\\wt-demo-api", "/c/x/repo~2/wt-demo-api", "//server/share/A~1B/wt-demo-api", "C:/x/~1/wt-demo-api"):
+        stored, why = G.lane_worktree(p)
+        assert stored is None and "8.3 short name" in why, p
+    for p in ("C:/x/repo::$INDEX_ALLOCATION/wt-demo-api", "C:/x/repo:s/wt-demo-api", "/c/x/a:b/wt-demo-api", "//server/share/a:b/wt-demo-api", "//server/sh:are/wt-demo-api"):
+        stored, why = G.lane_worktree(p)
+        assert stored is None and "':' after the drive" in why, p
+    for p in ("C:/x/a~b/wt-demo-api", "C:/x/a~/wt-demo-api", "C:/x/wt-demo-api", "//server/share/wt-demo-api"):
+        assert G.lane_worktree(p) == (p, None), p  # a ~ before no digit, and the colon of the drive, stay valid
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the Win32 aliases of a worktree path")
+def test_set_plan_refuses_a_worktree_spelled_through_a_short_name_or_a_stream(guard, tmp_path):
+    repo = make_repo(tmp_path, "repository-main")  # on a volume with 8.3 names its short name is REPOSI~1, that of the api worktree below LONG-D~1
+    main, api, ads = P(repo.path), P(tmp_path / "wt" / "long-directory-demo-api"), "::$INDEX_ALLOCATION"
+    cases = (([lane(tmp_path, "api", ["src/api/"], worktree=P(tmp_path) + "/REPOSI~1/x-demo-api")], "lanes[0].worktree", "8.3 short name"),
+             ([lane(tmp_path, "api", ["src/api/"], worktree=api), lane(tmp_path, "ui", ["src/ui/"], worktree=P(tmp_path / "wt") + "/LONG-D~1/y-demo-ui")],
+              "lanes[1].worktree", "8.3 short name"),
+             ([lane(tmp_path, "api", ["src/api/"], worktree=main + ads + "/x-demo-api")], "lanes[0].worktree", "':' after the drive"),
+             ([lane(tmp_path, "api", ["src/api/"], worktree=api), lane(tmp_path, "ui", ["src/ui/"], worktree=api + ads + "/y-demo-ui")],
+              "lanes[1].worktree", "':' after the drive"))
+    for lanes, field, why in cases:  # Win32 can resolve each inside the main worktree or inside the worktree of api, which pkey keeps apart from it
+        rc, v = dry(guard, repo, tmp_path, custom_spec(repo, tmp_path, lanes))
+        assert rc == 24 and v["code"] == "INVALID_SPEC" and errors_of(v) == {(field, "WORKTREE")} and why in v["errors"][0]["text"], v
+    assert not store_dir(repo).exists()
+
+
+def test_the_default_worktree_of_a_main_worktree_at_the_root_of_a_unc_share(monkeypatch):
+    want = "//server/share/repo-demo-api" if os.name == "nt" else "//server/share-demo-api"  # on POSIX //server/share is a directory below /server
+    for main in ("//server/share", "//server/share/", "\\\\server\\share", "\\\\server\\share\\"):
+        monkeypatch.setattr(G, "worktrees", lambda g, main=main: [{"path": main}])
+        ctx = G._Spec(None, "en", "demo", "main")
+        assert ctx.default_worktree("api") == want, main
+        assert ctx.worktree_name_error("api", "/x/repo-api") == ("WORKTREE_FORM", G.T("en", "set_err_worktree_form", l="api", s="demo", got="repo-api", want=want)), main
+        if os.name == "nt":  # the share is the drive: the default lies on it, inside the main worktree, and is refused like C:/repo-demo-api
+            assert G.lane_worktree(want) == (want, None) and G.inside_path(want, main), main
+
+
 def test_lane_overlaps_finds_every_pair_a_brute_force_finds(monkeypatch):
     import random
     rnd = random.Random(104)
@@ -4470,7 +4597,43 @@ def test_refuse16_is_the_one_builder_of_exit_16():
     assert zh["blocked"] == [{"lane": "ui", "reason": "SHRINK", "files": ["a", "b"]}] and zh["message"] == "MAGOS：拒绝 set-plan --amend：t"
 
 
-# ---- TC-374, TC-375: the cost of an amend's shrink check and of the judgement of the lanes ------------------------------------------------------
+# ---- TC-418, TC-419: the files of an amend's exit 16 and the branch its text names --------------------------------------------------------------
+def test_amend_files_hold_at_most_20_and_200_files(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    wt = wt_dir(tmp_path, "api")
+    demo.git("worktree", "add", "-q", "--detach", str(wt), "main")  # the registered worktree of api on a detached HEAD
+    committed = ["src/api/c%03d.py" % i for i in range(205)]
+    for rel in committed:
+        demo.write(rel, "c\n", base=wt)
+    demo.git("add", "-A", cwd=wt)
+    demo.git("commit", "-q", "-m", "api", cwd=wt)
+    untracked = ["src/api/u%02d.py" % i for i in range(25)]
+    for rel in untracked:
+        demo.write(rel, "u\n", base=wt)
+    before = store_files(demo)
+    rc, v = jplan(guard, demo, write_spec(tmp_path, drop_lane(demo_spec(demo, tmp_path), "api"), "drop.json"), "--amend", "--expect-revision", "1")
+    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "UNMERGED_WORK", "files": committed[:20]},
+                                         {"lane": "api", "reason": "DIRTY_WORKTREE", "files": untracked[:20]}], v
+    s = demo_spec(demo, tmp_path)
+    s["lanes"][0]["paths"] = ["src/api/keep/", "tests/api/", "package-lock.json"]
+    rc, v = jplan(guard, demo, write_spec(tmp_path, s, "shrink.json"), "--amend", "--expect-revision", "1")
+    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "SHRINK", "files": committed[:200]}], v  # 230 files outside: the first 200
+    assert "lane api already changed files outside its new manifest: %s ..." % ", ".join(committed[:8]) in v["message"]
+    assert store_files(demo) == before
+
+
+def test_amend_unmerged_text_names_the_branch_as_the_record_spells_it(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    branch_at(demo, "agent/demo/API", {"src/api/n.py": "n\n"})  # the branch of api in another case, with a commit that is not in main
+    assert branches(demo) == ["agent/demo/API", "main"]
+    before = store_files(demo)
+    rc, v = jplan(guard, demo, write_spec(tmp_path, drop_lane(demo_spec(demo, tmp_path), "api"), "drop.json"), "--amend", "--expect-revision", "1")
+    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "UNMERGED_WORK", "files": []}], v
+    assert v["message"] == "MAGOS: set-plan --amend refused: the branch agent/demo/api of lane api has unmerged work"
+    assert store_files(demo) == before
+
+
+# ---- TC-374, TC-375, TC-429: the cost of an amend's shrink check and of the judgement of the lanes ----------------------------------------------
 def test_amend_shrink_check_runs_on_the_manifest_index(demo, guard, tmp_path, monkeypatch):
     plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
     files = {"src/api/n%03d.py" % i: "n\n" for i in range(40)}
@@ -4507,6 +4670,7 @@ def test_set_plan_parses_other_claims_once_and_compares_only_matched_files(tmp_p
     files = {"vendor/v%02d.js" % i: "v\n" for i in range(60)}
     files["d3/x.py"] = "x\n"
     branch_at(r, "feature/deps", files)
+    r.write("scratch/outside.txt", "u\n")  # an uncommitted file of the main worktree that no lane's manifest index matches
     assert guard(r, "plan", "--branch", "agent/x9", "--paths", "d9/x.py").rc == 0
     assert guard(r, "plan", "--branch", "agent/other", "--paths", "other/").rc == 0
     f = write_spec(tmp_path, custom_spec(r, tmp_path, [lane(tmp_path, "mod-%02d" % i, ["d%d/" % i]) for i in range(1, 13)]), "cost.json")
@@ -4529,13 +4693,28 @@ def test_set_plan_parses_other_claims_once_and_compares_only_matched_files(tmp_p
     assert v["lanes"][1]["conflicts"] == [{"key": G.lane_key("agent/x9"), "branch": "agent/x9", "worktrees": [], "planned": True,
                                            "evidence": [{"kind": "declared", "files": [], "matched": ["d9/"], "theirs": ["d9/x.py"]}]}]
     assert calls[0] == 1  # the other claims are parsed once for the twelve lanes
-    assert "d3/x.py" in compared and not any(p.startswith("vendor/") for p in compared), sorted(set(compared))  # no lane's index matches a vendor file
+    assert "d3/x.py" in compared and not any(p.startswith(("vendor/", "scratch/")) for p in compared), sorted(set(compared))  # no lane's index matches a vendor file or the uncommitted file
     bad = store_dir(r) / "claims" / "agent" / "badentry.claim"
     bad.write_text("state=active\nbranch=agent/badentry\nentry=/abs\n", encoding="utf-8")
     calls[0] = 0
     rc, v = jplan(guard, r, f, "--dry-run")
     assert rc == 10 and len(v["lanes"]) == 12 and all(x["unknowns"] == [{"code": "CLAIM_UNPARSEABLE", "text": "agent/badentry"}] for x in v["lanes"]), v
     assert calls[0] == 1
+
+
+def test_set_plan_narrowing_runs_on_the_budget_of_the_call(tmp_path, guard, monkeypatch):
+    r = make_repo(tmp_path, "budget")
+    branch_at(r, "feature/deps", {"vendor/v%02d.js" % i: "v\n" for i in range(60)})
+    assert guard(r, "plan", "--branch", "agent/other", "--paths", "other/x.py").rc == 0
+    f = write_spec(tmp_path, custom_spec(r, tmp_path, [lane(tmp_path, "mod", ["vendor/k%02d*.md" % j for j in range(10)])]), "budget.json")
+    before, real_index = store_files(r), G.ManifestIndex
+
+    def expired(raws, deadline=None):  # the index gets the call's deadline, here one that has passed
+        return real_index(raws, None if deadline is None else time.monotonic() - 1)
+    monkeypatch.setattr(G, "ManifestIndex", expired)
+    rc, v = jplan(guard, r, f)  # 60 files against ten glob entries: the index tests them one by one and reads the clock
+    assert rc == 11 and v["unknowns"][0]["code"] == "BUDGET_EXCEEDED" and "lane manifests" in v["unknowns"][0]["text"], v
+    assert store_files(r) == before
 
 
 # ---- TC-362 .. TC-365: a lone surrogate in a --set value or a serves id, a number beyond the float range --------------------------------------
@@ -4655,6 +4834,102 @@ def test_a_target_with_a_lone_surrogate_is_target_uncertain(demo, guard, tmp_pat
     assert store_files(demo) in (None, {})
 
 
+# ---- TC-412 to TC-415: a lone surrogate in a record, the names doctor prints, the worktree and the override of a lane claim ---------------------
+def test_a_record_with_a_lone_surrogate_is_unreadable_and_never_rewritten(demo, guard, tmp_path):
+    f = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    plan_ok(guard, demo, f)
+    path = record_file(demo)
+    text = path.read_bytes().decode("utf-8")
+    calls = {"show": ["--json", "set-show", "--set", "demo"], "show-text": ["set-show", "--set", "demo"], "show-drift": ["--json", "set-show", "--set", "demo", "--drift"],
+             "update": ["--json", *update_args("api", "active", 1)], "update-text": update_args("api", "active", 1),
+             "release": ["--json", "set-release", "--set", "demo"], "release-abandon": ["--json", "set-release", "--set", "demo", "--abandon"],
+             "amend": ["--json", *sp_args(f, "demo", "main", "--amend", "--expect-revision", "1")]}
+    bodies = (text.replace('"title": "', '"title": "De\\ud800', 1),  # a known field (the amend would write the spec's title over it)
+              text.replace('"v": 1,', '"v": 1,\n  "x": "a\\ud800",', 1), text.replace('"id": "api",', '"id": "api", "x": "\\udcff",', 1),  # an unknown key
+              text.replace('"v": 1,', '"v": 1,\n  "k\\ud800": 1,', 1), text.replace('"id": "api",', '"id": "api", "k\\udcff": [1],', 1),  # a key
+              text.replace('"v": 1,', '"v": 1,\n  "z": [{"q\\udcff": 0}],', 1))  # a key inside a list
+    for body in bodies:
+        assert body != text
+        path.write_bytes(body.encode("utf-8"))
+        for label, args in calls.items():
+            r = guard(demo, *args)
+            assert r.rc == 11 and r.err == "" and path.read_bytes() == body.encode("utf-8"), (label, body[:60], r)  # never an internal error, never rewritten
+            if args[0] == "--json":
+                v = json.loads(r.out)
+                assert v["code"] == "UNKNOWN" and [u["code"] for u in v["unknowns"]] == ["SET_UNREADABLE"], (label, v)
+                assert v["unknowns"][0]["text"].endswith("demo.json: holds a lone surrogate"), (label, v)
+            else:
+                assert "demo.json" in r.out, (label, r)
+        d = guard(demo, "doctor")
+        assert d.rc == 1 and "sets: 0, unreadable: 1, newer-format: 0" in d.out and "  unreadable set record sets/demo.json" in d.out.splitlines(), d.out
+    path.write_bytes(text.replace('"v": 1,', '"v": 9,\n  "k\\ud800": 1,', 1).encode("utf-8"))  # the format gate comes first
+    r = guard(demo, "--json", "set-show", "--set", "demo")
+    assert r.rc == 23 and json.loads(r.out)["code"] == "SET_NEWER_FORMAT", r
+    path.write_bytes(text.replace('"v": 1,', '"v": 1,\n  "x": "\\ud83d\\ude00",', 1).encode("utf-8"))  # the two halves of a pair are one character
+    upd_ok(guard, demo, "api", "active", rev=1)
+    assert record(demo)["x"] == "\U0001f600" and record(demo)["revision"] == 2
+
+
+def test_doctor_shows_the_names_of_unusable_record_files_as_values(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    sets = store_dir(demo) / "sets"
+    long_name = "n" * 95 + ".json"  # longer than the 80 characters of a value: a file name is never cut
+    cases = (("x\udcff.json", b"{}", "  unreadable set record sets/x\ufffd.json"),
+             ("y\udcff.json", b'{"v": 3}', "  set record sets/y\ufffd.json was written by a newer MAGOS (v=3): upgrade this guard (doctor shows its version, install refreshes the copy)"),
+             (long_name, b"{", "  unreadable set record sets/" + long_name))
+    for name, body, line in cases:
+        p = sets / name
+        try:
+            p.write_bytes(body)  # an undecodable byte of a POSIX file name, an unpaired UTF-16 half of a Windows one
+        except (OSError, UnicodeError):
+            pytest.skip("the file system refuses the name %r" % name)
+        for extra in ((), ("--json",)):
+            r = guard(demo, *extra, "doctor")
+            assert r.rc == 1 and r.err == "" and line in r.out.splitlines(), (name, extra, r)
+        p.unlink()
+    assert guard(demo, "doctor").rc == 0
+
+
+def test_a_lane_claim_with_another_worktree_or_an_override_is_a_mismatch(demo, guard, tmp_path):
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    claim = store_dir(demo) / "claims" / "agent" / "demo" / "api.claim"
+    good = claim.read_text(encoding="utf-8")
+    wt = "worktree=%s\n" % wt_path(tmp_path, "api")
+    assert wt in good and "override=\n" in good
+    edits = {"empty": good.replace(wt, "worktree=\n"),  # what a 1.0.3 override re-plan without --worktree leaves
+             "other": good.replace(wt, "worktree=%s\n" % P(tmp_path / "elsewhere")),
+             "override": good.replace("override=\n", "override=9f1cc717836a\n"),  # what it leaves with the registered --worktree
+             "spelled": good.replace(wt, "worktree=%s/./\n" % wt_path(tmp_path, "api"))}  # the same path in another spelling
+    for label, body in edits.items():
+        assert body != good, label
+        claim.write_text(body, encoding="utf-8")
+        want = "ok" if label == "spelled" else "mismatch"
+        lanes = jshow(guard, demo)["view"]["lanes"]
+        assert lanes[0]["claim"] == want and all(x["claim"] == "ok" for x in lanes[1:]), (label, lanes)
+        d = guard(demo, "doctor")
+        assert ("  set demo lane api: claim differs" in d.out.splitlines()) == (want == "mismatch") and (d.rc == 1 or want == "ok"), (label, d.out)
+    claim.write_text(good, encoding="utf-8")
+    assert jshow(guard, demo)["view"]["lanes"][0]["claim"] == "ok" and guard(demo, "doctor").rc == 0
+
+
+def test_amend_rewrites_a_lane_claim_with_another_worktree_or_an_override(demo, guard, tmp_path):
+    f = write_spec(tmp_path, demo_spec(demo, tmp_path))
+    plan_ok(guard, demo, f)
+    claim = store_dir(demo) / "claims" / "agent" / "demo" / "api.claim"
+    good = claim.read_bytes()
+    wt = ("worktree=%s\n" % wt_path(tmp_path, "api")).encode("utf-8")
+    edits = (good.replace(b"override=\n", b"override=9f1cc717836a\n"),  # the override alone
+             good.replace(wt, b"worktree=\n").replace(b"override=\n", b"override=9f1cc717836a\n"))  # and with the worktree erased
+    for rev, body in enumerate(edits, start=1):
+        assert body != good
+        claim.write_bytes(body)
+        rc, v = jplan(guard, demo, f, "--amend", "--expect-revision", str(rev), "--dry-run")
+        assert rc == 0 and v["unchanged"] is False and claim.read_bytes() == body, v  # writing the claim is a change; the dry run writes nothing
+        v = plan_ok(guard, demo, f, "--amend", "--expect-revision", str(rev))
+        assert v["revision"] == rev + 1 and P(claim) in v["written"] and claim.read_bytes() == good, v  # rewritten from the record, created kept
+        assert jshow(guard, demo)["view"]["lanes"][0]["claim"] == "ok"
+
+
 # ---- TC-382, TC-383: every path is read from the top of the work tree, whatever directory --repo names -----------------------------------------
 def test_drift_reads_the_paths_from_the_top_under_diff_relative(demo, guard, tmp_path):
     plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
@@ -4686,6 +4961,50 @@ def test_ready_and_integrated_read_the_paths_from_the_top_under_diff_relative(de
     demo.git("merge", "-q", "--ff-only", INTEGRATION)
     rc, v = update("integrated", "--head", tip, "--integration", INTEGRATION)
     assert rc == 0 and (v["changes"]["files"], v["changes"]["paths"]) == (2, ["src/api", "tests/api"]) and lane_of(record(demo), "api")["changes"] == v["changes"], v
+
+
+# ---- TC-410, TC-411: the set subcommands see gitlink changes, whatever hides the changes of submodules -----------------------------------------
+@pytest.mark.parametrize("how", HIDE_SUBMODULES)
+def test_drift_and_ready_read_gitlink_changes_whatever_hides_submodules(demo, guard, tmp_path, how):
+    hide_submodules(demo, how, {"x": "libs/x", "vendor": "src/ui/vendor"})
+    plan_ok(guard, demo, write_spec(tmp_path, demo_spec(demo, tmp_path)))
+    wt, _ = start_lane(demo, tmp_path, "api", {"src/api/b.py": "b\n"})
+    gitlink(demo, "libs/x", demo.git("rev-parse", "main"), cwd=wt)  # a submodule pointer outside the manifest of api
+    tip = demo.git("rev-parse", LANES["api"])
+    upd_ok(guard, demo, "api", "active")
+    v = upd_refused(guard, demo, "api", "ready", "--head", tip, rc_want=22)
+    assert v["code"] == "OUT_OF_LANE" and v["files"] == ["libs/x"], v
+    row = jshow(guard, demo, "--drift")["view"]["lanes"][0]
+    assert (row["changed"], row["out_of_lane"]) == (["libs/x", "src/api/b.py"], ["libs/x"]), row
+    gitlink(demo, "src/ui/vendor", demo.git("rev-parse", "main"))  # the target moves by a submodule pointer inside the manifest of ui
+    drift = jshow(guard, demo, "--drift")["view"]["drift"]
+    assert drift["target_overlap"] == [{"path": "src/ui/vendor", "lanes": ["ui"]}] and drift["stale"] is True, drift
+
+
+@pytest.mark.parametrize("how", HIDE_SUBMODULES)
+def test_the_summary_and_the_clean_worktree_see_gitlinks_whatever_hides_submodules(demo, guard, tmp_path, how):
+    sub, (first, second) = submodule_commits(tmp_path / "sub")
+    hide_submodules(demo, how, {"vendor": "src/api/vendor"})
+    gitlink(demo, "src/api/vendor", first)
+    plan_ok(guard, demo, write_spec(tmp_path, custom_spec(demo, tmp_path, [lane(tmp_path, "api", ["src/api/"])])))
+    wt, _ = start_lane(demo, tmp_path, "api", {"src/api/n.py": "n\n"})
+    gitlink(demo, "src/api/vendor", second, cwd=wt)  # the lane moves the submodule pointer
+    tip = demo.git("rev-parse", LANES["api"])
+    checkout = wt / "src" / "api" / "vendor"
+    check_out_submodule(demo, sub, checkout, first)  # the checkout is behind the lane's gitlink: an uncommitted change
+    upd_ok(guard, demo, "api", "active")
+    assert jshow(guard, demo)["view"]["lanes"][0]["worktree_clean"] is False
+    v = upd_refused(guard, demo, "api", "ready", "--head", tip, rc_want=16)
+    assert v["blocked"] == [{"lane": "api", "reason": "DIRTY_WORKTREE", "files": []}], v
+    demo.git("checkout", "-q", second, cwd=checkout)
+    upd_ok(guard, demo, "api", "ready", "--head", tip)
+    integrate(demo, LANES["api"])
+    demo.git("merge", "-q", "--ff-only", INTEGRATION)
+    ch = upd_ok(guard, demo, "api", "integrated", "--head", tip, "--integration", INTEGRATION)["changes"]
+    assert (ch["files"], ch["insertions"], ch["deletions"], ch["paths"]) == (2, 2, 1, ["src/api"]), ch  # n.py and the moved pointer
+    demo.git("checkout", "-q", first, cwd=checkout)
+    rc, v = jrelease(guard, demo, "--reason", "integrated")
+    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "DIRTY_WORKTREE", "files": []}], v
 
 
 # ---- TC-390, TC-391: set-release judges the integration branch as release judges its claim ---------------------------------------------
@@ -4745,12 +5064,65 @@ def test_set_release_refuses_a_dirty_worktree_on_the_integration_branch(demo, gu
     assert rc == 0 and v["released"] == [LANES["api"], INTEGRATION] and INTEGRATION in branches(demo), v
 
 
+# ---- TC-420, TC-421: the worktrees and the claims set-release cannot vouch for ------------------------------------------------------------------
+def test_set_release_counts_a_locked_missing_or_unreadable_worktree_on_the_integration_branch(demo, guard, tmp_path):
+    one_lane_integrated(guard, demo, tmp_path, land=True)
+    iwt = tmp_path / "wt" / "int-demo"
+    demo.git("worktree", "add", "-q", str(iwt), INTEGRATION)
+    demo.git("worktree", "lock", "--reason", "usb", str(iwt))
+    away = iwt.with_name(iwt.name + "-away")
+    os.rename(str(iwt), str(away))  # the drive is unmounted: git lists the entry as locked, never as prunable
+    entry = next(e for e in demo.git("worktree", "list", "--porcelain").split("\n\n") if e.startswith("worktree " + P(iwt)))
+    assert "locked usb" in entry.splitlines() and not any(x.startswith("prunable") for x in entry.splitlines()), entry
+    before = store_files(demo)
+    for extra in ([], ["--abandon"]):
+        rc, v = jrelease(guard, demo, *extra)
+        assert rc == 16 and v["blocked"] == [{"lane": "integration", "reason": "DIRTY_WORKTREE", "files": []}], (extra, v)
+        assert G.T("en", "set_why_wt_missing", l="integration", w=P(iwt)) in v["message"] and store_files(demo) == before, v
+    os.rename(str(away), str(iwt))
+    index = Path(demo.git("rev-parse", "--absolute-git-dir", cwd=iwt)) / "index"
+    good = index.read_bytes()
+    index.write_bytes(b"not an index")  # git status fails in that worktree: it cannot be known to be clean
+    assert sub(["git", "status", "--porcelain=v1", "--untracked-files=all"], check=False, cwd=str(iwt), capture_output=True).returncode != 0
+    rc, v = jrelease(guard, demo)
+    assert rc == 16 and v["blocked"] == [{"lane": "integration", "reason": "DIRTY_WORKTREE", "files": []}], v
+    assert "the worktree of lane integration has uncommitted changes" in v["message"] and store_files(demo) == before, v
+    index.write_bytes(good)
+    rc, v = jrelease(guard, demo, "--reason", "integrated")
+    assert rc == 0 and v["released"] == [LANES["api"], INTEGRATION], v
+
+
+def test_set_release_claim_test_is_the_unusable_rows_of_list(demo, guard, tmp_path):
+    one_lane_integrated(guard, demo, tmp_path, land=True)
+    claims = store_dir(demo) / "claims" / "agent" / "demo"
+    lane_claim, int_claim = claims / "api.claim", claims / "integration.claim"
+    lane_good = lane_claim.read_bytes()
+
+    def unusable():
+        return [r for r in json.loads(guard(demo, "--json", "list").out) if r["state"] in ("unreadable", "newer-format")]
+    lane_claim.write_bytes(lane_good.replace(b"v=1\n", b"v=2\n"))  # a lane claim of a newer format: listed with its branch and path, no set
+    assert unusable() == [{"branch": LANES["api"], "state": "newer-format", "v": 2, "path": "agent/demo/api.claim"}]
+    rc, v = jrelease(guard, demo, "--reason", "integrated")
+    assert rc == 16 and v["blocked"] == [{"lane": "api", "reason": "CLAIM_UNUSABLE", "files": []}], v
+    lane_claim.write_bytes(lane_good)
+    int_claim.write_bytes(b"state=active\nnot a claim\n")  # an integration claim nobody can read: listed by its path only
+    assert unusable() == [{"branch": None, "state": "unreadable", "path": "agent/demo/integration.claim"}]
+    rc, v = jrelease(guard, demo, "--reason", "integrated")
+    assert rc == 16 and v["blocked"] == [{"lane": "integration", "reason": "CLAIM_UNUSABLE", "files": []}], v
+    int_claim.unlink()  # a missing integration claim: no row at all, and set-release does not refuse it
+    rows = json.loads(guard(demo, "--json", "list").out)
+    assert unusable() == [] and not [r for r in rows if r.get("role") == "integration"], rows
+    rc, v = jrelease(guard, demo, "--reason", "integrated")
+    assert rc == 0 and v["released"] == [LANES["api"]] and not record_file(demo).exists(), v
+
+
 # ---- TC-350: the order of the spec errors ------------------------------------------------------------------------------------------------
 def test_spec_errors_come_in_the_documented_order(demo, guard, tmp_path):
-    # the keys of the top level, its fields in schema order without shared, each lane; then the depends_on ids, the cycles, shared entry by entry,
+    # the keys of the top level, its fields in schema order without shared, each lane; then the depends_on ids (each in array order, the first of
+    # unknown, repeated, self that applies), the cycles, shared entry by entry,
     # the unserved requirements, the nesting of lane worktrees and the position of the spec file
     home = P(tmp_path / "x-demo-api")
-    api = lane(tmp_path, "api", ["src/api/"], ["ghost", "api", "docs"], title="", worktree=home)
+    api = lane(tmp_path, "api", ["src/api/"], ["api", "ghost", "api", "docs"], title="", worktree=home)
     docs = lane(tmp_path, "docs", ["docs/"], ["api", "api"], worktree=home + "/y-demo-docs")
     spec = custom_spec(demo, tmp_path, [api, docs], requirements=[{"id": "R1", "text": "the task is done"}, {"id": "R2", "text": "nobody serves it"}],
                        notes=[""], shared=[{"path": "nope/x.py", "owner": "api"}, {"path": "a/*", "owner": "zzz"}])
@@ -4760,8 +5132,8 @@ def test_spec_errors_come_in_the_documented_order(demo, guard, tmp_path):
     f.write_bytes(json.dumps(spec).encode("utf-8"))
     rc, v = jplan(guard, demo, f, "--dry-run")
     assert rc == 24 and [(e["field"], e["code"]) for e in v["errors"]] == [
-        ("zz", "UNKNOWN_KEY"), ("notes[0]", "RANGE"), ("lanes[0].title", "RANGE"), ("lanes[0].depends_on[0]", "UNKNOWN_LANE"), ("lanes[0].depends_on[1]", "CYCLE"),
-        ("lanes[1].depends_on[1]", "DUPLICATE"), ("lanes[0].depends_on", "CYCLE"), ("shared[0].path", "NOT_IN_OWNER"), ("shared[1].path", "BAD_GLOB"),
+        ("zz", "UNKNOWN_KEY"), ("notes[0]", "RANGE"), ("lanes[0].title", "RANGE"), ("lanes[0].depends_on[0]", "CYCLE"), ("lanes[0].depends_on[1]", "UNKNOWN_LANE"),
+        ("lanes[0].depends_on[2]", "CYCLE"), ("lanes[1].depends_on[1]", "DUPLICATE"), ("lanes[0].depends_on", "CYCLE"), ("shared[0].path", "NOT_IN_OWNER"), ("shared[1].path", "BAD_GLOB"),
         ("shared[1].owner", "UNKNOWN_LANE"), ("requirements[1]", "UNSERVED"), ("lanes[1].worktree", "WORKTREE"), ("--spec", "SPEC_IN_WORKTREE")], v
     assert v["message"].splitlines()[1:] == ["  [%s] %s: %s" % (e["code"], e["field"], e["text"]) for e in v["errors"]]  # the text prints the same order
     # the 20 lines are the first 20 of that order: 24 lane errors and 2 shared errors print the first 20 lane errors and no shared one

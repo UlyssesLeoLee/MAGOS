@@ -1304,7 +1304,7 @@ first failing step ends the call, and a failure at any step writes nothing:
     `ready_target`, `changes` and notes carried over for the ids that survive, `planned`, a null `head`, a null
     `ready_target` and a null `changes` for new
     ones, `integration` kept, `created` kept) and the claims (a lane
-    claim is rewritten when it is missing, or its entries, worktree, target, base or set keys (`set=`, `lane=`) differ; its `created` is kept; the
+    claim is rewritten when it is missing, or its entries, worktree, target, base, override fingerprint or set keys (`set=`, `lane=`) differ; its `created` is kept; the
     claims of survivors get the new `base` when the amend moves it; claims of removed lanes are deleted; the
     integration claim is written when it is missing or does not have the shape `set-plan` writes, its `created` kept).
     When an amend changes nothing (every record field except `revision`, `updated` and `by`, and every claim, equals

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import G, SCRIPT, Repo, run
+from conftest import G, SCRIPT, Repo, payload, run
 
 
 def claims_dir(repo):
@@ -635,6 +635,23 @@ def test_replace_files_undo_retries_a_busy_removal(tmp_path, monkeypatch):
     assert not new.exists() and calls[os.path.normcase(str(new))] == 3 and old.read_bytes() == b"old\n" and not list(tmp_path.rglob("*.tmp"))
 
 
+def test_store_removal_fails_at_once_on_another_error(tmp_path, monkeypatch):
+    rec, claim = a_record_and_a_claim(tmp_path)
+    key, calls, real = os.path.normcase(str(claim)), [], os.remove
+
+    def gone(path, *a, **kw):  # only PermissionError means a busy file: any other error of the removal is final
+        if os.path.normcase(str(path)) == key:
+            calls.append(path)
+            raise FileNotFoundError(2, "injected: gone", str(path))
+        return real(path, *a, **kw)
+    monkeypatch.setattr(G.os, "remove", gone)
+    monkeypatch.setattr(G.time, "sleep", lambda s: None)
+    with pytest.raises(FileNotFoundError) as err:
+        G.commit_store([(str(rec), b"new record\n", b"old record\n")], [(str(claim), b"old claim\n")])
+    assert not isinstance(err.value, G.NotRestored) and len(calls) == 1
+    assert rec.read_bytes() == b"old record\n" and claim.read_bytes() == b"old claim\n" and not list(tmp_path.rglob("*.tmp"))
+
+
 def test_main_error_paths(repo, monkeypatch, capsys):
     monkeypatch.setattr(G, "cmd_list", lambda a: (_ for _ in ()).throw(G.GitFail("GIT_FAILED", "boom")))
     r = run(["--repo", str(repo.path), "list"])
@@ -715,6 +732,22 @@ def test_a_re_plan_without_worktree_keeps_the_registered_path(repo, guard):
     rc, v = verdict(guard, repo, "plan", "--branch", "L", "--paths", "docs/", "web/")
     lines = (claims_dir(repo) / "L.claim").read_text(encoding="utf-8").split("\n")
     assert rc == 0 and v["code"] == "OVERRIDDEN" and want in lines and "override=" + fp in lines
+
+
+def test_the_plan_example_names_the_registered_worktree(repo, guard):
+    one = str(repo.path.parent / "one").replace("\\", "/")  # typed as the claim stores it, so only the path of the example is at stake
+    example = 'git worktree add "%s" -b L main' % os.path.abspath(one).replace("\\", "/")
+    first = guard(repo, "plan", "--branch", "L", "--paths", "docs/", "--worktree", one)
+    assert first.rc == 0 and first.out.splitlines()[0].endswith("e.g.: " + example), first
+    for paths in (["docs/", "web/", "--amend"], ["docs/", "web/"]):  # an amend without --worktree, then the identical re-plan (a no-op)
+        r = guard(repo, "plan", "--branch", "L", "--paths", *paths)
+        assert r.rc == 0 and r.out.splitlines()[0].endswith("e.g.: " + example) and "<path>" not in r.out, (paths, r)
+    rc, v = verdict(guard, repo, "plan", "--branch", "L", "--paths", "docs/", "web/")
+    assert rc == 0 and "worktree" not in v  # the path is no key of the verdict
+    allowed = run(["hook", "claude", "pre-tool"], stdin=json.dumps(payload("Bash", example, repo.path)).encode())
+    assert allowed.out.strip() == "{}", allowed  # the printed command is the creation the hook lets through
+    bare = guard(repo, "plan", "--branch", "M", "--paths", "src/")
+    assert bare.rc == 0 and bare.out.splitlines()[0].endswith('e.g.: git worktree add "<path>" -b M main')  # a claim that registers no worktree
 
 
 def test_remote_tracking_cap_warns_instead_of_denying(repo, guard, monkeypatch):
