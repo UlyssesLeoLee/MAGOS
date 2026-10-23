@@ -1,0 +1,16 @@
+# Defense in depth only. Gemini CLI extension policies are loaded automatically.
+# NOTE: This does not replace MAGOS's Python lane guard and cannot detect every
+# way to invoke Git through a shell or third-party tools.
+# 'ask_user' deliberately does not authorize these commands automatically.
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = 'git\s+(?:push|reset\s+--hard|branch\s+(?:-D|--delete\s+--force)|worktree\s+remove|clean\s+-[a-zA-Z]*f|update-ref|rebase|cherry-pick|merge)\b'
+decision = "ask_user"
+priority = 100
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = 'git\s+(?:switch\s+-C|checkout\s+-B|remote\s+prune)\b'
+decision = "ask_user"
+priority = 100

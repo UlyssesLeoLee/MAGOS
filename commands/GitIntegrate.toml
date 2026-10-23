@@ -1,0 +1,20 @@
+description = "审核安全门禁后显式集成一个 Agent Lane 或分支（写操作）"
+prompt = '''
+MAGOS /GitIntegrate — Gemini CLI adapter for the existing MAGOS repository.
+
+Raw command arguments (preserve spelling and whitespace semantics): {{args}}
+
+USAGE: /GitIntegrate <lane-or-branch> [--strategy auto|merge|squash|cherry-pick] [--lang <language>] [--help]
+Examples: /GitIntegrate agent/auth; /GitIntegrate agent/auth --strategy squash
+
+MANDATORY EXECUTION ORDER:
+1. Parse these arguments FIRST, without tools. If --help is present, reply with usage, options, defaults and examples in the chosen language, then STOP: do not load skills, read files, inspect Git, or invoke any tool. Unknown flags or invalid/missing required arguments: show usage and stop. `--lang <language>` affects reply language only; default Simplified Chinese.
+2. Otherwise activate the existing Gemini Agent Skill named `git-orchestrator` using `activate_skill`; it is provided in this MAGOS extension at `skills/git-orchestrator/SKILL.md`. It links to package-root `SKILL.md` and `references/commands.md`; read and follow those canonical contracts. If skill activation or its contract cannot be read, STOP ALL WRITES and explain; for a read-only command, use only observed non-mutating status information. Do NOT treat Claude Code-only `Skill` tool names or `$ARGUMENTS` from `commands/GitIntegrate.md` as executable commands in Gemini.
+3. Execute the source-defined Git command GitIntegrate with exactly the arguments above, under Gemini CLI tool approvals, checking the real target repository and safety preconditions. Neither this TOML nor an automatic tool invocation is permission to bypass MAGOS gates.
+4. Return contract-defined tables, evidence, blockers, risks, and safe next actions. Recheck the requested reply language before answering. Never claim operations ran when they were not performed.
+
+SOURCE-SPECIFIC CONSTRAINTS:
+EXPLICIT USER-INVOCATION WRITE COMMAND: do not run due to a model inference or passive context. A target is mandatory. This command has NO preview: invocation expresses integration intent. Before any write, pass all review, dependency, freshness, branch-protection and repository-policy gates. If the skill cannot load or any gate fails, refuse to integrate. Never force-push or rewrite shared history.
+
+Safety classification: Explicit command only; observe PREVIEW defaults and all write gates.
+'''
