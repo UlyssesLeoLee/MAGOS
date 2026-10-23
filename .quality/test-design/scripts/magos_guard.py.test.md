@@ -39,7 +39,7 @@ workflow `.github/workflows/test.yml` runs the guard suite, the contract unittes
 `--check` and the version agreement check on windows-latest and ubuntu-latest with Python 3.9 and 3.14, and a
 coverage job on windows-latest with Python 3.14 that installs coverage from `.github/requirements/coverage.txt`, runs
 the `coverage_commands` of `.quality/qguard.json` and fails when a changed source file has 90 percent line coverage or
-less (TC-180). The workflow `.github/workflows/security.yml` runs on pushes and pull requests to main, develop_claude
+less (TC-180). The workflow `.github/workflows/security.yml` runs on pushes and pull requests to main, develop
 and develop_codex, on v* tags, and weekly: the replay of the 1.0.2 audit findings (TC-187, TC-188), the hardening and
 review suites and the supply-chain contracts (TC-189 to TC-199) on windows-latest and ubuntu-latest with Python 3.14,
 and zizmor with `--no-ignores --no-config --collect=all --strict-collection --persona pedantic` and its online audits

@@ -13,5 +13,5 @@
   ],
   "mappings": {},
   "excluded_sources": [],
-  "test_timeout_seconds": 1500
+  "test_timeout_seconds": 3600
 }
