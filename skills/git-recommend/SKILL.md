@@ -2,6 +2,8 @@
 name: git-recommend
 description: "给出 Git 建议（只读）；/git-recommend [goal] [--remote] [--help]."
 license: Apache-2.0
+disable-model-invocation: true
+user-invocable: false
 metadata:
   short-description: "Git 建议；$git-recommend [goal] [--remote] [--help]."
 ---

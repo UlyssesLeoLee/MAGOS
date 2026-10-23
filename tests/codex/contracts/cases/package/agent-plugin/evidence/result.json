@@ -36,7 +36,7 @@
       "missing": []
     },
     {
-      "file": "plugin: only the write adapters (git-integrate, git-cleanup, git-converge, git-sweep, git-plan) set disable-model-invocation: true (Claude Code host key)",
+      "file": "plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true (Claude Code shows only the commands/ set); the entry skill and the root SKILL.md set neither",
       "passed": true,
       "missing": []
     },

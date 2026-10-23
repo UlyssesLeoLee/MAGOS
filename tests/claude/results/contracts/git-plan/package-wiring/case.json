@@ -129,7 +129,9 @@
         "`/magos:git-recon` … `/magos:git-plan`",
         "共 8 个",
         "八个 `agents/openai.yaml`",
-        "Claude Code 里，五个会写仓库的适配层（`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`、`git-plan`）设置了 `disable-model-invocation: true`",
+        "Claude Code 里每个命令只有一套：`commands/` 里的 `/magos:GitRecon` … `/magos:GitPlan`",
+        "头信息设置了 `user-invocable: false` 与 `disable-model-invocation: true`",
+        "**同一个命令出现两套时**",
         "每个版本的发布提交带有标签 `v<版本号>`（例如 `v{plugin.yaml version}`）",
         "| 安装方式 | 固定到 `v{plugin.yaml version}` |"
       ]

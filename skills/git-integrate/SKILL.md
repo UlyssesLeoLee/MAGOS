@@ -3,6 +3,7 @@ name: git-integrate
 description: "集成目标（仅限用户显式调用，写操作）；/git-integrate TARGET [--strategy] [--help]."
 license: Apache-2.0
 disable-model-invocation: true
+user-invocable: false
 metadata:
   short-description: "集成目标；$git-integrate TARGET [--strategy] [--help]."
 ---

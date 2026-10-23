@@ -3,6 +3,7 @@ name: git-converge
 description: "收敛分支（仅显式调用，写操作）；/git-converge BRANCH [--apply] [--discard-ignored] [--help]."
 license: Apache-2.0
 disable-model-invocation: true
+user-invocable: false
 metadata:
   short-description: "收敛分支；$git-converge BRANCH [--apply] [--discard-ignored] [--help]."
 ---

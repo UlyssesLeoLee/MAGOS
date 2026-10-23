@@ -198,7 +198,7 @@ PACKAGE_VERSION = re.search(r"^version: (\S+)$", (REPO / "plugin.yaml").read_tex
 MANIFEST = "plugin.json is a valid"
 VERSION = "manifest version matches"
 SHIPPED_VERSION = "GUARD_VERSION equal the manifest version"
-INVOCATION = "set disable-model-invocation: true"
+INVOCATION = "the eight command adapters set user-invocable: false"
 DISCOVERY = "skills/ discovery"
 SKILLS = "every discovered skill meets"
 ROOT = "root SKILL.md"
@@ -334,10 +334,14 @@ MUTATIONS = [
     ("a write adapter lets the model invoke it", edit(SWEEP, "disable-model-invocation: true\n", ""), [INVOCATION]),
     ("a write adapter quotes the boolean", edit(SWEEP, "disable-model-invocation: true", 'disable-model-invocation: "true"'),
      [SKILLS, INVOCATION, CLONE]),
-    ("a read-only adapter disables model invocation",
-     edit(RECON, "license: Apache-2.0", "license: Apache-2.0\ndisable-model-invocation: true"), [INVOCATION]),
+    ("a read-only adapter lets the model invoke it", edit(RECON, "disable-model-invocation: true\n", ""), [INVOCATION]),
+    ("an adapter stays in the / menu", edit(RECON, "user-invocable: false\n", ""), [INVOCATION]),
+    ("an adapter is made user-invocable", edit(RECON, "user-invocable: false", "user-invocable: true"), [SKILLS, INVOCATION, CLONE]),
+    ("an adapter quotes user-invocable", edit(RECON, "user-invocable: false", 'user-invocable: "false"'), [SKILLS, INVOCATION, CLONE]),
     ("the entry skill disables model invocation",
      edit(ENTRY, "license: Apache-2.0", "license: Apache-2.0\ndisable-model-invocation: true"), [INVOCATION]),
+    ("the entry skill is hidden from the / menu",
+     edit(ENTRY, "license: Apache-2.0", "license: Apache-2.0\nuser-invocable: false"), [INVOCATION]),
     ("adapter flow-style list", edit(RECON, SHORT, SHORT + "\n  tags: [git, worktree]"), [SKILLS, CLONE]),
     ("adapter nested metadata.hermes", edit(RECON, SHORT, SHORT + '\n  hermes:\n    tags: "git"'), [SKILLS, CLONE]),
     ("adapter metadata.hermes as a string", edit(RECON, SHORT, SHORT + '\n  hermes: "git, worktree"'), [SKILLS]),

@@ -3,6 +3,7 @@ name: git-plan
 description: "规划并收敛多车道任务（仅显式调用，写操作）；/git-plan SET --into BRANCH [--help]."
 license: Apache-2.0
 disable-model-invocation: true
+user-invocable: false
 metadata:
   short-description: "规划并收敛车道；$git-plan SET --into BRANCH [--apply] [--help]."
 ---

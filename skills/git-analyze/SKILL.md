@@ -2,6 +2,8 @@
 name: git-analyze
 description: "分析目标（只读）；/git-analyze TARGET [--remote] [--help]."
 license: Apache-2.0
+disable-model-invocation: true
+user-invocable: false
 metadata:
   short-description: "分析目标；$git-analyze TARGET [--remote] [--help]."
 ---

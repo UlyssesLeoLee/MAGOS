@@ -14,6 +14,8 @@
 #   (v_ADAPTER_REFERENCE:Variable {name: "ADAPTER_REFERENCE", type: "variable"}),
 #   (v_WRITE_ADAPTERS:Variable {name: "WRITE_ADAPTERS", type: "variable"}),
 #   (v_MODEL_INVOCATION_KEY:Variable {name: "MODEL_INVOCATION_KEY", type: "variable"}),
+#   (v_USER_INVOCABLE_KEY:Variable {name: "USER_INVOCABLE_KEY", type: "variable"}),
+#   (v_ENTRY_SKILL:Variable {name: "ENTRY_SKILL", type: "variable"}),
 #   (f_validate:Function {name: "validate", type: "function", signature: "validate(instance, schema: dict, where: str='$') -> list[str]"}),
 #   (f_reject_constant:Function {name: "reject_constant", type: "function", signature: "reject_constant(token: str)"}),
 #   (f_load_json:Function {name: "load_json", type: "function", signature: "load_json(path: Path)"}),
@@ -56,6 +58,8 @@
 #   (file)-[:CONTAINS]->(v_ADAPTER_REFERENCE),
 #   (file)-[:CONTAINS]->(v_WRITE_ADAPTERS),
 #   (file)-[:CONTAINS]->(v_MODEL_INVOCATION_KEY),
+#   (file)-[:CONTAINS]->(v_USER_INVOCABLE_KEY),
+#   (file)-[:CONTAINS]->(v_ENTRY_SKILL),
 #   (file)-[:CONTAINS]->(f_validate),
 #   (file)-[:CONTAINS]->(f_reject_constant),
 #   (file)-[:CONTAINS]->(f_load_json),
@@ -108,8 +112,9 @@
 #   (f_check_version)-[:USES]->(v_ROOT_SKILL_NAME),
 #   (f_check_shipped_versions)-[:CALLS]->(f_load_json),
 #   (f_check_model_invocation)-[:CALLS]->(f_adapter_skill_files),
-#   (f_check_model_invocation)-[:USES]->(v_WRITE_ADAPTERS),
+#   (f_check_model_invocation)-[:USES]->(v_ENTRY_SKILL),
 #   (f_check_model_invocation)-[:USES]->(v_MODEL_INVOCATION_KEY),
+#   (f_check_model_invocation)-[:USES]->(v_USER_INVOCABLE_KEY),
 #   (f_discovered_skills)-[:CALLS]->(f_adapter_skill_files),
 #   (f_discovered_skills)-[:USES]->(v_EXPECTED_PLUGIN_SKILLS),
 #   (f_skill_problems)-[:USES]->(v_ALLOWED_FIELDS),
@@ -176,11 +181,15 @@ TYPES = {"object": dict, "string": str, "array": list}
 EXPECTED_PLUGIN_SKILLS = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-orchestrator",
                          "git-plan", "git-recommend", "git-recon", "git-sweep"]
 ROOT_SKILL_NAME = "multi-agent-git-orchestrator"
-# The Agent Skills fields, plus one documented Claude Code host key: `disable-model-invocation: true` keeps the model
-# from invoking a skill through the Skill tool (only the user's slash command runs it). Hermes passes unknown keys
-# through; Codex reads only the fields it knows.
+# The Agent Skills fields, plus two documented Claude Code host keys: `disable-model-invocation: true` keeps the model
+# from invoking a skill through the Skill tool, `user-invocable: false` keeps a skill out of the `/` menu. The eight command
+# adapters set both, because Claude Code gets its commands from commands/ and would otherwise list every command twice
+# (/magos:GitRecon and /magos:git-recon). Hermes reads the frontmatter as a mapping and ignores them; Codex reads only the
+# fields it knows.
 MODEL_INVOCATION_KEY = "disable-model-invocation"
-ALLOWED_FIELDS = {"name", "description", "license", "allowed-tools", "metadata", "compatibility", MODEL_INVOCATION_KEY}
+USER_INVOCABLE_KEY = "user-invocable"
+ENTRY_SKILL = "git-orchestrator"  # the one skill of skills/ that Claude Code shows: the orchestrator entry
+ALLOWED_FIELDS = {"name", "description", "license", "allowed-tools", "metadata", "compatibility", MODEL_INVOCATION_KEY, USER_INVOCABLE_KEY}
 WRITE_ADAPTERS = ("git-cleanup", "git-converge", "git-integrate", "git-plan", "git-sweep")  # the adapters that write; only the user runs them
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 QUOTED_FIELDS = ("description", "compatibility")
@@ -435,23 +444,28 @@ def check_shipped_versions(root: Path) -> list[str]:
 
 
 def check_model_invocation(root: Path) -> list[str]:
-    """Claude Code offers every skills/ adapter to the model unless its frontmatter sets disable-model-invocation: true.
+    """Claude Code lists every skills/ skill in its `/` menu and offers it to the model unless its frontmatter hides it.
 
-    The write adapters set it (they act only on the user's explicit invocation); the read-only adapters, the entry skill
-    and the root SKILL.md do not, so the model can still load them.
+    Claude Code gets its eight commands from commands/, so the eight command adapters (made for Codex and Hermes) set
+    `user-invocable: false` and `disable-model-invocation: true`; the entry skill and the root SKILL.md set neither.
     """
     problems = []
-    pages = [(f"skills/{path.parent.name}/SKILL.md", path, path.parent.name in WRITE_ADAPTERS) for path in adapter_skill_files(root)]
-    for label, path, writes in pages + [("SKILL.md", root / "SKILL.md", False)]:
+    pages = [(f"skills/{path.parent.name}/SKILL.md", path, path.parent.name != ENTRY_SKILL) for path in adapter_skill_files(root)]
+    for label, path, adapter in pages + [("SKILL.md", root / "SKILL.md", False)]:
         try:
             fields, _ = skill_frontmatter.parse(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, skill_frontmatter.FrontmatterError) as error:
             problems.append(f"{label}: {error}")
             continue
-        if writes and fields.get(MODEL_INVOCATION_KEY) is not True:
-            problems.append(f"{label} must set {MODEL_INVOCATION_KEY}: true (a write adapter runs only on the user's invocation)")
-        elif not writes and MODEL_INVOCATION_KEY in fields:
-            problems.append(f"{label} must not set {MODEL_INVOCATION_KEY} (only the write adapters do)")
+        if adapter:
+            if fields.get(MODEL_INVOCATION_KEY) is not True:
+                problems.append(f"{label} must set {MODEL_INVOCATION_KEY}: true (Claude Code must not offer an adapter to the model)")
+            if fields.get(USER_INVOCABLE_KEY) is not False:
+                problems.append(f"{label} must set {USER_INVOCABLE_KEY}: false (Claude Code must not list an adapter in its / menu)")
+        else:
+            for key in (MODEL_INVOCATION_KEY, USER_INVOCABLE_KEY):
+                if key in fields:
+                    problems.append(f"{label} must not set {key} (only the eight command adapters do)")
     return problems
 
 
@@ -530,8 +544,8 @@ def check(root: Path) -> list[dict]:
          "string-only metadata)", lambda: [problem for path in found for problem in skill_problems(path, path.parent.name)]),
         ("plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules",
          lambda: skill_problems(root / "SKILL.md", ROOT_SKILL_NAME)),
-        ("plugin: only the write adapters (git-integrate, git-cleanup, git-converge, git-sweep, git-plan) set "
-         "disable-model-invocation: true (Claude Code host key)", lambda: check_model_invocation(root)),
+        ("plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true (Claude Code shows "
+         "only the commands/ set); the entry skill and the root SKILL.md set neither", lambda: check_model_invocation(root)),
         ("plugin: package paths stay inside the plugin root and include no links (§4.1)", lambda: check_containment(root)),
         ("plugin: mcp.json is absent or valid (§7.2)", lambda: check_mcp(root)),
     ]

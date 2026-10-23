@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tokenize
@@ -280,24 +281,65 @@ def contract_module(name):
     return __import__(name)
 
 
-def test_write_adapters_disable_model_invocation():
+def test_the_command_adapters_are_hidden_from_claude_code():
+    """Claude Code gets its eight commands from commands/: each skills/ adapter (for Codex and Hermes) is out of its / menu and not offered to the model."""
     frontmatter, plugin = contract_module("skill_frontmatter"), contract_module("agent_plugin")
     writes = {"git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan"}
-    assert set(plugin.WRITE_ADAPTERS) == writes
-    assert plugin.ALLOWED_FIELDS - {"name", "description", "license", "allowed-tools", "metadata", "compatibility"} == {"disable-model-invocation"}
+    adapters = writes | {"git-recon", "git-analyze", "git-recommend"}
+    assert set(plugin.WRITE_ADAPTERS) == writes and plugin.ENTRY_SKILL == "git-orchestrator"
+    assert plugin.ALLOWED_FIELDS - {"name", "description", "license", "allowed-tools", "metadata", "compatibility"} == {"disable-model-invocation", "user-invocable"}
     seen = set()
     for skill in sorted(p for p in (ROOT / "skills").iterdir() if p.is_dir()):
         fields, _ = frontmatter.parse((skill / "SKILL.md").read_text(encoding="utf-8"))
         seen.add(skill.name)
-        if skill.name in writes:
-            assert fields.get("disable-model-invocation") is True, skill.name
+        if skill.name in adapters:
+            assert fields.get("disable-model-invocation") is True and fields.get("user-invocable") is False, skill.name
         else:
-            assert "disable-model-invocation" not in fields, skill.name
-    assert writes | {"git-recon", "git-analyze", "git-recommend", "git-orchestrator"} == seen
-    assert "disable-model-invocation" not in frontmatter.parse((ROOT / "SKILL.md").read_text(encoding="utf-8"))[0]
+            assert "disable-model-invocation" not in fields and "user-invocable" not in fields, skill.name
+    assert adapters | {"git-orchestrator"} == seen
+    root_fields = frontmatter.parse((ROOT / "SKILL.md").read_text(encoding="utf-8"))[0]
+    assert "disable-model-invocation" not in root_fields and "user-invocable" not in root_fields
     assert plugin.check_model_invocation(ROOT) == []
-    for command in ("GitIntegrate", "GitCleanup", "GitConverge", "GitSweep", "GitPlan"):  # the Claude commands of the same name say the same
+    commands = sorted((ROOT / "commands").glob("*.md"))
+    assert len(commands) == 8
+    for command in commands:  # the commands are THE set of Claude Code: none is hidden
+        assert "\nuser-invocable:" not in command.read_text(encoding="utf-8"), command.name
+    for command in ("GitIntegrate", "GitCleanup", "GitConverge", "GitSweep", "GitPlan"):  # the Claude commands of the write adapters say the same
         assert "\ndisable-model-invocation: true\n" in (ROOT / "commands" / (command + ".md")).read_text(encoding="utf-8")
+
+
+def test_a_visible_adapter_or_a_hidden_entry_skill_is_reported(tmp_path):
+    plugin = contract_module("agent_plugin")
+    shutil.copytree(ROOT / "skills", tmp_path / "skills", ignore=shutil.ignore_patterns("agents"))
+    shutil.copy(ROOT / "SKILL.md", tmp_path / "SKILL.md")
+    assert plugin.check_model_invocation(tmp_path) == []
+
+    def rewrite(rel, old, new):
+        p = tmp_path / rel
+        text = p.read_text(encoding="utf-8")
+        assert old in text.replace("\r\n", "\n")
+        p.write_bytes(text.replace("\r\n", "\n").replace(old, new).encode("utf-8"))
+
+    rewrite("skills/git-recon/SKILL.md", "user-invocable: false\n", "")  # an adapter in the / menu
+    rewrite("skills/git-analyze/SKILL.md", "disable-model-invocation: true\n", "")  # an adapter offered to the model
+    rewrite("skills/git-orchestrator/SKILL.md", "\nlicense:", "\nuser-invocable: false\nlicense:")  # the entry skill hidden
+    problems = plugin.check_model_invocation(tmp_path)
+    assert len(problems) == 3 and any("git-recon" in p and "user-invocable: false" in p for p in problems), problems
+    assert any("git-analyze" in p and "disable-model-invocation: true" in p for p in problems), problems
+    assert any("git-orchestrator" in p and "must not set user-invocable" in p for p in problems), problems
+
+
+def test_each_host_key_takes_exactly_one_boolean():
+    frontmatter = contract_module("skill_frontmatter")
+
+    def parse(extra):
+        return frontmatter.parse('---\nname: x\ndescription: "d"\n%s\n---\n' % extra)[0]
+
+    assert parse("user-invocable: false")["user-invocable"] is False
+    assert parse("disable-model-invocation: true")["disable-model-invocation"] is True
+    for bad in ("user-invocable: true", "user-invocable: no", 'user-invocable: "false"', "disable-model-invocation: false", "disable-model-invocation: yes"):
+        with pytest.raises(frontmatter.FrontmatterError):
+            parse(bad)
 
 
 # APIs newer than Python 3.9, the minimum the package supports (TC-179): (callable name, keyword) pairs, attribute names and imports.

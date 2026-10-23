@@ -2,6 +2,8 @@
 name: git-recon
 description: "查看仓库状态（只读）；/git-recon [--remote] [--help]."
 license: Apache-2.0
+disable-model-invocation: true
+user-invocable: false
 metadata:
   short-description: "查看仓库状态；$git-recon [--remote] [--help]."
 ---

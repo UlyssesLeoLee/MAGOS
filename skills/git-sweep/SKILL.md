@@ -3,6 +3,7 @@ name: git-sweep
 description: "收敛并清除已合并远端分支（仅显式调用，写操作）；/git-sweep BRANCH [--apply] [--push] [--help]."
 license: Apache-2.0
 disable-model-invocation: true
+user-invocable: false
 metadata:
   short-description: "收敛并清远端分支；$git-sweep BRANCH [--apply] [--push] [--help]."
 ---

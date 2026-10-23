@@ -39,7 +39,8 @@ double-quoted string (JSON escapes, only \\" and \\\\), a single-quoted string (
 that every YAML parser reads as the same string. Everything else is rejected instead of guessed: flow collections,
 sequences, block scalars, anchors, aliases, tags, comments, tabs, duplicate keys, deeper nesting, and plain scalars
 that YAML reads differently (": ", " #", a leading indicator, or a bool/null/number-like word). The one exception is
-a column-0 key in BOOLEAN_KEYS, a host key whose only accepted value is the plain YAML boolean `true` (read as True).
+a column-0 key in BOOLEAN_KEYS, a Claude Code host key whose only accepted value is one plain YAML boolean (`true` for
+disable-model-invocation, `false` for user-invocable; read as True and False).
 
 Anything else this reader accepts therefore parses to the same strings under PyYAML and under strictyaml, which the
 Agent Skills reference validator (skills-ref) uses and which rejects flow style outright. When PyYAML is installed,
@@ -59,8 +60,9 @@ DOUBLE_QUOTED = re.compile(r'"(?:[^"\\]|\\["\\])*"')
 PLAIN_FIRST = set("-?:,[]{}#&*!|>'\"%@`~")
 YAML11_WORDS = {"y", "n", "yes", "no", "true", "false", "on", "off", "null"}
 # Claude Code reads `disable-model-invocation: true` as a boolean that keeps the model from invoking a skill through the
-# Skill tool. It is the only non-string value the package uses, so it is the only key whose value may be `true`.
-BOOLEAN_KEYS = {"disable-model-invocation"}
+# Skill tool and `user-invocable: false` as one that keeps a skill out of the `/` menu. They are the only non-string values
+# the package uses: each key accepts exactly the one plain boolean written here.
+BOOLEAN_KEYS = {"disable-model-invocation": "true", "user-invocable": "false"}
 
 
 class FrontmatterError(ValueError):
@@ -138,9 +140,9 @@ def parse(text: str) -> tuple[dict, dict]:
             if key in fields:
                 raise FrontmatterError(f"line {number}: duplicate key {key!r}")
             if raw and key in BOOLEAN_KEYS:
-                if raw != "true":
-                    raise FrontmatterError(f"line {number}: {key} takes only the plain boolean true")
-                fields[key], styles[key] = True, "plain"
+                if raw != BOOLEAN_KEYS[key]:
+                    raise FrontmatterError(f"line {number}: {key} takes only the plain boolean {BOOLEAN_KEYS[key]}")
+                fields[key], styles[key] = raw == "true", "plain"
                 parent = None
             elif raw:
                 fields[key], styles[key] = scalar(raw, number)

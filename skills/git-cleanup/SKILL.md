@@ -3,6 +3,7 @@ name: git-cleanup
 description: "预览清理（仅限用户显式调用；--apply 才删除）；/git-cleanup [--apply] [--help]."
 license: Apache-2.0
 disable-model-invocation: true
+user-invocable: false
 metadata:
   short-description: "预览清理；$git-cleanup [--apply] [--help]."
 ---
