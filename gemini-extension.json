@@ -1,0 +1,6 @@
+
+{
+  "name": "magos",
+  "version": "1.0.5",
+  "description": "Multi-Agent Git Orchestrator (MAGOS) coordinates AI coding agents through safe Git branch, worktree, integration, and cleanup workflows."
+}
