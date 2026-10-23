@@ -6,6 +6,10 @@ Every version of the `magos` package (the `version` in `plugin.json`, `.claude-p
 
 Tag `v1.0.5`. A patch release: Claude Code shows one set of commands. Until now the plugin listed every command twice there: `/magos:GitRecon` (from `commands/`) and `/magos:git-recon` (the adapter of `skills/`, made for Codex and Hermes). The behaviour of the lane guard is unchanged; its `GUARD_VERSION` follows the package.
 
+### Added
+
+- **Listing icon.** `.claude-plugin/icon.png`, a 1024 x 1024 PNG (under 2 MB, as the plugin directory requires), is the image of the plugin; Claude Code finds it by its place, so the manifest keeps only metadata keys. `claude plugin validate --strict` passes without a warning.
+
 ### Changed
 
 - **One set of commands in Claude Code.** The eight command adapters of `skills/` (`git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`) set `user-invocable: false` and `disable-model-invocation: true`. Claude Code lists only the eight commands of `commands/` (`/magos:GitRecon` ... `/magos:GitPlan`) and the entry skill `git-orchestrator` in its `/` menu, and offers the model only the three read-only commands and the entry skill (checked on Claude Code 2.1.309 by loading the plugin files and reading the commands and skills it lists). Codex reads only the fields it knows and Hermes reads the frontmatter as a mapping, so both ignore the two keys: `$git-recon` and `/git-recon` work as before.

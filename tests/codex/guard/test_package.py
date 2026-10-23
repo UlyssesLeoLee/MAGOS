@@ -8,6 +8,7 @@ import os
 import re
 import shlex
 import shutil
+import struct
 import subprocess
 import sys
 import tokenize
@@ -86,7 +87,7 @@ def test_contract_and_skill_anchors():
 
 def test_package_rules_still_hold():
     claude = sorted(p.name for p in (ROOT / ".claude-plugin").iterdir())
-    assert claude == ["marketplace.json", "plugin.json"]  # no hook file next to the manifests
+    assert claude == ["icon.png", "marketplace.json", "plugin.json"]  # the two manifests and the listing icon: no hook file next to them
     plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert "hooks" not in plugin and set(plugin) <= {"name", "version", "description", "author", "homepage", "repository", "license", "keywords"}
     spec = __import__("importlib.util").util.spec_from_file_location("sync_hosts_real", ROOT / "scripts" / "sync_hosts.py")
@@ -279,6 +280,18 @@ def contract_module(name):
     if contracts not in sys.path:
         sys.path.insert(0, contracts)
     return __import__(name)
+
+
+def test_the_listing_icon_meets_the_directory_rules():
+    """The plugin directory takes a square PNG or JPEG of 512 to 2048 pixels, under 2 MB (not SVG, not WebP); it sits beside the manifest."""
+    path = ROOT / ".claude-plugin" / "icon.png"
+    data = path.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR"
+    width, height = struct.unpack(">II", data[16:24])
+    assert width == height and 512 <= width <= 2048, (width, height)
+    assert len(data) < 2_000_000, len(data)
+    plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    assert "icon" not in plugin  # found by its place, so the manifest keeps only metadata keys
 
 
 def test_the_command_adapters_are_hidden_from_claude_code():

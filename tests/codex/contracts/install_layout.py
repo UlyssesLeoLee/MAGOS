@@ -38,6 +38,7 @@ ROOT_REFERENCE = re.compile(r"`(references/[A-Za-z0-9_.-]+\.md)`")
 HOST_PLUGIN_MANIFEST_DIRS = {".codex-plugin", ".claude-plugin", ".cursor-plugin"}
 CLAUDE_PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
 MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json"
+CLAUDE_PLUGIN_ICON = ".claude-plugin/icon.png"  # the listing image of the plugin directory: an image, not a manifest
 MARKETPLACE_ENTRY_KEYS = {"name", "source", "description", "version", "author", "homepage", "repository", "license",
                           "keywords", "category", "tags"}
 # Metadata only: any other key (commands, skills, hooks, monitors, themes, ...) declares a component or setting.
@@ -171,7 +172,7 @@ def check_checkout(repo: Path) -> list[dict]:
         if sorted(names) != sorted(CHECKOUT_SKILLS):
             problems.append(f"{host} replica discovers {sorted(names)}; expected {sorted(CHECKOUT_SKILLS)}")
     manifests = sorted(relative for relative in tracked if HOST_PLUGIN_MANIFEST_DIRS & set(relative.split("/")))
-    stray = [relative for relative in manifests if relative not in (CLAUDE_PLUGIN_MANIFEST, MARKETPLACE_MANIFEST)]
+    stray = [relative for relative in manifests if relative not in (CLAUDE_PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CLAUDE_PLUGIN_ICON)]
     return [{"file": "install:git-clone checkout, the Codex and Hermes replicas find each skill once",
              "passed": not problems, "missing": problems},
             {"file": "install:git-clone checkout has no host plugin manifest other than .claude-plugin/plugin.json "

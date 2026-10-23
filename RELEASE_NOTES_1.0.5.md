@@ -9,6 +9,7 @@ A patch release: Claude Code shows one set of commands. Until now the plugin lis
 ## Highlights
 
 - **One set in Claude Code.** The `/` menu lists the eight commands `/magos:GitRecon` ... `/magos:GitPlan` and the entry skill `git-orchestrator`; the model is offered the three read-only commands and the entry skill.
+- **A listing icon.** `.claude-plugin/icon.png` (1024 x 1024 PNG) is the image of the plugin; `claude plugin validate --strict` passes without a warning.
 - **Codex and Hermes unchanged.** Codex reads only the fields it knows, Hermes reads the frontmatter as a mapping: both ignore `user-invocable` and `disable-model-invocation`.
 - **Guarded by the package contract.** Both keys are required on the eight adapters and forbidden on the entry skill and the root `SKILL.md`; the frontmatter reader accepts exactly one boolean per key.
 
@@ -17,6 +18,7 @@ A patch release: Claude Code shows one set of commands. Until now the plugin lis
 - The eight adapters of `skills/` set `user-invocable: false` and `disable-model-invocation: true` (the five write adapters already set the second one).
 - `references/installation.md` states the one set and the usual sources of a second one: command copies in `~/.claude/commands/` and a clone below `~/.claude/skills/`.
 - `GUARD_VERSION` and the manifests state 1.0.5.
+- The package tests allow `icon.png` beside the two manifests of `.claude-plugin/` and check its size and shape.
 
 ## 升级 / Upgrade
 
