@@ -3449,12 +3449,12 @@ def test_changes_summary_binary_rename_empty_and_merged_target(tmp_path, monkeyp
     repo.git("mv", "src/api/a.py", "src/api/b.py", cwd=wt)  # unchanged rename
     repo.git("mv", "src/api/c.py", "src/api/d.py", cwd=wt)
     repo.write("src/api/d.py", "".join("c%d\n" % i for i in range(20)) + "n1\nn2\nn3\n", base=wt)  # renamed and three lines added
-    repo.git("update-index", "--chmod=+x", "tool.sh", cwd=wt)  # only the mode changes
     repo.git("rm", "-q", "five.txt", cwd=wt)
     repo.write("empty.txt", "", base=wt)
     repo.write("-dash.txt", "d1\nd2\n", base=wt)
     repo.git("add", "-A", cwd=wt)
     repo.git("add", "--", "-dash.txt", cwd=wt)
+    repo.git("update-index", "--chmod=+x", "tool.sh", cwd=wt)  # only the mode changes; after `add -A`, which on POSIX (core.fileMode on) stages the mode on disk
     repo.git("commit", "-q", "-m", "everything at once", cwd=wt)
     s = summary_of(repo, "work")
     assert s["commits"] == 1 and s["subjects"] == ["everything at once"] and s["files"] == 7  # the binary file, two renames, the mode change, the deletion, the empty file, the dash file
