@@ -1,6 +1,6 @@
 {
   "name": "magos",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Multi-Agent Git Orchestrator (MAGOS) for Claude Code: the orchestrator skill, eight explicit Git commands (GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge, GitSweep, GitPlan), and the lane guard: PreToolUse hooks that check branch and worktree creation in every repository against the planned file manifests of the other lanes (opt out per repository with git config --local magos.guard off).",
   "author": {
     "name": "Ulysses Leo Lee"

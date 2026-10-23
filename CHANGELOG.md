@@ -2,6 +2,27 @@
 
 Every version of the `magos` package (the `version` in `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` and the lane guard's `GUARD_VERSION`). A release is tagged `v<version>` on its release commit. The tag `v1.0` marks the skill release 3.4.0 from before the package became a plugin and was renumbered; it is not a plugin version. Install, pin, upgrade and roll back as `references/installation.md` describes.
 
+## 1.0.5
+
+Tag `v1.0.5`. A patch release: Claude Code shows one set of commands. Until now the plugin listed every command twice there: `/magos:GitRecon` (from `commands/`) and `/magos:git-recon` (the adapter of `skills/`, made for Codex and Hermes). The behaviour of the lane guard is unchanged; its `GUARD_VERSION` follows the package.
+
+### Changed
+
+- **One set of commands in Claude Code.** The eight command adapters of `skills/` (`git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`) set `user-invocable: false` and `disable-model-invocation: true`. Claude Code lists only the eight commands of `commands/` (`/magos:GitRecon` ... `/magos:GitPlan`) and the entry skill `git-orchestrator` in its `/` menu, and offers the model only the three read-only commands and the entry skill (checked on Claude Code 2.1.309 by loading the plugin files and reading the commands and skills it lists). Codex reads only the fields it knows and Hermes reads the frontmatter as a mapping, so both ignore the two keys: `$git-recon` and `/git-recon` work as before.
+- **The package contract** requires both keys on the eight adapters and neither on the entry skill and the root `SKILL.md`; the strict frontmatter reader accepts exactly one boolean per key (`true` for `disable-model-invocation`, `false` for `user-invocable`).
+- **Installation notes.** `references/installation.md` states the one set and names the usual sources of a second one: command copies in `~/.claude/commands/` (the place `scripts/sync_hosts.py --host claude` writes) and a clone below `~/.claude/skills/` (its root `SKILL.md` is also a personal skill).
+
+### Known limits
+
+- A second set can still come from files outside the package: command copies in `~/.claude/commands/` (delete them) and a clone below `~/.claude/skills/`.
+- The two host keys were checked on Claude Code and on the frontmatter reader of Hermes; Codex, which reads only the fields it knows (as it already does for `disable-model-invocation`), was not available for a check.
+
+### Upgrade
+
+1. Upgrade the plugin on each host (`references/installation.md`, "升级"): `claude plugin marketplace update magos`, then `claude plugin update magos@magos`, and restart every running Claude Code session. A Hermes install pinned with `--ref` moves its pin with `hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character SHA of v1.0.5> --force --enable`.
+2. Delete command copies in `~/.claude/commands/` (`Git*.md`): the plugin provides the commands.
+3. The guard changes only in its version number. To refresh the guard copy under `~/.magos/guard`, run `doctor` from the new version and the `install --host <host>` commands it prints.
+
 ## 1.0.4
 
 Tag `v1.0.4`. A feature release: the new command `/GitPlan`, which plans, before any sub-agent starts, how one task is divided into lanes that own different files and are merged back as one whole, lists the requirements, the lanes and their outcomes in tables, and later converges the lanes and supplements that list with what each lane changed, backed by four new subcommands of the lane guard (`scripts/magos_guard.py`). Every install should upgrade, and the guard copies under `~/.magos/guard` that the Codex and Hermes hooks run must be refreshed: a guard of 1.0.3 has no set subcommand, and `/GitPlan` stops at its version check.

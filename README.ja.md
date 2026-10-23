@@ -1165,12 +1165,12 @@ Claude Code ではターミナルからも実行できます：`claude plugin ma
 1.0.1 以降、すべてのリリースにタグ `v<バージョン番号>` が付いています（`CHANGELOG.md` を参照）。1.0.0 にはタグがないので、インストールも固定もしないでください。タグ `v1.0` はプラグイン化とバージョン番号の変更より前の 3.4.0 版のスキルで、プラグインのバージョンではないので、これにも固定しないでください。上のコマンドはデフォルトブランチに追従します。特定のバージョンにとどまるには：
 
 ```bash
-claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.4    # 然后：claude plugin install magos@magos
-git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.4 の 40 文字のコミット SHA> --enable    # MAGOS をインストール済みのときは --force を付ける
+claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.5    # 然后：claude plugin install magos@magos
+git clone --branch v1.0.5 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.5 の 40 文字のコミット SHA> --enable    # MAGOS をインストール済みのときは --force を付ける
 ```
 
-バージョンを固定すると、その後の修正（ガードのセキュリティ修正も含む）は届きません。`CHANGELOG.md` を確認して、固定先を移してください。タグの commit SHA は、`git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.4 "refs/tags/v1.0.4^{}"` の出力のうち `refs/tags/v1.0.4^{}` の行にある SHA です（この行がない場合は `refs/tags/v1.0.4` の行を使います）。Hermes は `--ref` 付きのインストールを固定として記録します。`hermes plugins update magos` はそれを拒否し、`--ref` なしの `hermes plugins install UlyssesLeoLee/MAGOS --force` は、もともと固定していたコミットを再インストールします。固定先を移すには `--ref <新しい SHA> --force --enable` を使います。デフォルトブランチへの追従に戻すには、先に `hermes plugins remove magos` を実行し、続けて `hermes plugins install UlyssesLeoLee/MAGOS --enable` を実行します。詳細と、Codex および同期スクリプトでインストールしたものの固定方法は、`references/installation.md` を参照してください。
+バージョンを固定すると、その後の修正（ガードのセキュリティ修正も含む）は届きません。`CHANGELOG.md` を確認して、固定先を移してください。タグの commit SHA は、`git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.5 "refs/tags/v1.0.5^{}"` の出力のうち `refs/tags/v1.0.5^{}` の行にある SHA です（この行がない場合は `refs/tags/v1.0.5` の行を使います）。Hermes は `--ref` 付きのインストールを固定として記録します。`hermes plugins update magos` はそれを拒否し、`--ref` なしの `hermes plugins install UlyssesLeoLee/MAGOS --force` は、もともと固定していたコミットを再インストールします。固定先を移すには `--ref <新しい SHA> --force --enable` を使います。デフォルトブランチへの追従に戻すには、先に `hermes plugins remove magos` を実行し、続けて `hermes plugins install UlyssesLeoLee/MAGOS --enable` を実行します。詳細と、Codex および同期スクリプトでインストールしたものの固定方法は、`references/installation.md` を参照してください。
 
 ### Claude Code：スキルディレクトリへの clone
 
