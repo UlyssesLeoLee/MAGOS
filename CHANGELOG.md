@@ -31,7 +31,7 @@ Tag `v1.0.6`. A patch release: the `/` menu of Claude Code lists the eight comma
 
 ## 1.0.5
 
-Tag `v1.0.5`. A patch release: Claude Code shows one set of commands. Until now the plugin listed every command twice there: `/magos:GitRecon` (from `commands/`) and `/magos:git-recon` (the adapter of `skills/`, made for Codex and Hermes). The behaviour of the lane guard is unchanged; its `GUARD_VERSION` follows the package.
+Tag `v1.0.5`. A patch release: Claude Code shows one set of commands, `/magos:GitRecon` and its siblings from `commands/`; the adapters of `skills/` (`/magos:git-recon` and so on, made for Codex and Hermes) are hidden there. The behaviour of the lane guard is unchanged; its `GUARD_VERSION` follows the package.
 
 ### Added
 

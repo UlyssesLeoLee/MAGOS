@@ -108,6 +108,8 @@ def test_the_japanese_readme_has_the_outline_tables_and_command_blocks_of_the_ch
             assert commands(a[1]) == commands(b[1]), ("code block %d (%s) differs" % (k, a[0]), a[1][:80])
         elif a[0] == DIAGRAM:
             assert shape(a[1]) == shape(b[1]), ("diagram %d differs in its nodes or edges" % k, a[1][:80])
+            for alias in re.findall(r'^\s*state\s+"[^"]*"\s+as\s+(\w+)\s*$', b[1], re.M):  # an alias only labels a state the Chinese diagram draws
+                assert re.search(r"\b%s\b" % alias, a[1]), ("diagram %d aliases a state the Chinese diagram does not draw" % k, alias)
 
 
 def test_the_japanese_readme_names_the_files_flags_and_commands_the_chinese_one_names(zh_ja):
