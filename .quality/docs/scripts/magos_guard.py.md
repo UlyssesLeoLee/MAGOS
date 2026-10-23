@@ -410,7 +410,7 @@ The file holds eight cooperating parts.
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
-7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.4) and equals
+7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.5) and equals
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the
@@ -1912,7 +1912,7 @@ Version 1.0.3 is a hardening release of the guard (`GUARD_VERSION` 1.0.3). Relat
 - honours a claim stored under a name the Windows alias rule refuses when its branch is created, and names such
   claims in `list` and `doctor`.
 
-Version 1.0.4 is a feature release of the guard (`GUARD_VERSION` 1.0.4) that adds the sets for `/GitPlan`. Relative to
+Version 1.0.5 of the guard (`GUARD_VERSION` 1.0.5) has the sets for `/GitPlan` that 1.0.4 added. Relative to
 the 1.0.3 product it:
 
 - adds the subcommands `set-plan`, `set-show`, `set-update` and `set-release`, none of them user-only, and the exit
