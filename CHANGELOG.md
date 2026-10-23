@@ -8,7 +8,7 @@ Tag `v1.0.5`. A patch release: Claude Code shows one set of commands. Until now 
 
 ### Added
 
-- **Listing icon.** `.claude-plugin/icon.png`, a 1024 x 1024 PNG (under 2 MB, as the plugin directory requires), is the image of the plugin; Claude Code finds it by its place, so the manifest keeps only metadata keys. `claude plugin validate --strict` passes without a warning.
+- **Listing icon.** `.claude-plugin/icon.png`, a 1024 x 1024 PNG (under 2 MB, as the plugin directory requires), is the image of the plugin; the plugin directory finds it by its place, so the manifest keeps only metadata keys. `claude plugin validate --strict` passes without a warning.
 
 ### Changed
 
@@ -20,6 +20,7 @@ Tag `v1.0.5`. A patch release: Claude Code shows one set of commands. Until now 
 
 - A second set can still come from files outside the package: command copies in `~/.claude/commands/` (delete them) and a clone below `~/.claude/skills/`.
 - The two host keys were checked on Claude Code and on the frontmatter reader of Hermes; Codex, which reads only the fields it knows (as it already does for `disable-model-invocation`), was not available for a check.
+- A host other than Claude Code that reads the same two frontmatter keys hides the adapters there too, and stops offering the three read-only adapters to its model.
 
 ### Upgrade
 

@@ -10,7 +10,7 @@ Source-SHA256: `76db96aa4767e257b2bbcdd172f6cc32b4dabdfef27979750ec439e60b434bb5
 repository, `plugin.yaml` is its native manifest (name and version equal to `plugin.json`, no hooks, tools,
 capabilities or dependencies), and Hermes calls `register(ctx)` from this file once when it loads the plugin. The
 function registers every `skills/<name>/SKILL.md` under the plugin namespace, so Hermes offers the skills as
-`/magos:git-recon` and so on, the names the Claude Code and Codex plugins use. Without this file Hermes loads the
+`/magos:git-recon` and so on, which Codex spells `$magos:git-recon` and Claude Code hides. Without this file Hermes loads the
 package through its portable `plugin.json` and names the commands `/agent-plugin-magos-<digest>:git-recon`.
 
 Nine skills are registered: the entry skill `git-orchestrator` and the eight command adapters `git-recon`,

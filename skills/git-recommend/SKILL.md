@@ -27,7 +27,7 @@ Examples: `/git-recommend`, `$git-recommend 哪些分支应该先合并 --remote
 ## Arguments
 
 - Codex: the arguments are the text that follows `$git-recommend` in the user's message.
-- Plugin installs prefix the name with the plugin name: `/magos:git-recommend` in Claude Code and Hermes, `$magos:git-recommend` in Codex. The arguments follow it the same way (Claude Code appends them as `ARGUMENTS: ...`).
+- Plugin installs prefix the name with the plugin name: `/magos:git-recommend` in Hermes, `$magos:git-recommend` in Codex; Claude Code hides this adapter and offers the command `/magos:GitRecommend` instead. The arguments follow the name the same way.
 - Hermes: the arguments are the instruction Hermes appends after the skill content, introduced by "The user has provided the following instruction alongside the skill invocation:" (single command) or `User instruction:` (stacked commands). An empty instruction means no arguments.
 
 If `--help` is present, even with other arguments, answer from the inline Usage section above and stop before any tool call, file read, or repository inspection. Treat `--remote` as an option only when it is a standalone argument, and keep the remaining text as the goal; for an unknown option, explain the error, show this help, and stop. Read the shared files below only for a normal invocation.

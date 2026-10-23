@@ -299,7 +299,7 @@ def test_the_command_adapters_are_hidden_from_claude_code():
     frontmatter, plugin = contract_module("skill_frontmatter"), contract_module("agent_plugin")
     writes = {"git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan"}
     adapters = writes | {"git-recon", "git-analyze", "git-recommend"}
-    assert set(plugin.WRITE_ADAPTERS) == writes and plugin.ENTRY_SKILL == "git-orchestrator"
+    assert plugin.ENTRY_SKILL == "git-orchestrator"
     assert plugin.ALLOWED_FIELDS - {"name", "description", "license", "allowed-tools", "metadata", "compatibility"} == {"disable-model-invocation", "user-invocable"}
     seen = set()
     for skill in sorted(p for p in (ROOT / "skills").iterdir() if p.is_dir()):
@@ -307,8 +307,8 @@ def test_the_command_adapters_are_hidden_from_claude_code():
         seen.add(skill.name)
         if skill.name in adapters:
             assert fields.get("disable-model-invocation") is True and fields.get("user-invocable") is False, skill.name
-        else:
-            assert "disable-model-invocation" not in fields and "user-invocable" not in fields, skill.name
+        else:  # the entry skill: loaded by the model, out of the / menu
+            assert "disable-model-invocation" not in fields and fields.get("user-invocable") is False, skill.name
     assert adapters | {"git-orchestrator"} == seen
     root_fields = frontmatter.parse((ROOT / "SKILL.md").read_text(encoding="utf-8"))[0]
     assert "disable-model-invocation" not in root_fields and "user-invocable" not in root_fields
@@ -321,7 +321,7 @@ def test_the_command_adapters_are_hidden_from_claude_code():
         assert "\ndisable-model-invocation: true\n" in (ROOT / "commands" / (command + ".md")).read_text(encoding="utf-8")
 
 
-def test_a_visible_adapter_or_a_hidden_entry_skill_is_reported(tmp_path):
+def test_a_visible_adapter_or_a_mis_set_entry_skill_is_reported(tmp_path):
     plugin = contract_module("agent_plugin")
     shutil.copytree(ROOT / "skills", tmp_path / "skills", ignore=shutil.ignore_patterns("agents"))
     shutil.copy(ROOT / "SKILL.md", tmp_path / "SKILL.md")
@@ -335,11 +335,13 @@ def test_a_visible_adapter_or_a_hidden_entry_skill_is_reported(tmp_path):
 
     rewrite("skills/git-recon/SKILL.md", "user-invocable: false\n", "")  # an adapter in the / menu
     rewrite("skills/git-analyze/SKILL.md", "disable-model-invocation: true\n", "")  # an adapter offered to the model
-    rewrite("skills/git-orchestrator/SKILL.md", "\nlicense:", "\nuser-invocable: false\nlicense:")  # the entry skill hidden
+    rewrite("skills/git-orchestrator/SKILL.md", "user-invocable: false\n", "")  # the entry skill typed in the / menu next to the commands
+    rewrite("skills/git-orchestrator/SKILL.md", "\nlicense:", "\ndisable-model-invocation: true\nlicense:")  # the entry skill kept from the model
     problems = plugin.check_model_invocation(tmp_path)
-    assert len(problems) == 3 and any("git-recon" in p and "user-invocable: false" in p for p in problems), problems
+    assert len(problems) == 4 and any("git-recon" in p and "user-invocable: false" in p for p in problems), problems
     assert any("git-analyze" in p and "disable-model-invocation: true" in p for p in problems), problems
-    assert any("git-orchestrator" in p and "must not set user-invocable" in p for p in problems), problems
+    assert any("git-orchestrator" in p and "must set user-invocable: false" in p for p in problems), problems
+    assert any("git-orchestrator" in p and "must not set disable-model-invocation" in p for p in problems), problems
 
 
 def test_each_host_key_takes_exactly_one_boolean():

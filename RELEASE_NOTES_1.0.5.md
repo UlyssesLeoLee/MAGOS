@@ -30,4 +30,5 @@ A patch release: Claude Code shows one set of commands. Until now the plugin lis
 
 - A second set can still come from files outside the package: command copies in `~/.claude/commands/` and a clone below `~/.claude/skills/` (its root `SKILL.md` is also a personal skill).
 - Codex was not available for a check of the two host keys; it reads only the fields it knows, as it already does for `disable-model-invocation`.
+- A host other than Claude Code that reads the same two frontmatter keys hides the adapters there too, and stops offering the three read-only adapters to its model.
 - The lane guard's own limits, unchanged since 1.0.3, are listed in `references/lane-split.md`, section 12.

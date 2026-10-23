@@ -53,14 +53,14 @@ Examples: `/git-plan sweep-readiness --into develop`, `$git-plan sweep-readiness
 ## Arguments
 
 - Codex: the arguments are the text that follows `$git-plan` in the user's message.
-- Plugin installs prefix the name with the plugin name: `/magos:git-plan` in Claude Code and Hermes, `$magos:git-plan` in Codex. The arguments follow it the same way (Claude Code appends them as `ARGUMENTS: ...`).
+- Plugin installs prefix the name with the plugin name: `/magos:git-plan` in Hermes, `$magos:git-plan` in Codex; Claude Code hides this adapter and offers the command `/magos:GitPlan` instead. The arguments follow the name the same way.
 - Hermes: the arguments are the instruction Hermes appends after the skill content, introduced by "The user has provided the following instruction alongside the skill invocation:" (single command) or `User instruction:` (stacked commands). An empty instruction means no arguments.
 
 If `--help` is present, even with other arguments, answer from the inline Usage section above and stop before any tool call, file read, or repository inspection. If the set name is missing, show this help and ask for it; for an unknown option, or an option the form does not list, explain the error and show this help. Do not inspect or change the repository in these error cases. Read the shared files below only for a normal invocation.
 
 ## Explicit invocation only
 
-A semantic match or automatic skill selection is not authorization to write. Claude Code keeps the model from invoking this adapter through `disable-model-invocation: true` in its frontmatter, and Codex disables implicit selection for it through `agents/openai.yaml`; Hermes has no per-skill switch, so this rule applies there by instruction. An explicit invocation is the user's `/git-plan` command (Hermes renders it as "The user has invoked the "git-plan" skill" followed by the arguments) or `$git-plan` in Codex. With a plugin install, the user's `/magos:git-plan` (Claude Code, Hermes) or `$magos:git-plan` (Codex) is the same explicit invocation; in Claude Code, the `/magos:GitPlan` command of the same name is the preferred form. If this adapter was selected without such an invocation, preview at most and register, create, merge, and release nothing.
+A semantic match or automatic skill selection is not authorization to write. Claude Code keeps the model from invoking this adapter through `disable-model-invocation: true` in its frontmatter, and Codex disables implicit selection for it through `agents/openai.yaml`; Hermes has no per-skill switch, so this rule applies there by instruction. An explicit invocation is the user's `/git-plan` command (Hermes renders it as "The user has invoked the "git-plan" skill" followed by the arguments) or `$git-plan` in Codex. With a plugin install, the user's `/magos:git-plan` (Hermes) or `$magos:git-plan` (Codex) is the same explicit invocation; Claude Code hides this adapter, and there the user's `/magos:GitPlan` command is the explicit invocation. If this adapter was selected without such an invocation, preview at most and register, create, merge, and release nothing.
 
 ## Shared files
 

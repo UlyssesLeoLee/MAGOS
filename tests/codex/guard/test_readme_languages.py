@@ -54,9 +54,22 @@ def parse(rel):
     return heads, fences, tables, {re.sub(r"<[^<>]*>", "<>", s) for s in spans}  # a placeholder is written in the language of the README
 
 
+def without_comment(line):
+    """The line up to its `# ` comment: a '#' that starts the line or follows whitespace, is followed by whitespace and sits outside quotes."""
+    quote = ""
+    for i, char in enumerate(line):
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "\"'":
+            quote = char
+        elif char == "#" and (i == 0 or line[i - 1].isspace()) and line[i + 1:i + 2].isspace():
+            return line[:i]
+    return line
+
+
 def commands(body):
     """A command block as every language must write it: no `# ` comment, and each <placeholder> read as one (both are written for the reader)."""
-    return "\n".join(re.sub(r"<[^<>]*>", "<>", re.sub(r"(^|\s)#\s.*$", "", line)).rstrip() for line in body.split("\n"))
+    return "\n".join(re.sub(r"<[^<>]*>", "<>", without_comment(line)).rstrip() for line in body.split("\n"))
 
 
 def shape(body):

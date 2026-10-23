@@ -12,7 +12,6 @@
 #   (v_SKILL_NAME:Variable {name: "SKILL_NAME", type: "variable"}),
 #   (v_QUOTED_FIELDS:Variable {name: "QUOTED_FIELDS", type: "variable"}),
 #   (v_ADAPTER_REFERENCE:Variable {name: "ADAPTER_REFERENCE", type: "variable"}),
-#   (v_WRITE_ADAPTERS:Variable {name: "WRITE_ADAPTERS", type: "variable"}),
 #   (v_MODEL_INVOCATION_KEY:Variable {name: "MODEL_INVOCATION_KEY", type: "variable"}),
 #   (v_USER_INVOCABLE_KEY:Variable {name: "USER_INVOCABLE_KEY", type: "variable"}),
 #   (v_ENTRY_SKILL:Variable {name: "ENTRY_SKILL", type: "variable"}),
@@ -56,7 +55,6 @@
 #   (file)-[:CONTAINS]->(v_SKILL_NAME),
 #   (file)-[:CONTAINS]->(v_QUOTED_FIELDS),
 #   (file)-[:CONTAINS]->(v_ADAPTER_REFERENCE),
-#   (file)-[:CONTAINS]->(v_WRITE_ADAPTERS),
 #   (file)-[:CONTAINS]->(v_MODEL_INVOCATION_KEY),
 #   (file)-[:CONTAINS]->(v_USER_INVOCABLE_KEY),
 #   (file)-[:CONTAINS]->(v_ENTRY_SKILL),
@@ -184,13 +182,13 @@ ROOT_SKILL_NAME = "multi-agent-git-orchestrator"
 # The Agent Skills fields, plus two documented Claude Code host keys: `disable-model-invocation: true` keeps the model
 # from invoking a skill through the Skill tool, `user-invocable: false` keeps a skill out of the `/` menu. The eight command
 # adapters set both, because Claude Code gets its commands from commands/ and would otherwise list every command twice
-# (/magos:GitRecon and /magos:git-recon). Hermes reads the frontmatter as a mapping and ignores them; Codex reads only the
-# fields it knows.
+# (/magos:GitRecon and /magos:git-recon). The entry skill is loaded by the model and typed by nobody, so it sets
+# `user-invocable: false` only: the menu then lists the eight commands under one naming. Hermes reads the frontmatter as a
+# mapping and ignores the keys; Codex reads only the fields it knows.
 MODEL_INVOCATION_KEY = "disable-model-invocation"
 USER_INVOCABLE_KEY = "user-invocable"
-ENTRY_SKILL = "git-orchestrator"  # the one skill of skills/ that Claude Code shows: the orchestrator entry
+ENTRY_SKILL = "git-orchestrator"  # the one skill of skills/ that the model loads in Claude Code: the orchestrator entry
 ALLOWED_FIELDS = {"name", "description", "license", "allowed-tools", "metadata", "compatibility", MODEL_INVOCATION_KEY, USER_INVOCABLE_KEY}
-WRITE_ADAPTERS = ("git-cleanup", "git-converge", "git-integrate", "git-plan", "git-sweep")  # the adapters that write; only the user runs them
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 QUOTED_FIELDS = ("description", "compatibility")
 ADAPTER_REFERENCE = re.compile(r"`((?:\.\./)+[A-Za-z0-9_./-]+\.(?:md|yaml))`")
@@ -447,25 +445,29 @@ def check_model_invocation(root: Path) -> list[str]:
     """Claude Code lists every skills/ skill in its `/` menu and offers it to the model unless its frontmatter hides it.
 
     Claude Code gets its eight commands from commands/, so the eight command adapters (made for Codex and Hermes) set
-    `user-invocable: false` and `disable-model-invocation: true`; the entry skill and the root SKILL.md set neither.
+    `user-invocable: false` and `disable-model-invocation: true`. The entry skill is loaded by the model and typed by nobody, so it sets
+    `user-invocable: false` only, and the menu lists the eight commands under one naming. The root SKILL.md sets neither.
     """
     problems = []
-    pages = [(f"skills/{path.parent.name}/SKILL.md", path, path.parent.name != ENTRY_SKILL) for path in adapter_skill_files(root)]
-    for label, path, adapter in pages + [("SKILL.md", root / "SKILL.md", False)]:
+    pages = [(f"skills/{path.parent.name}/SKILL.md", path, "entry" if path.parent.name == ENTRY_SKILL else "adapter") for path in adapter_skill_files(root)]
+    for label, path, kind in pages + [("SKILL.md", root / "SKILL.md", "root")]:
         try:
             fields, _ = skill_frontmatter.parse(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, skill_frontmatter.FrontmatterError) as error:
             problems.append(f"{label}: {error}")
             continue
-        if adapter:
+        if kind == "adapter":
             if fields.get(MODEL_INVOCATION_KEY) is not True:
                 problems.append(f"{label} must set {MODEL_INVOCATION_KEY}: true (Claude Code must not offer an adapter to the model)")
             if fields.get(USER_INVOCABLE_KEY) is not False:
                 problems.append(f"{label} must set {USER_INVOCABLE_KEY}: false (Claude Code must not list an adapter in its / menu)")
         else:
-            for key in (MODEL_INVOCATION_KEY, USER_INVOCABLE_KEY):
-                if key in fields:
-                    problems.append(f"{label} must not set {key} (only the eight command adapters do)")
+            if kind == "entry" and fields.get(USER_INVOCABLE_KEY) is not False:
+                problems.append(f"{label} must set {USER_INVOCABLE_KEY}: false (the menu lists the eight commands only; the model loads the entry skill)")
+            if MODEL_INVOCATION_KEY in fields:
+                problems.append(f"{label} must not set {MODEL_INVOCATION_KEY} (the model loads it on its own)")
+            if kind == "root" and USER_INVOCABLE_KEY in fields:
+                problems.append(f"{label} must not set {USER_INVOCABLE_KEY} (only the eight command adapters and the entry skill do)")
     return problems
 
 
@@ -544,8 +546,9 @@ def check(root: Path) -> list[dict]:
          "string-only metadata)", lambda: [problem for path in found for problem in skill_problems(path, path.parent.name)]),
         ("plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules",
          lambda: skill_problems(root / "SKILL.md", ROOT_SKILL_NAME)),
-        ("plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true (Claude Code shows "
-         "only the commands/ set); the entry skill and the root SKILL.md set neither", lambda: check_model_invocation(root)),
+        ("plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true, the entry skill sets "
+         "user-invocable: false only (Claude Code lists the eight commands/ entries alone), and the root SKILL.md sets neither",
+         lambda: check_model_invocation(root)),
         ("plugin: package paths stay inside the plugin root and include no links (§4.1)", lambda: check_containment(root)),
         ("plugin: mcp.json is absent or valid (§7.2)", lambda: check_mcp(root)),
     ]

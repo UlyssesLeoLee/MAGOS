@@ -20,10 +20,10 @@
 
 ## 它运行什么、发送什么、联网做什么
 
-- **运行什么。** 在 Claude Code 里，插件启用 PreToolUse 钩子（`hooks/hooks.json`）。遇到 shell 命令、子 Agent 启动、创建 worktree，以及会启动会话、shell 或进程的 MCP 工具时，`hooks/run-guard.cmd` 用 Python 运行 `scripts/magos_guard.py`；脚本读取收到的这次工具调用，回答放行或拒绝，不运行其他任何东西。
+- **运行什么。** 在 Claude Code 里，插件启用 PreToolUse 钩子（`hooks/hooks.json`）。遇到 shell 命令、子 Agent 启动、创建 worktree，以及会启动会话、shell 或进程的 MCP 工具时，`hooks/run-guard.cmd` 用 Python 运行 `scripts/magos_guard.py`；脚本读取收到的这次工具调用，回答放行或拒绝，除下面列出的本地 Git 命令外不运行任何程序。
 - **读取什么。** 这次工具调用，以及你当前所在仓库的 Git 状态；只通过本地 Git 命令读取（`branch`、`check-ref-format`、`config`、`diff`、`for-each-ref`、`log`、`merge-base`、`rev-list`、`rev-parse`、`status`、`worktree`）。它从不运行与远程通信的命令。
 - **写入什么。** 只写在该仓库的 `<git-common-dir>/magos/` 里：车道登记、计划记录、覆盖（override）记录和一份审计日志（时间、该仓库的 Git 用户名和邮箱以及账户的登录名、分支和它的文件、你为覆盖输入的理由）。只有你自己在终端里运行时，才会在这个目录之外做两件事：`install` 把守卫复制到 `~/.magos/guard` 并打印一条配置，由你自己合并；`arm` 给该仓库加一个 Git `reference-transaction` 钩子。插件不修改任何 Claude Code 设置和权限规则。
-- **发送与联网。** 守卫不发送任何数据，也不联网获取任何内容：没有网络访问、没有遥测、不接触凭据（包测试检查钩子代码不建立任何网络连接，且它的 Git 运行器拒绝所有与远程通信的子命令）。斜杠命令是写给 Agent 的指令：`/GitRecon`、`/GitAnalyze`、`/GitRecommend` 只读；会写入的五个命令只有你亲自输入才会运行（模型不能自己启动），带有 `--apply` 的命令没有它就不会改动任何东西。联网只发生在你要求时：`--remote` 对你的远程运行 `git fetch --prune`，`/GitSweep --apply` 删除已合并的远程分支，`/GitSweep --apply --push` 推送一个分支。
+- **发送与联网。** 守卫不发送任何数据，也不联网获取任何内容：没有网络访问、没有遥测、不接触凭据（包测试检查钩子代码不建立任何网络连接，且它的 Git 运行器拒绝所有与远程通信的子命令）。斜杠命令是写给 Agent 的指令：`/GitRecon`、`/GitAnalyze`、`/GitRecommend` 只读；会写入的五个命令只有你亲自输入才会运行（Claude Code 与 Codex 不让模型自己启动它们；Hermes 没有这个开关，适配层靠指令要求 Agent 只在你明确调用时运行），带有 `--apply` 的命令没有它就不会改动任何东西。联网只发生在你要求时：`--remote` 对你的远程运行 `git fetch --prune`，`/GitSweep --apply` 删除已合并的远程分支，`/GitSweep --apply --push` 推送一个分支。
 - **关闭方法。** `git config --local magos.guard off`（单个仓库）、`claude plugin disable magos`（整个插件）或 `MAGOS_GUARD=off`；见下文的“车道守卫”一节。
 
 ---
@@ -1153,7 +1153,7 @@ Claude Code 也可以在终端里执行：`claude plugin marketplace add Ulysses
 | 八个命令 | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |
 | 总规则（描述问题时自动触发） | `magos:git-orchestrator` | `magos:git-orchestrator` | `magos:git-orchestrator`（Hermes 把它列进系统提示的 `<available_skills>`，模型按描述自行加载） |
 
-- Claude Code 里还会看到八个小写的 `/magos:git-recon` 等，它们是跨平台适配层，和 `/magos:GitXxx` 等价，用大写那套即可。
+- Claude Code 里只会看到八个 `/magos:GitXxx` 命令：小写的 `/magos:git-recon` 等是给 Codex 与 Hermes 用的适配层，插件在 Claude Code 里把它们隐藏了。总规则 `magos:git-orchestrator` 也不在 `/` 菜单里，描述问题时由 Claude 自己加载。
 - 插件宿主只加载 `skills/` 下的 Skill，不加载根目录的 `SKILL.md`，所以插件里多了一个入口 Skill `git-orchestrator`，它会去读根目录的 `SKILL.md`。clone 到 `~/.claude/skills/magos` 时它同样会加载；只有用同步脚本安装的 Codex 与 Hermes 包不需要它，同步脚本也不会复制它。
 - 版本号写在清单里，Claude Code 只有在版本号变化时才会更新已安装的插件。正在运行的会话继续使用它启动时那个版本的钩子，所以更新后要重启每一个会话。
 - Claude Code 的插件安装会同时启用车道守卫钩子，Codex 与 Hermes 的插件安装不会（见“车道守卫”）。各平台的升级细节（包括守卫副本与回滚）见 `references/installation.md`，每个版本的变化见 `CHANGELOG.md`。
@@ -1189,7 +1189,7 @@ git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
 
 - 八个命令：`/magos:GitRecon`、`/magos:GitAnalyze`、`/magos:GitRecommend`、`/magos:GitIntegrate`、`/magos:GitCleanup`、`/magos:GitConverge`、`/magos:GitSweep`、`/magos:GitPlan`（输入 `/magos:` 即可补全）；
 - 总规则入口 `magos:git-orchestrator`，描述问题时会自动触发；
-- `skills/` 下的八个跨工具适配层也会以 `/magos:git-recon` 等名字出现，它们和上面的命令等价，Claude Code 里用 `/magos:GitXxx` 即可。
+- `skills/` 下的八个跨工具适配层（Hermes 里是 `/magos:git-recon` 等，Codex 里是 `$magos:git-recon` 等）。它们和上面的命令等价，在 Claude Code 里被隐藏，那里只列 `/magos:GitXxx`。
 
 以后更新只要在该目录执行 `git pull`（按“固定版本”克隆在标签上的，改为执行 `git fetch --tags` 与 `git checkout v<新版本>`），再重启所有正在运行的 Claude Code 会话，命令、规则和车道守卫会一起更新。用 `claude plugin list` 可以确认它显示为 `magos@skills-dir` 且状态为 loaded。
 

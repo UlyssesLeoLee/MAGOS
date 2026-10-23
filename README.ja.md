@@ -20,10 +20,10 @@
 
 ## 何を実行し、何を送り、何を取得するか
 
-- **実行するもの。** Claude Code では、プラグインが PreToolUse フック（`hooks/hooks.json`）を有効にします。シェルコマンド、サブエージェントの起動、worktree の作成、およびセッション・シェル・プロセスを起動する MCP ツールの呼び出しのたびに、`hooks/run-guard.cmd` が Python で `scripts/magos_guard.py` を実行します。スクリプトは渡されたツール呼び出しを読み、許可か拒否かを答えるだけで、ほかには何も実行しません。
+- **実行するもの。** Claude Code では、プラグインが PreToolUse フック（`hooks/hooks.json`）を有効にします。シェルコマンド、サブエージェントの起動、worktree の作成、およびセッション・シェル・プロセスを起動する MCP ツールの呼び出しのたびに、`hooks/run-guard.cmd` が Python で `scripts/magos_guard.py` を実行します。スクリプトは渡されたツール呼び出しを読み、許可か拒否かを答えるだけで、次に挙げるローカルの Git コマンド以外のプログラムは実行しません。
 - **読むもの。** そのツール呼び出しと、作業中のリポジトリの Git の状態です。読むのはローカルの Git コマンド（`branch`、`check-ref-format`、`config`、`diff`、`for-each-ref`、`log`、`merge-base`、`rev-list`、`rev-parse`、`status`、`worktree`）だけで、リモートと通信するコマンドは実行しません。
 - **書くもの。** そのリポジトリの `<git-common-dir>/magos/` の中だけです。レーンの登録、計画の記録、上書き（override）の記録、監査ログ（時刻、そのリポジトリの Git のユーザー名とメールアドレスとアカウントのログイン名、ブランチとそのファイル、上書きのために入力した理由）が入ります。この外で行うのは、あなた自身が端末で実行したときの 2 つだけです。`install` はガードを `~/.magos/guard` にコピーして設定のエントリを表示し（統合はあなたが行います）、`arm` はそのリポジトリに Git の `reference-transaction` フックを 1 つ追加します。プラグインは Claude Code の設定も権限ルールも変更しません。
-- **送信と取得。** ガードは何も送らず、何も取得しません。ネットワークアクセスも、テレメトリも、認証情報の取り扱いもありません（パッケージのテストが、フックのコードがネットワーク接続を開かないこと、その Git ランナーがリモートと通信するサブコマンドをすべて拒否することを確認します）。スラッシュコマンドはエージェントへの指示です。`/GitRecon`、`/GitAnalyze`、`/GitRecommend` は読むだけです。書き込む 5 つのコマンドは、あなたが自分で入力したときだけ動きます（モデルは自分で起動できません）。`--apply` を持つコマンドは、それを付けなければ何も変更しません。通信が起きるのはあなたが求めたときだけです。`--remote` はあなたのリモートに対して `git fetch --prune` を実行し、`/GitSweep --apply` はマージ済みのリモートブランチを削除し、`/GitSweep --apply --push` は 1 つのブランチをプッシュします。
+- **送信と取得。** ガードは何も送らず、何も取得しません。ネットワークアクセスも、テレメトリも、認証情報の取り扱いもありません（パッケージのテストが、フックのコードがネットワーク接続を開かないこと、その Git ランナーがリモートと通信するサブコマンドをすべて拒否することを確認します）。スラッシュコマンドはエージェントへの指示です。`/GitRecon`、`/GitAnalyze`、`/GitRecommend` は読むだけです。書き込む 5 つのコマンドは、あなたが自分で入力したときだけ動きます（Claude Code と Codex はモデルが自分で起動するのを止めます。Hermes にはそのスイッチがないため、アダプターが、あなたが明示的に呼び出したときだけ実行するよう指示しています）。`--apply` を持つコマンドは、それを付けなければ何も変更しません。通信が起きるのはあなたが求めたときだけです。`--remote` はあなたのリモートに対して `git fetch --prune` を実行し、`/GitSweep --apply` はマージ済みのリモートブランチを削除し、`/GitSweep --apply --push` は 1 つのブランチをプッシュします。
 - **無効にする方法。** `git config --local magos.guard off`（1 つのリポジトリ）、`claude plugin disable magos`（プラグイン全体）、`MAGOS_GUARD=off`。下の「レーンガード」の節も参照してください。
 
 ---
@@ -1162,7 +1162,7 @@ Claude Code ではターミナルからも実行できます：`claude plugin ma
 | 八つのコマンド | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |
 | 全体ルール（問題を説明すると自動的にトリガー） | `magos:git-orchestrator` | `magos:git-orchestrator` | `magos:git-orchestrator`（Hermes はこれをシステムプロンプトの `<available_skills>` に載せ、モデルが説明文を見て自分で読み込みます） |
 
-- Claude Code では、小文字の `/magos:git-recon` なども八つ表示されます。これらはプラットフォーム共通のアダプター層で、`/magos:GitXxx` と同等なので、大文字の方を使えば十分です。
+- Claude Code に表示されるのは八つの `/magos:GitXxx` コマンドだけです。小文字の `/magos:git-recon` などは Codex と Hermes 用のアダプター層で、プラグインが Claude Code ではそれらを隠します。全体ルールの `magos:git-orchestrator` も `/` メニューには出ず、問題を説明すると Claude が自分で読み込みます。
 - プラグインのホストは `skills/` 配下のスキルだけを読み込み、ルートの `SKILL.md` は読み込みません。そのため、プラグインにはエントリースキル `git-orchestrator` が一つ追加されていて、これがルートの `SKILL.md` を読みに行きます。`~/.claude/skills/magos` に clone した場合にも、このエントリースキルは読み込まれます。同期スクリプトでインストールした Codex と Hermes のパッケージだけはこれを必要とせず、同期スクリプトもコピーしません。
 - バージョン番号はマニフェストに書かれていて、Claude Code はバージョン番号が変わったときにだけ、インストール済みのプラグインを更新します。実行中のセッションは、起動した時点のバージョンのフックを使い続けるので、更新後はすべてのセッションを再起動してください。
 - Claude Code にプラグインをインストールすると、レーンガードのフックも同時に有効になります。Codex や Hermes にプラグインをインストールしても、有効にはなりません（「レーンガード」を参照）。各プラットフォームのアップグレードの詳細（ガードのコピーとロールバックを含む）は `references/installation.md`、各バージョンの変更点は `CHANGELOG.md` を参照してください。
@@ -1198,7 +1198,7 @@ git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
 
 - 八つのコマンド：`/magos:GitRecon`、`/magos:GitAnalyze`、`/magos:GitRecommend`、`/magos:GitIntegrate`、`/magos:GitCleanup`、`/magos:GitConverge`、`/magos:GitSweep`、`/magos:GitPlan`（`/magos:` と入力すると補完されます）。
 - 全体ルールの入口 `magos:git-orchestrator`。問題を説明すると自動的にトリガーされます。
-- `skills/` 配下にあるツール共通のアダプター層（八つ）も、`/magos:git-recon` などの名前で表示されます。上のコマンドと同等なので、Claude Code では `/magos:GitXxx` を使えば十分です。
+- `skills/` 配下にあるツール共通のアダプター層（八つ。Hermes では `/magos:git-recon` など、Codex では `$magos:git-recon` など）。上のコマンドと同等で、Claude Code では隠され、そこには `/magos:GitXxx` だけが表示されます。
 
 以後の更新は、そのディレクトリで `git pull` を実行するだけです（「バージョンの固定」に従ってタグ上に clone したものは、代わりに `git fetch --tags` と `git checkout v<新しいバージョン>` を実行します）。そのうえで実行中のすべての Claude Code セッションを再起動すると、コマンド、ルール、レーンガードがまとめて更新されます。`claude plugin list` を実行すると、`magos@skills-dir` がステータス loaded で表示されていることを確認できます。
 
