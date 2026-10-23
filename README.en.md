@@ -1156,12 +1156,12 @@ After a new session the names line up across hosts:
 Every release from 1.0.1 on is tagged `v<version>` (`CHANGELOG.md`); 1.0.0 has no tag, so do not install or pin it, and the tag `v1.0` is the skill release 3.4.0 from before the package became a plugin, not a plugin version, so do not pin it either. The commands above follow the default branch; to stay on one release:
 
 ```bash
-claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.5    # then: claude plugin install magos@magos
-git clone --branch v1.0.5 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character commit SHA of v1.0.5> --enable    # add --force when MAGOS is already installed
+claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.6    # then: claude plugin install magos@magos
+git clone --branch v1.0.6 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character commit SHA of v1.0.6> --enable    # add --force when MAGOS is already installed
 ```
 
-A pinned install receives no later fixes, guard security fixes included: follow `CHANGELOG.md` and move the pin. The commit SHA of a tag is the `refs/tags/v1.0.5^{}` line of `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.5 "refs/tags/v1.0.5^{}"` (the `refs/tags/v1.0.5` line when there is no `^{}` line). Hermes records a `--ref` install as pinned: `hermes plugins update magos` refuses it, and `hermes plugins install UlyssesLeoLee/MAGOS --force` without `--ref` reinstalls the pinned commit. Move the pin with `--ref <new SHA> --force --enable`; to follow the default branch again, run `hermes plugins remove magos` and then `hermes plugins install UlyssesLeoLee/MAGOS --enable`. `references/installation.md` has the details, including how to pin Codex and the sync-script installs.
+A pinned install receives no later fixes, guard security fixes included: follow `CHANGELOG.md` and move the pin. The commit SHA of a tag is the `refs/tags/v1.0.6^{}` line of `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.6 "refs/tags/v1.0.6^{}"` (the `refs/tags/v1.0.6` line when there is no `^{}` line). Hermes records a `--ref` install as pinned: `hermes plugins update magos` refuses it, and `hermes plugins install UlyssesLeoLee/MAGOS --force` without `--ref` reinstalls the pinned commit. Move the pin with `--ref <new SHA> --force --enable`; to follow the default branch again, run `hermes plugins remove magos` and then `hermes plugins install UlyssesLeoLee/MAGOS --enable`. `references/installation.md` has the details, including how to pin Codex and the sync-script installs.
 
 ### Claude Code (clone into the skills folder)
 

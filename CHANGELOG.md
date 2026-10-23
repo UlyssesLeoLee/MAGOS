@@ -2,6 +2,33 @@
 
 Every version of the `magos` package (the `version` in `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` and the lane guard's `GUARD_VERSION`). A release is tagged `v<version>` on its release commit. The tag `v1.0` marks the skill release 3.4.0 from before the package became a plugin and was renumbered; it is not a plugin version. Install, pin, upgrade and roll back as `references/installation.md` describes.
 
+## 1.0.6
+
+Tag `v1.0.6`. A patch release: the `/` menu of Claude Code lists the eight commands under one naming, the READMEs say what the plugin runs, sends and fetches, and the texts that name the commands of each host are corrected. The behaviour of the lane guard is unchanged; its `GUARD_VERSION` follows the package.
+
+### Added
+
+- **What it runs, sends and fetches.** A section at the top of `README.md`, `README.en.md` and `README.ja.md` lists what the hooks run, what the guard reads and writes (inside `<git-common-dir>/magos/`, plus the two steps you run yourself, `install` and `arm`), that it sends and fetches nothing, which commands touch the network only when you ask, and how to turn the guard off. The security scan of Anthropic's plugin directory reads the README for exactly this.
+
+### Changed
+
+- **One naming in the Claude Code menu.** `skills/git-orchestrator` sets `user-invocable: false`: the `/` menu lists the eight `/magos:GitXxx` commands and nothing else, and Claude still loads the orchestrator on its own when you describe a problem (the model is offered it as before). Codex and Hermes ignore the key. Checked on Claude Code 2.1.309 by loading the plugin files and reading the commands and skills it lists.
+- **The texts name the commands each host offers.** The three READMEs, the eight adapters of `skills/` and the design of `__init__.py` no longer say that Claude Code lists `/magos:git-<name>`: there the commands are `/magos:GitXxx`, the adapters are `/magos:git-<name>` in Hermes and `$magos:git-<name>` in Codex, and the explicit invocation of a write adapter in Claude Code is its command.
+- **The disclosure is exact.** The model is kept from starting the five write commands in Claude Code and Codex; Hermes has no such switch, so the adapters tell the agent to run only on your explicit invocation. The guard runs no program other than the local Git commands the README lists.
+- **The package contract** requires `user-invocable: false` and no `disable-model-invocation` on the entry skill and drops the unused `WRITE_ADAPTERS`; the README test reads a `#` inside quotes as part of the command; the test design (TC-104) states the rule and names the tests.
+- **The notes of 1.0.5** credit the plugin directory, not Claude Code, with reading the icon, and name the hosts that may honour the two keys.
+
+### Known limits
+
+- Claude Code does not document how `user-invocable: false` and `disable-model-invocation: true` combine: the one set of commands and the model's view of the entry skill were checked on 2.1.309 only.
+- A host other than Claude Code that reads the same frontmatter keys hides the adapters there too.
+- A second set can still come from files outside the package: command copies in `~/.claude/commands/` (delete them) and a clone below `~/.claude/skills/`.
+
+### Upgrade
+
+1. Upgrade the plugin on each host (`references/installation.md`, "升级"): `claude plugin marketplace update magos`, then `claude plugin update magos@magos`, and restart every running Claude Code session. A Hermes install pinned with `--ref` moves its pin with `hermes plugins install UlyssesLeoLee/MAGOS --ref <40-character SHA of v1.0.6> --force --enable`.
+2. The guard changes only in its version number. To refresh the guard copy under `~/.magos/guard`, run `doctor` from the new version and the `install --host <host>` commands it prints.
+
 ## 1.0.5
 
 Tag `v1.0.5`. A patch release: Claude Code shows one set of commands. Until now the plugin listed every command twice there: `/magos:GitRecon` (from `commands/`) and `/magos:git-recon` (the adapter of `skills/`, made for Codex and Hermes). The behaviour of the lane guard is unchanged; its `GUARD_VERSION` follows the package.
