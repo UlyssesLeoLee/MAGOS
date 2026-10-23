@@ -18,6 +18,16 @@
 
 ---
 
+## 它运行什么、发送什么、联网做什么
+
+- **运行什么。** 在 Claude Code 里，插件启用 PreToolUse 钩子（`hooks/hooks.json`）。遇到 shell 命令、子 Agent 启动、创建 worktree，以及会启动会话、shell 或进程的 MCP 工具时，`hooks/run-guard.cmd` 用 Python 运行 `scripts/magos_guard.py`；脚本读取收到的这次工具调用，回答放行或拒绝，不运行其他任何东西。
+- **读取什么。** 这次工具调用，以及你当前所在仓库的 Git 状态；只通过本地 Git 命令读取（`branch`、`check-ref-format`、`config`、`diff`、`for-each-ref`、`log`、`merge-base`、`rev-list`、`rev-parse`、`status`、`worktree`）。它从不运行与远程通信的命令。
+- **写入什么。** 只写在该仓库的 `<git-common-dir>/magos/` 里：车道登记、计划记录、覆盖（override）记录和一份审计日志（时间、该仓库的 Git 用户名和邮箱以及账户的登录名、分支和它的文件、你为覆盖输入的理由）。只有你自己在终端里运行时，才会在这个目录之外做两件事：`install` 把守卫复制到 `~/.magos/guard` 并打印一条配置，由你自己合并；`arm` 给该仓库加一个 Git `reference-transaction` 钩子。插件不修改任何 Claude Code 设置和权限规则。
+- **发送与联网。** 守卫不发送任何数据，也不联网获取任何内容：没有网络访问、没有遥测、不接触凭据（包测试检查钩子代码不建立任何网络连接，且它的 Git 运行器拒绝所有与远程通信的子命令）。斜杠命令是写给 Agent 的指令：`/GitRecon`、`/GitAnalyze`、`/GitRecommend` 只读；会写入的五个命令只有你亲自输入才会运行（模型不能自己启动），带有 `--apply` 的命令没有它就不会改动任何东西。联网只发生在你要求时：`--remote` 对你的远程运行 `git fetch --prune`，`/GitSweep --apply` 删除已合并的远程分支，`/GitSweep --apply --push` 推送一个分支。
+- **关闭方法。** `git config --local magos.guard off`（单个仓库）、`claude plugin disable magos`（整个插件）或 `MAGOS_GUARD=off`；见下文的“车道守卫”一节。
+
+---
+
 ## 先用人话说明白（新手请先看这里）
 
 > 完全没学过 Git 也没关系。下面用“几个人同时修改一份文稿”来打比方，把要用到的词讲清楚。

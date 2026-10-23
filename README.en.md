@@ -19,6 +19,16 @@ It actively inspects the current repository's **branch / worktree / commit / ahe
 
 ---
 
+## What it runs, sends and fetches
+
+- **Runs.** In Claude Code the plugin turns on PreToolUse hooks (`hooks/hooks.json`). For shell commands, agent launches, worktree creation and the MCP tools that start sessions, shells or processes, `hooks/run-guard.cmd` starts Python on `scripts/magos_guard.py`; the script reads the tool call it is handed, answers allow or deny, and runs nothing else.
+- **Reads.** That tool call, and the Git state of the repository you are working in, through local Git commands only (`branch`, `check-ref-format`, `config`, `diff`, `for-each-ref`, `log`, `merge-base`, `rev-list`, `rev-parse`, `status`, `worktree`). It never runs a command that talks to a remote.
+- **Writes.** Only inside `<git-common-dir>/magos/` of that repository: lane claims, plan records, override records and an audit log (the time, the Git user name and email and the login name of the account, the branch and its files, and the reason you typed for an override). Two things happen outside it, only when you run them yourself in a terminal: `install` copies the guard to `~/.magos/guard` and prints a configuration entry for you to merge, and `arm` adds one Git `reference-transaction` hook to that repository. The plugin changes no Claude Code setting and no permission rule.
+- **Sends and fetches.** The guard sends nothing and fetches nothing: no network access, no telemetry, no credentials (the package tests check that the hook code opens no network connection and that its Git runner refuses every subcommand that talks to a remote). The slash commands are instructions for the agent: `/GitRecon`, `/GitAnalyze` and `/GitRecommend` only read; the five commands that write run only when you type them (the model cannot start them), and where one has `--apply`, nothing changes without it. Network use is limited to what you ask: `--remote` runs `git fetch --prune` against your remote, `/GitSweep --apply` deletes merged remote branches and `/GitSweep --apply --push` pushes one branch.
+- **Turning it off.** `git config --local magos.guard off` (one repository), `claude plugin disable magos` (the plugin) or `MAGOS_GUARD=off`; see **Lane guard** below.
+
+---
+
 ## Plain-language primer (start here if you are new to Git)
 
 > No Git background needed. Think of several people editing the same important document.
