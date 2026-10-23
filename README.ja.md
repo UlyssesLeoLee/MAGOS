@@ -156,15 +156,15 @@ Agent C ─┘
 
 ```mermaid
 flowchart LR
-    M["main"] --> A["Agent A<br/>Branch + Worktree"]
-    M --> B["Agent B<br/>Branch + Worktree"]
-    M --> C["Agent C<br/>Branch + Worktree"]
+    M["main"] --> A["エージェント A<br/>ブランチ + ワークツリー"]
+    M --> B["エージェント B<br/>ブランチ + ワークツリー"]
+    M --> C["エージェント C<br/>ブランチ + ワークツリー"]
 
-    A --> R["Review / Validation"]
+    A --> R["レビュー / 検証"]
     B --> R
     C --> R
 
-    R --> Q["Merge Queue"]
+    R --> Q["マージキュー"]
     Q --> M2["main"]
 ```
 
@@ -403,14 +403,14 @@ cherry-pick    A──B──C'          C だけをコピーしてくる。D �
 
 ```mermaid
 flowchart TD
-    A["Agent Lane"] --> B["Refresh"]
-    B --> C["Validation"]
-    C --> D["Review"]
-    D --> E["Freshness Check"]
-    E --> F{"接受范围"}
-    F -->|"全部"| G["Merge / Squash"]
-    F -->|"部分"| H["Cherry-pick"]
-    G --> I["Validate main"]
+    A["エージェントのレーン"] --> B["最新の状態に更新"]
+    B --> C["検証"]
+    C --> D["レビュー"]
+    D --> E["鮮度チェック"]
+    E --> F{"受け入れる範囲"}
+    F -->|"すべて"| G["マージ / スカッシュ"]
+    F -->|"一部"| H["チェリーピック"]
+    G --> I["main を検証"]
     H --> I
 ```
 
@@ -669,10 +669,10 @@ agent/c        内容はすでに含まれていて、新しいものはない
 
 ```mermaid
 flowchart TD
-    A["预览计划"] --> B["逐个 merge --no-ff"]
-    B -->|"冲突"| X["abort，停止，不删除任何分支"]
-    B --> C["校验"]
-    C --> D["逐个复查：tip 未变 + 已是 target 祖先"]
+    A["計画をプレビュー"] --> B["1 つずつ merge --no-ff"]
+    B -->|"コンフリクト"| X["abort して停止し、ブランチは 1 つも削除しない"]
+    B --> C["検証"]
+    C --> D["1 つずつ再確認：tip が変わっていない + すでに target の祖先"]
     D --> E["worktree remove → branch -d"]
 ```
 
@@ -995,6 +995,15 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 
 ```mermaid
 stateDiagram-v2
+    state "計画済み（PLANNED）" as PLANNED
+    state "作業中（ACTIVE）" as ACTIVE
+    state "準備完了（READY）" as READY
+    state "承認済み（APPROVED）" as APPROVED
+    state "統合中（INTEGRATING）" as INTEGRATING
+    state "統合済み（INTEGRATED）" as INTEGRATED
+    state "ブロック中（BLOCKED）" as BLOCKED
+    state "却下（REJECTED）" as REJECTED
+
     [*] --> PLANNED
     PLANNED --> ACTIVE
     ACTIVE --> READY
@@ -1158,7 +1167,7 @@ Claude Code ではターミナルからも実行できます：`claude plugin ma
 ```bash
 claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.4    # 然后：claude plugin install magos@magos
 git clone --branch v1.0.4 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.4 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
+hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.4 の 40 文字のコミット SHA> --enable    # MAGOS をインストール済みのときは --force を付ける
 ```
 
 バージョンを固定すると、その後の修正（ガードのセキュリティ修正も含む）は届きません。`CHANGELOG.md` を確認して、固定先を移してください。タグの commit SHA は、`git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.4 "refs/tags/v1.0.4^{}"` の出力のうち `refs/tags/v1.0.4^{}` の行にある SHA です（この行がない場合は `refs/tags/v1.0.4` の行を使います）。Hermes は `--ref` 付きのインストールを固定として記録します。`hermes plugins update magos` はそれを拒否し、`--ref` なしの `hermes plugins install UlyssesLeoLee/MAGOS --force` は、もともと固定していたコミットを再インストールします。固定先を移すには `--ref <新しい SHA> --force --enable` を使います。デフォルトブランチへの追従に戻すには、先に `hermes plugins remove magos` を実行し、続けて `hermes plugins install UlyssesLeoLee/MAGOS --enable` を実行します。詳細と、Codex および同期スクリプトでインストールしたものの固定方法は、`references/installation.md` を参照してください。

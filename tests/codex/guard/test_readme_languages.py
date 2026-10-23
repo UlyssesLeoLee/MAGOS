@@ -1,6 +1,6 @@
 """The READMEs in the three languages (README.md Chinese, README.en.md English, README.ja.md Japanese) offer the same choice of language, and the
-Japanese one follows the Chinese one section for section: the same outline, tables and command blocks, and the same files, flags and commands
-named in inline code."""
+Japanese one follows the Chinese one section for section: the same outline, tables and command blocks, diagrams of the same shape, and the same
+files, flags and commands named in inline code.  A command block is written for its reader as well: only its commands must be the same."""
 from __future__ import annotations
 
 import re
@@ -11,7 +11,8 @@ from conftest import ROOT
 
 FILES = {"zh": "README.md", "en": "README.en.md", "ja": "README.ja.md"}
 SWITCH = "[English](README.en.md) | [中文](README.md) | [日本語](README.ja.md)"
-CODE_LANGS = ("bash", "powershell", "json", "yaml", "mermaid")  # fences whose body is the same in every language
+CODE_LANGS = ("bash", "powershell", "json", "yaml")  # fences whose commands are the same in every language (comments and placeholders aside)
+DIAGRAM = "mermaid"  # a diagram is translated: its labels are in the language of the README, its nodes and edges are the same
 LITERAL = re.compile(r"/|\\|--|\.md\b|\.py\b|\.json\b|\.ya?ml\b|\.cmd\b|\$|%|~")
 
 
@@ -53,6 +54,18 @@ def parse(rel):
     return heads, fences, tables, {re.sub(r"<[^<>]*>", "<>", s) for s in spans}  # a placeholder is written in the language of the README
 
 
+def commands(body):
+    """A command block as every language must write it: no `# ` comment, and each <placeholder> read as one (both are written for the reader)."""
+    return "\n".join(re.sub(r"<[^<>]*>", "<>", re.sub(r"(^|\s)#\s.*$", "", line)).rstrip() for line in body.split("\n"))
+
+
+def shape(body):
+    """The nodes and edges of a mermaid diagram: its non-empty lines without the quoted labels of nodes and edges and without the `state "..." as`
+    lines that only label a state."""
+    lines = (re.sub(r'\[\s*"[^"]*"\s*\]|\{\s*"[^"]*"\s*\}|\|\s*"[^"]*"\s*\|', "", line).rstrip() for line in body.split("\n"))
+    return [line for line in lines if line.strip() and not re.match(r'\s*state\s+"', line)]
+
+
 def test_every_readme_opens_with_the_same_language_switcher():
     for rel in FILES.values():
         lines = read(rel)
@@ -79,7 +92,9 @@ def test_the_japanese_readme_has_the_outline_tables_and_command_blocks_of_the_ch
     assert ja[2] == zh[2], "table dimensions differ"
     for k, (a, b) in enumerate(zip(zh[1], ja[1])):
         if a[0] in CODE_LANGS:
-            assert a[1] == b[1], ("code block %d (%s) differs" % (k, a[0]), a[1][:80])
+            assert commands(a[1]) == commands(b[1]), ("code block %d (%s) differs" % (k, a[0]), a[1][:80])
+        elif a[0] == DIAGRAM:
+            assert shape(a[1]) == shape(b[1]), ("diagram %d differs in its nodes or edges" % k, a[1][:80])
 
 
 def test_the_japanese_readme_names_the_files_flags_and_commands_the_chinese_one_names(zh_ja):
