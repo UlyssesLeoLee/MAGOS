@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "source": "scripts/validate_gemini_adapter.py",
+  "baseline_source_sha256": "8b750352b1a1acbcc72faac1b269f96a9ae77c883a4a3de4cebe9f3ed277052b",
+  "prepared_branch": "develop",
+  "technical_design": ".quality/docs/scripts/validate_gemini_adapter.py.md",
+  "test_design": ".quality/test-design/scripts/validate_gemini_adapter.py.test.md",
+  "prepared_technical_design_sha256": "e94a8ce314f543dbf5c1114863f96a3c8be76e7176aa4552cb263cae0e10d818",
+  "prepared_test_design_sha256": "643bf058d6948bd109d4fd28aacbbcd2816ebe7eea0d2ba81c4da3e46f494cae",
+  "prepared_related_design_sha256": {}
+}
