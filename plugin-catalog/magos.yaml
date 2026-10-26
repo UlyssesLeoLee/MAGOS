@@ -1,0 +1,17 @@
+name: magos
+title: "MAGOS — Multi-Agent Git Orchestrator"
+repo: https://github.com/UlyssesLeoLee/MAGOS
+sha: 9740920d5cde201d89faa127ddcfe984f326e587
+description: "Coordinate AI coding agents through safe Git branch, worktree, planning, integration, and cleanup workflows."
+maintainer: UlyssesLeoLee
+tier: community
+category: tools
+version: "1.0.5"
+docs_url: https://github.com/UlyssesLeoLee/MAGOS
+readme: true
+onboarding: false
+capabilities:
+  provides_tools: []
+  provides_hooks: []
+  provides_middleware: []
+  requires_env: []

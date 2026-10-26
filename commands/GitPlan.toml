@@ -1,0 +1,20 @@
+description = "按需求规划互斥文件 Lane，预览或显式注册、收敛、释放"
+prompt = '''
+MAGOS /GitPlan — Gemini CLI adapter for the existing MAGOS repository.
+
+Raw command arguments (preserve spelling and whitespace semantics): {{args}}
+
+USAGE: /GitPlan <set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]
+Examples: /GitPlan sweep-readiness --into develop; /GitPlan sweep-readiness --into develop --apply --create; /GitPlan sweep-readiness --status; /GitPlan sweep-readiness --converge --apply --land
+
+MANDATORY EXECUTION ORDER:
+1. Parse these arguments FIRST, without tools. If --help is present, reply with usage, options, defaults and examples in the chosen language, then STOP: do not load skills, read files, inspect Git, or invoke any tool. Unknown flags or invalid/missing required arguments: show usage and stop. `--lang <language>` affects reply language only; default Simplified Chinese.
+2. Otherwise activate the existing Gemini Agent Skill named `git-orchestrator` using `activate_skill`; it is provided in this MAGOS extension at `skills/git-orchestrator/SKILL.md`. It links to package-root `SKILL.md` and `references/commands.md`; read and follow those canonical contracts. If skill activation or its contract cannot be read, STOP ALL WRITES and explain; for a read-only command, use only observed non-mutating status information. Do NOT treat Claude Code-only `Skill` tool names or `$ARGUMENTS` from `commands/GitPlan.md` as executable commands in Gemini.
+3. Execute the source-defined Git command GitPlan with exactly the arguments above, under Gemini CLI tool approvals, checking the real target repository and safety preconditions. Neither this TOML nor an automatic tool invocation is permission to bypass MAGOS gates.
+4. Return contract-defined tables, evidence, blockers, risks, and safe next actions. Recheck the requested reply language before answering. Never claim operations ran when they were not performed.
+
+SOURCE-SPECIFIC CONSTRAINTS:
+Require a valid named set and EXACTLY one form selector. `--into` previews disjoint lane plan unless --apply; `--create` only with applicable --apply. `--status` read only. `--amend --expect-revision <n>` previews unless --apply; `--converge` previews unless --apply (with --land fast-forward only after approved merges and checks); `--release` ALWAYS writes and requires explicit user invocation. Enforce set name pattern [a-z0-9][a-z0-9-]{0,23} and reject Windows device names; --into target must not be main. Use magos_guard.py >=1.0.4 and dry-run for manifest validation and pairwise exclusive paths. Preview shows Requirements and Lanes tables plus blockers and readiness; apply consumes actual proven record/revision, never invented state. Do not silently auto-invoke any write form. No pushes, force deletes, merges with ours/theirs, repository-wide prune, or changes to main.
+
+Safety classification: Explicit command only; observe PREVIEW defaults and all write gates.
+'''

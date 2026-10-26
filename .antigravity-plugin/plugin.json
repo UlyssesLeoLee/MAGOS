@@ -1,0 +1,5 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "magos",
+  "description": "Multi-Agent Git Orchestrator (MAGOS): eight explicit Git command skills (git-recon, git-analyze, git-recommend, git-integrate, git-cleanup, git-converge, git-sweep, git-plan) that inspect, plan, integrate, clean up, and converge branches and worktrees. Each skill reads the shared orchestrator rules in the package-root SKILL.md and references/."
+}
