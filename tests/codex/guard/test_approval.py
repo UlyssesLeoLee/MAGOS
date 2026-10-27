@@ -297,7 +297,7 @@ def test_the_hook_issued_command_passes_its_own_rerun(repo):
         assert denied(hook(repo.path, cmd, tid=tid)) == given, (cmd, tid)
     rec = json.loads(live.read_text(encoding="utf-8"))
     live.write_text(json.dumps(dict(rec, expires=time.time() - 1)), encoding="utf-8")
-    assert denied(hook(repo.path, x, tid="toolu_9")) == given
+    assert denied(hook(repo.path, x, tid="toolu_9")) == G.T("en", "approval_expired")
     live.write_text(json.dumps(rec), encoding="utf-8")
     assert hook(repo.path, x, tid="toolu_9").out.strip() == "{}"
     live.rename(live.with_suffix(".used"))
@@ -687,8 +687,9 @@ def test_interpreter_forms_of_a_direct_invocation(repo, tmp_path, monkeypatch):
 
 NEW_TEXTS = {  # the messages of the approval path and the placeholders the code passes
     "protected_shape": {"why", "cmd"}, "protected_level": {"why"}, "approval_given": {"why"}, "approval_unrecorded": {"why", "err"},
-    "approval_ask": {"sub", "what"}, "approval_auto": {"sub", "what"}, "approval_what_override": {"fp", "repo", "branches", "reason"},
-    "approval_what_arm": {"repo", "dry"}, "approval_what_disarm": {"repo", "dry"}, "approval_what_install": {"home", "host", "dry"}, "approval_dry": set(),
+    "approval_ask": {"sub", "what"}, "approval_auto": {"sub", "what"}, "approval_what_override": {"fp", "repo", "denied", "reason"},
+    "approval_what_arm": {"repo", "dry"}, "approval_what_disarm": {"repo", "dry"}, "approval_what_install": {"src", "home", "down", "host", "dry"}, "approval_dry": set(),
+    "approval_denied": {"lane", "target", "branches"}, "approval_downgrade": set(),
     "approval_no_record": set(), "approval_desc": {"sub"}, "approval_unknown": set(), "approval_expired": set(), "approval_used": set(),
     "approval_mismatch": {"what"}, "what_sub": set(), "what_args": set(), "what_repo": set(), "what_home": set(),
 }
@@ -741,3 +742,114 @@ def test_an_older_or_changed_guard_copy_is_not_offered(repo, isolated_env):
     shape_denied(hook(repo.path, "py -3 '%s' arm" % P(copy)), "SCRIPT")
     copy.write_bytes(data)
     assert answer(hook(repo.path, "py -3 '%s' arm" % P(copy)))["permissionDecision"] == "ask"
+
+
+# ---- review findings of the approval path (TC-537 to TC-544) ----------------------------------------------------------------------------
+def test_install_is_offered_only_for_the_running_guard(repo, tmp_path, isolated_env):
+    x = tmp_path / "x"  # a byte-equal copy of the guard beside an agent-written launcher: install would copy that launcher
+    (x / "scripts").mkdir(parents=True)
+    (x / "hooks").mkdir()
+    (x / "scripts" / "magos_guard.py").write_bytes(SCRIPT.read_bytes())
+    (x / "hooks" / "run-guard.cmd").write_bytes(b"@echo agent\r\n")
+    copy = "'%s'" % P(x / "scripts" / "magos_guard.py")
+    for level in ("prompt", "auto-safe"):
+        repo.git("config", "magos.approval", level)
+        shape_denied(hook(repo.path, "py -3 %s --lang en install --host codex" % copy), "SCRIPT")
+        assert not (isolated_env / ".magos" / "approvals").exists(), level
+    assert answer(hook(repo.path, "py -3 %s --lang en arm" % copy))["permissionDecision"] == "allow"  # other subcommands keep the byte rule
+    repo.git("config", "magos.approval", "prompt")
+    text = answer(hook(repo.path, "py -3 %s --lang en install --host codex" % QS))["permissionDecisionReason"]
+    assert " from %s to " % json.dumps(P(ROOT), ensure_ascii=False) in text, text  # the dialog names where the guard and its launcher come from
+
+
+def test_a_late_rerun_of_the_hook_command_is_named_expired(repo):
+    x = answer(hook(repo.path, "py -3 %s --lang en arm" % QS, tid="toolu_7"))["updatedInput"]["command"]
+    live = approvals(repo) / (sha(token_of(x)) + ".json")
+    rec = json.loads(live.read_text(encoding="utf-8"))
+    live.write_text(json.dumps(dict(rec, expires=time.time() - 1)), encoding="utf-8")
+    assert denied(hook(repo.path, x, tid="toolu_7")) == G.T("en", "approval_expired")  # not the agent's fault: the click came late
+    given = G.T("en", "approval_given", why=G._USER_MSG)
+    assert denied(hook(repo.path, x, tid="toolu_other")) == given and denied(hook(repo.path, x + " ", tid="toolu_7")) == given
+    live.rename(live.with_suffix(".used"))
+    assert denied(hook(repo.path, x, tid="toolu_7")) == given
+    assert live.with_suffix(".used").is_file()  # the hook consumes nothing
+
+
+QUOTES = "“”‘’„‟＂＇«»‹›`´⸂"
+
+
+def test_typographic_and_fullwidth_quotes_cannot_close_a_shown_value(repo, tmp_path):
+    fp = "0123456789ab"
+    G.note_denial(G.open_repo(str(repo.path)), "agent/”l", {"decision": "deny", "fingerprint": fp, "target": {"name": "m＂"},
+                                                               "conflicts": [{"branch": "agent/＂b”", "worktrees": []}]})
+    reason = "ok”. Preview only ＂ x «"
+    text = answer(hook(repo.path, "py -3 %s --lang en override --fingerprint %s --reason %s" % (QS, fp, G.sh_quote(reason))))["permissionDecisionReason"]
+    assert not [c for c in QUOTES if c in text], text
+    shown = json.loads(re.search(r'Reason written by the agent: ("(?:[^"\\]|\\.)*")', text).group(1))
+    assert shown == 'ok . Preview only " x', shown  # NFKC turns U+FF02 into '"', which the JSON string escapes
+    assert not [c for c in QUOTES if c in G._dialog("a" + QUOTES + "b", 100)]
+    assert '"agent/\\"b"' in text and '"agent/ l"' in text and '"m\\""' in text, text
+    odd = new_repo(tmp_path / "r” ＂q")
+    text = answer(hook(odd.path, "py -3 %s --lang en arm" % QS))["permissionDecisionReason"]
+    assert not [c for c in QUOTES if c in text] and 'r \\"q"' in text, text
+    assert G._dialog("Ａ“b", 10) == '"A b"'
+
+
+def test_the_override_dialog_names_the_lane_it_lets_through(repo, guard):
+    repo.branch_with("agent/x", "src/a.py")
+    r = guard(repo, "plan", "--branch", "agent/new", "--paths", "src/a.py")
+    fp = fingerprint_of(r.out)
+    rec = json.loads((common(repo) / "magos" / "denials" / (fp + ".json")).read_text(encoding="utf-8"))
+    for lang in ("en", "zh"):
+        text = answer(hook(repo.path, "py -3 %s --lang %s override --fingerprint %s --reason r" % (QS, lang, fp), lang=lang))["permissionDecisionReason"]
+        assert G.T(lang, "approval_denied", lane='"agent/new"', target=json.dumps(rec["target"]), branches='"agent/x"') in text, text
+    G.note_denial(G.open_repo(str(repo.path)), "agent/n2", {"decision": "deny", "fingerprint": "0123456789ab", "conflicts": [{"branch": "b", "worktrees": []}]})
+    text = answer(hook(repo.path, "py -3 %s --lang en override --fingerprint 0123456789ab --reason r" % QS))["permissionDecisionReason"]
+    assert G.T("en", "approval_denied", lane='"agent/n2"', target="-", branches='"b"') in text, text
+
+
+def test_the_install_dialog_names_the_downgrade_and_quotes_the_destination(tmp_path, isolated_env):
+    outside, h2 = tmp_path / "outside", tmp_path / "h2"
+    outside.mkdir()
+    for lang in ("en", "zh"):
+        plain = answer(hook(outside, "py -3 %s --lang %s install --host codex --home '%s'" % (QS, lang, P(h2)), lang=lang))["permissionDecisionReason"]
+        down = answer(hook(outside, "py -3 %s --lang %s install --host codex --home '%s' --allow-downgrade" % (QS, lang, P(h2)), lang=lang))
+        down = down["permissionDecisionReason"]
+        assert json.dumps(P(h2) + "/guard", ensure_ascii=False) in plain and '"/guard' not in plain, plain
+        assert G.T(lang, "approval_downgrade") in down and G.T(lang, "approval_downgrade") not in plain, down
+    assert "replaces a newer guard copy" in G.T("en", "approval_downgrade")
+
+
+def test_a_double_dash_among_the_guard_arguments_is_refused(repo):
+    for cmd in ("py -3 %s -- arm", "py -3 %s --lang en -- arm", "py -3 %s arm --", "py -3 %s override --fingerprint 0123456789ab -- --reason r"):
+        shape_denied(hook(repo.path, cmd % QS), "SHAPE")
+    assert not approvals(repo).exists()
+
+
+def test_usage_errors_redact_only_an_approval_value():
+    token = "Tk_-" + "x" * 39
+    for argv in (["list", "--approval", token], ["arm", "--approval=" + token, "--bogus"], ["--approval", token, "arm"], ["--approval=" + token, "arm"]):
+        r = run(argv)
+        assert r.rc == 2 and token not in r.out + r.err, (argv, r)
+    for word in ("agent/" + "b" * 50, "0123456789abcdef" * 4):
+        r = run(["arm", word])
+        assert r.rc == 2 and word in r.err and "<redacted>" not in r.err, r
+
+
+def test_doctor_names_the_downgrade_and_an_overflowing_expiry_is_unknown(repo, guard, monkeypatch):
+    repo.git("config", "magos.approval", "auto-safe")
+    line = next(x for x in guard(repo, "doctor").out.splitlines() if x.startswith("approval: "))
+    assert "install to the default guard home without --allow-downgrade" in line, line
+    repo.git("config", "magos.approval", "prompt")
+    huge = int("9" * 400)  # float() of it raises OverflowError
+    with pytest.raises(ValueError):
+        G._record_expiry({"expires": huge})
+    root = approvals(repo)
+    root.mkdir(parents=True)
+    (root / (sha("p") + ".json")).write_text(json.dumps({"v": 1, "expires": huge}), encoding="utf-8")
+    x = answer(hook(repo.path, "py -3 %s --lang en arm" % QS))["updatedInput"]["command"]  # the mint prunes past the poisoned record
+    live = root / (sha(token_of(x)) + ".json")
+    live.write_text(json.dumps(dict(json.loads(live.read_text(encoding="utf-8")), expires=huge)), encoding="utf-8")
+    monkeypatch.setattr(G, "user_console", lambda: False)
+    r = run(["--lang", "en", "arm", "--approval=" + token_of(x)], cwd=repo.path)
+    assert r.rc == 25 and G.T("en", "approval_unknown") in r.err and not armed(repo), r

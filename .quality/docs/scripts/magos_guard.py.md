@@ -1896,7 +1896,12 @@ the following:
 4. That word, with a Git Bash drive spelling mapped and joined to the session directory when it is relative, names
    this guard: the running file, or a file whose bytes equal it, such as the copy under the guard home
    (`APPROVAL_SCRIPT`). An older guard, a changed copy and a file of the same name elsewhere are never offered.
-5. The guard's own argument parser (`build_parser`, the parser the command uses, with `--repo` unset) reads the words
+   For `install` the word must name the running file itself (`APPROVAL_SCRIPT` otherwise, at every level): `install`
+   copies the launcher `hooks/run-guard.cmd` from beside the script it runs as, so a byte-equal copy of the guard
+   next to another launcher would install that launcher.
+5. No argument of the guard is `--` (`APPROVAL_SHAPE`): argparse from Python 3.13 on reads the word after it as the
+   subcommand and earlier versions read it otherwise, so the command could fail on another interpreter than the hook's.
+   The guard's own argument parser (`build_parser`, the parser the command uses, with `--repo` unset) reads the words
    after it, with `--approval=<43 characters>` appended, without a usage error. They must name a subcommand that has a
    `USER_ONLY` row, and the parser must read the appended word as its approval option (`APPROVAL_ARGS`).
 6. Every word reaches the guard unchanged through the tool's shell.
@@ -1912,7 +1917,9 @@ A command in which the tamper filter finds a user-only subcommand and which name
 argparse from Python 3.13 on reads as the end of the global options), as written and with every backslash, backtick,
 caret, `'` and `"` removed. The one exception is the hook's own rewritten command of the same tool call: the token's record is live,
 carries the payload's `tool_use_id`, and holds the SHA-256 of exactly this command text. That command is answered `{}`,
-so a host that runs its hooks again on the rewritten input runs it. At level `terminal` the hook denies with the
+so a host that runs its hooks again on the rewritten input runs it. When such a record (not yet consumed, same
+`tool_use_id`, same SHA-256) has expired, the hook denies with the `approval_expired` text: the click came too late,
+nothing runs, and the record stays for the command or a prune. At level `terminal` the hook denies with the
 `protected_level` text.
 
 ### The answer
@@ -1939,27 +1946,34 @@ so a host that runs its hooks again on the rewritten input runs it. At level `te
 - `TEXT` says what is approved and that the click is the approval.
   - Every subcommand: its name and a dry run.
   - `arm`, `disarm` and `override`: the repository.
-  - `install`: the host and the destination.
-  - `override`: also the fingerprint, the conflicting branches of its denial record (or that they are not recorded
-    here), and the reason, marked as written by the agent.
+  - `install`: the host, the directory it copies the guard and its launcher from (the directory of the running
+    guard), the destination `<home>/guard`, and with `--allow-downgrade` that it replaces a newer guard copy.
+  - `override`: also the fingerprint, the lane its denial record names (the lane the click lets through) with its
+    target (`-` when the record names none), the conflicting branches of that record (or that the lane and the branches
+    are not recorded here), and the reason, marked as written by the agent.
   - An `ask` says that the command carries a one-time token valid for 120 s; an `allow` says that the subcommand runs
     without a click under `auto-safe`.
-- Every value an agent can choose is shown as a JSON string: the reason, the fingerprint, branch names, and the
-  repository and home paths.
+- Every value an agent can choose is shown as a JSON string: the reason, the fingerprint, the lane, the target, branch
+  names, and the repository, source and home paths.
+  - The value is normalised to NFKC (so a fullwidth `＂` becomes `"`).
   - Every control, format (the bidirectional controls among them), surrogate, and line or paragraph separator character
-    is replaced by a space, and runs of blanks are collapsed.
+    is replaced by a space, and so is every quotation mark but the ASCII `"`: the categories Pi and Pf, U+2018 to
+    U+201F, the fullwidth `＂` and `＇`, `«` `»` `‹` `›`, the backtick and `´`. Runs of blanks are collapsed.
+  - The ASCII `"` is escaped as `\"` by the JSON string.
   - The value is cut to 160 characters (the reason), 80 (a branch), 200 (a path) or 16 (the fingerprint).
   - At most six branches are shown, followed by `+<n> more`.
 
-  So no agent text can close its quotes or imitate a line of the guard.
+  So the closing quote of every shown value is the guard's, and no agent text starts a line of its own. A shown value
+  can still hold letters that look like the guard's words; the quotes mark where it begins and ends.
 - A mint that cannot write its record denies with the `approval_unrecorded` text, which names the error.
 
 ### Token and store
 
 - The token is `secrets.token_urlsafe(32)`: 43 characters of `A-Z a-z 0-9 _ -`, shown only in the rewritten command.
   The SHA-256 of the token (64 hex digits) names its record, and the record never holds the token. No message of the
-  command and no audit field holds it either: a usage error of the guard's parser shows every run of 43 or more of
-  these characters as `<redacted>`.
+  command and no audit field holds it either: a usage error of the guard's parser shows every value of `--approval`
+  it parsed (`--approval=<x>`, or the word after `--approval`) as `<redacted>`, wherever the message names it, and
+  every other word as written.
 - Store.
   - Scope `repo`: `<git-common-dir>/magos/approvals/` of the repository that `--repo` names (joined to the session
     directory), else that of the session directory.
@@ -1994,7 +2008,8 @@ so a host that runs its hooks again on the rewritten input runs it. At level `te
 - Consumption renames `<sha256>.json` to `<sha256>.used`. A rename succeeds only once on NTFS and on POSIX file systems,
   so of two uses at the same moment one wins and the other finds no record.
 - The renamed record is then read and checked:
-  - format 1: `v` 1, `used` false, `via` `prompt` or `auto-safe` and a finite `expires` (else the token is unknown);
+  - format 1: `v` 1, `used` false, `via` `prompt` or `auto-safe` and a finite `expires` (else the token is unknown; an
+    integer too large for a float is no finite `expires`);
   - not expired;
   - `sub` equal to the subcommand;
   - `where` equal to the command's repository or default guard home;
@@ -2047,8 +2062,9 @@ repository and outside any repository. Reading a store is allowed: it holds no t
   records and of `ARMED` (Known limits): the token, like the console gate, is no access control.
 - The token is visible in the dialog and in the command the host runs. Anything that reads the host's record of that
   call before the click can run exactly the approved command, once, within 120 s.
-- A click more than 120 s after the hook answered ends the command with exit 26; the agent runs the command again for
-  a new dialog.
+- A click more than 120 s after the hook answered runs nothing: a host that runs its hooks again on the rewritten
+  command gets the `approval_expired` deny, and otherwise the command ends with exit 26. The agent runs the command
+  again for a new dialog.
 - The hook and the command must see the same directory and the same `MAGOS_HOME`. A host whose payload `cwd` differs
   from the directory its shell runs in, or a tool environment with another `MAGOS_HOME`, ends the command with exit 25.
 - The PowerShell and Git Bash word rules are those of Recognition. A word that another shell version passes otherwise

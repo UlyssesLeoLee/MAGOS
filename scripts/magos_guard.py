@@ -154,18 +154,22 @@ M = {
                      "valid for 120 s."),
     "approval_auto": ("MAGOS：{sub} 无需点击即执行（magos.approval 为 auto-safe：它只增加保护或复制守卫，不削弱任何东西）。{what}",
                       "MAGOS: {sub} runs without a click (magos.approval is auto-safe: it adds protection or copies the guard and weakens nothing). {what}"),
-    "approval_what_override": ("它在 {repo} 中为拒绝 {fp} 记录一次覆盖，1 小时内有效，使该 lane 的下一次 plan 不顾重叠而通过；冲突的分支：{branches}。agent 写的理由：{reason}。",
+    "approval_what_override": ("它在 {repo} 中为拒绝 {fp} 记录一次覆盖，1 小时内有效，使该 lane 的下一次 plan 不顾重叠而通过；{denied}。agent 写的理由：{reason}。",
                                "It records an override of the denial {fp} in {repo}, valid for one hour, so that the next plan of that lane goes through despite the "
-                               "overlap; conflicting branches: {branches}. Reason written by the agent: {reason}."),
+                               "overlap; {denied}. Reason written by the agent: {reason}."),
+    "approval_denied": ("放行的 lane：{lane}（目标 {target}）；冲突的分支：{branches}", "the lane it lets through: {lane} (target {target}); conflicting branches: {branches}"),
     "approval_what_arm": ("它在 {repo} 中安装 git 后备钩子（reference-transaction 钩子和 ARMED，并把 gc.packRefs 与 maintenance.pack-refs.enabled 设为 false）{dry}。",
                           "It installs the git backstop in {repo} (the reference-transaction hook and ARMED; gc.packRefs and maintenance.pack-refs.enabled set to "
                           "false){dry}."),
     "approval_what_disarm": ("它从 {repo} 移除 git 后备钩子并恢复 pack-refs 设置；登记和审计日志保留{dry}。",
                              "It removes the git backstop from {repo} and restores the pack-refs settings; the claims and the audit log stay{dry}."),
-    "approval_what_install": ("它把本守卫复制到 {home}/guard 并打印 {host} 的钩子配置；它从不修改宿主配置{dry}。",
-                              "It copies this guard to {home}/guard and prints the {host} hook entry; it never edits the host configuration{dry}."),
+    "approval_what_install": ("它把本守卫及其启动器从 {src} 复制到 {home}{down}，并打印 {host} 的钩子配置；它从不修改宿主配置{dry}。",
+                              "It copies this guard and its launcher from {src} to {home}{down} and prints the {host} hook entry; it never edits the host "
+                              "configuration{dry}."),
     "approval_dry": ("（--dry-run：不写入任何东西）", " (--dry-run: nothing is written)"),
-    "approval_no_record": ("此处没有记录（agent 收到的拒绝消息列出了它们）", "not recorded here (the denial the agent received names them)"),
+    "approval_downgrade": ("（--allow-downgrade：会替换更新版本的守卫副本）", " (--allow-downgrade: replaces a newer guard copy)"),
+    "approval_no_record": ("lane 与冲突的分支：此处没有记录（agent 收到的拒绝消息列出了它们）",
+                           "the lane and the conflicting branches: not recorded here (the denial the agent received names them)"),
     "approval_desc": ("MAGOS 用户专属命令：{sub}（待批准）", "MAGOS user-only command: {sub} (approval)"),
     "approval_unknown": ("MAGOS：批准令牌在这里无效：存储中没有这个令牌（令牌错误、属于另一个仓库或守卫目录，或已过期并被清除）。没有执行任何操作。"
                          "请去掉 --approval 重新执行这条守卫命令，由用户在 Claude Code 的对话框中重新批准。",
@@ -3683,8 +3687,11 @@ def _rename(src, dst, tries=40):
 
 def _record_expiry(rec):
     """The `expires` of an approval or denial record as a finite number of seconds since the epoch (ValueError, TypeError or KeyError when it
-    has none)."""
-    v = float(rec["expires"])
+    has none, or one too large for a float)."""
+    try:
+        v = float(rec["expires"])
+    except OverflowError:  # an integer of hundreds of digits
+        raise ValueError("expires is too large")
     if not math.isfinite(v):
         raise ValueError("expires is not a finite number")
     return v
@@ -5976,8 +5983,8 @@ def approval_invocation(payload, cwd):
     (Approval, Recognition 1 to 4)?  One command of the tool's dialect with nothing around it, no redirection and no dynamic word; an interpreter
     (_interpreter_problem) and only the interpreter options -3, -3.<n> (-32, -64), -B, -E, -I, -s, -u, -X utf8 and -Xutf8; then a word that
     names this guard (this_guard), joined to the session directory when it is relative.  The invocation: "sh" (the tool's shell), "words" (the
-    interpreter, its options and the absolute script path, which the rewritten command quotes), "args" (the guard's arguments) and "text"
-    (the command as the payload holds it)."""
+    interpreter, its options and the absolute script path, which the rewritten command quotes), "args" (the guard's arguments, none of them
+    `--`) and "text" (the command as the payload holds it)."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     sh, c = _APPROVAL_TOOLS.get(tool), ti.get("command")
@@ -6003,7 +6010,7 @@ def approval_invocation(payload, cwd):
             k += 1
         else:
             return None, "APPROVAL_SHAPE"
-    if k == len(ws) or _guard_word(ws[k]) != "script":
+    if k == len(ws) or _guard_word(ws[k]) != "script" or "--" in ws[k + 1:]:  # argparse reads a word after `--` otherwise from Python 3.13 on
         return None, "APPROVAL_SHAPE"
     p = _norm_path(ws[k])
     path = p if _rooted(p) else os.path.normpath(os.path.join(cwd, p))
@@ -6052,27 +6059,40 @@ def approval_command(sh, words, token):
     return " ".join(w if _BARE_SH.fullmatch(w) else sh_quote(w) for w in ws)
 
 
+_QUOTE_LIKE = frozenset("＂＇«»‹›`´" + "".join(chr(c) for c in range(0x2018, 0x2020)))
+
+
 def _dialog(text, limit):
-    """An agent-controlled value as the dialog shows it: a JSON string in which every control, format (the bidirectional controls among them),
-    surrogate, line and paragraph separator character is a space and a run of blanks is one, cut to `limit` characters, so that no agent text
-    can close its quotes or imitate a line of the guard."""
-    s = " ".join("".join(" " if unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Zl", "Zp") else ch for ch in str(text)).split())
+    """An agent-controlled value as the dialog shows it: a JSON string of its NFKC form in which every control, format (the bidirectional
+    controls among them), surrogate, line and paragraph separator character and every quotation mark but the ASCII '"' (categories Pi and Pf,
+    U+2018 to U+201F, the fullwidth quotes, the guillemets, the backtick and the acute accent) is a space and a run of blanks is one, cut to
+    `limit` characters.  The ASCII '"' is escaped as \\", so the value cannot end its quotes early or start a line of the guard."""
+    s = unicodedata.normalize("NFKC", str(text))
+    s = " ".join("".join(" " if ch in _QUOTE_LIKE or unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Zl", "Zp", "Pi", "Pf") else ch for ch in s).split())
     return json.dumps(s if len(s) <= limit else s[:limit - 1] + "…", ensure_ascii=False)
 
 
 def approval_text(lang, row, ns, t, auto):
     """permissionDecisionReason: what the click approves and that the click is the approval.  Every subcommand: its name and a dry run;
-    arm, disarm and override: the repository; install: the host and the destination; override: also the fingerprint, the conflicting branches
-    of its denial record (at most six, then +<n> more) and the reason, marked as written by the agent."""
+    arm, disarm and override: the repository; install: the host, the directory it copies from (that of this guard), the destination and an
+    --allow-downgrade; override: also the fingerprint, the lane and target and the conflicting branches of its denial record (at most six,
+    then +<n> more) and the reason, marked as written by the agent."""
     dry = T(lang, "approval_dry") if getattr(ns, "dry_run", False) else ""
     repo = _dialog(repo_dir(t["g"]), 200) if t["g"] is not None else ""
     if row.name == "override":
-        b = denial_branches(t["g"], ns.fingerprint)
-        names = T(lang, "approval_no_record") if b is None else \
-            ", ".join(_dialog(x, 80) for x in b[:6]) + (" " + T(lang, "show_more", n=len(b) - 6) if len(b) > 6 else "")
-        what = T(lang, "approval_what_override", fp=_dialog(ns.fingerprint, 16), repo=repo, branches=names, reason=_dialog(ns.reason, 160))
+        rec = denial_record(t["g"], ns.fingerprint)
+        if rec is None:
+            denied = T(lang, "approval_no_record")
+        else:
+            b = rec["branches"]
+            names = ", ".join(_dialog(x, 80) for x in b[:6]) + (" " + T(lang, "show_more", n=len(b) - 6) if len(b) > 6 else "")
+            denied = T(lang, "approval_denied", lane=_dialog(rec["lane"], 80), target="-" if rec["target"] is None else _dialog(rec["target"], 80),
+                       branches=names)
+        what = T(lang, "approval_what_override", fp=_dialog(ns.fingerprint, 16), repo=repo, denied=denied, reason=_dialog(ns.reason, 160))
     elif row.name == "install":
-        what = T(lang, "approval_what_install", home=_dialog(t["dest"], 200), host=ns.host, dry=dry)
+        src = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).replace("\\", "/")  # guard_files copies the script and the launcher from here
+        what = T(lang, "approval_what_install", src=_dialog(src, 200), home=_dialog(t["dest"] + "/guard", 200), host=ns.host, dry=dry,
+                 down=T(lang, "approval_downgrade") if getattr(ns, "allow_downgrade", False) else "")
     else:
         what = T(lang, "approval_what_" + row.name, repo=repo, dry=dry)
     return T(lang, "approval_auto" if auto else "approval_ask", sub=row.name, what=what)
@@ -6089,27 +6109,30 @@ def _payload_id(v):
 
 
 def approval_reentry(payload, cwd):
-    """Is the command the hook's own rewritten command of this tool call, which the host runs through its hooks again?  Its token's record is
-    live, names the payload's tool_use_id and holds the SHA-256 of exactly this command text."""
+    """Is the command the hook's own rewritten command of this tool call, which the host runs through its hooks again?  -> "live" when its
+    token's record (<sha256>.json, not yet consumed) names the payload's tool_use_id, holds the SHA-256 of exactly this command text and has not
+    expired; "expired" for such a record whose expires has passed (the click came too late); None otherwise."""
     tid = payload.get("tool_use_id")
     if not isinstance(tid, str) or not tid:
-        return False
+        return None
     inv, _cause = approval_invocation(payload, cwd)
     last = inv["args"][-1] if inv and inv["args"] else ""
     token = last[len("--approval="):] if last.startswith("--approval=") else ""
     if not _APPROVAL_TOKEN.fullmatch(token):
-        return False
+        return None
     ns = parse_quiet(inv["args"])
     row = user_only_row(ns)
     t = approval_target(ns, row, cwd) if row is not None and ns.approval == token else None
     if not isinstance(t, dict):
-        return False
+        return None
     try:
         rec = json.loads(_read_retry(os.path.join(t["root"], hashlib.sha256(token.encode("ascii")).hexdigest() + ".json")))
-        return isinstance(rec, dict) and rec.get("tool_use_id") == tid and _record_expiry(rec) >= time.time() and \
-            rec.get("command_sha256") == hashlib.sha256(inv["text"].encode("utf-8")).hexdigest()
+        if not (isinstance(rec, dict) and rec.get("tool_use_id") == tid and
+                rec.get("command_sha256") == hashlib.sha256(inv["text"].encode("utf-8")).hexdigest()):
+            return None
+        return "live" if _record_expiry(rec) >= time.time() else "expired"
     except (OSError, ValueError, TypeError, KeyError):
-        return False
+        return None
 
 
 def approval_answer(payload, cwd, crs, lang):
@@ -6122,7 +6145,12 @@ def approval_answer(payload, cwd, crs, lang):
     def shape(cause):
         return "PROTECTED", T(lang, "protected_shape", why=why, cmd=guard_cmd()) + "\n[%s]" % cause
     if _carries_approval(str(ti.get("command") or "")):  # an agent never supplies a token
-        return None if approval_reentry(payload, cwd) else ("PROTECTED", T(lang, "approval_given", why=why))
+        again = approval_reentry(payload, cwd)
+        if again == "live":
+            return None
+        if again == "expired":  # the hook's own command, clicked too late: nothing runs, and the agent is not blamed
+            return "PROTECTED", T(lang, "approval_expired")
+        return "PROTECTED", T(lang, "approval_given", why=why)
     inv, cause = approval_invocation(payload, cwd)
     if inv is None:
         return shape(cause)
@@ -6133,6 +6161,8 @@ def approval_answer(payload, cwd, crs, lang):
     row = user_only_row(ns) if ns is not None and getattr(ns, "approval", None) == probe else None
     if row is None:
         return shape("APPROVAL_ARGS")
+    if row.name == "install" and not same_file(inv["words"][-1], os.path.abspath(__file__)):
+        return shape("APPROVAL_SCRIPT")  # install copies the launcher beside the script it runs as: only this very file names a trusted one
     cause = approval_intact(inv["words"], inv["args"], inv["sh"])
     if cause:
         return shape(cause)
@@ -6213,16 +6243,18 @@ def note_denial(g, lane, v):
         pass
 
 
-def denial_branches(g, fp):
-    """The conflicting branches that the live denial record of fingerprint `fp` names, or None (no repository, no such record, or one that has
-    expired or cannot be read)."""
+def denial_record(g, fp):
+    """What the live denial record of fingerprint `fp` names -> {"lane", "target" (None when it names none), "branches"}, or None (no
+    repository, no such record, or one that has expired, cannot be read or names no lane)."""
     if g is None or not isinstance(fp, str) or not re.fullmatch(r"[0-9a-f]{12}", fp):
         return None
     try:
         rec = json.loads(_read_retry(os.path.join(store(g), "denials", fp + ".json")))
-        if rec.get("fp") != fp or not isinstance(rec.get("branches"), list) or _record_expiry(rec) <= time.time():
+        if rec.get("fp") != fp or not isinstance(rec.get("branches"), list) or not isinstance(rec.get("lane"), str) or \
+                _record_expiry(rec) <= time.time():
             return None
-        return [str(b) for b in rec["branches"]]
+        target = rec.get("target")
+        return {"lane": rec["lane"], "target": None if target is None else str(target), "branches": [str(b) for b in rec["branches"]]}
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
 
@@ -6922,8 +6954,8 @@ def set_report(g, claims, bad_claims, heads):
 
 _APPROVAL_SAYS = {"terminal": "every user-only command runs in the user's own terminal",
                   "prompt": "Claude Code asks in its own dialog for a user-only command; Codex and Hermes use the terminal",
-                  "auto-safe": "Claude Code runs arm, and install to the default guard home, without a click and asks for every other user-only "
-                               "command; Codex and Hermes use the terminal"}
+                  "auto-safe": "Claude Code runs arm, and install to the default guard home without --allow-downgrade, without a click and asks "
+                               "for every other user-only command; Codex and Hermes use the terminal"}
 
 
 def approval_report(g):
@@ -7037,13 +7069,23 @@ class Parser(argparse.ArgumentParser):
     def __init__(self, *args, **kw):
         kw["allow_abbrev"] = False
         super().__init__(*args, **kw)
+        self.hidden = set()  # the values of --approval it parsed; build_parser gives the subcommand parsers the main parser's set
+
+    def parse_known_args(self, args=None, namespace=None):
+        words = [str(w) for w in (sys.argv[1:] if args is None else args)]
+        for k, w in enumerate(words):
+            if w.startswith("--approval="):
+                self.hidden.add(w[len("--approval="):])
+            elif w == "--approval" and k + 1 < len(words):
+                self.hidden.add(words[k + 1])
+        return super().parse_known_args(args, namespace)
 
     def error(self, message):
-        """A usage error never shows an approval token: a run of 43 or more token characters (A-Z a-z 0-9 _ -) is shown as <redacted>."""
-        super().error(_TOKEN_RUN.sub("<redacted>", message))
-
-
-_TOKEN_RUN = re.compile(r"[A-Za-z0-9_-]{43,}")
+        """A usage error never shows an approval token: every value of --approval (--approval=<x>, or the word after --approval) that was
+        parsed is shown as <redacted>, wherever the message names it; every other word is shown as written."""
+        for v in sorted((v for v in self.hidden if v), key=len, reverse=True):
+            message = re.sub(r"(?<![A-Za-z0-9_-])%s(?![A-Za-z0-9_-])" % re.escape(v), "<redacted>", message)
+        super().error(message)
 
 
 def build_parser(repo_default=None):
@@ -7111,6 +7153,8 @@ def build_parser(repo_default=None):
     p.add_argument("--abandon", action="store_true")
     for u in USER_ONLY:
         sub.choices[u.name].add_argument("--approval", help=argparse.SUPPRESS)
+    for p in sub.choices.values():  # a usage error of a subcommand also hides a value the main parser saw (Parser.error)
+        p.hidden = ap.hidden
     return ap
 
 
