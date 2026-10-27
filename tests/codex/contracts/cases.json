@@ -1009,6 +1009,98 @@
     ]
   },
   {
+    "id": "package/approval-levels",
+    "skill": "package",
+    "feature": "A user-only guard command (override, arm, disarm, install) runs only with the user's approval, a click in Claude Code's permission dialog or the user's own terminal, at the three levels of magos.approval, and no level lets an agent override or disarm unattended",
+    "invocations": {
+      "activation": "source contract of the documents; the permission dialog of a host is not started here"
+    },
+    "test_object": {
+      "files": [
+        "SKILL.md",
+        "references/lane-split.md",
+        "references/installation.md",
+        "references/pressure-tests.md",
+        "README.md",
+        "README.en.md",
+        "README.ja.md"
+      ],
+      "scope": "source contract only; the dialog and the click are checked in a real Claude Code session"
+    },
+    "expected": [
+      "SKILL.md and references/lane-split.md say that override, arm, disarm and install run only with the user's approval and that magos.approval is written only by the user.",
+      "references/lane-split.md section 6 states the levels terminal, prompt (the default) and auto-safe (arm and install into the default guard home without a click, override and disarm still ask), the two approval stores and that no level lets an agent run override or disarm unattended, and section 5 the exit codes 25 to 28 of a token that does not verify.",
+      "references/installation.md and the three READMEs state the same levels and the same stores in their language; the pressure tests describe the approval of an override and an agent that supplies its own approval."
+    ],
+    "checks": [
+      {
+        "file": "SKILL.md",
+        "contains": [
+          "`magos.*` config, `magos.approval` included, is written only by the user"
+        ]
+      },
+      {
+        "file": "references/lane-split.md",
+        "contains": [
+          "4. **Only the user overrides.** `override`, `arm`, `disarm` and `install` run only with the user's approval, never on your own",
+          "- **Approval levels.** `git config --local magos.approval <level>`",
+          "`auto-safe`: as `prompt`, except that `arm` and `install` run without a click",
+          "and without `--allow-downgrade`",
+          "No level lets an agent run `override` or `disarm` unattended",
+          "in `<git-common-dir>/magos/approvals/` for `override`, `arm` and `disarm`, in `<guard home>/approvals/` for `install`",
+          "## 10. Override (the User Approves)",
+          "25 the approval token of a user-only command is not known",
+          "28 the token does not match this command"
+        ]
+      },
+      {
+        "file": "references/installation.md",
+        "contains": [
+          "- 批准级别：`git config --local magos.approval <级别>`",
+          "没有让代理无人值守运行 `override` 或 `disarm` 的级别",
+          "`<git 公共目录>/magos/approvals/`"
+        ]
+      },
+      {
+        "file": "README.md",
+        "contains": [
+          "`git config --local magos.approval <级别>`",
+          "没有让代理无人值守地覆盖的级别",
+          "`<git-common-dir>/magos/approvals/`",
+          "`<guard home>/approvals/`",
+          "`<git-common-dir>/magos/denials/<fp>.json`"
+        ]
+      },
+      {
+        "file": "README.en.md",
+        "contains": [
+          "`git config --local magos.approval <level>`",
+          "No level lets an agent override or disarm unattended",
+          "`<git-common-dir>/magos/approvals/`",
+          "`<guard home>/approvals/`",
+          "`<git-common-dir>/magos/denials/<fp>.json`"
+        ]
+      },
+      {
+        "file": "README.ja.md",
+        "contains": [
+          "`git config --local magos.approval <レベル>`",
+          "エージェントが無人で上書きするレベルはありません",
+          "`<git-common-dir>/magos/approvals/`",
+          "`<guard home>/approvals/`",
+          "`<git-common-dir>/magos/denials/<fp>.json`"
+        ]
+      },
+      {
+        "file": "references/pressure-tests.md",
+        "contains": [
+          "### Approval of an override",
+          "### An agent supplies its own approval"
+        ]
+      }
+    ]
+  },
+  {
     "id": "hermes/argument-passing",
     "skill": "hermes-adapters",
     "feature": "Adapters explain how Hermes passes arguments and how to read shared files without '..' skill-viewer paths",

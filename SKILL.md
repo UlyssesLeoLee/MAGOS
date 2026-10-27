@@ -232,7 +232,7 @@ Fallback when no native isolation exists:
 git worktree add <path> -b agent/<task-id>-<short-name> <base-branch>
 ```
 
-Register the lane's manifest first (`magos_guard.py plan --branch agent/<task-id>-<short-name> --paths <files>`) as its own step, then create exactly that branch; release the claim when the lane is integrated or abandoned.
+Register the lane's manifest first (`magos_guard.py plan --branch agent/<task-id>-<short-name> --paths <files>`) as its own step, then create exactly that branch; release the claim when the lane is integrated or abandoned. When the guard denies the creation, report the denial and ask the user first: an override needs the user's approval, given as a click in Claude Code's own permission dialog or in the user's own terminal (`references/lane-split.md` sections 6 and 10).
 
 Keep unrelated refactors outside the lane unless approved as separate scope.
 
@@ -345,7 +345,7 @@ Recommended integration: merge | squash-merge | cherry-pick <commits> | reject
 Never:
 
 - let parallel agents edit the same writable checkout;
-- create a branch or worktree without a registered file manifest where the lane guard applies, or bypass, disable or edit the guard (`override`, `arm`, `disarm`, `install`, `magos.*` config, `core.hooksPath`, `GIT_CONFIG_*`, `.git/hooks`, `.git/magos`): only the user does;
+- create a branch or worktree without a registered file manifest where the lane guard applies, or bypass, disable or edit the guard (`override`, `arm`, `disarm`, `install`, `magos.*` config, `core.hooksPath`, `GIT_CONFIG_*`, `.git/hooks`, `.git/magos`) on your own: the user decides. `override`, `arm`, `disarm` and `install` run only with the user's approval: a click in the permission dialog of Claude Code, the user's own terminal, or, for `arm` and for `install` into the default guard home without `--allow-downgrade`, the standing approval the user gives by setting `magos.approval` to `auto-safe`; `override` and `disarm` always need the click or the terminal. `magos.*` config, `magos.approval` included, is written only by the user;
 - delete a lane that holds an open guard claim as if it were unowned;
 - give repository-specific branch/worktree advice without inspecting available state first;
 - recommend a branching model or branch restructure without first classifying the model the repository actually follows;
