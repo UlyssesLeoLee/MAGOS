@@ -1166,12 +1166,12 @@ Claude Code 也可以在终端里执行：`claude plugin marketplace add Ulysses
 从 1.0.1 起，每个发布都有标签 `v<版本号>`（见 `CHANGELOG.md`）；1.0.0 没有标签，不要安装或固定它；标签 `v1.0` 是插件化与改号之前的 3.4.0 版 Skill，不是插件版本，也不要固定到它。上面的命令跟随默认分支；要停留在某个版本：
 
 ```bash
-claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.6    # 然后：claude plugin install magos@magos
-git clone --branch v1.0.6 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
-hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.6 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
+claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.7    # 然后：claude plugin install magos@magos
+git clone --branch v1.0.7 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.7 的 40 位 commit SHA> --enable    # 已经安装过 MAGOS 时加 --force
 ```
 
-固定版本收不到之后的修复，包括守卫的安全修复：请关注 `CHANGELOG.md` 并移动固定点。标签的 commit SHA 是 `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.6 "refs/tags/v1.0.6^{}"` 输出里 `refs/tags/v1.0.6^{}` 那一行的 SHA（没有这一行时取 `refs/tags/v1.0.6` 那一行）。Hermes 把带 `--ref` 的安装记为固定：`hermes plugins update magos` 会拒绝它，不带 `--ref` 的 `hermes plugins install UlyssesLeoLee/MAGOS --force` 会重装原来固定的提交。移动固定点用 `--ref <新的 SHA> --force --enable`；要重新跟随默认分支，先 `hermes plugins remove magos`，再 `hermes plugins install UlyssesLeoLee/MAGOS --enable`。细节以及如何固定 Codex 与同步脚本安装，见 `references/installation.md`。
+固定版本收不到之后的修复，包括守卫的安全修复：请关注 `CHANGELOG.md` 并移动固定点。标签的 commit SHA 是 `git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.7 "refs/tags/v1.0.7^{}"` 输出里 `refs/tags/v1.0.7^{}` 那一行的 SHA（没有这一行时取 `refs/tags/v1.0.7` 那一行）。Hermes 把带 `--ref` 的安装记为固定：`hermes plugins update magos` 会拒绝它，不带 `--ref` 的 `hermes plugins install UlyssesLeoLee/MAGOS --force` 会重装原来固定的提交。移动固定点用 `--ref <新的 SHA> --force --enable`；要重新跟随默认分支，先 `hermes plugins remove magos`，再 `hermes plugins install UlyssesLeoLee/MAGOS --enable`。细节以及如何固定 Codex 与同步脚本安装，见 `references/installation.md`。
 
 ### Claude Code：clone 到 Skill 目录
 

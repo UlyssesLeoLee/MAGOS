@@ -20,16 +20,16 @@
 
 ## 固定版本
 
-每个版本的发布提交带有标签 `v<版本号>`（例如 `v1.0.6`），各版本的变化、安全说明与升级步骤见仓库根目录的 `CHANGELOG.md`。上面的安装命令跟随默认分支；要停留在某个版本，用下面的写法安装：
+每个版本的发布提交带有标签 `v<版本号>`（例如 `v1.0.7`），各版本的变化、安全说明与升级步骤见仓库根目录的 `CHANGELOG.md`。上面的安装命令跟随默认分支；要停留在某个版本，用下面的写法安装：
 
-| 安装方式 | 固定到 `v1.0.6` |
+| 安装方式 | 固定到 `v1.0.7` |
 | --- | --- |
-| Claude Code 插件市场 | `claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.6`，然后 `claude plugin install magos@magos` |
-| Claude Code clone 到 Skill 目录 | `git clone --branch v1.0.6 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos` |
-| Hermes 插件 | `hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.6 的 40 位 commit SHA> --enable`；已经安装过 MAGOS 时加 `--force` |
-| Codex 与同步脚本 | 在 `git clone --branch v1.0.6 https://github.com/UlyssesLeoLee/MAGOS` 得到的目录里运行同步脚本与 `install --host codex` |
+| Claude Code 插件市场 | `claude plugin marketplace add UlyssesLeoLee/MAGOS@v1.0.7`，然后 `claude plugin install magos@magos` |
+| Claude Code clone 到 Skill 目录 | `git clone --branch v1.0.7 https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos` |
+| Hermes 插件 | `hermes plugins install UlyssesLeoLee/MAGOS --ref <v1.0.7 的 40 位 commit SHA> --enable`；已经安装过 MAGOS 时加 `--force` |
+| Codex 与同步脚本 | 在 `git clone --branch v1.0.7 https://github.com/UlyssesLeoLee/MAGOS` 得到的目录里运行同步脚本与 `install --host codex` |
 
-- Hermes 只接受 40 位 commit SHA。`git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.6 "refs/tags/v1.0.6^{}"` 只列出这一个标签：有 `refs/tags/v1.0.6^{}` 一行时取那一行的 SHA（它是标签指向的提交），否则取 `refs/tags/v1.0.6` 一行的 SHA。其他版本把两处 `v1.0.6` 换成那个标签；不要用 `refs/tags/v1.0.6*` 这样的通配写法，它也会列出 `v1.0.60` 等其他标签。
+- Hermes 只接受 40 位 commit SHA。`git ls-remote https://github.com/UlyssesLeoLee/MAGOS refs/tags/v1.0.7 "refs/tags/v1.0.7^{}"` 只列出这一个标签：有 `refs/tags/v1.0.7^{}` 一行时取那一行的 SHA（它是标签指向的提交），否则取 `refs/tags/v1.0.7` 一行的 SHA。其他版本把两处 `v1.0.7` 换成那个标签；不要用 `refs/tags/v1.0.7*` 这样的通配写法，它也会列出 `v1.0.70` 等其他标签。
 - Hermes 把带 `--ref` 的安装记为固定（pinned）。对固定的安装，`hermes plugins update magos` 会拒绝并提示带 `--ref` 的重装命令；不带 `--ref` 的 `hermes plugins install UlyssesLeoLee/MAGOS --force --enable` 会重新安装原来固定的那个提交，而不是最新版本。
 - 移动固定点（包括回滚之后重新升级）：`hermes plugins install UlyssesLeoLee/MAGOS --ref <新标签的 40 位 commit SHA> --force --enable`，安装仍然是固定的。
 - 回到跟随默认分支：`hermes plugins remove magos`，然后 `hermes plugins install UlyssesLeoLee/MAGOS --enable`。两条命令之间插件目录不存在，指向 `<Hermes home>/plugins/magos/hooks/run-guard.cmd` 的 Hermes 钩子条目找不到启动器，`fail_closed: true` 会拒绝每一次 terminal 调用，所以两条命令要紧接着运行。

@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `4b0ff31398bed20ea4d3c457e87ed1ead557d2b4ae496cac8cb61335ed17347a`
+Source-SHA256: `b9bcbd5dba511643676e05a123057b18f14d0880967b1386f2a73e5d59baf3a4`
 
 ## Responsibility
 
@@ -411,7 +411,7 @@ The file holds nine cooperating parts.
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
-7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.6) and equals
+7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.7) and equals
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the

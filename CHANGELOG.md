@@ -2,6 +2,36 @@
 
 Every version of the `magos` package (the `version` in `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` and the lane guard's `GUARD_VERSION`). A release is tagged `v<version>` on its release commit. The tag `v1.0` marks the skill release 3.4.0 from before the package became a plugin and was renumbered; it is not a plugin version. Install, pin, upgrade and roll back as `references/installation.md` describes.
 
+## 1.0.7
+
+Tag `v1.0.7`. A feature release: a user-only guard command (`override`, `arm`, `disarm`, `install`) is approved with one click in Claude Code instead of a command typed in a terminal, at three levels of the new setting `magos.approval`.
+
+### Added
+
+- **One-click approval in Claude Code.** After a denial the agent asks you first; on your yes it runs the guard command, and Claude Code shows its own permission dialog that says what is approved (the subcommand, the repository, branch, host or fingerprint, and the reason the agent wrote, quoted and marked as the agent's) and that your click is the approval. The level is the local git config `magos.approval`, written only by you: `terminal` (you run the command in a real terminal, as before), `prompt` (the default) and `auto-safe` (a plain `arm` and an `install` into the default guard home run without a click; `override`, `disarm` and every other form still ask). Any other value counts as `terminal`, and `doctor` reports it.
+- **A single-use approval token.** For one direct invocation of this guard by the Bash or PowerShell tool with a user-only subcommand, the hook hands Claude Code the command rebuilt from its words with `--approval=<token>`. The token is single use, valid for 120 seconds and bound to the exact arguments and the repository or guard home; the command accepts it instead of a real console and its challenge. A token that is unknown (exit 25), expired (26), used (27) or for another command (28) is an error and never falls back to a prompt. A command in which the agent wrote `--approval` is denied. `install` is approved only when the running guard itself is the script.
+- **Audit of the route.** Every approved run records `via` (`terminal`, `prompt` or `auto-safe`); an override approved by a click records its reason as written by the agent (`reason_by`). The hook keeps the branches and the lane of a conflict denial in `<git-common-dir>/magos/denials/<fp>.json` so that the override dialog can name them.
+
+### Changed
+
+- **The documents state the levels.** `SKILL.md`, `references/lane-split.md`, `references/installation.md`, `references/pressure-tests.md`, `PR_DESCRIPTION.md` and the three READMEs say that a user-only command needs your approval, as a click in Claude Code or in your own terminal, that Codex and Hermes always use the terminal, and that an agent never sets `magos.approval`. The READMEs disclose the approval and denial records.
+- **The agent asks first.** After a denial the agent quotes the fingerprint and asks you, with the host's question tool where it has one, before it runs anything.
+- **The texts of the guard name the click.** The denial (`options`), `protected`, `need_tty` and `doctor` texts describe the levels; the writes of the hook now include approval and denial records, and writes into an approval store are denied.
+
+### Known limits
+
+- No level lets an agent run `override` or `disarm` unattended: an agent that approved its own bypass would be no guard. The opt-out is `git config --local magos.guard off`, which only you set.
+- The token is convenience, not access control: the barrier is Claude Code's own dialog. File tools are not hooked, so a deliberately malicious agent can still forge state files, the approval store or the audit log, as in 1.0.6; `via` and `reason_by` are provenance, not proof.
+- Codex and Hermes keep the terminal route whatever `magos.approval` says; the approval route exists in Claude Code only, for the Bash and PowerShell tools.
+- The route relies on Claude Code holding a hook's `ask` until you click and applying the rewritten command. On Claude Code 2.1.310, headless runs showed an `ask` held in each of the five permission modes, a `permissions.allow` rule not overriding it, and the rewritten command being applied and run once, for Bash and PowerShell; the click in the real dialog is not covered by those runs.
+- The reason in the dialog is text the agent wrote, shown quoted and shortened: read it before you click.
+- A guard older than 1.0.7 given `--approval` stops with a usage error.
+
+### Upgrade
+
+1. Upgrade the plugin on each host (`references/installation.md`) and restart every running Claude Code session: `claude plugin marketplace update magos`, then `claude plugin update magos@magos`.
+2. Nothing needs configuring: `prompt` is the default. To keep typing every user-only command in a terminal, run `git config --local magos.approval terminal` in each repository. To refresh a guard copy, run `doctor` from the new version and the `install --host <host>` commands it prints.
+
 ## 1.0.6
 
 Tag `v1.0.6`. A patch release: the `/` menu of Claude Code lists the eight commands under one naming, the READMEs say what the plugin runs, sends and fetches, and the texts that name the commands of each host are corrected. The behaviour of the lane guard is unchanged; its `GUARD_VERSION` follows the package.

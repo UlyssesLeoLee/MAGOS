@@ -5,7 +5,7 @@ license: Apache-2.0
 user-invocable: false
 compatibility: "Requires Git 2.30+ (Git 2.36+ for the lane guard) or harness-native workspace isolation; intended for Agent Skills-compatible coding agents."
 metadata:
-  version: "1.0.6"
+  version: "1.0.7"
   short-description: "Multi-Agent Git Orchestrator entry for plugin installs."
 ---
 
