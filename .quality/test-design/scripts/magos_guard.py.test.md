@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `b9bcbd5dba511643676e05a123057b18f14d0880967b1386f2a73e5d59baf3a4`
+Source-SHA256: `bea870a5e181b369e7787e41fad58ad65f40ff4806aaa3f6887e48c71daec395`
 
 ## Test Strategy
 
@@ -29,7 +29,7 @@ separate project test worktree described in `AGENTS.md`). Three levels:
    under Git's `sh`, run `run-guard.cmd` through cmd.exe and `sh`, and run two concurrent planners in separate processes.
    Redirect cases run at hook level from three session directories: a directory outside any repository, another clean
    repository, and another repository that holds a lane and a claim for the same name.
-   The approval tests (`test_approval.py`, TC-500 to TC-544) feed Claude, Codex and Hermes payloads of user-only commands to
+   The approval tests (`test_approval.py`, TC-500 to TC-547) feed Claude, Codex and Hermes payloads of user-only commands to
    `hook`, in process and as a subprocess, and run the rewritten command through the real guard with Git's `sh` and, on
    Windows, `powershell.exe`, with stdin closed, so that no console is present.
 
@@ -517,6 +517,9 @@ In the table, the character ∣ (U+2223) stands for the shell pipe character, wh
 | TC-542 | Claude payloads `py -3 S -- arm`, `py -3 S --lang en -- arm`, `py -3 S arm --`, `py -3 S override --fingerprint 0123456789ab -- --reason r` | Each is denied with `[APPROVAL_SHAPE]`; no approval store is created | tests/codex/guard/test_approval.py::test_a_double_dash_among_the_guard_arguments_is_refused |
 | TC-543 | `main` on `list --approval T`, `arm --approval=T --bogus`, `--approval T arm`, `--approval=T arm` (T 43 token characters); `arm agent/` + 50 × `b`; `arm` + 64 hex digits | Exit 2 and T in no stream, also where argparse names T as an invalid subcommand; the long branch and the 64 hex digits are shown as written, with no `<redacted>` | tests/codex/guard/test_approval.py::test_usage_errors_redact_only_an_approval_value |
 | TC-544 | `doctor` at `auto-safe`; `_record_expiry` of `expires` 10^400 - 1 (400 nines); such a record in the approval store when the hook mints for `arm`; the minted record's `expires` set to that integer and `arm --approval=<token>` run | The approval line says `install to the default guard home without --allow-downgrade`; `_record_expiry` raises ValueError; the mint asks; the command exits 25 with `approval_unknown` and does not arm | tests/codex/guard/test_approval.py::test_doctor_names_the_downgrade_and_an_overflowing_expiry_is_unknown |
+| TC-545 | Parametrised over `COMMA_FORMS`, with S the guard script and L the launcher: PowerShell `Start-Process py S,disarm -Wait`, `Start-Process py -ArgumentList 'S','install','--host','claude','--allow-downgrade'`, `Start-Process py S,arm`, `Start-Process py 'S','disarm'`, `Start-Process py @('S','disarm')`, `Start-Process py S, disarm`, `Start-Process py S ,arm`, `Start-Process py S , arm`, `Start-Process py S,` + backtick + newline + ` disarm`, `saps py S,disarm`, `start py S,arm`, `Start-Process py -Args S,disarm`, `Start-Process cmd '/c','py','S','disarm'`, `Start-Process conhost.exe py,S,disarm`, `Start-Process wt py,S,disarm`, `Start-Process py "S,disarm".Split(',')`, `iex "Start-Process py S,disarm"`, `py 'S','disarm'`, `py ('S') disarm`, `Start-Process py S,--lang,en,arm`, `Start-Process cmd '/c','L','disarm'`; Bash `powershell -NoProfile -Command 'Start-Process py ''S'',''disarm'''`, `pwsh -c 'Start-Process py S,disarm'`, `cmd //c start py S,disarm`; each as a Claude payload at `magos.approval` prompt and auto-safe, and as a Codex `Bash` and a Hermes `terminal` payload | `protected` returns `("always", "override / arm / disarm / install are user-only")`; Claude denies with the `protected_shape` text and the last line `[APPROVAL_DYNAMIC]` for a form with a parenthesis, `[APPROVAL_SHAPE]` for the others, at both levels; Codex and Hermes deny with the `protected` text; neither the repository's approval store nor `<HOME>/.magos/approvals` exists | tests/codex/guard/test_approval.py::test_comma_and_array_lists_of_the_guard_are_denied_on_every_host |
+| TC-546 | Parametrised: `git commit -m "a, b"`, `echo a,b`, `grep -e a,b notes.txt`, `cat 'C:/x/a,b/notes.md'`, `Get-Content a.txt,b.txt`, `Write-Output @('a','b')`, `Start-Process notepad -ArgumentList 'a.txt','b.txt'`, `py -3 'S' check --branch a,install --paths src/a.py,docs/d.md`, `Start-Process py 'S','list'`, `py -3 'C:/a.b(c)/tool.py' arm,x`; each as a Claude `Bash` and `PowerShell` payload (regression: no new denial) | `protected` returns None; the hook answers `{}` for both tools | tests/codex/guard/test_approval.py::test_ordinary_commands_with_commas_are_not_denied |
+| TC-547 | `approval_intact(["py","-3",S], ["--reason", w], "bash")` for w `@/tmp/x`, `x@/y`, `a\\b`, `\\server\share` with win True and False, and for `a@b`, `a\b`, `C:\x`, `a b /c/y` with win True; Claude `Bash` payloads `py -3 'S' override --fingerprint 0123456789ab --reason '@/tmp/x'` and `... --reason 'a\\b'` | The first four give `APPROVAL_PATHCONV` with win True and None with win False; the other four None; on Windows both payloads are denied with `[APPROVAL_PATHCONV]` and no approval store exists; elsewhere both are asked | tests/codex/guard/test_approval.py::test_arguments_git_bash_rewrites_after_the_click_are_refused |
 
 ## Boundary & Failure Cases
 

@@ -2488,6 +2488,24 @@ def _user_only(rest, launcher):
     return k < len(rest) and (rest[k] in _USER_ONLY or _bare(rest[k]) in _USER_ONLY)
 
 
+_METHOD_TAIL = re.compile(r"\.[A-Za-z_]\w*\([^\\/]*$")  # a .Name(...) call at the end of a piece ("a,b".Split(',')); a path segment is none
+
+
+def _pieces(words):
+    """-> (owners, pieces): the words cut at PowerShell's comma, which separates the elements of an array that a native command and
+    Start-Process receive as separate arguments (`a,b`, `'a','b'`, `a, b`, `a ,b`, `@('a','b')`, `"a,b".Split(',')`, also `('a') b`).
+    Each piece loses a .Name(...) call at its end and every @, ( and ) at its ends; an empty piece (a lone comma, a comma that starts or
+    ends a word) is no word.  owners[j] is the index in `words` of the word that holds pieces[j]."""
+    owners, pieces = [], []
+    for i, w in enumerate(words):
+        for p in w.split(","):
+            p = re.sub(r"^[@(]+|[()]+$", "", _METHOD_TAIL.sub("", p))
+            if p:
+                owners.append(i)
+                pieces.append(p)
+    return owners, pieces
+
+
 def user_only_row(args):
     """The USER_ONLY row of a parsed invocation, or None.  The one place that says which parsed invocation is user-only (an argument predicate
     of a row belongs here, and the same rule in _user_only)."""
@@ -2601,10 +2619,14 @@ def _protected_words(words, depth, roots, lazy):
 
     def any_word(pred):
         return any(pred(x) for x in lows) or any(pred(x) for x in bares)
+    owners, pieces = _pieces(words)  # a guard piece and the pieces after it, its arguments: `Start-Process py <guard>,disarm` runs disarm
+    j = 0
     for i, w in enumerate(words):
-        kind = _guard_word(w)
-        if kind and _user_only(words[i + 1:], kind == "launcher"):  # also behind start, cmd /c start or Start-Process: the word is found anywhere
-            return "always", _USER_MSG
+        while j < len(pieces) and owners[j] == i:
+            kind = _guard_word(pieces[j])
+            if kind and _user_only(pieces[j + 1:], kind == "launcher"):  # also behind start, cmd /c start or Start-Process: found anywhere
+                return "always", _USER_MSG
+            j += 1
         if depth < 3 and re.search(r"\s", w) and re.search(r"magos_guard|run-guard", w, re.I):  # Start-Process ... -ArgumentList '<guard> disarm'
             found = protected(w, depth + 1, roots, lazy)
             if found:
@@ -6023,12 +6045,13 @@ def approval_intact(lead, args, sh, win=None):
     """The cause code when a word cannot reach the guard unchanged through the tool's shell, else None.  `lead`: the interpreter, its options
     and the script; `args`: the guard's arguments.  Windows PowerShell 5.1 drops an empty word, splits or rejoins a word that holds '"' or ends
     with a backslash, and reads --% as its stop-parsing token; Git Bash on Windows rewrites an argument that starts with '/', holds '=/' or
-    starts with -<letter>/ as a Windows path when it starts a Windows program (the script word is a Windows path already)."""
+    '@/' or starts with -<letter>/ as a Windows path, and one backslash of a pair away, when it starts a Windows program (the script word is
+    a Windows path already)."""
     win = sys.platform == "win32" if win is None else win
     if sh == "ps":
         if any(w == "" or '"' in w or w.endswith("\\") or w == "--%" for w in list(lead) + list(args)):
             return "APPROVAL_POWERSHELL"
-    elif win and any(w.startswith("/") or "=/" in w or re.match(r"-[A-Za-z]/", w) for w in args):
+    elif win and any(w.startswith("/") or "=/" in w or "@/" in w or "\\\\" in w or re.match(r"-[A-Za-z]/", w) for w in args):
         return "APPROVAL_PATHCONV"
     return None
 

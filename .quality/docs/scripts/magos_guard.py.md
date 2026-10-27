@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `b9bcbd5dba511643676e05a123057b18f14d0880967b1386f2a73e5d59baf3a4`
+Source-SHA256: `bea870a5e181b369e7787e41fad58ad65f40ff4806aaa3f6887e48c71daec395`
 
 ## Responsibility
 
@@ -514,8 +514,15 @@ it look like. A guard word is a word ending in `magos_guard` or `magos_guard.py`
 guard word the hook skips a `--opt=value` word, a prefix of `--repo` or `--lang` together with its value, a prefix of
 `--json`, and a `--` (the end of the options; from Python 3.13 on argparse takes the word after it as the subcommand),
 and tests the first remaining word. The guard word is found wherever it stands in a command, so wrappers that start it
-in a new console or process (`start`, `cmd /c start`, `Start-Process`) hide nothing, and the text of a child shell is
-read as well.
+in a new console or process (`start`, `cmd /c start`, `Start-Process` and its alias `saps`, `conhost.exe`, `wt`) hide
+nothing, and the text of a child shell is read as well. Every word is also cut at PowerShell's comma, which separates
+the elements of an array that a native command and `Start-Process` receive as separate arguments: a guard piece and
+the pieces and words after it are read as the guard word and its arguments (`Start-Process py <guard>,disarm`,
+`-ArgumentList '<guard>','disarm'`, `<guard>, disarm`, `<guard> ,disarm`, `py '<guard>','disarm'`). A piece loses a
+`.Name(...)` method call at its end that holds no `/` or `\` (`"<guard>,disarm".Split(',')`) and every `@`, `(` and `)`
+at its ends (`@('<guard>','disarm')`, `('<guard>') disarm`); an empty piece (a lone comma, a comma that starts or ends a
+word) is no word. A command without a guard word is not affected by the cut (`git commit -m "a, b"`, `echo a,b`, a path
+that holds a comma).
 
 - `check --branch B (--paths P... | --manifest FILE|-) [--target T]`: read-only verdict, no lock, writes nothing.
 - `plan --branch B (--paths P... | --manifest FILE|-) [--worktree PATH] [--amend]`: judges against the resolved
@@ -841,7 +848,8 @@ Invariants:
    from the host process environment only; it silences the creation checks and the overflow rule everywhere.
 7. Tamper protection is best-effort matching of words and common writer commands. User-only subcommands (whatever the
    spelling of the global options before them, `--` included, and whether the guard script or its launcher
-   `run-guard.cmd` is named, also behind `start`, `cmd /c start` or `Start-Process`) and `git config magos.*` writes are
+   `run-guard.cmd` is named, also behind `start`, `cmd /c start` or `Start-Process`, and also as an element of a
+   PowerShell comma or array list such as `Start-Process py <guard>,disarm`) and `git config magos.*` writes are
    denied by the host hook in every repository and outside any repository, and so is a git invocation that carries a
    word beginning with `magos.` beside an alias it defines with `-c alias.<name>=` or a subcommand that is not a
    built-in git command, because an alias can run `config`. The one exception is the ask or allow of the Claude Code
@@ -1908,8 +1916,9 @@ the following:
    - PowerShell (`APPROVAL_POWERSHELL`): no empty word, no word that holds `"`, no word that ends with `\`, and no
      `--%`. When Windows PowerShell 5.1 starts a program it drops the first, splits or rejoins the next two, and reads
      the last as its stop-parsing token.
-   - Bash on Windows (`APPROVAL_PATHCONV`): no argument of the guard that starts with `/`, holds `=/` or starts with
-     `-<letter>/`. Git Bash rewrites such a word as a Windows path when it starts a Windows program.
+   - Bash on Windows (`APPROVAL_PATHCONV`): no argument of the guard that starts with `/`, holds `=/` or `@/`, starts
+     with `-<letter>/`, or holds two backslashes in a row. Git Bash rewrites such a word when it starts a Windows program:
+     the first four as a Windows path (`@/tmp/x` reaches Python as `@C:/...`), a backslash pair as one backslash.
 7. A subcommand of scope `repo` names a repository the hook opens (`APPROVAL_REPO`).
 
 A command in which the tamper filter finds a user-only subcommand and which names `--approval` is denied with the
@@ -2370,8 +2379,8 @@ Known limits, stated in `references/lane-split.md` section 12:
   before the `S` (`env -vS`, `env -iS`) or the `\_` separator (`env -S 'git\_switch\_-c\_x'`) is not split. Keep the
   repository armed.
 - The tamper filter does not follow these routes: user-only commands (`disarm`, `override`, `arm`, `install`) pass
-  through `Start-Process` comma and array lists (`Start-Process py -ArgumentList 'C:\x\magos_guard.py','disarm'`), a
-  launcher followed by `-ArgumentList` or a variable, an argument split by a block comment (`py magos_guard.py <##>
+  through a guard word or launcher followed by `-ArgumentList` or a variable (`Start-Process <launcher> -ArgumentList
+  disarm`, an array held in a variable or built by splatting), an argument split by a block comment (`py magos_guard.py <##>
   disarm`) and `env -S`, and writes to the guard's state (`.git/hooks`, refs, config) pass through `cmd /r`, `/d/c` and
   `/cdel`, a shell that `Start-Process` starts, `env -S`, `iex` and `ScriptBlock::Create`, besides the lexer
   approximations above; a command started in a new console also passes the console gate. This is the one class where the

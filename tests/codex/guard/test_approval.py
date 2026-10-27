@@ -853,3 +853,62 @@ def test_doctor_names_the_downgrade_and_an_overflowing_expiry_is_unknown(repo, g
     monkeypatch.setattr(G, "user_console", lambda: False)
     r = run(["--lang", "en", "arm", "--approval=" + token_of(x)], cwd=repo.path)
     assert r.rc == 25 and G.T("en", "approval_unknown") in r.err and not armed(repo), r
+
+
+# ---- PowerShell comma and array lists, Git Bash rewrites (TC-545 to TC-547) ---------------------------------------------------------------
+COMMA_FORMS = [  # (tool, command): the guard and a user-only subcommand as elements of a PowerShell array, which a new console runs
+    ("PowerShell", "Start-Process py {s},disarm -Wait"), ("PowerShell", "Start-Process py -ArgumentList '{s}','install','--host','claude','--allow-downgrade'"),
+    ("PowerShell", "Start-Process py {s},arm"), ("PowerShell", "Start-Process py '{s}','disarm'"), ("PowerShell", "Start-Process py @('{s}','disarm')"),
+    ("PowerShell", "Start-Process py {s}, disarm"), ("PowerShell", "Start-Process py {s} ,arm"), ("PowerShell", "Start-Process py {s} , arm"),
+    ("PowerShell", "Start-Process py {s},`\n disarm"), ("PowerShell", "saps py {s},disarm"), ("PowerShell", "start py {s},arm"),
+    ("PowerShell", "Start-Process py -Args {s},disarm"), ("PowerShell", "Start-Process cmd '/c','py','{s}','disarm'"),
+    ("PowerShell", "Start-Process conhost.exe py,{s},disarm"), ("PowerShell", "Start-Process wt py,{s},disarm"),
+    ("PowerShell", "Start-Process py \"{s},disarm\".Split(',')"), ("PowerShell", "iex \"Start-Process py {s},disarm\""),
+    ("PowerShell", "py '{s}','disarm'"), ("PowerShell", "py ('{s}') disarm"), ("PowerShell", "Start-Process py {s},--lang,en,arm"),
+    ("PowerShell", "Start-Process cmd '/c','{launcher}','disarm'"),
+    ("Bash", "powershell -NoProfile -Command 'Start-Process py ''{s}'',''disarm'''"), ("Bash", "pwsh -c 'Start-Process py {s},disarm'"),
+    ("Bash", "cmd //c start py {s},disarm"),
+]
+
+
+@pytest.mark.parametrize("tool,cmd", COMMA_FORMS)
+def test_comma_and_array_lists_of_the_guard_are_denied_on_every_host(repo, isolated_env, tool, cmd):
+    text = cmd.format(s=S, launcher=P(LAUNCHER))
+    assert G.protected(text) == ("always", G._USER_MSG), text
+    for level in ("prompt", "auto-safe"):  # Claude Code neither asks nor allows: no strict single direct invocation
+        repo.git("config", "magos.approval", level)
+        shape_denied(hook(repo.path, text, tool=tool), "DYNAMIC" if "(" in cmd else "SHAPE")  # the lexer reads a parenthesis as dynamic
+    protected = G.T("en", "protected", why=G._USER_MSG)
+    for host, t in (("codex", "Bash"), ("hermes", "terminal")):
+        assert denied(hook(repo.path, text, tool=t, host=host)) == protected, (host, text)
+    assert not approvals(repo).exists() and not (isolated_env / ".magos" / "approvals").exists()
+
+
+@pytest.mark.parametrize("cmd", [
+    'git commit -m "a, b"', "echo a,b", "grep -e a,b notes.txt", "cat 'C:/x/a,b/notes.md'", "Get-Content a.txt,b.txt", "Write-Output @('a','b')",
+    "Start-Process notepad -ArgumentList 'a.txt','b.txt'", "py -3 {qs} check --branch a,install --paths src/a.py,docs/d.md",
+    "Start-Process py '{s}','list'", "py -3 'C:/a.b(c)/tool.py' arm,x",
+])
+def test_ordinary_commands_with_commas_are_not_denied(repo, cmd):
+    text = cmd.format(s=S, qs=QS)
+    assert G.protected(text) is None, text
+    for tool in ("Bash", "PowerShell"):
+        assert denied(hook(repo.path, text, tool=tool)) is None, (tool, text)
+
+
+def test_arguments_git_bash_rewrites_after_the_click_are_refused(repo):
+    lead = ["py", "-3", S]
+    for w in ("@/tmp/x", "x@/y", r"a\\b", r"\\server\share"):
+        assert G.approval_intact(lead, ["--reason", w], "bash", win=True) == "APPROVAL_PATHCONV", w
+        assert G.approval_intact(lead, ["--reason", w], "bash", win=False) is None, w
+    for w in ("a@b", r"a\b", r"C:\x", "a b /c/y"):  # one backslash and an @ before no / stay intact
+        assert G.approval_intact(lead, ["--reason", w], "bash", win=True) is None, w
+    cmd = "py -3 %s override --fingerprint 0123456789ab --reason %s"
+    for reason in ("'@/tmp/x'", r"'a\\b'"):
+        r = hook(repo.path, cmd % (QS, reason))
+        if WIN:
+            shape_denied(r, "PATHCONV")
+        else:
+            assert answer(r)["permissionDecision"] == "ask", reason
+    if WIN:
+        assert not approvals(repo).exists()
