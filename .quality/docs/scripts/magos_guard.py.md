@@ -18,7 +18,7 @@ The guard stops the lane that is being created, never a lane that already exists
 - "Changed" is measured against the integration target. Every worktree contains every file; a lane claims a file only
   if it differs from the target in that file (committed, staged, unstaged, untracked or in progress) or declared it.
 
-The file holds eight cooperating parts.
+The file holds nine cooperating parts.
 
 1. **Manifest and overlap engine.** Entries are normalised (NFC, case-folded, separators unified, trailing dots and
    spaces stripped) and compared with an exact glob-intersection dynamic programme at character level and at path level.
@@ -381,8 +381,9 @@ The file holds eight cooperating parts.
      directory counts with its prior directory and the `&&` chain it follows (`cd /missing` reached from two
      directories gives two records, each judged with its own prior directory); the directory states in which text
      found inside the line is judged are kept apart by the same fields.
-5. **Host hook entry.** `hook <claude|codex|hermes> pre-tool` reads one PreToolUse payload from stdin and prints either
-   `{}` (allow) or one deny object that carries the full conflict message. The hooked tools are named in one constant:
+5. **Host hook entry.** `hook <claude|codex|hermes> pre-tool` reads one PreToolUse payload from stdin and prints
+   `{}` (allow), one deny object that carries the full conflict message, or, for exactly one direct invocation of a
+   user-only guard subcommand in Claude Code, the ask or allow of part 9. The hooked tools are named in one constant:
    the shell tools `Bash`, `PowerShell`, `Monitor`, `terminal`, `shell` and `local_shell`; the worktree-creating tools
    (`EnterWorktree`, `Agent`, `Task` and `Workflow` with worktree isolation); the MCP session tools, whose name contains
    `start_session`, `worktree`, `branch` or `hand_off_to_session`; and the names and substrings that route an MCP tool
@@ -414,7 +415,7 @@ The file holds eight cooperating parts.
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the
-   copy, the Hermes entry, the repository, the backstop and the sets.
+   copy, the Hermes entry, the repository, the backstop, the sets and the approval level.
 8. **Sets.** `set-plan`, `set-show`, `set-update` and `set-release` register, read, update and retire a set: one task
    divided into lanes with exclusive file ownership, merged back as one whole. They reuse the manifest engine for the
    disjointness proof, the evidence gatherer and the judge for the comparison with every other claimant, the claim store
@@ -424,11 +425,17 @@ The file holds eight cooperating parts.
    every lane serves one), names that show the topic of the change (a lane id that is a topic slug, the branch
    `agent/<set>/<id>` and a worktree directory ending with `-<set>-<id>`), and, when a lane is recorded `integrated`, an
    objective summary of what it changed computed from git. The section Sets (version 1.0.4) states them.
+9. **Approval.** The user-only subcommands (`override`, `arm`, `disarm`, `install`) run after the user's approval: in a
+   real terminal on every host, or, in Claude Code, by a click in Claude Code's own permission dialog. The host hook
+   opens that dialog for exactly one direct invocation of this guard and hands the host a rewritten command that
+   carries a one-time token, which the command verifies and consumes instead of asking the console. The repository's
+   `magos.approval` sets the level. The section Approval (version 1.0.7) states it.
 
 ## Dependencies
 
-Upstream: Python 3.9+ standard library only (`argparse`, `base64`, `collections`, `functools`, `getpass`, `hashlib`,
-`json`, `os`, `re`, `shlex`, `subprocess`, `sys`, `threading`, `time`, `unicodedata`, `concurrent.futures`, `msvcrt` or
+Upstream: Python 3.9+ standard library only (`argparse`, `base64`, `collections`, `contextlib`, `functools`, `getpass`,
+`hashlib`, `io`, `json`, `os`, `re`, `secrets`, `shlex`, `shutil`, `subprocess`, `sys`, `threading`, `time`,
+`unicodedata`, `concurrent.futures`, `msvcrt` or
 `fcntl`, and `ctypes` for the Windows console check). On Windows the module
 sets `NoDefaultCurrentDirectoryInExePath=1` in its own environment at import, before any subprocess starts, so `git`
 and every other child program are never resolved from the hook's working directory. Git 2.36+ (`status --porcelain=v2`,
@@ -499,7 +506,8 @@ abbreviated (every parser is built with `allow_abbrev=False`), so `--rep` is a u
 
 Commands an agent may run: `check`, `plan`, `list`, `release`, `doctor`, `version`, `set-plan`, `set-show`,
 `set-update`, `set-release`. Commands only the user runs:
-`override`, `arm`, `disarm`, `install`. The set subcommands are not user-only: the host hook lets them through like
+`override`, `arm`, `disarm`, `install`: the user runs them in a real terminal or, in Claude Code, approves them by a click
+in Claude Code's own dialog (Approval (version 1.0.7)). The set subcommands are not user-only: the host hook lets them through like
 `plan`, `release` and `list` (Sets, Hook). The host hook recognises a user-only command whatever the global options before
 it look like. A guard word is a word ending in `magos_guard` or `magos_guard.py`, or a word whose case-folded base name
 (after the last `/` or `\`) is `run-guard.cmd` or `run-guard`, after which a leading `--strict` is skipped. After the
@@ -561,14 +569,20 @@ read as well.
   integration claim of that set) is refused with exit 16 and the message that names the set (`blocked_set`): the
   claims of a set are released only by `set-release`; the claim of a set that has no record (a registration that was
   interrupted) is released like any other.
-- `override --fingerprint FP --reason R`: exits 2 unless FP is the 12 lowercase hex digits a denial prints; refuses
-  (exit 17) unless stdin and stdout are a real console; the user retypes the fingerprint; writes a one-shot record valid
-  for one hour. Only `plan` reads override records: the next `plan` whose denial has the same fingerprint consumes the
+- `override --fingerprint FP --reason R [--approval TOKEN]`: exits 2 unless FP is the 12 lowercase hex digits a denial
+  prints; then, without `--approval`, refuses (exit 17) unless stdin and stdout are a real console and the user retypes
+  the fingerprint, and with `--approval` verifies and consumes the token instead (exit 25 to 28 when it does not
+  verify; Approval (version 1.0.7)); writes a one-shot record valid for one hour (`fp`, `reason`, `by`, `at`,
+  `expires`, `via`, `reason_by`) and appends an audit line (`ts`, `by`, `op` `override`, `fingerprint`, `reason`,
+  `reason_by`, `via`, `host` `cli`, and `tool_use_id` for a run approved in Claude Code). Only `plan` reads override
+  records: the next `plan` whose denial has the same fingerprint consumes the
   record and stores the fingerprint in the claim's `override` field. The host hook honours only that field, so a re-plan
   is required after an override, and the deny text says so. A lane of a set that has a record is not overridden this
   way: its re-plan is refused (exit 14, `lane_in_set`; see `plan`) and leaves the record unconsumed.
 - `hook <host> pre-tool`: the PreToolUse entry; it also guards `git worktree add --detach` and `<path> <commit>`, whose
-  lane is keyed `detached/<directory name>`. Allow is `{}` with exit 0. Deny is exactly one ASCII-escaped JSON object on
+  lane is keyed `detached/<directory name>`. Allow is `{}` with exit 0. For a user-only subcommand the Claude Code hook
+  (`hook claude`) answers with the ask or allow of Approval (version 1.0.7), or denies; the Codex and Hermes hooks deny
+  it. Deny is exactly one ASCII-escaped JSON object on
   stdout, exit 0:
   `{"decision":"block","reason":MSG,"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":MSG}}`.
   A deny is never an exit code. Stderr stays empty except for one warning line when engagement could not be decided
@@ -576,10 +590,11 @@ read as well.
   (Invariant 8). An auto-named creation (a tool that names the branch or worktree itself) is denied `UNPLANNABLE` with
   the instruction to plan the branch `worktree-<name>` first and then call `EnterWorktree name=<name>`, or to run
   `git worktree add` directly; `EnterWorktree name=N` creates the branch `worktree-N`.
-- `arm [--lang L] [--dry-run]`: needs a real console (exit 17 otherwise, except `--dry-run`). Writes
+- `arm [--lang L] [--dry-run] [--approval TOKEN]`: needs a real console or an approval token that verifies (exit 17
+  without either, except with `--dry-run`; Approval (version 1.0.7)). Writes
   `<hooks dir>/reference-transaction` (a foreign hook is chained as `.magos-prev`; the backstop runs it, with the
   transaction on its stdin, only when it is executable, as git runs only executable hooks), `<store>/ARMED`, `lang` and `guard`,
-  and appends an audit line (`ts`, `by`, `op` `arm`) to `<store>/audit.log`. `guard` holds the command the backstop's deny message
+  and appends an audit line (`ts`, `by`, `op` `arm`, `lang`, `via`, and `tool_use_id` for a run approved in Claude Code) to `<store>/audit.log`. `guard` holds the command the backstop's deny message
   prints: the command that runs the copy under the guard home (`~/.magos` or `MAGOS_HOME`) when that copy exists and
   declares the same `GUARD_VERSION` as the running guard, else the running script. Before it sets
   `maintenance.pack-refs.enabled` and `gc.packRefs` to `false` for the repository, it records their previous local
@@ -589,17 +604,21 @@ read as well.
   (`git config --local --unset gc.packRefs` and `git config --local --unset maintenance.pack-refs.enabled`). It can be
   re-run over its own hook. Refuses (exit 3, checked before the console) when `core.hooksPath` is set, hook directories
   differ across worktrees, or `.magos-prev` already exists next to a hook that is not MAGOS's. Idempotent.
-- `disarm [--dry-run]`: needs a real console except with `--dry-run` (exit 17 otherwise); removes `ARMED`, deletes the
+- `disarm [--dry-run] [--approval TOKEN]`: needs a real console or an approval token that verifies, except with
+  `--dry-run` (exit 17 otherwise; Approval (version 1.0.7)); removes `ARMED`, deletes the
   hook if it is MAGOS's and restores `.magos-prev`; restores both settings from `arm-config.json` (unsetting a key that
   was unset) and deletes the record; without a record both settings stay as they are, and a record that does not parse
   leaves both settings and the record as they are; keeps claims and audit, and appends an audit line (`ts`, `by`, `op`
-  `disarm`).
+  `disarm`, `via`, and `tool_use_id` for a run approved in Claude Code).
 - Console gate. The gate of `override`, `arm`, `disarm` and `install` refuses a call whose stdin and stdout are not a
-  console. A command started in a new console window (`start`, `Start-Process`) passes it, so the gate, like an
+  console, unless the call carries `--approval` with a token that verifies (Approval (version 1.0.7)): such a call never
+  asks the console, and a token that does not verify ends it with exit 25 to 28. A command started in a new console
+  window (`start`, `Start-Process`) passes the console gate, so the gate, like an
   override, is not access control; what keeps agents from running the user-only commands is the host hook's recognition
   of them and the launcher's refusal of every subcommand but `hook`.
-- `install --host claude|codex|hermes [--dry-run] [--home DIR] [--allow-downgrade]`: needs a real console except with
-  `--dry-run` (exit 17 otherwise). On Windows it refuses (exit 2, nothing written) when the path of the copied launcher
+- `install --host claude|codex|hermes [--dry-run] [--home DIR] [--allow-downgrade] [--approval TOKEN]`: needs a real
+  console or an approval token that verifies, except with `--dry-run` (exit 17 otherwise; Approval (version 1.0.7)),
+  checked after the guard-home check below. On Windows it refuses (exit 2, nothing written) when the path of the copied launcher
   (`<home>/guard/hooks/run-guard.cmd`) contains a character that cmd.exe reads as an operator, a separator or an
   expansion when it starts the launcher and runs the interpreter through `call` (`&`, `(`, `)`, `^`, `%`, `;`, `,`,
   `=`); the message names the character and the path and asks for a guard home without it (`--home` or `MAGOS_HOME`).
@@ -615,7 +634,7 @@ read as well.
   `guard copy <old> -> <new>` (`none` when there was no copy, `unversioned` for a copy that declares no
   `GUARD_VERSION`). Every install that is not a dry run then rewrites `guard/VERSION.json` (also when the copy was
   unchanged) with `{version, sha256, source, installed_at}` of the copied guard and appends one JSON line (`ts`, `op`
-  `install`, `host`, `from`, `to`, `source`) to `<home>/audit.log`. `--dry-run` prints what it would copy and the snippet
+  `install`, `host`, `from`, `to`, `source`, `via`, and `tool_use_id` for a run approved in Claude Code) to `<home>/audit.log`. `--dry-run` prints what it would copy and the snippet
   and writes nothing. It writes the exact host snippet to `guard/generated/<host>.json|yaml` and prints it.
   It never edits `~/.claude/settings.json`, `~/.codex/hooks.json` or Hermes config. The Codex snippet matches
   `Bash|mcp__.*(start_session|worktree|branch|hand_off_to_session)` and runs `sh '<launcher>' hook codex pre-tool`
@@ -651,7 +670,9 @@ read as well.
   `guard/generated/hermes.yaml` exists, doctor reads the launcher path from its command and reports, as a problem, a
   launcher that does not exist (the Hermes plugin was removed, and `fail_closed` then blocks every Hermes terminal call)
   and a launcher whose guard script (`../scripts/magos_guard.py` beside it) declares a `GUARD_VERSION` other than the
-  running guard's. Outside a repository it then reports that the guard is inert there. In a repository it checks mode,
+  running guard's. Outside a repository it then reports that the guard is inert there and prints `approval: prompt (no
+  repository): ...`. In a repository it prints the approval line of Approval (version 1.0.7) after the repository line,
+  a problem when `magos.approval` holds a value that is no level, and checks mode,
   hook uniformity, hook content, claim parsing (unreadable and newer-format claims), orphan claims, the sets (the
   `sets:` line and the set problems of Sets, Hook, list, doctor and the plain commands), `core.hooksPath` and
   the backstop command recorded in `<store>/guard`: a recorded script that does not exist is reported as missing with
@@ -736,7 +757,9 @@ and the refusals of `set-update` and `set-plan --amend` that the repository stat
 17 CONSOLE_REQUIRED (`override`, `arm`, `disarm`, `install`); 18 DOWNGRADE_REFUSED (`install`); 19 STALE (the plan or
 the revision a set command was made against is not the current one); 20 SET_EXISTS; 21 SET_UNKNOWN; 22 OUT_OF_LANE
 (`set-update --state ready` with files outside the lane's manifest); 23 SET_NEWER_FORMAT (a set record of a newer
-format); 24 INVALID_SPEC (a spec or option value that is invalid in itself; the message names the field). The
+format); 24 INVALID_SPEC (a spec or option value that is invalid in itself; the message names the field); 25
+APPROVAL_UNKNOWN, 26 APPROVAL_EXPIRED, 27 APPROVAL_USED and 28 APPROVAL_MISMATCH (`override`, `arm`, `disarm` and
+`install` with an `--approval` token that does not verify; Approval (version 1.0.7)). The
 launcher's refusal of a subcommand other than `hook` is its own exit 2; the guard is not started.
 
 Claim file (LF; the git layer reads only line 1, which is exactly `state=active` in every format): `state=active`,
@@ -767,8 +790,8 @@ are kept in the claim's `extra` list, not in `CLAIM_KEYS`, so claims without a s
 keys it does not know. Only `set-plan` writes `role=integration`; `plan` writes no extra key, and `role=integration`
 is read only as one part of the shape of the integration claim (Sets, Integration claim), so the key alone exempts
 nothing. Store layout:
-`<git-common-dir>/magos/{ARMED,lang,guard,arm-config.json,claims/,sets/,override/,audit.log,lock}`; the guard home holds
-`guard/{scripts,hooks,generated}/`, `guard/VERSION.json` and `audit.log`.
+`<git-common-dir>/magos/{ARMED,lang,guard,arm-config.json,claims/,sets/,override/,approvals/,denials/,audit.log,lock}`;
+the guard home holds `guard/{scripts,hooks,generated}/`, `guard/VERSION.json`, `approvals/` and `audit.log`.
 
 Verdict (`--json`): `{decision, code, conflicts:[{key, branch, worktrees, planned, evidence:[{kind committed|uncommitted|declared,
 files, matched, theirs}]}], unknowns, warnings, target:{name,sha,confidence}, fingerprint, overridden, message, exit_code}`.
@@ -802,9 +825,12 @@ Invariants:
    against a manifest; the integration claim of a set takes part in none of them (Sets, Integration claim). Warnings
    never deny: inferred target, remote freshness, operation in progress, repository not armed.
 5. The only writes are claim, set-record and audit files (under the lock), override records, the files `arm` (including
-   `arm-config.json`), `disarm` and `install` (including `VERSION.json` and the generated snippet) print, and the audit
-   lines `arm` and `disarm` append to `<store>/audit.log` and `install` appends to `<guard home>/audit.log`. `check`,
-   `list`, `hook`, `version`, `set-show` and every `--dry-run` never write; `set-plan`, `set-update` and `set-release`
+   `arm-config.json`), `disarm` and `install` (including `VERSION.json` and the generated snippet) print, the audit
+   lines `arm` and `disarm` append to `<store>/audit.log` and `install` appends to `<guard home>/audit.log`, the
+   approval records the Claude Code hook writes and a verifying command renames, and the denial records `plan` and the
+   host hook write (Approval (version 1.0.7)). `check`, `list`, `version` and `set-show` never write, every
+   `--dry-run` writes nothing but the consumption of its `--approval` token, and the host hook writes nothing but
+   approval and denial records; `set-plan`, `set-update` and `set-release`
    write only the claim and set-record files of their own set and an audit line, and never a branch, a ref, a worktree or
    the index.
 6. Engagement: ARMED (marker file) guards every new branch and worktree; AUTO (default) always guards named worktree
@@ -818,7 +844,10 @@ Invariants:
    `run-guard.cmd` is named, also behind `start`, `cmd /c start` or `Start-Process`) and `git config magos.*` writes are
    denied by the host hook in every repository and outside any repository, and so is a git invocation that carries a
    word beginning with `magos.` beside an alias it defines with `-c alias.<name>=` or a subcommand that is not a
-   built-in git command, because an alias can run `config`. Edits of the guard's state are denied once
+   built-in git command, because an alias can run `config`. The one exception is the ask or allow of the Claude Code
+   hook for exactly one direct invocation of this guard (Approval (version 1.0.7)). A writer or a redirect aimed at an
+   approval store (`.git/magos/approvals`, `.magos/approvals`, the absolute `<git-common-dir>/magos/approvals` or
+   `<guard home>/approvals`) is denied in every repository and outside any repository. Edits of the guard's state are denied once
    the session directory's repository is armed or holds a claim: `core.hooksPath`, `GIT_CONFIG_*`, worktree config, and
    writers or redirects aimed at `.git/hooks`, `.git/refs`, `.git/HEAD`, `.git/config`, `packed-refs`, `.git/magos`
    (the claims, the set records under `.git/magos/sets` and every other file of the store),
@@ -1812,6 +1841,209 @@ exit 16 `NO_MERGE_BASE` at `integrated` (`set_blocked` with the operation `set-u
 - Known limits are below and in `references/lane-split.md`: sets live in one clone; semantic coupling between files is
   not detected; the claims of an older guard cannot see the set.
 
+## Approval (version 1.0.7)
+
+The user-only subcommands (`override`, `arm`, `disarm`, `install`) run only when the user approves them. The user
+approves a run in one of two ways. In a real terminal: the console gate, and for `override` the retyped fingerprint, on
+every host and at every level. Or, in Claude Code, by a click in Claude Code's own permission dialog: the host hook
+opens it for exactly one direct invocation of this guard, and the host then runs a command that carries a one-time
+approval token. Codex and Hermes have no such dialog; their hooks deny every user-only command with the `protected` text.
+
+### Registry and levels
+
+- `USER_ONLY` is the one table of the user-only subcommands, one row (`name`, `auto_safe`, `scope`) each: `override`
+  (no, `repo`), `arm` (yes, `repo`), `disarm` (no, `repo`) and `install` (yes, `home`). The tamper filter reads its
+  names (`_USER_ONLY`), the argument parser gives each of them the hidden option `--approval`, and `user_only_row` maps
+  a parsed invocation to its row. `auto_safe` marks a subcommand that adds protection or copies the guard and weakens
+  nothing; `scope` names its approval store.
+- `magos.approval` is read like `magos.guard`: from the repository's own config (`git config --local`; `-c`,
+  `GIT_CONFIG_*` and the global and system files cannot set it), its last value when the key has several, compared
+  without regard to case and surrounding blanks. `terminal`: the hook denies, and the user runs the command in their
+  own terminal. `prompt`, also when the key is unset: the hook asks. `auto-safe`: the hook allows `arm`, and `install`
+  when its destination is the default guard home and it carries no `--allow-downgrade`, and asks for every other subcommand. Any other value counts as
+  `terminal`, and `doctor` reports it as a problem. The value that applies is that of the repository the guard command
+  names: its `--repo` joined to the session directory, else the session directory; where that is no repository
+  (`install` outside a repository) the level is `prompt`. No guard command writes the key, and the tamper filter
+  denies an agent's `git config magos.*` (Invariant 7), so only the user sets it. No level runs `override` or `disarm`
+  without a click.
+
+### Recognition
+
+The Claude Code hook (`hook claude pre-tool`) takes the approval path only for a command in which the tamper filter
+finds a user-only subcommand (scope `always`, reason `override / arm / disarm / install are user-only`). It denies with
+the `protected_shape` text, which ends with one cause code on a line of its own, every such command that is not all of
+the following:
+
+1. A call of the `Bash` or `PowerShell` tool (`APPROVAL_TOOL` otherwise: `Monitor`, MCP tools and every tool whose
+   shell the hook cannot name).
+2. Exactly one command in the tool's dialect. With the leading and trailing blanks and line breaks of the text cut, it
+   holds no control character but the tab, and the lexer reads it as one command with nothing around it: no list,
+   pipe, background `&`, group, brace block, compound command, substituted text, redirection or here-document, and it
+   creates nothing (`APPROVAL_SHAPE`). No word is dynamic (`$`, a backtick, `%`, an open parenthesis;
+   `APPROVAL_DYNAMIC`).
+3. Its first word is a Python interpreter (`APPROVAL_SHAPE` otherwise; a prefix assignment, a wrapper and the
+   launcher are none). It is either a bare name `py`, `python`, `python3` or `python3.<n>`, optionally with `.exe`,
+   which the shell finds on PATH and which on Windows resolves to an `.exe` (not a `.bat` or `.cmd` shim, which would
+   hand the arguments to cmd.exe); or a path to the same file as the interpreter that runs the hook
+   (`APPROVAL_INTERPRETER` for any other path, a word that starts with `~`, or a name that resolves to a shim). Only
+   these interpreter options follow it: `-3`, `-3.<n>` and their `-32` or `-64` forms, `-B`, `-E`, `-I`, `-s`, `-u`,
+   `-X utf8` and `-Xutf8`. Then comes a word ending in `magos_guard.py` or `magos_guard`.
+4. That word, with a Git Bash drive spelling mapped and joined to the session directory when it is relative, names
+   this guard: the running file, or a file whose bytes equal it, such as the copy under the guard home
+   (`APPROVAL_SCRIPT`). An older guard, a changed copy and a file of the same name elsewhere are never offered.
+5. The guard's own argument parser (`build_parser`, the parser the command uses, with `--repo` unset) reads the words
+   after it, with `--approval=<43 characters>` appended, without a usage error. They must name a subcommand that has a
+   `USER_ONLY` row, and the parser must read the appended word as its approval option (`APPROVAL_ARGS`).
+6. Every word reaches the guard unchanged through the tool's shell.
+   - PowerShell (`APPROVAL_POWERSHELL`): no empty word, no word that holds `"`, no word that ends with `\`, and no
+     `--%`. When Windows PowerShell 5.1 starts a program it drops the first, splits or rejoins the next two, and reads
+     the last as its stop-parsing token.
+   - Bash on Windows (`APPROVAL_PATHCONV`): no argument of the guard that starts with `/`, holds `=/` or starts with
+     `-<letter>/`. Git Bash rewrites such a word as a Windows path when it starts a Windows program.
+7. A subcommand of scope `repo` names a repository the hook opens (`APPROVAL_REPO`).
+
+A command in which the tamper filter finds a user-only subcommand and which names `--approval` is denied with the
+`approval_given` text, whatever its shape. The filter reads that name with every backslash, backtick, caret, `'` and
+`"` removed. The one exception is the hook's own rewritten command of the same tool call: the token's record is live,
+carries the payload's `tool_use_id`, and holds the SHA-256 of exactly this command text. That command is answered `{}`,
+so a host that runs its hooks again on the rewritten input runs it. At level `terminal` the hook denies with the
+`protected_level` text.
+
+### The answer
+
+- `ask`, or `allow` where level `auto-safe` allows the subcommand, as one ASCII-escaped JSON object on stdout, exit 0,
+  stderr empty. Its only key is `hookSpecificOutput`, an object of exactly four keys: `hookEventName` `PreToolUse`,
+  `permissionDecision` `ask` or `allow`, `permissionDecisionReason` TEXT and `updatedInput` INPUT.
+  It carries no legacy `decision` field: that field has no ask, and its `approve` would skip the dialog. Claude Code
+  applies the strictest answer of its hooks (deny, then defer, then ask, then allow), and an ask holds in every
+  permission mode.
+- `INPUT` is the whole `tool_input`, with `command` replaced by the rewritten command and `description` by the
+  guard's own (`MAGOS user-only command: <subcommand> (approval)`). For an `allow` it holds no
+  `dangerouslyDisableSandbox`.
+- The rewritten command is built from the words the hook read, never by appending to the agent's text. It is the
+  interpreter, its options, the absolute path of the script and the guard's arguments, each quoted for the tool's
+  shell, then `--approval=<token>`. That is one word, so a token that starts with `-` stays the option's value.
+  - Bash: a word made only of letters, digits and `_ @ % + = : , . / -` stays bare; every other word is single-quoted,
+    with `'` written `'\''`.
+  - PowerShell: the line starts with `& ` and every word is single-quoted, with `'` and the typographic single quotes
+    doubled.
+
+  The host shows this command in its dialog and runs it after the click. A comment, a dropped call operator or any text
+  the lexer reads otherwise than the shell is not part of it.
+- `TEXT` says what is approved and that the click is the approval.
+  - Every subcommand: its name and a dry run.
+  - `arm`, `disarm` and `override`: the repository.
+  - `install`: the host and the destination.
+  - `override`: also the fingerprint, the conflicting branches of its denial record (or that they are not recorded
+    here), and the reason, marked as written by the agent.
+  - An `ask` says that the command carries a one-time token valid for 120 s; an `allow` says that the subcommand runs
+    without a click under `auto-safe`.
+- Every value an agent can choose is shown as a JSON string: the reason, the fingerprint, branch names, and the
+  repository and home paths.
+  - Every control, format (the bidirectional controls among them), surrogate, and line or paragraph separator character
+    is replaced by a space, and runs of blanks are collapsed.
+  - The value is cut to 160 characters (the reason), 80 (a branch), 200 (a path) or 16 (the fingerprint).
+  - At most six branches are shown, followed by `+<n> more`.
+
+  So no agent text can close its quotes or imitate a line of the guard.
+- A mint that cannot write its record denies with the `approval_unrecorded` text, which names the error.
+
+### Token and store
+
+- The token is `secrets.token_urlsafe(32)`: 43 characters of `A-Z a-z 0-9 _ -`, shown only in the rewritten command.
+  The SHA-256 of the token (64 hex digits) names its record, and the record never holds the token.
+- Store.
+  - Scope `repo`: `<git-common-dir>/magos/approvals/` of the repository that `--repo` names (joined to the session
+    directory), else that of the session directory.
+  - `install`: `<guard home>/approvals/` of the default guard home (`MAGOS_HOME`, else `~/.magos`), whatever `--home`
+    says. `--home` names only where `install` copies.
+- The hook and the command compute the same directory from the same inputs.
+  - A relative `--repo` is joined to the payload's `cwd`, the directory in which the tool's shell runs the command.
+  - Git reports one common directory for every worktree and every spelling of a repository.
+  - The command compares the record's `where` with its own common directory or default guard home, case- and
+    separator-insensitively where the platform is, or as the same directory.
+- Record `<sha256>.json`, written to a temporary file and moved into place with `os.replace`:
+  `{"v": 1, "sub", "argv", "where", "via", "created", "expires", "tool_use_id", "session_id", "command_sha256",
+  "used": false}`.
+  - `argv`: the guard's arguments as the hook read them, without the approval word.
+  - `via`: `prompt` (ask) or `auto-safe` (allow).
+  - `created`, `expires`: seconds since the epoch; `expires` is 120 s after `created`.
+  - `tool_use_id`, `session_id`: from the payload, at most 200 characters, null when absent.
+  - `command_sha256`: the SHA-256 of the rewritten command.
+- Every mint first prunes its store. It removes a record whose `expires` passed more than 600 s ago, and a record or
+  temporary file that cannot be read and is older than that; in a repository store it also removes a denial record
+  whose `expires` has passed. Files of other names stay. A hook call that mints nothing reads no store.
+
+### Verification in the command
+
+- `override`, `arm`, `disarm` and `install` take `--approval <token>`, hidden from their help.
+- The refusals that come before the console gate stay first: not a repository, a malformed fingerprint, `arm`'s
+  refusal with exit 3, the guard home `install` refuses on Windows.
+- Then, with `--approval`, the command verifies and consumes the token, and asks neither the console nor the
+  challenge. A `--dry-run` with `--approval` consumes its token as well. Without `--approval`, the console gate and
+  `override`'s challenge run as Public Contract states, and `--dry-run` skips them.
+- Consumption renames `<sha256>.json` to `<sha256>.used`. A rename succeeds only once on NTFS and on POSIX file systems,
+  so of two uses at the same moment one wins and the other finds no record.
+- The renamed record is then read and checked:
+  - format 1 and `used` false (else the token is unknown);
+  - not expired;
+  - `sub` equal to the subcommand;
+  - `where` equal to the command's repository or default guard home;
+  - `argv` equal to the command's own argument list without its one approval option.
+
+  The `.used` file stays until a mint prunes it, so a second use is named as such.
+- A token that does not verify ends the command before it writes anything, and never falls back to the console. The
+  message names the cause and says to run the command again without `--approval`. The exit codes:
+  - 25 `APPROVAL_UNKNOWN`: not a token, no record of it in this store (a wrong token, one of another repository or
+    guard home, one pruned after it expired), or a record that cannot be read.
+  - 26 `APPROVAL_EXPIRED`.
+  - 27 `APPROVAL_USED`.
+  - 28 `APPROVAL_MISMATCH`: issued for another subcommand, set of arguments, repository or guard home, or an argument
+    list that holds more than one approval option.
+
+  A guard before 1.0.7 refuses `--approval` as a usage error (exit 2).
+
+### Audit
+
+Every run of a user-only subcommand that is not a dry run records how it was approved:
+- `via`: `terminal` (a real console), `prompt` (a click) or `auto-safe` (allowed without a click);
+- `tool_use_id`: that of its record, for a run approved in Claude Code.
+
+The lines are those of Public Contract with these fields added: `arm` and `disarm` in `<store>/audit.log`, `install`
+in `<home>/audit.log`, and `override` in `<store>/audit.log`. The `override` line also carries `reason_by`: `user` for
+a reason typed in a terminal, `agent` for one that came through the dialog. The override record carries `via` and
+`reason_by` as well.
+
+### Denial records
+
+`plan` (when it would write and denies with a conflict) and the host hook (when it denies a creation with a conflict)
+keep `<store>/denials/<fingerprint>.json`: `{"v": 1, "fp", "lane", "branches", "target", "at", "expires"}`.
+`branches` holds the conflicting branches of the verdict (`(detached) <worktrees>` for a detached one). A record is
+valid for one hour, like an override record, and only the override dialog reads it. `check` writes none, and a failure
+to write one changes no verdict and no message.
+
+### Tamper filter
+
+A writer or a redirect whose target lies in an approval store (`.git/magos/approvals`, `.magos/approvals`, the
+absolute `<git-common-dir>/magos/approvals` or `<guard home>/approvals`) is `PROTECTED` with scope `always`, in every
+repository and outside any repository. Reading a store is allowed: it holds no token.
+
+### Limits
+
+- The approval path relies on an agent that runs commands through the hooked tools. Claude Code's file tools (`Write`,
+  `Edit`) are not hooked, and the tamper filter does not read interpreters or scripts. So a same-user agent that sets
+  out to forge a record, and to call the guard through such a route, can do so. This is the class of the override
+  records and of `ARMED` (Known limits): the token, like the console gate, is no access control.
+- The token is visible in the dialog and in the command the host runs. Anything that reads the host's record of that
+  call before the click can run exactly the approved command, once, within 120 s.
+- A click more than 120 s after the hook answered ends the command with exit 26; the agent runs the command again for
+  a new dialog.
+- The hook and the command must see the same directory and the same `MAGOS_HOME`. A host whose payload `cwd` differs
+  from the directory its shell runs in, or a tool environment with another `MAGOS_HOME`, ends the command with exit 25.
+- The PowerShell and Git Bash word rules are those of Recognition. A word that another shell version passes otherwise
+  ends the command with exit 28. A PowerShell `''` inside a single-quoted word and the typographic quotes are read as
+  Known limits states, and the rewritten command shows the words that run.
+
 ## Change Notes
 
 Version 1.0.2 is a security release of the guard. Relative to the 1.0.1 product it:
@@ -1960,6 +2192,26 @@ the 1.0.3 product it:
 - runs every `diff`, `log` and `status` call with `--ignore-submodules=none`, so `plan`, `check`, the hook, plain `release` (a lane
   worktree holding such a change has uncommitted changes) and the set subcommands count a changed gitlink, and a submodule checkout that differs from its gitlink or holds changes, as a
   change of that path whatever `diff.ignoreSubmodules`, `submodule.<name>.ignore` or the `ignore` of `.gitmodules` says.
+
+Version 1.0.7 of the guard (`GUARD_VERSION` 1.0.7). Relative to the 1.0.6 product it:
+
+- lets the user approve a user-only subcommand in Claude Code's own permission dialog. The Claude Code hook answers
+  exactly one direct invocation of this guard by the `Bash` or `PowerShell` tool with `ask`, or, under `magos.approval
+  auto-safe`, with `allow` for `arm` and for `install` to the default guard home. It hands the host the command rebuilt
+  from its words with a one-time `--approval` token, and it denies every other shape with a cause code (Approval
+  (version 1.0.7));
+- reads `magos.approval` (`terminal`, `prompt`, `auto-safe`; unset is `prompt`, any other value `terminal`) from the
+  repository's own config and reports it in `doctor`;
+- gives `override`, `arm`, `disarm` and `install` the hidden option `--approval`. The token is verified against a record
+  named by its SHA-256 in `<git-common-dir>/magos/approvals/` or `<guard home>/approvals/` and consumed by one rename,
+  with the exit codes 25 to 28;
+- records `via` in the audit lines of the user-only subcommands, and `reason_by` for `override`;
+- keeps the branches of a conflict denial in `<store>/denials/<fp>.json` for the override dialog;
+- denies writes into an approval store in every repository, and states the click in the `options` and `need_tty`
+  texts, in the denials of a user-only command and in `doctor`'s re-arm and refresh hints.
+
+Its claims, set records and every other command are those of 1.0.6; a guard of 1.0.6 refuses `--approval` as a usage
+error.
 
 Compatibility: claim files of format 1 written by 1.0.0 to 1.0.3 are read unchanged, and line 1 of every claim stays
 `state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule
@@ -2125,7 +2377,8 @@ Known limits, stated in `references/lane-split.md` section 12:
   from the copy.
 - A plugin directory whose Windows path holds a cmd metacharacter breaks the plugin's own Windows hook entry, which
   `install` cannot choose.
-- Claims are per clone, and neither an override nor the console gate is access control.
+- Claims are per clone, and neither an override, the console gate nor an approval token is access control (Approval
+  (version 1.0.7), Limits).
 - Sets live in one clone: the record and the claims are in the clone's store, are shared by its worktrees and are not
   carried by fetch, push, clone, bundle or mirror, so a second clone neither sees nor honours the set, and the set record
   never travels with the integration branch.
