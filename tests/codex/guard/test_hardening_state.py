@@ -367,7 +367,7 @@ def test_arm_records_a_stable_guard_command_and_doctor_checks_it(repo, guard):
     assert r.rc == 0 and "backstop guard command: %s" % G.guard_cmd(str(copy)) in r.out and "the same as this guard" in r.out
     shutil.rmtree(str(home / "guard"))  # the copy the backstop names is gone
     r = guard(repo, "doctor")
-    rearm = "re-arm in your own terminal: %s arm" % G.guard_cmd()
+    rearm = "re-arm (%s): %s arm" % (G._USER_RUN, G.guard_cmd())
     assert r.rc == 1 and "the script is MISSING" in r.out and rearm in r.out
     assert guard(repo, "arm").rc == 0  # without a copy: the running script
     assert recorded.read_text(encoding="utf-8").strip() == G.guard_cmd()
@@ -985,7 +985,7 @@ def test_arm_records_the_copy_only_at_the_same_version(repo, guard):
 def test_doctor_reports_a_backstop_command_older_than_this_guard(repo, guard, tmp_path):
     assert guard(repo, "arm").rc == 0
     recorded = common(repo) / "magos" / "guard"
-    rearm = "re-arm in your own terminal: %s arm" % G.guard_cmd()
+    rearm = "re-arm (%s): %s arm" % (G._USER_RUN, G.guard_cmd())
     for name, data, shown in (("old", stale("1.0.1"), "1.0.1"), ("none", stale(None), "no version")):
         script = tmp_path / name / "magos_guard.py"
         script.parent.mkdir()

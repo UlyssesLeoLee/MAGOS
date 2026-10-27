@@ -2,20 +2,24 @@
 """MAGOS lane guard: a lane's files are planned before the lane exists; creating a lane that overlaps another lane is denied.
 
 One stdlib-only file (Python >= 3.9): CLI, PreToolUse hook entry for Claude Code / Codex / Hermes, and the sh body of the git
-reference-transaction backstop. check / list / hook / set-show never write; plan / release / override / arm / disarm / install and the set
+reference-transaction backstop. check / list / set-show never write, and hook writes only approval and denial records; plan / release / override / arm / disarm / install and the set
 commands set-plan / set-update / set-release write only the claim store and the set records under <git-common-dir>/magos and the files they print.
 """
 from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import getpass
 import hashlib
+import io
 import json
 import math
 import os
 import re
+import secrets
 import shlex
+import shutil
 import subprocess
 import sys
 import threading
@@ -54,7 +58,10 @@ HOOKED_TOOLS = {
 SHELL_TOOLS = HOOKED_TOOLS["shell"] + HOOKED_TOOLS["host_shell"]
 EXIT = {"OK": 0, "OVERRIDDEN": 0, "CONFLICT": 10, "NO_MANIFEST": 10, "UNPLANNABLE": 10, "UNPARSEABLE": 10, "PROTECTED": 10, "UNKNOWN": 11,
         "INVALID_MANIFEST": 12, "LOCK_TIMEOUT": 13, "LANE_EXISTS": 14, "BRANCH_EXISTS": 15, "BLOCKED": 16, "CONSOLE_REQUIRED": 17, "ARM_REFUSED": 3,
-        "DOWNGRADE_REFUSED": 18, "STALE": 19, "SET_EXISTS": 20, "SET_UNKNOWN": 21, "OUT_OF_LANE": 22, "SET_NEWER_FORMAT": 23, "INVALID_SPEC": 24}
+        "DOWNGRADE_REFUSED": 18, "STALE": 19, "SET_EXISTS": 20, "SET_UNKNOWN": 21, "OUT_OF_LANE": 22, "SET_NEWER_FORMAT": 23, "INVALID_SPEC": 24,
+        "APPROVAL_UNKNOWN": 25, "APPROVAL_EXPIRED": 26, "APPROVAL_USED": 27, "APPROVAL_MISMATCH": 28}
+APPROVAL_LEVELS = ("terminal", "prompt", "auto-safe")  # magos.approval; unset is prompt, any other value terminal
+APPROVAL_S, APPROVAL_GRACE_S, DENIAL_S = 120, 600, 3600  # token lifetime; how long an expired or used record names its cause; a denial record's lifetime
 MARK = "MAGOS lane guard"  # identifies the reference-transaction hook this file wrote
 HOOK_DEADLINE = None  # set for the duration of a hook call: every git call of that call shares one budget
 
@@ -96,10 +103,12 @@ M = {
     "k_uncommitted": ("未提交（暂存/未暂存/未跟踪）", "uncommitted (staged/unstaged/untracked)"),
     "k_declared": ("账本中已声明", "declared in the ledger"),
     "options": ("可选处理：① 缩小或拆分 manifest；② 等对方合入 {target} 后再创建；③ 对方若已合并或已放弃，用 {cmd} release --branch <对方分支> 释放它的登记（未合并的工作不会被释放）；"
-                "④ 仅在用户明确同意后，由用户本人在自己的终端运行：{cmd} override --fingerprint {fp} --reason \"<用户原话>\"；覆盖只通过 plan 生效，之后必须重新 plan（re-plan）。",
+                "④ 仅在用户明确同意后，把 {cmd} override --fingerprint {fp} --reason \"<用户原话>\" 单独作为一条命令执行：在 Claude Code 中由用户在对话框里批准；"
+                "magos.approval 为 terminal 时，以及在 Codex 和 Hermes 中，由用户本人在自己的终端里运行；覆盖只通过 plan 生效，之后必须重新 plan（re-plan）。",
                 "Options: (1) shrink or split the manifest; (2) wait until they are merged into {target}; (3) if the other lane is merged or abandoned, release its claim with "
                 "{cmd} release --branch <their branch> (unmerged work is never released); (4) only with the user's explicit consent, "
-                "the USER runs in their own terminal: {cmd} override --fingerprint {fp} --reason \"<user's words>\"; the override takes effect only through plan, "
+                "run {cmd} override --fingerprint {fp} --reason \"<user's words>\" as a command of its own: in Claude Code the user approves it in Claude Code's dialog; "
+                "with magos.approval terminal, and in Codex and Hermes, the USER runs it in their own terminal; the override takes effect only through plan, "
                 "so a re-plan is required."),
     "newer_only": ("只有能读取该格式的 MAGOS 才能处理这份登记：请升级本守卫（doctor 显示版本，install 刷新副本），或用写入它的那个 MAGOS 执行这条命令。",
                    "Only a MAGOS that reads that format can act on this claim: upgrade this guard (doctor shows its version, install refreshes the copy), "
@@ -120,7 +129,62 @@ M = {
                       "MAGOS: release refused: the claim of '{b}' is stored in {f}, not at its own path; the user must inspect and remove it by hand."),
     "released": ("MAGOS：已释放「{b}」的登记。", "MAGOS: released the claim of '{b}'."),
     "overridden": ("MAGOS：已记录用户覆盖（指纹 {fp}，1 小时内有效）。", "MAGOS: recorded the user's override (fingerprint {fp}, valid for 1 hour)."),
-    "need_tty": ("MAGOS：这条命令只能由用户在真实终端里执行（当前标准输入不是控制台）。", "MAGOS: only the user may run this, in a real terminal (stdin is not a console)."),
+    "need_tty": ("MAGOS：这条用户专属命令需要真实终端（当前标准输入不是控制台），或者在 Claude Code 中由用户在对话框里批准（守卫会自己加上 --approval）。",
+                 "MAGOS: this user-only command needs a real terminal (stdin is not a console), or the user's approval in Claude Code's dialog "
+                 "(the guard then adds --approval itself)."),
+    # ---- approval (1.0.7): the Claude Code hook's answer to a user-only command, its dialog text and the command's token errors
+    "protected_shape": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。只有用户能批准它：在 Claude Code 中，请把这条守卫命令单独作为一次 Bash 或 PowerShell "
+                        "调用执行，前后不加任何内容，也不带 --approval：{cmd} <子命令> <选项>；用户随后在 Claude Code 自己的对话框中点击批准。否则由用户在自己的终端里执行。",
+                        "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}). Only the user approves it: in Claude Code, run this guard "
+                        "command as a Bash or PowerShell call of its own, with nothing before or after it and without --approval: {cmd} <subcommand> <options>; "
+                        "the user then approves it in Claude Code's own dialog. Otherwise the user runs it in their own terminal."),
+    "protected_level": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。本仓库的 magos.approval 是 terminal（或是守卫不认识的值，按 terminal 处理）："
+                        "这类操作只能由用户在自己的终端里执行。",
+                        "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}). This repository's magos.approval is terminal "
+                        "(or a value the guard does not know, which counts as terminal): only the user may do this, in their own terminal."),
+    "approval_given": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}），并且带有 --approval。批准令牌从不由 agent 提供：用户在 Claude Code 的对话框中批准时，"
+                       "守卫会自己加上它。请去掉 --approval 后重新执行。",
+                       "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}) and carries --approval. An agent never supplies an "
+                       "approval token: the guard adds it itself when the user approves the command in Claude Code's dialog. Run the command without --approval."),
+    "approval_unrecorded": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。批准记录无法写入（{err}），因此只能由用户在自己的终端里执行。",
+                            "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}). The approval could not be recorded ({err}), "
+                            "so only the user may run it, in their own terminal."),
+    "approval_ask": ("MAGOS：批准用户专属的守卫命令 {sub} 吗？{what}你的点击就是批准：下面的命令带有一次性批准令牌，120 秒内有效。",
+                     "MAGOS: approve the user-only guard command {sub}? {what} Your click is the approval: the command below carries a one-time approval token, "
+                     "valid for 120 s."),
+    "approval_auto": ("MAGOS：{sub} 无需点击即执行（magos.approval 为 auto-safe：它只增加保护或复制守卫，不削弱任何东西）。{what}",
+                      "MAGOS: {sub} runs without a click (magos.approval is auto-safe: it adds protection or copies the guard and weakens nothing). {what}"),
+    "approval_what_override": ("它在 {repo} 中为拒绝 {fp} 记录一次覆盖，1 小时内有效，使该 lane 的下一次 plan 不顾重叠而通过；冲突的分支：{branches}。agent 写的理由：{reason}。",
+                               "It records an override of the denial {fp} in {repo}, valid for one hour, so that the next plan of that lane goes through despite the "
+                               "overlap; conflicting branches: {branches}. Reason written by the agent: {reason}."),
+    "approval_what_arm": ("它在 {repo} 中安装 git 后备钩子（reference-transaction 钩子和 ARMED，并把 gc.packRefs 与 maintenance.pack-refs.enabled 设为 false）{dry}。",
+                          "It installs the git backstop in {repo} (the reference-transaction hook and ARMED; gc.packRefs and maintenance.pack-refs.enabled set to "
+                          "false){dry}."),
+    "approval_what_disarm": ("它从 {repo} 移除 git 后备钩子并恢复 pack-refs 设置；登记和审计日志保留{dry}。",
+                             "It removes the git backstop from {repo} and restores the pack-refs settings; the claims and the audit log stay{dry}."),
+    "approval_what_install": ("它把本守卫复制到 {home}/guard 并打印 {host} 的钩子配置；它从不修改宿主配置{dry}。",
+                              "It copies this guard to {home}/guard and prints the {host} hook entry; it never edits the host configuration{dry}."),
+    "approval_dry": ("（--dry-run：不写入任何东西）", " (--dry-run: nothing is written)"),
+    "approval_no_record": ("此处没有记录（agent 收到的拒绝消息列出了它们）", "not recorded here (the denial the agent received names them)"),
+    "approval_desc": ("MAGOS 用户专属命令：{sub}（待批准）", "MAGOS user-only command: {sub} (approval)"),
+    "approval_unknown": ("MAGOS：批准令牌在这里无效：存储中没有这个令牌（令牌错误、属于另一个仓库或守卫目录，或已过期并被清除）。没有执行任何操作。"
+                         "请去掉 --approval 重新执行这条守卫命令，由用户在 Claude Code 的对话框中重新批准。",
+                         "MAGOS: the approval token is not valid here: the store holds no such token (a wrong token, one of another repository or guard home, or "
+                         "one that expired and was removed). Nothing was done. Run the guard command again without --approval; the user approves it again in "
+                         "Claude Code's dialog."),
+    "approval_expired": ("MAGOS：批准令牌已过期（批准在钩子签发后 120 秒内有效）。没有执行任何操作。请去掉 --approval 重新执行这条守卫命令，由用户重新批准。",
+                         "MAGOS: the approval token expired (an approval is valid for 120 s after the hook issued it). Nothing was done. Run the guard command "
+                         "again without --approval; the user approves it again."),
+    "approval_used": ("MAGOS：批准令牌已经用过（一次批准只执行一条命令一次）。没有执行任何操作。请去掉 --approval 重新执行这条守卫命令，由用户重新批准。",
+                      "MAGOS: the approval token was already used (one approval runs one command once). Nothing was done. Run the guard command again without "
+                      "--approval; the user approves it again."),
+    "approval_mismatch": ("MAGOS：批准令牌是为另一{what}签发的。没有执行任何操作。请去掉 --approval 重新执行这条守卫命令，由用户重新批准。",
+                          "MAGOS: the approval token was issued for another {what}. Nothing was done. Run the guard command again without --approval; the user "
+                          "approves it again."),
+    "what_sub": ("个子命令", "subcommand"),
+    "what_args": ("组参数", "set of arguments"),
+    "what_repo": ("个仓库", "repository"),
+    "what_home": ("个守卫目录", "guard home"),
     # ---- sets (1.0.4): set-plan, set-show, set-update, set-release, and the plain plan / release refusing the claims of a set
     "set_invalid": ("MAGOS：set 规划无效，未登记也未创建任何东西：\n{errors}", "MAGOS: the set plan is invalid, nothing registered or created:\n{errors}"),
     "set_invalid_args": ("MAGOS：参数无效，未做任何修改：\n{errors}", "MAGOS: invalid arguments, nothing was changed:\n{errors}"),
@@ -2360,11 +2424,28 @@ _WRITE_CMDS = frozenset("rm mv cp tee chmod del erase ren rename remove-item mov
                         "unlink truncate shred rmdir rd ln mklink rename-item rni ri mi move copy cpi sc ac ni clc".split())
 _COPIES = ("cp", "copy-item", "copy", "cpi")  # tested on their destination only, unless they copy as a link
 _WRITE_HINT = re.compile(r">|\b(?:%s|sed|find)\b" % "|".join(re.escape(w) for w in sorted(_WRITE_CMDS, key=len, reverse=True)), re.I)
-_USER_ONLY = ("override", "arm", "disarm", "install")
+UserOnly = namedtuple("UserOnly", "name auto_safe scope")
+# The user-only subcommands, one row each (Approval).  auto_safe: magos.approval auto-safe lets the Claude Code hook allow it without a click (it
+# adds protection or copies the guard and weakens nothing); scope: where its approvals live ("repo": <git-common-dir>/magos/approvals, "home":
+# <default guard home>/approvals).
+USER_ONLY = (UserOnly("override", False, "repo"), UserOnly("arm", True, "repo"), UserOnly("disarm", False, "repo"), UserOnly("install", True, "home"))
+_USER_ONLY = tuple(u.name for u in USER_ONLY)
 _READ_FLAGS = ("--get", "--get-all", "--get-regexp", "--list", "-l", "--show-origin", "--show-scope")
 _ENV_WRITE = re.compile(r"^(?:GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)=|\$env:GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)$)", re.I)
 _USER_MSG = "override / arm / disarm / install are user-only"
 _STATE_MSG = "the hooks, refs and claim store under .git and the guard home are the guard's state"
+_APPROVAL_MSG = "the approval records under <git-common-dir>/magos/approvals and <guard home>/approvals are written by the host hook only"
+_APPROVALS = re.compile(r"(?:^|[\\/])approvals(?:[\\/]|$)", re.I)  # a path segment named approvals, in a word that names the guard's state
+_APPROVAL_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")  # secrets.token_urlsafe(32)
+_APPROVAL_FILE = re.compile(r"[0-9a-f]{64}\.(?:json|used)")  # an approval record: the SHA-256 of its token, live (.json) or consumed (.used)
+_DENIAL_FILE = re.compile(r"[0-9a-f]{12}\.json")  # a denial record: the fingerprint of its denial
+_APPROVAL_WORD = re.compile(r"--approval(?![\w-])", re.I)
+_APPROVAL_TOOLS = {"Bash": "bash", "PowerShell": "ps"}  # the tools whose shell the rewritten command is quoted for
+_INTERPRETER = re.compile(r"(?:py|python|python3(?:\.\d+)?)(?:\.exe)?", re.I)  # the bare first word of a direct invocation
+_INTERP_OPT = re.compile(r"-3(?:\.\d+)?(?:-(?:32|64))?|-[BEIsu]|-Xutf8")  # and the pair -X utf8
+_BARE_SH = re.compile(r"[A-Za-z0-9_@%+=:,./-]+")  # a word bash reads as itself
+_USER_RUN = "user-only: approved in Claude Code's dialog, or run in your own terminal"  # doctor's hint before a user-only command
+Approval = namedtuple("Approval", "decision reason updated")  # the Claude Code hook's ask or allow of a user-only command
 
 
 def _bare(word):
@@ -2401,6 +2482,17 @@ def _user_only(rest, launcher):
         else:
             break
     return k < len(rest) and (rest[k] in _USER_ONLY or _bare(rest[k]) in _USER_ONLY)
+
+
+def user_only_row(args):
+    """The USER_ONLY row of a parsed invocation, or None.  The one place that says which parsed invocation is user-only (an argument predicate
+    of a row belongs here, and the same rule in _user_only)."""
+    return next((u for u in USER_ONLY if u.name == getattr(args, "cmd", None)), None)
+
+
+def _in_approvals(word):
+    """Does a word that names the guard's state lie in an approval store (a path segment named approvals)?  Both readings count."""
+    return any(_APPROVALS.search(w) for w in (word, _bare(word)))
 
 
 def _child_text(words):
@@ -2532,13 +2624,14 @@ def _protected_words(words, depth, roots, lazy):
     exe = _exe(bares[e]) if e is not None else ""
     if exe in _WRITE_CMDS or (exe == "sed" and "-i" in words) or (exe == "find" and "-delete" in seen):
         targets = _copy_destination(exe, words[e + 1:]) if exe in _COPIES else None
-        if any(_state_word(w, roots, lazy) for w in (words[e + 1:] if targets is None else targets)):
-            return "guarded", _STATE_MSG
+        hits = [w for w in (words[e + 1:] if targets is None else targets) if _state_word(w, roots, lazy)]
+        if hits:  # an approval store is written by the host hook only, in every repository
+            return ("always", _APPROVAL_MSG) if any(_in_approvals(w) for w in hits) else ("guarded", _STATE_MSG)
     for k, w in enumerate(words):  # a redirect into the guard's state
         m = re.match(r"(?:\d|&)?>>?\|?(.*)$", w)
         target = (m.group(1) or (words[k + 1] if k + 1 < len(words) else "")) if m else ""
         if target and _state_word(target, roots, lazy):
-            return "guarded", _STATE_MSG
+            return ("always", _APPROVAL_MSG) if _in_approvals(target) else ("guarded", _STATE_MSG)
     return None
 
 
@@ -3470,6 +3563,8 @@ def cmd_plan(args, write):
     if errors:
         return finish(args, deny("INVALID_MANIFEST", message=T(args.lang, "invalid", errors="\n".join("  [%s] %s" % e for e in errors))), args.branch)
     v = plan_core(g, args.branch, entries, write, getattr(args, "amend", False), args.lang, getattr(args, "target", None), getattr(args, "worktree", ""))
+    if write and v.get("decision") == "deny":  # the override dialog names the branches of this denial (check writes nothing)
+        note_denial(g, args.branch, v)
     path = v.pop("worktree", "") or "<path>"  # the worktree the claim registers, no key of the --json verdict
     if v["decision"] == "allow" and "message" not in v:
         v["message"] = "\n".join([T(args.lang, "ok_plan", b=args.branch, n=len(entries), example='git worktree add "%s" -b %s %s' % (path, args.branch, v["target"]["name"]))
@@ -3575,6 +3670,96 @@ def challenge(expected, lang):
     return box[0] == expected
 
 
+def _rename(src, dst, tries=40):
+    """os.rename, retried while Windows reports a file busy (a reader holds it open).  It succeeds once: a second rename of `src` finds no file."""
+    for attempt in range(tries):
+        try:
+            return os.rename(src, dst)
+        except PermissionError:
+            if attempt == tries - 1:
+                raise
+            time.sleep(0.05)
+
+
+def _record_expiry(rec):
+    """The `expires` of an approval or denial record as a finite number of seconds since the epoch (ValueError, TypeError or KeyError when it
+    has none)."""
+    v = float(rec["expires"])
+    if not math.isfinite(v):
+        raise ValueError("expires is not a finite number")
+    return v
+
+
+def strip_approval(argv):
+    """The argument list without its one approval option (--approval=<t>, or --approval and its value), or None when it holds none or more
+    than one."""
+    hits = [k for k, w in enumerate(argv or []) if w == "--approval" or w.startswith("--approval=")]
+    if len(hits) != 1:
+        return None
+    k = hits[0]
+    return argv[:k] + argv[k + (2 if argv[k] == "--approval" else 1):]
+
+
+def consume_approval(args, root, where):
+    """Verify and consume the --approval token of a user-only command (Approval, Verification in the command) -> (None, record), or (exit code,
+    None) after its message on stderr.  <sha256>.json is renamed <sha256>.used first, so of two uses one wins and a failed check burns the
+    token; the renamed record must then be of format 1 and unused, unexpired, and issued for this subcommand, this repository or default guard
+    home (`where`) and exactly this argument list.  No message names the token."""
+    def refuse(code, key, **kw):
+        sys.stderr.write(T(args.lang, key, **kw) + "\n")
+        return EXIT[code], None
+    token = args.approval or ""
+    if not _APPROVAL_TOKEN.fullmatch(token):
+        return refuse("APPROVAL_UNKNOWN", "approval_unknown")
+    h = hashlib.sha256(token.encode("ascii")).hexdigest()
+    live, used = os.path.join(root, h + ".json"), os.path.join(root, h + ".used")
+    try:
+        _rename(live, used)
+    except FileNotFoundError:
+        return refuse("APPROVAL_USED", "approval_used") if os.path.isfile(used) else refuse("APPROVAL_UNKNOWN", "approval_unknown")
+    except FileExistsError:  # Windows: a .used file of the same token beside a live record
+        return refuse("APPROVAL_USED", "approval_used")
+    try:
+        rec = json.loads(_read_retry(used))
+        if not (isinstance(rec, dict) and rec.get("v") == 1 and rec.get("used") is False and rec.get("via") in ("prompt", "auto-safe")):
+            raise ValueError("not an approval record of format 1")
+        expires = _record_expiry(rec)
+    except (OSError, ValueError, TypeError, KeyError):
+        return refuse("APPROVAL_UNKNOWN", "approval_unknown")
+    if time.time() > expires:
+        return refuse("APPROVAL_EXPIRED", "approval_expired")
+    if rec.get("sub") != args.cmd:
+        return refuse("APPROVAL_MISMATCH", "approval_mismatch", what=T(args.lang, "what_sub"))
+    w = rec.get("where")
+    if not isinstance(w, str) or not (pkey(w) == pkey(where) or same_file(w, where)):
+        return refuse("APPROVAL_MISMATCH", "approval_mismatch", what=T(args.lang, "what_home" if args.cmd == "install" else "what_repo"))
+    if rec.get("argv") != strip_approval(getattr(args, "argv", None)):
+        return refuse("APPROVAL_MISMATCH", "approval_mismatch", what=T(args.lang, "what_args"))
+    return None, rec
+
+
+def user_gate(args, root, where, retype=None, dry=False):
+    """The approval of a user-only command -> (exit code or None, via, record).  With --approval the token is verified and consumed
+    (consume_approval) and neither the console nor the challenge is asked, also for a dry run; without it a dry run needs nothing, and every
+    other run a real console and, with `retype`, the user typing it (challenge).  via: terminal, or the record's prompt or auto-safe."""
+    if getattr(args, "approval", None) is not None:
+        code, rec = consume_approval(args, root, where)
+        return code, (rec or {}).get("via"), rec
+    if dry:
+        return None, None, None
+    if retype is not None:
+        return (None, "terminal", None) if challenge(retype, args.lang) else (EXIT["CONSOLE_REQUIRED"], None, None)
+    if user_console():
+        return None, "terminal", None
+    sys.stderr.write(T(args.lang, "need_tty") + "\n")
+    return EXIT["CONSOLE_REQUIRED"], None, None
+
+
+def approval_fields(rec):
+    """The audit fields of a run approved in Claude Code: the tool_use_id of its record."""
+    return {"tool_use_id": rec.get("tool_use_id")} if rec else {}
+
+
 def ref_spelling(name):
     """A branch spelling read as a ref path: a backslash is a separator, empty and `.` segments are dropped, `..` is resolved."""
     parts = []
@@ -3666,14 +3851,17 @@ def cmd_override(args):
     if not re.fullmatch(r"[0-9a-f]{12}", args.fingerprint):
         sys.stderr.write("the fingerprint is the 12 hex digits printed with a denial\n")
         return 2
-    if not challenge(args.fingerprint, args.lang):
-        return EXIT["CONSOLE_REQUIRED"]
+    code, via, rec = user_gate(args, os.path.join(store(g), "approvals"), g.common, retype=args.fingerprint)
+    if code:
+        return code
+    by = "user" if via == "terminal" else "agent"  # a reason typed in a terminal is the user's; one that came through the dialog the agent's
     now = time.time()
-    doc = {"fp": args.fingerprint, "reason": args.reason, "by": who(g), "at": now_iso(), "expires": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + 3600))}
+    doc = {"fp": args.fingerprint, "reason": args.reason, "by": who(g), "at": now_iso(), "expires": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + 3600)),
+           "via": via, "reason_by": by}
     os.makedirs(os.path.join(store(g), "override"), exist_ok=True)
     with open(os.path.join(store(g), "override", args.fingerprint + ".json"), "wb") as fh:
         fh.write(json.dumps(doc, ensure_ascii=False).encode("utf-8"))
-    audit(g, op="override", fingerprint=args.fingerprint, reason=args.reason, host="cli")
+    audit(g, op="override", fingerprint=args.fingerprint, reason=args.reason, reason_by=by, via=via, host="cli", **approval_fields(rec))
     out_text(T(args.lang, "overridden", fp=args.fingerprint))
     return 0
 
@@ -5717,6 +5905,7 @@ def judge_creation(cr, default_cwd, lang, seen=None):
         except GitFail as err:
             v = deny("UNKNOWN", unknowns=[{"code": err.code, "text": str(err)}]) if mode == "armed" or cr["kind"] == "worktree" else None
         if v:
+            note_denial(g, n, v)  # the override dialog names the branches of this denial
             if v["code"] == "NO_MANIFEST" and (cr.get("redirect") or cr["verb"] == "push"):  # the creation is in another repository: the plan command names it
                 v["message"] = T(lang, "nomanifest", b=n) + "\n" + T(lang, "how_plan", cmd='%s --repo "%s"' % (guard_cmd(), repo_dir(g)), b=n)
             return v["code"], v.get("message") or render(lang, v, n)
@@ -5744,8 +5933,302 @@ def tamper_roots():
     return roots
 
 
-def decide(payload, lang):
-    """-> None (allow) or (code, message)."""
+# ---------------------------------------------------------------- approval (1.0.7): the user's click in Claude Code's dialog for a user-only command
+def approval_level(g):
+    """-> (level, raw value): the repository's own magos.approval, read like magos.guard (git config --local; git's last value of a key that has
+    several) and compared without regard to case and surrounding blanks.  Unset, and no repository, is prompt; any other value terminal.  A
+    GitFail propagates: the hook then denies."""
+    raw = cfg(g, "magos.approval") if g is not None else None
+    if raw is None:
+        return "prompt", None
+    v = raw.strip().lower()
+    return (v if v in APPROVAL_LEVELS else "terminal"), raw
+
+
+def this_guard(path):
+    """Is `path` this guard: the running file, or a file with the same bytes (such as the copy under the guard home)?"""
+    me = os.path.abspath(__file__)
+    if same_file(path, me):
+        return True
+    data = read_quiet(path) if os.path.isfile(path) else None
+    return data is not None and data == read_quiet(me)
+
+
+def _interpreter_problem(word, cwd):
+    """The cause code when the first word of a direct invocation is no interpreter the hook may name, else None.  Accepted: a bare py, python,
+    python3 or python3.<n>, optionally with .exe, which on Windows resolves (in the hook's PATH) to an .exe, not to a .bat or .cmd shim that
+    would hand the quoted arguments to cmd.exe; or a path to the interpreter that runs the hook.  The guard or its launcher as the first word,
+    a prefix assignment and a wrapper are no interpreter."""
+    if _guard_word(word):
+        return "APPROVAL_SHAPE"
+    if re.search(r"[\\/]", word) or word.startswith("~"):
+        p = _norm_path(word)
+        return None if same_file(p if _rooted(p) else os.path.join(cwd, p), sys.executable) else "APPROVAL_INTERPRETER"
+    if not _INTERPRETER.fullmatch(word):
+        return "APPROVAL_SHAPE"
+    if sys.platform == "win32" and not (shutil.which(word) or "").lower().endswith(".exe"):
+        return "APPROVAL_INTERPRETER"
+    return None
+
+
+def approval_invocation(payload, cwd):
+    """-> (invocation, None) or (None, cause code): is the command of a Bash or PowerShell call exactly one direct invocation of this guard
+    (Approval, Recognition 1 to 4)?  One command of the tool's dialect with nothing around it, no redirection and no dynamic word; an interpreter
+    (_interpreter_problem) and only the interpreter options -3, -3.<n> (-32, -64), -B, -E, -I, -s, -u, -X utf8 and -Xutf8; then a word that
+    names this guard (this_guard), joined to the session directory when it is relative.  The invocation: "sh" (the tool's shell), "words" (the
+    interpreter, its options and the absolute script path, which the rewritten command quotes), "args" (the guard's arguments) and "text"
+    (the command as the payload holds it)."""
+    tool = str(payload.get("tool_name") or "")
+    ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
+    sh, c = _APPROVAL_TOOLS.get(tool), ti.get("command")
+    if sh is None or not isinstance(c, str):
+        return None, "APPROVAL_TOOL"
+    text = c.strip(" \t\r\n")
+    if len(text) > MAX_TEXT or _CTL.search(text.replace("\t", " ")) or _SURROGATE.search(text):
+        return None, "APPROVAL_SHAPE"
+    ev = _lex(text, sh)
+    if len(ev) != 1 or not isinstance(ev[0], _Seg) or ev[0].sub or any(isinstance(w, _Redir) for w, _d in ev[0]):
+        return None, "APPROVAL_SHAPE"
+    if any(d for _w, d in ev[0]):
+        return None, "APPROVAL_DYNAMIC"
+    ws = [w for w, _d in ev[0]]
+    cause = _interpreter_problem(ws[0], cwd)
+    if cause:
+        return None, cause
+    k = 1
+    while k < len(ws) and ws[k].startswith("-"):
+        if ws[k] == "-X" and ws[k + 1:k + 2] == ["utf8"]:
+            k += 2
+        elif _INTERP_OPT.fullmatch(ws[k]):
+            k += 1
+        else:
+            return None, "APPROVAL_SHAPE"
+    if k == len(ws) or _guard_word(ws[k]) != "script":
+        return None, "APPROVAL_SHAPE"
+    p = _norm_path(ws[k])
+    path = p if _rooted(p) else os.path.normpath(os.path.join(cwd, p))
+    if not this_guard(path):
+        return None, "APPROVAL_SCRIPT"
+    return {"sh": sh, "words": ws[:k] + [path.replace("\\", "/")], "args": ws[k + 1:], "text": c}, None
+
+
+def approval_intact(lead, args, sh, win=None):
+    """The cause code when a word cannot reach the guard unchanged through the tool's shell, else None.  `lead`: the interpreter, its options
+    and the script; `args`: the guard's arguments.  Windows PowerShell 5.1 drops an empty word, splits or rejoins a word that holds '"' or ends
+    with a backslash, and reads --% as its stop-parsing token; Git Bash on Windows rewrites an argument that starts with '/', holds '=/' or
+    starts with -<letter>/ as a Windows path when it starts a Windows program (the script word is a Windows path already)."""
+    win = sys.platform == "win32" if win is None else win
+    if sh == "ps":
+        if any(w == "" or '"' in w or w.endswith("\\") or w == "--%" for w in list(lead) + list(args)):
+            return "APPROVAL_POWERSHELL"
+    elif win and any(w.startswith("/") or "=/" in w or re.match(r"-[A-Za-z]/", w) for w in args):
+        return "APPROVAL_PATHCONV"
+    return None
+
+
+def approval_target(ns, row, cwd):
+    """-> the cause code APPROVAL_REPO, or where the approval of a parsed invocation lives: {"g": the repository the command names (its --repo
+    joined to the session directory, else the session directory; None outside one), "level": its magos.approval (approval_level), "root": the
+    approval store, "where": the repository's common directory or the default guard home, "dest": the guard home install copies to}.  The
+    command computes the same store from the same inputs: its --repo is read in the directory the tool's shell runs it in."""
+    g = open_repo(cwd if ns.repo is None else os.path.join(cwd, ns.repo))
+    if row.scope == "repo":
+        if g is None:
+            return "APPROVAL_REPO"
+        root, where, dest = os.path.join(store(g), "approvals"), g.common, None
+    else:  # install: the default guard home holds the store whatever --home says; --home names only where install copies
+        root, where = os.path.join(guard_home(), "approvals"), guard_home()
+        dest = os.path.normpath(os.path.join(cwd, os.path.expanduser(ns.home or os.environ.get("MAGOS_HOME") or "~/.magos"))).replace("\\", "/")
+    return {"g": g, "level": approval_level(g)[0], "root": root, "where": where, "dest": dest}
+
+
+def approval_command(sh, words, token):
+    """The command the user approves: the words of the invocation, each quoted for the tool's shell, then --approval=<token> (one word, so a
+    token that starts with '-' stays the option's value).  Bash: a word of letters, digits and _ @ % + = : , . / - stays bare, every other
+    word is single-quoted; PowerShell: `& ` and every word single-quoted."""
+    ws = list(words) + ["--approval=" + token]
+    if sh == "ps":
+        return "& " + " ".join(ps_quote(w) for w in ws)
+    return " ".join(w if _BARE_SH.fullmatch(w) else sh_quote(w) for w in ws)
+
+
+def _dialog(text, limit):
+    """An agent-controlled value as the dialog shows it: a JSON string in which every control, format (the bidirectional controls among them),
+    surrogate, line and paragraph separator character is a space and a run of blanks is one, cut to `limit` characters, so that no agent text
+    can close its quotes or imitate a line of the guard."""
+    s = " ".join("".join(" " if unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Zl", "Zp") else ch for ch in str(text)).split())
+    return json.dumps(s if len(s) <= limit else s[:limit - 1] + "…", ensure_ascii=False)
+
+
+def approval_text(lang, row, ns, t, auto):
+    """permissionDecisionReason: what the click approves and that the click is the approval.  Every subcommand: its name and a dry run;
+    arm, disarm and override: the repository; install: the host and the destination; override: also the fingerprint, the conflicting branches
+    of its denial record (at most six, then +<n> more) and the reason, marked as written by the agent."""
+    dry = T(lang, "approval_dry") if getattr(ns, "dry_run", False) else ""
+    repo = _dialog(repo_dir(t["g"]), 200) if t["g"] is not None else ""
+    if row.name == "override":
+        b = denial_branches(t["g"], ns.fingerprint)
+        names = T(lang, "approval_no_record") if b is None else \
+            ", ".join(_dialog(x, 80) for x in b[:6]) + (" " + T(lang, "show_more", n=len(b) - 6) if len(b) > 6 else "")
+        what = T(lang, "approval_what_override", fp=_dialog(ns.fingerprint, 16), repo=repo, branches=names, reason=_dialog(ns.reason, 160))
+    elif row.name == "install":
+        what = T(lang, "approval_what_install", home=_dialog(t["dest"], 200), host=ns.host, dry=dry)
+    else:
+        what = T(lang, "approval_what_" + row.name, repo=repo, dry=dry)
+    return T(lang, "approval_auto" if auto else "approval_ask", sub=row.name, what=what)
+
+
+def _carries_approval(text):
+    """Does the command name --approval anywhere, as written or with every escape character and quote removed?  The whole text is read, so a
+    word after `--` (which argparse from Python 3.13 on reads as the end of the global options) counts as well."""
+    return any(_APPROVAL_WORD.search(t) for t in (text, _bare(text)))
+
+
+def _payload_id(v):
+    return v[:200] if isinstance(v, str) and v else None
+
+
+def approval_reentry(payload, cwd):
+    """Is the command the hook's own rewritten command of this tool call, which the host runs through its hooks again?  Its token's record is
+    live, names the payload's tool_use_id and holds the SHA-256 of exactly this command text."""
+    tid = payload.get("tool_use_id")
+    if not isinstance(tid, str) or not tid:
+        return False
+    inv, _cause = approval_invocation(payload, cwd)
+    last = inv["args"][-1] if inv and inv["args"] else ""
+    token = last[len("--approval="):] if last.startswith("--approval=") else ""
+    if not _APPROVAL_TOKEN.fullmatch(token):
+        return False
+    ns = parse_quiet(inv["args"])
+    row = user_only_row(ns)
+    t = approval_target(ns, row, cwd) if row is not None and ns.approval == token else None
+    if not isinstance(t, dict):
+        return False
+    try:
+        rec = json.loads(_read_retry(os.path.join(t["root"], hashlib.sha256(token.encode("ascii")).hexdigest() + ".json")))
+        return isinstance(rec, dict) and rec.get("tool_use_id") == tid and _record_expiry(rec) >= time.time() and \
+            rec.get("command_sha256") == hashlib.sha256(inv["text"].encode("utf-8")).hexdigest()
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
+def approval_answer(payload, cwd, crs, lang):
+    """The Claude Code hook's answer to a command in which the tamper filter found a user-only subcommand (Approval): an Approval (ask, or
+    allow where magos.approval auto-safe allows the subcommand) that hands the host the command rebuilt with a one-time token, a deny
+    (code, message) whose last line names the cause, or None for the hook's own rewritten command run through the hooks again."""
+    why = _USER_MSG
+    ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
+
+    def shape(cause):
+        return "PROTECTED", T(lang, "protected_shape", why=why, cmd=guard_cmd()) + "\n[%s]" % cause
+    if _carries_approval(str(ti.get("command") or "")):  # an agent never supplies a token
+        return None if approval_reentry(payload, cwd) else ("PROTECTED", T(lang, "approval_given", why=why))
+    inv, cause = approval_invocation(payload, cwd)
+    if inv is None:
+        return shape(cause)
+    if crs:
+        return shape("APPROVAL_SHAPE")
+    probe = "A" * 43  # the shape of a token: the guard's own parser must read the appended word as the approval option
+    ns = parse_quiet(inv["args"] + ["--approval=" + probe])
+    row = user_only_row(ns) if ns is not None and getattr(ns, "approval", None) == probe else None
+    if row is None:
+        return shape("APPROVAL_ARGS")
+    cause = approval_intact(inv["words"], inv["args"], inv["sh"])
+    if cause:
+        return shape(cause)
+    t = approval_target(ns, row, cwd)
+    if not isinstance(t, dict):
+        return shape(t)
+    if t["level"] == "terminal":
+        return "PROTECTED", T(lang, "protected_level", why=why)
+    auto = t["level"] == "auto-safe" and row.auto_safe and \
+        (row.scope != "home" or (pkey(t["dest"]) == pkey(guard_home()) and not getattr(ns, "allow_downgrade", False)))
+    now, token = time.time(), secrets.token_urlsafe(32)
+    command = approval_command(inv["sh"], inv["words"] + inv["args"], token)
+    rec = {"v": 1, "sub": row.name, "argv": inv["args"], "where": t["where"], "via": "auto-safe" if auto else "prompt", "created": now,
+           "expires": now + APPROVAL_S, "tool_use_id": _payload_id(payload.get("tool_use_id")), "session_id": _payload_id(payload.get("session_id")),
+           "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest(), "used": False}
+    try:
+        prune_approvals(t["root"], now)
+        if row.scope == "repo":
+            prune_denials(os.path.join(store(t["g"]), "denials"), now)
+        write_atomic(os.path.join(t["root"], hashlib.sha256(token.encode("ascii")).hexdigest() + ".json"), json.dumps(rec, ensure_ascii=False).encode("utf-8"))
+    except OSError as err:
+        return "PROTECTED", T(lang, "approval_unrecorded", why=why, err="%s: %s" % (type(err).__name__, err))
+    updated = dict(ti, command=command, description=T(lang, "approval_desc", sub=row.name))
+    if auto:  # an allow carries no sandbox escape the user never saw
+        updated.pop("dangerouslyDisableSandbox", None)
+    return Approval("allow" if auto else "ask", approval_text(lang, row, ns, t, auto), updated)
+
+
+def _prune(root, now, pattern, grace, age, tmp):
+    """Remove from the store `root` every file named by `pattern` whose expires passed more than `grace` seconds ago, one that cannot be read and
+    is older than `age` seconds, and, with `tmp`, a temporary file older than `age`.  Files of other names stay; a file that a concurrent prune
+    removed, or that cannot be removed, is no error."""
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return
+    for name in names:
+        p = os.path.join(root, name)
+        try:
+            if tmp and name.endswith(".tmp"):
+                stale = os.path.getmtime(p) + age < now
+            elif pattern.fullmatch(name):
+                try:
+                    stale = _record_expiry(json.loads(_read_retry(p))) + grace < now
+                except (OSError, ValueError, TypeError, KeyError):
+                    stale = os.path.getmtime(p) + age < now
+            else:
+                continue
+            if stale:
+                _remove(p)
+        except OSError:
+            pass
+
+
+def prune_approvals(root, now):
+    """Every mint first prunes its approval store: a record expired more than APPROVAL_GRACE_S ago, and an unreadable record or temporary file
+    older than that.  Until then an expired or used record names its cause."""
+    _prune(root, now, _APPROVAL_FILE, APPROVAL_GRACE_S, APPROVAL_GRACE_S, True)
+
+
+def prune_denials(root, now):
+    """A mint in a repository store also removes the denial records whose expires has passed (an unreadable one older than DENIAL_S)."""
+    _prune(root, now, _DENIAL_FILE, 0, DENIAL_S, False)
+
+
+def note_denial(g, lane, v):
+    """Keep the branches a conflict denial names in <store>/denials/<fingerprint>.json for the override dialog (plan in write mode, the host hook
+    for a creation); best effort, so a failure changes no verdict and no message."""
+    fp, conflicts = v.get("fingerprint"), v.get("conflicts")
+    if v.get("decision") != "deny" or not fp or not conflicts:
+        return
+    now = time.time()
+    try:
+        rec = {"v": 1, "fp": fp, "lane": lane, "branches": [c["branch"] or "(detached) " + ", ".join(c["worktrees"]) for c in conflicts],
+               "target": (v.get("target") or {}).get("name"), "at": now, "expires": now + DENIAL_S}
+        write_atomic(os.path.join(store(g), "denials", fp + ".json"), json.dumps(rec, ensure_ascii=False).encode("utf-8"))
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass
+
+
+def denial_branches(g, fp):
+    """The conflicting branches that the live denial record of fingerprint `fp` names, or None (no repository, no such record, or one that has
+    expired or cannot be read)."""
+    if g is None or not isinstance(fp, str) or not re.fullmatch(r"[0-9a-f]{12}", fp):
+        return None
+    try:
+        rec = json.loads(_read_retry(os.path.join(store(g), "denials", fp + ".json")))
+        if rec.get("fp") != fp or not isinstance(rec.get("branches"), list) or _record_expiry(rec) <= time.time():
+            return None
+        return [str(b) for b in rec["branches"]]
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def decide(payload, lang, host=None):
+    """-> None (allow), (code, message) (deny) or an Approval (host claude: the ask or allow of a user-only command)."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     if tool.startswith("mcp__") and not isinstance(ti.get("command"), str) and not _MCP_SESSION.fullmatch(tool):
@@ -5763,6 +6246,8 @@ def decide(payload, lang):
     if not prot and text and len(text) <= MAX_TEXT and _WRITE_HINT.search(re.sub(r"[\\`^'\"]", "", text)):
         prot = protected(text, roots=tuple(tamper_roots()), lazy=lambda: [pkey(store(repo()))] if repo() else [])
     if prot:
+        if host == "claude" and prot[1] == _USER_MSG:  # Claude Code asks the user in its own dialog (Approval); Codex and Hermes deny
+            return approval_answer(payload, cwd, crs, lang)
         g = repo()
         if prot[0] == "always" or (g and (guard_mode(g) == "armed" or holds_claims(g))):
             return "PROTECTED", T(lang, "protected", why=prot[1])
@@ -5784,7 +6269,17 @@ def emit_deny(msg):
     return 0
 
 
-_PREFILTER = re.compile(rb"git|worktree|isolation|start_session|EnterWorktree|magos|hookspath|gh|claude|eval|iex", re.I)
+def emit_approval(a):
+    """The ask or allow of a user-only command: one ASCII-escaped JSON object on stdout, exit 0, with hookSpecificOutput only (no legacy
+    decision field: it has no ask, and its approve would skip the dialog)."""
+    obj = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": a.decision, "permissionDecisionReason": a.reason,
+                                  "updatedInput": a.updated}}
+    sys.stdout.buffer.write((json.dumps(obj, ensure_ascii=True) + "\n").encode("ascii"))
+    sys.stdout.buffer.flush()
+    return 0
+
+
+_PREFILTER =re.compile(rb"git|worktree|isolation|start_session|EnterWorktree|magos|hookspath|gh|claude|eval|iex", re.I)
 
 
 def cmd_hook(args):
@@ -5820,7 +6315,7 @@ def _hook(args):
         sys.stderr.write("MAGOS guard warning: unparseable hook payload (%s); the call shows no lane word and is allowed\n" % type(err).__name__)
         return (out_text("{}"), 0)[1]
     try:
-        res = decide(payload, args.lang)
+        res = decide(payload, args.lang, args.host)
     except BaseException as err:  # fail closed only when the call looks lane-creating or protected
         try:
             looks = any(extract(payload)[:2])
@@ -5830,6 +6325,8 @@ def _hook(args):
             return emit_deny("MAGOS guard error (%s: %s); the lane-creating call is denied. Diagnose: %s doctor" % (type(err).__name__, err, guard_cmd()))
         sys.stderr.write("MAGOS guard warning: %s: %s\n" % (type(err).__name__, err))
         res = None
+    if isinstance(res, Approval):  # first: an Approval is a tuple too
+        return emit_approval(res)
     return emit_deny(res[1]) if res else (out_text("{}"), 0)[1]
 
 
@@ -5913,9 +6410,9 @@ def cmd_arm(args):
         sys.stderr.write("MAGOS arm refused: %s\n" % why)
         return EXIT["ARM_REFUSED"]
     s, dry = store(g), args.dry_run
-    if not dry and not user_console():
-        sys.stderr.write(T(args.lang, "need_tty") + "\n")
-        return EXIT["CONSOLE_REQUIRED"]
+    code, via, rec = user_gate(args, os.path.join(s, "approvals"), g.common, dry=dry)
+    if code:
+        return code
     record = os.path.join(s, "arm-config.json")
     keep = os.path.exists(record)  # an existing record holds the values from before the first arm: a re-run never records its own false
     steps = [("write", hook), ("write", os.path.join(s, "ARMED")), ("write", os.path.join(s, "lang")), ("write", os.path.join(s, "guard"))]
@@ -5935,7 +6432,7 @@ def cmd_arm(args):
     put_text(os.path.join(s, "ARMED"), now_iso() + "\n")
     for k in PACK_KEYS:
         g.run("config", "--local", k, "false")
-    audit(g, op="arm", lang=args.lang)
+    audit(g, op="arm", lang=args.lang, via=via, **approval_fields(rec))
     for kind, target in steps:
         out_text("did %s %s" % (kind, target))
     return 0
@@ -5946,9 +6443,9 @@ def cmd_disarm(args):
     if g is None:
         return 2
     hook, s = os.path.join(hooks_dir(g), "reference-transaction"), store(g)
-    if not args.dry_run and not user_console():
-        sys.stderr.write(T(args.lang, "need_tty") + "\n")
-        return EXIT["CONSOLE_REQUIRED"]
+    code, via, rec = user_gate(args, os.path.join(s, "approvals"), g.common, dry=args.dry_run)
+    if code:
+        return code
     verb = "would" if args.dry_run else "did"
     mine = os.path.exists(hook) and MARK in read_text(hook)
     for target in [os.path.join(s, "ARMED")] + ([hook] if mine else []):
@@ -5958,7 +6455,7 @@ def cmd_disarm(args):
     if mine and not args.dry_run and os.path.exists(hook + ".magos-prev"):
         os.replace(hook + ".magos-prev", hook)
     if not args.dry_run:
-        audit(g, op="disarm")
+        audit(g, op="disarm", via=via, **approval_fields(rec))
     record = os.path.join(s, "arm-config.json")
     if os.path.exists(record):  # put back what arm found; without a record the settings stay as they are
         try:
@@ -6203,8 +6700,8 @@ def cmd_install(args):
     """Copies the guard and its launcher to one canonical user-level directory and prints (and saves) the exact host snippet; never edits
     host config.  Version-aware and atomic: identical copies are left alone, a newer copy is not downgraded without --allow-downgrade, both
     files are replaced together or not at all (the launcher stays executable on POSIX), and guard/VERSION.json is rewritten by every install.
-    On Windows a guard home whose launcher path holds a character cmd.exe would misread is refused.  User-only: needs a real console
-    except with --dry-run."""
+    On Windows a guard home whose launcher path holds a character cmd.exe would misread is refused.  User-only: needs a real console or an
+    approval token that verifies (its store is under the default guard home, whatever --home says), except with --dry-run."""
     home, dry = guard_home(args.home), args.dry_run
     launcher = "%s/guard/hooks/run-guard.cmd" % home
     bad = cmd_unsafe(launcher)
@@ -6213,10 +6710,10 @@ def cmd_install(args):
                          "operator, a separator or an expansion when it starts the launcher; nothing was written. Choose a guard home whose "
                          "path holds none of & ( ) ^ %% ; , = (--home DIR or MAGOS_HOME).\n" % (home, launcher, bad))
         return 2
-    if not dry and not user_console():
-        sys.stderr.write(T(args.lang, "need_tty") + "\n")
-        return EXIT["CONSOLE_REQUIRED"]
-    files = [(src, dst, read_bytes(src), read_bytes(dst)) for src, dst in guard_files(home)]
+    code, via, rec = user_gate(args, os.path.join(guard_home(), "approvals"), guard_home(), dry=dry)
+    if code:
+        return code
+    files =[(src, dst, read_bytes(src), read_bytes(dst)) for src, dst in guard_files(home)]
     missing = [src for src, _dst, data, _cur in files if data is None]
     if missing:
         raise FileNotFoundError("the guard sources are incomplete: %s" % ", ".join(missing))
@@ -6251,7 +6748,7 @@ def cmd_install(args):
     note = hermes_plugin()[1] if args.host == "hermes" else None
     if not dry:
         put_text("%s/guard/generated/%s.%s" % (home, args.host, "yaml" if args.host == "hermes" else "json"), snippet)
-        home_audit(home, op="install", host=args.host, to=GUARD_VERSION, source=src0.replace("\\", "/"),
+        home_audit(home, op="install", host=args.host, to=GUARD_VERSION, source=src0.replace("\\", "/"), via=via, **approval_fields(rec),
                    **{"from": "none" if old is None else version_of(old) or "unversioned"})
     if note:
         out_text("NOTE: " + note + ".")
@@ -6318,8 +6815,8 @@ def copy_report(home_arg=None):
     else:
         hosts = [h for h in HOSTS if os.path.isfile("%s/guard/generated/%s.%s" % (home, h, "yaml" if h == "hermes" else "json"))] or list(HOSTS)
         refresh = "%s install --host %%s%s" % (guard_cmd(against), ' --home "%s"' % home if home_arg else "")
-        out_text("guard copy %s: %s DIFFERS from %s %s; refresh it in your own terminal:\n%s"
-                 % (dst, described(cur), label, described(data), "\n".join("  " + refresh % h for h in hosts)))
+        out_text("guard copy %s: %s DIFFERS from %s %s; refresh it (%s):\n%s"
+                 % (dst, described(cur), label, described(data), _USER_RUN, "\n".join("  " + refresh % h for h in hosts)))
         if ldata is not None and lcur != ldata:
             out_text("  the launcher %s (%s) differs as well" % (ldst, sha256_of(lcur or b"")[:12]))
     provenance(rec, cur)
@@ -6360,12 +6857,12 @@ def hermes_report(home, home_arg=None):
     redo = "%s install --host hermes%s" % (guard_cmd(), ' --home "%s"' % home if home_arg else "")
     if not os.path.isfile(launcher):
         out_text("hermes entry %s: its launcher %s does NOT EXIST (the Hermes plugin was removed?), and fail_closed then blocks every Hermes "
-                 "terminal call; in your own terminal run %s and merge the new entry, or remove the MAGOS entry from the Hermes config" % (path, launcher, redo))
+                 "terminal call; run %s (%s) and merge the new entry, or remove the MAGOS entry from the Hermes config" % (path, launcher, redo, _USER_RUN))
         return True
     v = version_of(read_quiet(os.path.join(os.path.dirname(os.path.dirname(launcher)), "scripts", "magos_guard.py")))
     if v != GUARD_VERSION:
-        out_text("hermes entry %s: its launcher %s runs guard %s, not this guard %s; update the Hermes plugin or, in your own terminal, run %s "
-                 "and merge the new entry" % (path, launcher, v or "unversioned", GUARD_VERSION, redo))
+        out_text("hermes entry %s: its launcher %s runs guard %s, not this guard %s; update the Hermes plugin or run %s (%s) "
+                 "and merge the new entry" % (path, launcher, v or "unversioned", GUARD_VERSION, redo, _USER_RUN))
         return True
     out_text("hermes entry: %s (guard %s)" % (launcher, v))
     return False
@@ -6423,6 +6920,28 @@ def set_report(g, claims, bad_claims, heads):
     return bool(lines)
 
 
+_APPROVAL_SAYS = {"terminal": "every user-only command runs in the user's own terminal",
+                  "prompt": "Claude Code asks in its own dialog for a user-only command; Codex and Hermes use the terminal",
+                  "auto-safe": "Claude Code runs arm, and install to the default guard home, without a click and asks for every other user-only "
+                               "command; Codex and Hermes use the terminal"}
+
+
+def approval_report(g):
+    """doctor's approval line: the level magos.approval sets in this repository -> True on a problem (a value that is no level, or one that
+    cannot be read: the guard then fails closed to terminal)."""
+    try:
+        level, raw = approval_level(g)
+    except GitFail as err:
+        out_text("approval: terminal (magos.approval cannot be read: %s)" % err)
+        return True
+    if raw is not None and raw.strip().lower() not in APPROVAL_LEVELS:
+        out_text("approval: terminal (magos.approval is %s, which is not terminal, prompt or auto-safe, so the guard fails closed; set it in "
+                 "your own terminal: git config --local magos.approval prompt)" % json.dumps(_shown(raw, 80), ensure_ascii=False))
+        return True
+    out_text("approval: %s (%s): %s" % (level, "magos.approval unset" if raw is None else "magos.approval " + raw, _APPROVAL_SAYS[level]))
+    return False
+
+
 def cmd_doctor(args):
     me = os.path.abspath(__file__)
     out_text("guard %s (%s) at %s" % (GUARD_VERSION, sha256_of(read_bytes(me) or b"")[:12], me.replace("\\", "/")))
@@ -6445,6 +6964,7 @@ def cmd_doctor(args):
     g = open_repo(args.repo)
     if g is None:
         out_text("repository: none at %s (guard is inert here)" % args.repo)
+        out_text("approval: prompt (no repository): install asks in Claude Code's dialog; Codex and Hermes use the terminal")
         return 1 if problems else 0
     claims, bad = read_claims(g)
     heads = list_refs(g)[0]
@@ -6453,6 +6973,7 @@ def cmd_doctor(args):
     out_text("repository: %s (mode %s); claims: %d, unreadable: %d, newer-format: %d" % (g.common, mode, len(claims), len(bad) - len(too_new), len(too_new)))
     for b in bad:
         out_text("  %s" % (b.text if b.code == "CLAIM_NEWER_FORMAT" else "unreadable claims/%s" % b.replace(os.sep, "/")))
+    approval_problem = approval_report(g)
     set_problems = set_report(g, claims, bad, heads)
     orphans = [d["branch"] for d in claims.values() if d["branch"] not in heads and not d["worktree"] and not (is_integration_claim(d) and claim_set_record(g, d))]
     out_text("claims without a branch or planned worktree: %s" % (", ".join(orphans) or "none"))
@@ -6464,13 +6985,13 @@ def cmd_doctor(args):
     hook = os.path.join(hooks_dir(g), "reference-transaction")
     mine = os.path.exists(hook) and MARK in read_text(hook)
     same = mine and read_text(hook).replace("\r\n", "\n") == HOOK_SH
-    rearm = "re-arm in your own terminal: %s arm" % guard_cmd()
+    rearm = "re-arm (%s): %s arm" % (_USER_RUN, guard_cmd())
     layer = "installed" if same else "installed but different from this version; " + rearm if mine else "not installed"
     out_text("git layer: %s; hook directories: %d" % (layer, len(dirs)))
     bypassed = mode == "armed" and g.run("config", "--get", "core.hooksPath", ok=(0, 1))[0] == 0
     if bypassed:
         out_text("core.hooksPath is set: git no longer runs the backstop")
-    problems = problems or bool(bad) or set_problems or len(dirs) > 1 or (mode == "armed" and not same) or bypassed
+    problems = problems or bool(bad) or set_problems or approval_problem or len(dirs) > 1 or (mode == "armed" and not same) or bypassed
     recorded = os.path.join(store(g), "guard")
     if os.path.exists(os.path.join(store(g), "ARMED")) and os.path.isfile(recorded):
         cmd = read_text(recorded).strip()
@@ -6517,18 +7038,22 @@ class Parser(argparse.ArgumentParser):
         kw["allow_abbrev"] = False
         super().__init__(*args, **kw)
 
+    def error(self, message):
+        """A usage error never shows an approval token: a run of 43 or more token characters (A-Z a-z 0-9 _ -) is shown as <redacted>."""
+        super().error(_TOKEN_RUN.sub("<redacted>", message))
 
-def main(argv=None):
-    for s in (sys.stdout, sys.stderr):
-        try:
-            s.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
-            pass
+
+_TOKEN_RUN = re.compile(r"[A-Za-z0-9_-]{43,}")
+
+
+def build_parser(repo_default=None):
+    """The guard's argument parser: main() uses it with repo_default os.getcwd(), and the Claude Code hook reads a direct invocation with it
+    (repo_default None: --repo unset).  Every user-only subcommand (USER_ONLY) takes the option --approval, hidden from its help."""
     lang0 = os.environ.get("MAGOS_LANG") if os.environ.get("MAGOS_LANG") in ("zh", "en") else "zh"
     common = Parser(add_help=False)  # the same options work before or after the subcommand
     ap = Parser(prog="magos_guard", description=__doc__.splitlines()[0])  # subcommand parsers are built with the same class
     for parser, dflt in ((ap, None), (common, argparse.SUPPRESS)):
-        parser.add_argument("--repo", default=os.getcwd() if dflt is None else dflt)
+        parser.add_argument("--repo", default=repo_default if dflt is None else dflt)
         parser.add_argument("--lang", choices=("zh", "en"), default=lang0 if dflt is None else dflt)
         parser.add_argument("--json", action="store_true", default=False if dflt is None else dflt)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -6584,6 +7109,28 @@ def main(argv=None):
     p.add_argument("--set", required=True)
     p.add_argument("--reason", default="")
     p.add_argument("--abandon", action="store_true")
+    for u in USER_ONLY:
+        sub.choices[u.name].add_argument("--approval", help=argparse.SUPPRESS)
+    return ap
+
+
+def parse_quiet(words):
+    """The guard's own reading of `words` with --repo unset, or None when its parser refuses them (or they ask for help); prints nothing."""
+    ap = build_parser(None)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return ap.parse_args(list(words))
+    except SystemExit:
+        return None
+
+
+def main(argv=None):
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+    ap = build_parser(os.getcwd())
     try:
         args = ap.parse_args(argv)
         if args.cmd == "set-plan" and args.amend != (args.expect_revision is not None):
@@ -6592,6 +7139,7 @@ def main(argv=None):
         if any(a == "hook" for a in (sys.argv[1:] if argv is None else argv)) and err.code:
             return 1  # a usage error is a failure (the launcher maps it), never a deny
         raise
+    args.argv = list(sys.argv[1:] if argv is None else argv)  # the argument list an --approval token was issued for
     try:
         if args.cmd in ("plan", "check"):
             return cmd_plan(args, args.cmd == "plan")

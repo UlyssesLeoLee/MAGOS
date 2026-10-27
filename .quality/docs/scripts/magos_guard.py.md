@@ -1866,6 +1866,11 @@ approval token. Codex and Hermes have no such dialog; their hooks deny every use
   (`install` outside a repository) the level is `prompt`. No guard command writes the key, and the tamper filter
   denies an agent's `git config magos.*` (Invariant 7), so only the user sets it. No level runs `override` or `disarm`
   without a click.
+- `doctor` prints the level after the repository line: `approval: <level> (magos.approval <value>): <what it means>`,
+  or `(magos.approval unset)`; outside a repository `approval: prompt (no repository): ...`. A value that is no level
+  prints `approval: terminal (magos.approval is "<value>", which is not terminal, prompt or auto-safe, so the guard fails
+  closed; set it in your own terminal: git config --local magos.approval prompt)`, and a value that cannot be read
+  `approval: terminal (magos.approval cannot be read: <error>)`; both are problems (exit 1).
 
 ### Recognition
 
@@ -1877,12 +1882,12 @@ the following:
 1. A call of the `Bash` or `PowerShell` tool (`APPROVAL_TOOL` otherwise: `Monitor`, MCP tools and every tool whose
    shell the hook cannot name).
 2. Exactly one command in the tool's dialect. With the leading and trailing blanks and line breaks of the text cut, it
-   holds no control character but the tab, and the lexer reads it as one command with nothing around it: no list,
+   holds no control character but the tab and no lone surrogate, and the lexer reads it as one command with nothing around it: no list,
    pipe, background `&`, group, brace block, compound command, substituted text, redirection or here-document, and it
    creates nothing (`APPROVAL_SHAPE`). No word is dynamic (`$`, a backtick, `%`, an open parenthesis;
    `APPROVAL_DYNAMIC`).
-3. Its first word is a Python interpreter (`APPROVAL_SHAPE` otherwise; a prefix assignment, a wrapper and the
-   launcher are none). It is either a bare name `py`, `python`, `python3` or `python3.<n>`, optionally with `.exe`,
+3. Its first word is a Python interpreter (`APPROVAL_SHAPE` otherwise; a prefix assignment, a wrapper, the guard
+   script itself and the launcher are none). It is either a bare name `py`, `python`, `python3` or `python3.<n>`, optionally with `.exe`,
    which the shell finds on PATH and which on Windows resolves to an `.exe` (not a `.bat` or `.cmd` shim, which would
    hand the arguments to cmd.exe); or a path to the same file as the interpreter that runs the hook
    (`APPROVAL_INTERPRETER` for any other path, a word that starts with `~`, or a name that resolves to a shim). Only
@@ -1903,8 +1908,9 @@ the following:
 7. A subcommand of scope `repo` names a repository the hook opens (`APPROVAL_REPO`).
 
 A command in which the tamper filter finds a user-only subcommand and which names `--approval` is denied with the
-`approval_given` text, whatever its shape. The filter reads that name with every backslash, backtick, caret, `'` and
-`"` removed. The one exception is the hook's own rewritten command of the same tool call: the token's record is live,
+`approval_given` text, whatever its shape. The hook looks for that name in the whole text, also after a `--` (which
+argparse from Python 3.13 on reads as the end of the global options), as written and with every backslash, backtick,
+caret, `'` and `"` removed. The one exception is the hook's own rewritten command of the same tool call: the token's record is live,
 carries the payload's `tool_use_id`, and holds the SHA-256 of exactly this command text. That command is answered `{}`,
 so a host that runs its hooks again on the rewritten input runs it. At level `terminal` the hook denies with the
 `protected_level` text.
@@ -1951,7 +1957,9 @@ so a host that runs its hooks again on the rewritten input runs it. At level `te
 ### Token and store
 
 - The token is `secrets.token_urlsafe(32)`: 43 characters of `A-Z a-z 0-9 _ -`, shown only in the rewritten command.
-  The SHA-256 of the token (64 hex digits) names its record, and the record never holds the token.
+  The SHA-256 of the token (64 hex digits) names its record, and the record never holds the token. No message of the
+  command and no audit field holds it either: a usage error of the guard's parser shows every run of 43 or more of
+  these characters as `<redacted>`.
 - Store.
   - Scope `repo`: `<git-common-dir>/magos/approvals/` of the repository that `--repo` names (joined to the session
     directory), else that of the session directory.
@@ -1970,9 +1978,10 @@ so a host that runs its hooks again on the rewritten input runs it. At level `te
   - `created`, `expires`: seconds since the epoch; `expires` is 120 s after `created`.
   - `tool_use_id`, `session_id`: from the payload, at most 200 characters, null when absent.
   - `command_sha256`: the SHA-256 of the rewritten command.
-- Every mint first prunes its store. It removes a record whose `expires` passed more than 600 s ago, and a record or
-  temporary file that cannot be read and is older than that; in a repository store it also removes a denial record
-  whose `expires` has passed. Files of other names stay. A hook call that mints nothing reads no store.
+- Every mint first prunes its store. It removes a record (`.json` or `.used`) whose `expires` passed more than 600 s
+  ago, a record that cannot be read and is older than that, and a temporary file older than that; in a repository
+  store it also removes a denial record whose `expires` has passed, or that cannot be read and is older than one hour.
+  Files of other names stay, and a file that cannot be removed is left. A hook call that mints nothing reads no store.
 
 ### Verification in the command
 
@@ -1985,7 +1994,7 @@ so a host that runs its hooks again on the rewritten input runs it. At level `te
 - Consumption renames `<sha256>.json` to `<sha256>.used`. A rename succeeds only once on NTFS and on POSIX file systems,
   so of two uses at the same moment one wins and the other finds no record.
 - The renamed record is then read and checked:
-  - format 1 and `used` false (else the token is unknown);
+  - format 1: `v` 1, `used` false, `via` `prompt` or `auto-safe` and a finite `expires` (else the token is unknown);
   - not expired;
   - `sub` equal to the subcommand;
   - `where` equal to the command's repository or default guard home;
@@ -1999,7 +2008,8 @@ so a host that runs its hooks again on the rewritten input runs it. At level `te
   - 26 `APPROVAL_EXPIRED`.
   - 27 `APPROVAL_USED`.
   - 28 `APPROVAL_MISMATCH`: issued for another subcommand, set of arguments, repository or guard home, or an argument
-    list that holds more than one approval option.
+    list that holds more than one approval option. The checks run in that order, so the message names the first that
+    fails.
 
   A guard before 1.0.7 refuses `--approval` as a usage error (exit 2).
 
@@ -2018,8 +2028,9 @@ a reason typed in a terminal, `agent` for one that came through the dialog. The 
 
 `plan` (when it would write and denies with a conflict) and the host hook (when it denies a creation with a conflict)
 keep `<store>/denials/<fingerprint>.json`: `{"v": 1, "fp", "lane", "branches", "target", "at", "expires"}`.
-`branches` holds the conflicting branches of the verdict (`(detached) <worktrees>` for a detached one). A record is
-valid for one hour, like an override record, and only the override dialog reads it. `check` writes none, and a failure
+`branches` holds the conflicting branches of the verdict (`(detached) <worktrees>` for a detached one); `at` and
+`expires` are seconds since the epoch. A record is valid for one hour, like an override record, and only the override
+dialog reads it. `check` writes none, and a failure
 to write one changes no verdict and no message.
 
 ### Tamper filter
@@ -2204,7 +2215,7 @@ Version 1.0.7 of the guard (`GUARD_VERSION` 1.0.7). Relative to the 1.0.6 produc
   repository's own config and reports it in `doctor`;
 - gives `override`, `arm`, `disarm` and `install` the hidden option `--approval`. The token is verified against a record
   named by its SHA-256 in `<git-common-dir>/magos/approvals/` or `<guard home>/approvals/` and consumed by one rename,
-  with the exit codes 25 to 28;
+  with the exit codes 25 to 28, and no message names it;
 - records `via` in the audit lines of the user-only subcommands, and `reason_by` for `override`;
 - keeps the branches of a conflict denial in `<store>/denials/<fp>.json` for the override dialog;
 - denies writes into an approval store in every repository, and states the click in the `options` and `need_tty`
