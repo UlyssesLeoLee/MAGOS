@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """MAGOS lane guard: a lane's files are planned before the lane exists; creating a lane that overlaps another lane is denied.
 
-One stdlib-only file (Python >= 3.9): CLI, PreToolUse hook entry for Claude Code / Codex / Hermes, and the sh body of the git
-reference-transaction backstop. check / list / set-show never write, and hook writes only approval and denial records; plan / release / override / arm / disarm / install and the set
+One stdlib-only file (Python >= 3.9): CLI, PreToolUse hook entry for Claude Code / Codex / Hermes, the MCP approval server the host starts
+(mcp), and the sh body of the git reference-transaction backstop. check / list / set-show never write, hook writes only approval and denial
+records and mcp only approval records; plan / release / override / arm / disarm / install and the set
 commands set-plan / set-update / set-release write only the claim store and the set records under <git-common-dir>/magos and the files they print.
 """
 from __future__ import annotations
@@ -16,6 +17,7 @@ import io
 import json
 import math
 import os
+import queue
 import re
 import secrets
 import shlex
@@ -62,6 +64,13 @@ EXIT = {"OK": 0, "OVERRIDDEN": 0, "CONFLICT": 10, "NO_MANIFEST": 10, "UNPLANNABL
         "APPROVAL_UNKNOWN": 25, "APPROVAL_EXPIRED": 26, "APPROVAL_USED": 27, "APPROVAL_MISMATCH": 28}
 APPROVAL_LEVELS = ("terminal", "prompt", "auto-safe")  # magos.approval; unset is prompt, any other value terminal
 APPROVAL_S, APPROVAL_GRACE_S, DENIAL_S = 120, 600, 3600  # token lifetime; how long an expired or used record names its cause; a denial record's lifetime
+# Codex approval (MCP approval server): the protocol version answered to a client that names no date; the longest message line; the longest
+# string argument; the longest output text of a result; how long the server waits for the click (Codex does not count that wait against its
+# tool timeout; the token's own 120 s start at the mint, after the click)
+MCP_PROTOCOL, MCP_LINE, MCP_FIELD, MCP_TEXT, MCP_CLICK_S = "2025-06-18", 1048576, 4096, 8000, 120
+MCP_SERVER, MCP_TOOL = "magos", "magos_approve"  # the server name of the host configuration and its one tool
+HERMES_GATES = ("ask", "bypass", "absent")  # --hermes-gate: what the MAGOS Hermes plugin found about Hermes's approval gate
+HERMES_TIMEOUT_S, HERMES_LIFE_MIN_S, HERMES_LIFE_MAX_S, HERMES_LIFE_MARGIN_S = 300, 120, 900, 30  # a Hermes record that asks lives min(max(T, 120), 900) + 30 s
 MARK = "MAGOS lane guard"  # identifies the reference-transaction hook this file wrote
 HOOK_DEADLINE = None  # set for the duration of a hook call: every git call of that call shares one budget
 
@@ -104,12 +113,15 @@ M = {
     "k_declared": ("账本中已声明", "declared in the ledger"),
     "options": ("可选处理：① 缩小或拆分 manifest；② 等对方合入 {target} 后再创建；③ 对方若已合并或已放弃，用 {cmd} release --branch <对方分支> 释放它的登记（未合并的工作不会被释放）；"
                 "④ 仅在用户明确同意后，把 {cmd} override --fingerprint {fp} --reason \"<用户原话>\" 单独作为一条命令执行：在 Claude Code 中由用户在对话框里批准；"
-                "magos.approval 为 terminal 时，以及在 Codex 和 Hermes 中，由用户本人在自己的终端里运行；覆盖只通过 plan 生效，之后必须重新 plan（re-plan）。",
+                "在 Codex 中调用 MCP 工具 magos_approve（subcommand 为 override，并给出指纹、理由和仓库），由用户在 Codex 的对话框里批准；"
+                "在装有 MAGOS Hermes 插件的 Hermes 中由用户在 Hermes 的审批提示中批准；magos.approval 为 terminal 时，由用户本人在自己的终端里运行；"
+                "覆盖只通过 plan 生效，之后必须重新 plan（re-plan）。",
                 "Options: (1) shrink or split the manifest; (2) wait until they are merged into {target}; (3) if the other lane is merged or abandoned, release its claim with "
                 "{cmd} release --branch <their branch> (unmerged work is never released); (4) only with the user's explicit consent, "
                 "run {cmd} override --fingerprint {fp} --reason \"<user's words>\" as a command of its own: in Claude Code the user approves it in Claude Code's dialog; "
-                "with magos.approval terminal, and in Codex and Hermes, the USER runs it in their own terminal; the override takes effect only through plan, "
-                "so a re-plan is required."),
+                "in Codex call the MCP tool magos_approve (subcommand override, the fingerprint, the reason and the repository) and the user approves it in "
+                "Codex's dialog; in Hermes with the MAGOS Hermes plugin the user approves it in Hermes's approval prompt; with magos.approval terminal the "
+                "USER runs it in their own terminal; the override takes effect only through plan, so a re-plan is required."),
     "newer_only": ("只有能读取该格式的 MAGOS 才能处理这份登记：请升级本守卫（doctor 显示版本，install 刷新副本），或用写入它的那个 MAGOS 执行这条命令。",
                    "Only a MAGOS that reads that format can act on this claim: upgrade this guard (doctor shows its version, install refreshes the copy), "
                    "or run this command with the MAGOS that wrote it."),
@@ -129,9 +141,10 @@ M = {
                       "MAGOS: release refused: the claim of '{b}' is stored in {f}, not at its own path; the user must inspect and remove it by hand."),
     "released": ("MAGOS：已释放「{b}」的登记。", "MAGOS: released the claim of '{b}'."),
     "overridden": ("MAGOS：已记录用户覆盖（指纹 {fp}，1 小时内有效）。", "MAGOS: recorded the user's override (fingerprint {fp}, valid for 1 hour)."),
-    "need_tty": ("MAGOS：这条用户专属命令需要真实终端（当前标准输入不是控制台），或者在 Claude Code 中由用户在对话框里批准（守卫会自己加上 --approval）。",
-                 "MAGOS: this user-only command needs a real terminal (stdin is not a console), or the user's approval in Claude Code's dialog "
-                 "(the guard then adds --approval itself)."),
+    "need_tty": ("MAGOS：这条用户专属命令需要真实终端（当前标准输入不是控制台），或者由用户在 Claude Code 的对话框中批准，或者在 Codex 中通过 MCP 工具 "
+                 "magos_approve 在 Codex 的对话框中批准，或者在 Hermes 的审批提示中批准（守卫会自己加上 --approval）。",
+                 "MAGOS: this user-only command needs a real terminal (stdin is not a console), or the user's approval in Claude Code's dialog, in Codex "
+                 "in Codex's dialog through the MCP tool magos_approve, or in Hermes in Hermes's approval prompt (the guard then adds --approval itself)."),
     # ---- approval (1.0.7): the Claude Code hook's answer to a user-only command, its dialog text and the command's token errors
     "protected_shape": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。只有用户能批准它：在 Claude Code 中，请把这条守卫命令单独作为一次 Bash 或 PowerShell "
                         "调用执行，前后不加任何内容，也不带 --approval：{cmd} <子命令> <选项>；用户随后在 Claude Code 自己的对话框中点击批准。否则由用户在自己的终端里执行。",
@@ -172,13 +185,13 @@ M = {
                            "the lane and the conflicting branches: not recorded here (the denial the agent received names them)"),
     "approval_desc": ("MAGOS 用户专属命令：{sub}（待批准）", "MAGOS user-only command: {sub} (approval)"),
     "approval_unknown": ("MAGOS：批准令牌在这里无效：存储中没有这个令牌（令牌错误、属于另一个仓库或守卫目录，或已过期并被清除）。没有执行任何操作。"
-                         "请去掉 --approval 重新执行这条守卫命令，由用户在 Claude Code 的对话框中重新批准。",
+                         "请去掉 --approval 重新执行这条守卫命令，由用户在宿主的对话框中重新批准。",
                          "MAGOS: the approval token is not valid here: the store holds no such token (a wrong token, one of another repository or guard home, or "
                          "one that expired and was removed). Nothing was done. Run the guard command again without --approval; the user approves it again in "
-                         "Claude Code's dialog."),
-    "approval_expired": ("MAGOS：批准令牌已过期（批准在钩子签发后 120 秒内有效）。没有执行任何操作。请去掉 --approval 重新执行这条守卫命令，由用户重新批准。",
-                         "MAGOS: the approval token expired (an approval is valid for 120 s after the hook issued it). Nothing was done. Run the guard command "
-                         "again without --approval; the user approves it again."),
+                         "the host's dialog."),
+    "approval_expired": ("MAGOS：批准令牌已过期（批准只在请求中说明的时间内有效）。没有执行任何操作。请去掉 --approval 重新执行这条守卫命令，由用户重新批准。",
+                         "MAGOS: the approval token expired (an approval is valid only for the time its request stated). Nothing was done. Run the guard "
+                         "command again without --approval; the user approves it again."),
     "approval_used": ("MAGOS：批准令牌已经用过（一次批准只执行一条命令一次）。没有执行任何操作。请去掉 --approval 重新执行这条守卫命令，由用户重新批准。",
                       "MAGOS: the approval token was already used (one approval runs one command once). Nothing was done. Run the guard command again without "
                       "--approval; the user approves it again."),
@@ -189,6 +202,95 @@ M = {
     "what_args": ("组参数", "set of arguments"),
     "what_repo": ("个仓库", "repository"),
     "what_home": ("个守卫目录", "guard home"),
+    # ---- Codex approval (1.0.8): the MCP approval server's dialog and results, the Codex hook's route, the mcp deny
+    "protected_codex": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。在 Codex 中由用户在 Codex 自己的对话框里点击批准：请调用 MCP 服务器 magos 的工具 "
+                        "magos_approve，参数正好是：{call} 不要自己执行这条守卫命令。如果这个工具不可用，或者 Codex 的审批策略是 never（Codex 会自行拒绝所有"
+                        "对话框），则由用户在真实终端里执行：{ready}",
+                        "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}). In Codex the user approves it with a click in "
+                        "Codex's own dialog: call the MCP tool magos_approve of the server magos with exactly these arguments: {call} Do not run the guard "
+                        "command yourself. Where that tool is not available, or Codex's approval policy is never (Codex then declines every dialog by "
+                        "itself), the user runs this in a real terminal: {ready}"),
+    "protected_codex_form": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。在 Codex 中，用户专属命令由用户通过 MCP 服务器 magos 的工具 magos_approve "
+                             "在 Codex 自己的对话框里点击批准：它只接受 subcommand（override、arm、disarm 或 install）、repo（仓库的绝对路径；install 可省略）、"
+                             "fingerprint 和 reason（override）、host（install）以及 dry_run（arm、disarm、install），而这条命令不是它能接受的单独一次直接守卫"
+                             "调用。请按用户的要求用相应参数调用 magos_approve，或者由用户在真实终端里执行：{cmd} <子命令> <选项>",
+                             "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}). In Codex the user approves a user-only "
+                             "command with a click in Codex's own dialog, through the MCP tool magos_approve of the server magos: it takes only subcommand "
+                             "(override, arm, disarm or install), repo (the absolute path of the repository; optional for install), fingerprint and reason "
+                             "(override), host (install) and dry_run (arm, disarm, install), and this command is no single direct invocation of the guard "
+                             "that it can take. Call magos_approve with the arguments of what the user asked for, or the user runs the command in a real "
+                             "terminal: {cmd} <subcommand> <options>"),
+    "protected_codex_never": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。Codex 的审批策略是 never，它会自行拒绝 magos_approve 的批准对话框，所以这里"
+                              "没有点击批准的途径：只能由用户在真实终端里执行：{ready}",
+                              "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}). Codex runs with the approval policy "
+                              "never, under which it declines the approval dialog of magos_approve by itself, so there is no click here: only the user runs "
+                              "this, in a real terminal: {ready}"),
+    "protected_mcp": ("MAGOS 拒绝：此命令会启动守卫的 MCP 批准服务器（mcp 子命令），它只能由宿主按照自己的配置启动；任何宿主上的工具命令都不能运行它。没有启动任何东西。",
+                      "MAGOS DENIES: this command would start the guard's MCP approval server (the mcp subcommand), which only the host starts from its "
+                      "own configuration; a tool command never runs it, on any host. Nothing was started."),
+    "mcp_ask": ("MAGOS：批准用户专属的守卫命令 {sub} 吗？\n{where}\n{what}\n先勾选 Approve，再点击 Accept（接受）：这只批准这一项，只执行一次。其他任何回答都不执行。",
+                "MAGOS: approve the user-only guard command {sub}?\n{where}\n{what}\nTick Approve, then Accept: that approves exactly this, once. "
+                "Anything else runs nothing."),
+    "mcp_approve_field": ("勾选即批准上面所述的这一条守卫命令，只执行一次。", "Tick to approve exactly the guard command described above, once."),
+    "mcp_where_repo": ("仓库：{repo}（Git 目录 {common}）", "Repository: {repo} (Git directory {common})"),
+    "mcp_where_home": ("守卫目录：{home}", "Guard home: {home}"),
+    "mcp_ran": ("MAGOS：用户已在对话框中批准 {sub}；守卫已执行，退出码 {code}。输出：\n{out}",
+                "MAGOS: the user approved {sub} in the dialog; the guard ran it and exited {code}. Its output:\n{out}"),
+    "mcp_refused": ("MAGOS：{sub} 的批准对话框以 {action} 结束：用户拒绝或取消了它，或者宿主自行作答（在 Codex 中，审批策略 never 或不含 MCP elicitation 的 "
+                    "granular 策略会拒绝所有对话框）。什么都没有执行。如果用户需要，由用户在真实终端里执行：{ready}",
+                    "MAGOS: the approval dialog of {sub} ended with {action}: the user declined or cancelled it, or the host answered it by itself (in "
+                    "Codex an approval policy of never, or a granular policy without MCP elicitations, declines every dialog). Nothing ran. If the user "
+                    "wants it, the user runs this in a real terminal: {ready}"),
+    "mcp_unticked": ("MAGOS：{sub} 的批准对话框被接受，但没有勾选 Approve（或回答不是勾选的 Approve）；什么都没有执行。用户在场时请再次调用 magos_approve，由用户勾选 "
+                     "Approve 后再接受，或者由用户在真实终端里执行：{ready}",
+                     "MAGOS: the approval dialog of {sub} was accepted without Approve ticked (or with an answer that is no ticked Approve); nothing ran. "
+                     "Call magos_approve again so that the user ticks Approve, then accepts, or the user runs this in a real terminal: {ready}"),
+    "mcp_late": ("MAGOS：{sub} 的批准对话框在 {s} 秒内没有得到回答；守卫已撤回它，什么都没有执行。用户在场时请再次调用 magos_approve，或者由用户在真实终端里执行：{ready}",
+                 "MAGOS: no answer to the approval dialog of {sub} within {s} s; the guard withdrew it and nothing ran. Call magos_approve again when the "
+                 "user is there, or the user runs this in a real terminal: {ready}"),
+    "mcp_busy": ("MAGOS：这个服务器的另一个批准对话框仍未关闭；什么都没有执行。请在用户回答之后再次调用 magos_approve。",
+                 "MAGOS: another approval dialog of this server is open; nothing ran. Call magos_approve again after the user has answered it."),
+    "mcp_no_form": ("MAGOS：这个客户端没有声明 MCP elicitation 表单能力，无法显示批准对话框；什么都没有执行。由用户在真实终端里执行：{ready}",
+                    "MAGOS: this client declares no MCP elicitation form, so it cannot show the approval dialog; nothing ran. The user runs this in a "
+                    "real terminal: {ready}"),
+    "mcp_terminal": ("MAGOS：该仓库的 magos.approval 是 terminal（或是守卫不认识的值，按 terminal 处理）：什么都没有执行；{sub} 只能由用户在真实终端里执行：{ready}",
+                     "MAGOS: the repository's magos.approval is terminal (or a value the guard does not know, which counts as terminal): nothing ran; "
+                     "only the user runs {sub}, in a real terminal: {ready}"),
+    "mcp_invalid": ("MAGOS：参数无效，什么都没有执行：\n{errors}\nmagos_approve 只接受 subcommand（override、arm、disarm 或 install）、repo（仓库的绝对路径；install "
+                    "可省略）、fingerprint 和 reason（override）、host（install）以及 dry_run（arm、disarm、install）。",
+                    "MAGOS: invalid arguments, nothing ran:\n{errors}\nmagos_approve takes only subcommand (override, arm, disarm or install), repo (the "
+                    "absolute path of the repository; optional for install), fingerprint and reason (override), host (install) and dry_run (arm, "
+                    "disarm, install)."),
+    "mcp_failed": ("MAGOS：{sub} 没有执行：{err}。由用户在真实终端里执行：{ready}", "MAGOS: {sub} did not run: {err}. The user runs this in a real terminal: {ready}"),
+    # ---- Hermes approval (1.0.8): the Hermes hook's answer when the MAGOS Hermes plugin runs it, its question and its denials
+    "protected_shape_hermes": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。只有用户能批准它：在 Hermes 中，请把这条守卫命令单独作为一次 terminal 调用"
+                               "执行：在前台运行、不用 pty，前后不加任何内容，也不带 --approval；脚本用绝对路径，并用 --repo <仓库绝对路径>（或调用的 workdir）"
+                               "指明仓库：{cmd} --repo <仓库> <子命令> <选项>；Hermes 随后在自己的审批提示中询问用户。否则由用户在自己的终端里执行。",
+                               "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}). Only the user approves it: in Hermes, "
+                               "run this guard command as a terminal call of its own, in the foreground and without pty, with nothing before or after it and "
+                               "without --approval, with an absolute script path and the repository named by --repo <absolute path> (or the call's "
+                               "workdir): {cmd} --repo <repository> <subcommand> <options>; Hermes then asks the user in its own approval prompt. Otherwise "
+                               "the user runs it in their own terminal."),
+    "approval_given_hermes": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}），并且带有 --approval。批准令牌从不由 agent 提供：用户在 Hermes 的审批提示中"
+                              "批准时，守卫会自己加上它。请去掉 --approval 后重新执行。",
+                              "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}) and carries --approval. An agent never "
+                              "supplies an approval token: the guard adds it itself when the user approves the command in Hermes's approval prompt. Run the "
+                              "command without --approval."),
+    "protected_hermes_noask": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。Hermes 在这里不会询问用户（{how}），因此一次点击不能证明用户同意：只能由用户"
+                               "在自己的终端里执行。",
+                               "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}). Hermes would not ask the user here "
+                               "({how}), so a click could not show the user's consent: only the user may run it, in their own terminal."),
+    "hermes_how_session": ("Hermes 报告它在这里无需询问即批准：/yolo、--yolo、approvals.mode off，或无人值守的运行（cron、-q、-z、无人值守的平台）",
+                           "Hermes reports that it approves without asking here: /yolo, --yolo, approvals.mode off, or a run nobody attends (cron, -q, -z, "
+                           "an unattended platform)"),
+    "hermes_how_gate": ("这个 Hermes 不向插件提供审批请求，或 MAGOS 插件无法在此进程中查看它的审批状态",
+                        "this Hermes has no approval request for plugins, or the MAGOS plugin cannot see its approval state in this process"),
+    "hermes_how_env": ("设置了 HERMES_YOLO_MODE", "HERMES_YOLO_MODE is set"),
+    "hermes_how_mode": ("{path} 中的 approvals.mode 是 {value}", "approvals.mode is {value} in {path}"),
+    "hermes_how_config": ("无法读取 {path}（{err}）", "{path} cannot be read ({err})"),
+    "approval_ask_hermes": ("MAGOS：批准用户专属的守卫命令 {sub} 吗？{what}批准后，这条命令在 {secs} 秒内执行，且只执行一次；once、session 和 always 都只批准这一次请求。",
+                            "MAGOS: approve the user-only guard command {sub}? {what} Approving runs exactly this command once, within {secs} s; once, "
+                            "session and always each approve this one request only."),
     # ---- sets (1.0.4): set-plan, set-show, set-update, set-release, and the plain plan / release refusing the claims of a set
     "set_invalid": ("MAGOS：set 规划无效，未登记也未创建任何东西：\n{errors}", "MAGOS: the set plan is invalid, nothing registered or created:\n{errors}"),
     "set_invalid_args": ("MAGOS：参数无效，未做任何修改：\n{errors}", "MAGOS: invalid arguments, nothing was changed:\n{errors}"),
@@ -2448,8 +2550,17 @@ _APPROVAL_TOOLS = {"Bash": "bash", "PowerShell": "ps"}  # the tools whose shell 
 _INTERPRETER = re.compile(r"(?:py|python|python3(?:\.\d+)?)(?:\.exe)?", re.I)  # the bare first word of a direct invocation
 _INTERP_OPT = re.compile(r"-3(?:\.\d+)?(?:-(?:32|64))?|-[BEIsu]|-Xutf8")  # and the pair -X utf8
 _BARE_SH = re.compile(r"[A-Za-z0-9_@%+=:,./-]+")  # a word bash reads as itself
-_USER_RUN = "user-only: approved in Claude Code's dialog, or run in your own terminal"  # doctor's hint before a user-only command
+_BARE_PS = re.compile(r"[A-Za-z0-9_+=:./-]+")  # a word PowerShell passes to a native program as itself (no , @ % $ or quote)
+_USER_RUN = "user-only: approved in Claude Code's, Codex's or Hermes's dialog, or run in your own terminal"  # doctor's hint before a user-only command
 Approval = namedtuple("Approval", "decision reason updated")  # the Claude Code hook's ask or allow of a user-only command
+HOST_ONLY = ("mcp",)  # the subcommands only the host starts (Codex approval): a tool command that runs one is denied on every host
+_HOST_MSG = "mcp is the guard's approval server, which only the host starts"
+MCP_ARGS = ("subcommand", "repo", "fingerprint", "reason", "host", "dry_run")  # the arguments of magos_approve, in the order the texts name them
+_MCP_TAKES = {"override": ("repo", "fingerprint", "reason"), "arm": ("repo", "dry_run"), "disarm": ("repo", "dry_run"), "install": ("repo", "host", "dry_run")}
+_HERMES_APPROVAL_TOOLS = {"terminal": "bash"}  # Hermes runs every terminal command with bash (Git Bash on Windows)
+_HERMES_WORKDIR_CHARS = frozenset("/\\:_-.~ +@=,")  # with the letters and digits: the characters Hermes accepts in a workdir
+_TRUTHY = ("1", "true", "yes", "on")
+HermesApproval = namedtuple("HermesApproval", "command message rule_key")  # the Hermes hook's modify and approve; message and rule_key None under auto-safe
 
 
 def _bare(word):
@@ -2468,9 +2579,10 @@ def _guard_word(word):
     return None
 
 
-def _user_only(rest, launcher):
-    """Is the subcommand in `rest` (the words after a guard word) user-only?  The launcher's leading --strict, the global options in any
-    spelling argparse ever took, and a `--` (from Python 3.13 on argparse takes the word after it as the subcommand) are skipped."""
+def _guard_sub(rest, launcher):
+    """The subcommand in `rest` (the words after a guard word) that a table names: a name of _USER_ONLY or HOST_ONLY in either reading of the
+    word; None for any other word.  The launcher's leading --strict, the global options in any spelling argparse ever took, and a `--` (from
+    Python 3.13 on argparse takes the word after it as the subcommand) are skipped."""
     k = 1 if launcher and rest[:1] and _bare(rest[0]) == "--strict" else 0
     while k < len(rest) and _bare(rest[k]).startswith("--"):
         t = _bare(rest[k])
@@ -2485,7 +2597,16 @@ def _user_only(rest, launcher):
             k += 1
         else:
             break
-    return k < len(rest) and (rest[k] in _USER_ONLY or _bare(rest[k]) in _USER_ONLY)
+    if k < len(rest):
+        for w in (rest[k], _bare(rest[k])):
+            if w in _USER_ONLY or w in HOST_ONLY:
+                return w
+    return None
+
+
+def _user_only(rest, launcher):
+    """Is the subcommand in `rest` (the words after a guard word) user-only (_guard_sub)?"""
+    return _guard_sub(rest, launcher) in _USER_ONLY
 
 
 _METHOD_TAIL = re.compile(r"\.[A-Za-z_]\w*\([^\\/]*$")  # a .Name(...) call at the end of a piece ("a,b".Split(',')); a path segment is none
@@ -2624,8 +2745,11 @@ def _protected_words(words, depth, roots, lazy):
     for i, w in enumerate(words):
         while j < len(pieces) and owners[j] == i:
             kind = _guard_word(pieces[j])
-            if kind and _user_only(pieces[j + 1:], kind == "launcher"):  # also behind start, cmd /c start or Start-Process: found anywhere
+            sub = _guard_sub(pieces[j + 1:], kind == "launcher") if kind else None
+            if sub in _USER_ONLY:  # also behind start, cmd /c start or Start-Process: found anywhere
                 return "always", _USER_MSG
+            if sub in HOST_ONLY:  # the approval server: only the host starts it (Codex approval)
+                return "always", _HOST_MSG
             j += 1
         if depth < 3 and re.search(r"\s", w) and re.search(r"magos_guard|run-guard", w, re.I):  # Start-Process ... -ArgumentList '<guard> disarm'
             found = protected(w, depth + 1, roots, lazy)
@@ -3785,8 +3909,17 @@ def user_gate(args, root, where, retype=None, dry=False):
 
 
 def approval_fields(rec):
-    """The audit fields of a run approved in Claude Code: the tool_use_id of its record."""
-    return {"tool_use_id": rec.get("tool_use_id")} if rec else {}
+    """The audit fields of a run approved by a token: the tool_use_id of its record, and its route when the record names one of the two routes
+    of version 1.0.8: `mcp` with the client that asked (Codex approval), or `hermes` (Hermes approval).  Any other value adds nothing, so the
+    lines of Claude Code and of a real terminal stay those of 1.0.7."""
+    if not rec:
+        return {}
+    fields = {"tool_use_id": rec.get("tool_use_id")}
+    if rec.get("route") == "mcp":
+        fields.update(route="mcp", client=rec.get("client"))
+    elif rec.get("route") == "hermes":
+        fields["route"] = "hermes"
+    return fields
 
 
 def ref_spelling(name):
@@ -5987,11 +6120,14 @@ def _interpreter_problem(word, cwd):
     """The cause code when the first word of a direct invocation is no interpreter the hook may name, else None.  Accepted: a bare py, python,
     python3 or python3.<n>, optionally with .exe, which on Windows resolves (in the hook's PATH) to an .exe, not to a .bat or .cmd shim that
     would hand the quoted arguments to cmd.exe; or a path to the interpreter that runs the hook.  The guard or its launcher as the first word,
-    a prefix assignment and a wrapper are no interpreter."""
+    a prefix assignment and a wrapper are no interpreter.  `cwd` None: the call names no directory (Hermes approval), so a relative path is
+    APPROVAL_DIRECTORY."""
     if _guard_word(word):
         return "APPROVAL_SHAPE"
     if re.search(r"[\\/]", word) or word.startswith("~"):
         p = _norm_path(word)
+        if not _rooted(p) and cwd is None:
+            return "APPROVAL_DIRECTORY"
         return None if same_file(p if _rooted(p) else os.path.join(cwd, p), sys.executable) else "APPROVAL_INTERPRETER"
     if not _INTERPRETER.fullmatch(word):
         return "APPROVAL_SHAPE"
@@ -6000,16 +6136,17 @@ def _interpreter_problem(word, cwd):
     return None
 
 
-def approval_invocation(payload, cwd):
+def approval_invocation(payload, cwd, tools=None):
     """-> (invocation, None) or (None, cause code): is the command of a Bash or PowerShell call exactly one direct invocation of this guard
     (Approval, Recognition 1 to 4)?  One command of the tool's dialect with nothing around it, no redirection and no dynamic word; an interpreter
     (_interpreter_problem) and only the interpreter options -3, -3.<n> (-32, -64), -B, -E, -I, -s, -u, -X utf8 and -Xutf8; then a word that
     names this guard (this_guard), joined to the session directory when it is relative.  The invocation: "sh" (the tool's shell), "words" (the
     interpreter, its options and the absolute script path, which the rewritten command quotes), "args" (the guard's arguments, none of them
-    `--`) and "text" (the command as the payload holds it)."""
+    `--`) and "text" (the command as the payload holds it).  `tools` maps a tool to its dialect (default: Claude Code's Bash and PowerShell);
+    `cwd` None means the call names no directory (Hermes approval): a relative script or interpreter path is then APPROVAL_DIRECTORY."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
-    sh, c = _APPROVAL_TOOLS.get(tool), ti.get("command")
+    sh, c = (_APPROVAL_TOOLS if tools is None else tools).get(tool), ti.get("command")
     if sh is None or not isinstance(c, str):
         return None, "APPROVAL_TOOL"
     text = c.strip(" \t\r\n")
@@ -6035,6 +6172,8 @@ def approval_invocation(payload, cwd):
     if k == len(ws) or _guard_word(ws[k]) != "script" or "--" in ws[k + 1:]:  # argparse reads a word after `--` otherwise from Python 3.13 on
         return None, "APPROVAL_SHAPE"
     p = _norm_path(ws[k])
+    if not _rooted(p) and cwd is None:
+        return None, "APPROVAL_DIRECTORY"
     path = p if _rooted(p) else os.path.normpath(os.path.join(cwd, p))
     if not this_guard(path):
         return None, "APPROVAL_SCRIPT"
@@ -6060,15 +6199,22 @@ def approval_target(ns, row, cwd):
     """-> the cause code APPROVAL_REPO, or where the approval of a parsed invocation lives: {"g": the repository the command names (its --repo
     joined to the session directory, else the session directory; None outside one), "level": its magos.approval (approval_level), "root": the
     approval store, "where": the repository's common directory or the default guard home, "dest": the guard home install copies to}.  The
-    command computes the same store from the same inputs: its --repo is read in the directory the tool's shell runs it in."""
-    g = open_repo(cwd if ns.repo is None else os.path.join(cwd, ns.repo))
+    command computes the same store from the same inputs: its --repo is read in the directory the tool's shell runs it in.  `cwd` None (a
+    Hermes call without workdir, whose paths are absolute): the repository is the one --repo names, none without it."""
+    if cwd is None:
+        g = open_repo(ns.repo) if ns.repo is not None else None
+    else:
+        g = open_repo(cwd if ns.repo is None else os.path.join(cwd, ns.repo))
     if row.scope == "repo":
         if g is None:
             return "APPROVAL_REPO"
         root, where, dest = os.path.join(store(g), "approvals"), g.common, None
     else:  # install: the default guard home holds the store whatever --home says; --home names only where install copies
         root, where = os.path.join(guard_home(), "approvals"), guard_home()
-        dest = os.path.normpath(os.path.join(cwd, os.path.expanduser(ns.home or os.environ.get("MAGOS_HOME") or "~/.magos"))).replace("\\", "/")
+        if cwd is None:
+            dest = guard_home(ns.home)
+        else:
+            dest = os.path.normpath(os.path.join(cwd, os.path.expanduser(ns.home or os.environ.get("MAGOS_HOME") or "~/.magos"))).replace("\\", "/")
     return {"g": g, "level": approval_level(g)[0], "root": root, "where": where, "dest": dest}
 
 
@@ -6096,10 +6242,15 @@ def _dialog(text, limit):
 
 
 def approval_text(lang, row, ns, t, auto):
-    """permissionDecisionReason: what the click approves and that the click is the approval.  Every subcommand: its name and a dry run;
-    arm, disarm and override: the repository; install: the host, the directory it copies from (that of this guard), the destination and an
-    --allow-downgrade; override: also the fingerprint, the lane and target and the conflicting branches of its denial record (at most six,
-    then +<n> more) and the reason, marked as written by the agent."""
+    """permissionDecisionReason: what the click approves (approval_what) and that the click is the approval."""
+    return T(lang, "approval_auto" if auto else "approval_ask", sub=row.name, what=approval_what(lang, row, ns, t))
+
+
+def approval_what(lang, row, ns, t):
+    """What a click approves, the {what} of every route's question (Approval routes): every subcommand its dry run; arm, disarm and override
+    the repository; install the host, the directory it copies from (that of this guard), the destination and an --allow-downgrade; override
+    also the fingerprint, the lane and target and the conflicting branches of its denial record (at most six, then +<n> more) and the reason,
+    marked as written by the agent.  `t`: {"g": the repository or None, "dest": the guard home install copies to}."""
     dry = T(lang, "approval_dry") if getattr(ns, "dry_run", False) else ""
     repo = _dialog(repo_dir(t["g"]), 200) if t["g"] is not None else ""
     if row.name == "override":
@@ -6118,7 +6269,7 @@ def approval_text(lang, row, ns, t, auto):
                  down=T(lang, "approval_downgrade") if getattr(ns, "allow_downgrade", False) else "")
     else:
         what = T(lang, "approval_what_" + row.name, repo=repo, dry=dry)
-    return T(lang, "approval_auto" if auto else "approval_ask", sub=row.name, what=what)
+    return what
 
 
 def _carries_approval(text):
@@ -6282,8 +6433,720 @@ def denial_record(g, fp):
         return None
 
 
-def decide(payload, lang, host=None):
-    """-> None (allow), (code, message) (deny) or an Approval (host claude: the ask or allow of a user-only command)."""
+# ---------------------------------------------------------------- Codex approval (1.0.8): the MCP approval server and the Codex hook's route
+MCP_TOOL_SPEC = {
+    "name": MCP_TOOL,
+    "title": "MAGOS approval",
+    "description": "Ask the user, in the host's own approval dialog, to approve one MAGOS user-only guard command (override, arm, disarm or "
+                   "install), and run it after the user ticks Approve and accepts. Call it with the arguments a MAGOS denial names. Nothing runs "
+                   "without that: a decline, a cancel, an Accept without Approve or a dialog the host cannot show runs nothing.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "subcommand": {"type": "string", "enum": ["override", "arm", "disarm", "install"], "description": "The user-only guard subcommand."},
+            "repo": {"type": "string", "description": "The absolute path of the repository. Required for override, arm and disarm; for install the "
+                                                      "repository whose magos.approval applies (optional)."},
+            "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{12}$", "description": "override: the 12 hex digits the denial printed."},
+            "reason": {"type": "string", "description": "override: the user's words; the dialog shows them as written by the agent."},
+            "host": {"type": "string", "enum": ["claude", "codex", "hermes"], "description": "install: the host whose hook entry install prints."},
+            "dry_run": {"type": "boolean", "description": "arm, disarm, install: only print what would be written; the user still approves it."},
+        },
+        "required": ["subcommand"],
+        "additionalProperties": False,
+    },
+    "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+}
+_OVERSIZE = object()  # the reader's mark of a line longer than MCP_LINE
+
+
+class _HostGone(Exception):
+    """stdout of the MCP approval server cannot be written: the host is gone."""
+
+
+def _abs_dir(p):
+    """The absolute directory `p` names, normalised with / separators, or None: a drive or UNC path on Windows (a Git Bash /c/... spelling
+    mapped), a /-rooted path elsewhere; never relative, drive-relative or ~, never longer than MAX_DIR, and existing.  Never os.path.isabs,
+    whose Windows result changed in Python 3.13."""
+    if not isinstance(p, str) or not p or p.startswith("~"):
+        return None
+    q = _norm_path(p)
+    rooted = re.match(r"[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]", q) if os.name == "nt" else q.startswith("/")
+    if not rooted or len(q) > MAX_DIR:
+        return None
+    q = os.path.normpath(q)
+    return q.replace("\\", "/") if os.path.isdir(q) else None
+
+
+def _client_name(info):
+    """`clientInfo` as an audit field: name/version (the name alone without a version), control characters as spaces, at most 80 characters;
+    None when it names no client."""
+    if not isinstance(info, dict) or not isinstance(info.get("name"), str) or not info["name"]:
+        return None
+    v = info.get("version")
+    return _shown(info["name"] + ("/" + v if isinstance(v, str) and v else ""), 80)
+
+
+def mcp_validate(arguments, lang):
+    """-> ({"row", "args", "argv", "repo", "g", "ns"}, None) or (None, [error lines]): the arguments of one magos_approve call checked as the guard
+    checks a command (Codex approval, The tool call 1 and 2).  The command line is built from single-word --option=value forms and read back by
+    the guard's own parser, which must give back the row, a probe approval word and every value."""
+    if not isinstance(arguments, dict):
+        return None, ["the arguments are not a JSON object"]
+    errors = ["%s: not an argument of magos_approve" % _shown(str(k), 40) for k in arguments if k not in MCP_ARGS]
+    sub = arguments.get("subcommand")
+    row = next((u for u in USER_ONLY if u.name == sub), None) if isinstance(sub, str) else None
+    if row is None:
+        return None, errors + ["subcommand: override, arm, disarm or install"]
+    takes = _MCP_TAKES[sub]
+    errors += ["%s: %s takes no %s" % (k, sub, k) for k in MCP_ARGS[1:]
+               if k in arguments and k not in takes and not (k == "dry_run" and arguments[k] is False)]
+    for k in ("repo", "fingerprint", "reason", "host"):
+        v = arguments.get(k)
+        if k not in arguments or k not in takes:
+            continue
+        if not isinstance(v, str):
+            errors.append("%s: not a string" % k)
+        elif len(v) > MCP_FIELD:
+            errors.append("%s: longer than %d characters" % (k, MCP_FIELD))
+        elif _CTL.search(v.replace("\t", " ")) or _SURROGATE.search(v):
+            errors.append("%s: holds a control character or a lone surrogate" % k)
+    if "dry_run" in arguments and not isinstance(arguments["dry_run"], bool):
+        errors.append("dry_run: true or false")
+    path, g = None, None
+    if "repo" in arguments:
+        if isinstance(arguments["repo"], str) and not [e for e in errors if e.startswith("repo:")]:
+            path = _abs_dir(arguments["repo"])
+            if path is None:
+                errors.append("repo: not the absolute path of an existing directory")
+            else:
+                try:
+                    g = open_repo(path)
+                except GitFail as err:
+                    errors.append("repo: %s: %s" % (err.code, _shown(str(err), 200)))
+                if g is None and row.scope == "repo" and not [e for e in errors if e.startswith("repo:")]:
+                    errors.append("repo: not a git repository")
+    elif row.scope == "repo":
+        errors.append("repo: required for %s" % sub)
+    fp, reason, host = arguments.get("fingerprint"), arguments.get("reason"), arguments.get("host")
+    if sub == "override":
+        if "fingerprint" not in arguments:
+            errors.append("fingerprint: required for override")
+        elif isinstance(fp, str) and not re.fullmatch(r"[0-9a-f]{12}", fp):
+            errors.append("fingerprint: the 12 lowercase hex digits a denial prints")
+        if "reason" not in arguments:
+            errors.append("reason: required for override")
+        elif isinstance(reason, str) and not reason.strip():
+            errors.append("reason: empty")
+    if sub == "install":
+        if "host" not in arguments:
+            errors.append("host: required for install")
+        elif isinstance(host, str) and host not in HOSTS:
+            errors.append("host: claude, codex or hermes")
+    if errors:
+        return None, errors
+    dry = arguments.get("dry_run") is True
+    argv = ([] if sub == "install" else ["--repo=" + path]) + ["--lang=" + lang, sub]  # install's repo names only the level
+    if sub == "override":
+        argv += ["--fingerprint=" + fp, "--reason=" + reason]
+    elif sub == "install":
+        argv += ["--host=" + host]
+    argv += ["--dry-run"] if dry else []
+    probe = "A" * 43
+    ns = parse_quiet(argv + ["--approval=" + probe])
+    back = ns is not None and user_only_row(ns) == row and getattr(ns, "approval", None) == probe and ns.lang == lang and \
+        ns.repo == (None if sub == "install" else path) and \
+        getattr(ns, "fingerprint", fp) == fp and getattr(ns, "reason", reason) == reason and getattr(ns, "host", host) == host and \
+        getattr(ns, "dry_run", False) == dry
+    if not back:
+        return None, ["the guard's parser reads these arguments otherwise"]
+    args = dict((k, v) for k, v in (("subcommand", sub), ("repo", path), ("fingerprint", fp if sub == "override" else None),
+                                    ("reason", reason if sub == "override" else None), ("host", host if sub == "install" else None),
+                                    ("dry_run", True if dry else None)) if v is not None)
+    return {"row": row, "args": args, "argv": argv, "repo": path, "g": g, "ns": ns}, None
+
+
+def ready_command(argv):
+    """The guard command the user runs in a real terminal for the command line `argv` (Codex approval, The tool call 7): guard_cmd() and each
+    word bare when the user's shell reads it as itself, else single-quoted for PowerShell on Windows and for sh elsewhere."""
+    win = sys.platform == "win32"
+    bare, quote = (_BARE_PS, ps_quote) if win else (_BARE_SH, sh_quote)
+    return guard_cmd() + "".join(" " + (w if bare.fullmatch(w) else quote(w)) for w in argv)
+
+
+def _named_invocation(text, sh):
+    """The guard's own reading (parse_quiet) of the words after the first guard script word that a user-only subcommand follows in a command of
+    `text` (read in the dialect `sh`), or None: no such command, a dynamic word among its arguments, or words the parser refuses."""
+    if not text or len(text) > MAX_TEXT:
+        return None
+    for ev in _lex(_heredocs(text)[0], sh):
+        if not isinstance(ev, _Seg):
+            continue
+        words = [w for w, _d in ev]
+        for i, w in enumerate(words):
+            if _guard_word(w) == "script" and _guard_sub(words[i + 1:], False) in _USER_ONLY:
+                if any(d for _w, d in ev[i + 1:]):
+                    return None
+                rest, k = [], i + 1
+                while k < len(words):  # a redirection of the shell is no argument of the guard
+                    if isinstance(words[k], _Redir):
+                        k += words[k].take
+                        continue
+                    rest.append(words[k])
+                    k += 1
+                ns = parse_quiet(rest)
+                return ns if ns is not None and user_only_row(ns) is not None else None
+    return None
+
+
+def mcp_arguments(ns, cwd):
+    """The magos_approve arguments that run what a parsed user-only invocation names in the session directory `cwd` (Codex approval, The Codex
+    hook), or None when it names what the tool does not take (install's --home or --allow-downgrade).  --lang, --json and an --approval value
+    are dropped; a relative --repo is joined to `cwd`, and without --repo `cwd` is the repository (for install only when it lies in one)."""
+    if getattr(ns, "home", None) or getattr(ns, "allow_downgrade", False):
+        return None
+    named = _join(cwd, ns.repo) if ns.repo is not None else cwd
+    if not named:
+        return None
+    a = {"subcommand": ns.cmd}
+    if ns.cmd != "install" or ns.repo is not None or open_repo(cwd) is not None:
+        a["repo"] = os.path.normpath(named).replace("\\", "/")
+    if ns.cmd == "override":
+        a.update(fingerprint=ns.fingerprint, reason=ns.reason)
+    if ns.cmd == "install":
+        a["host"] = ns.host
+    if getattr(ns, "dry_run", False):
+        a["dry_run"] = True
+    return a
+
+
+def codex_denial(payload, cwd, lang):
+    """The Codex hook's text for a user-only command (Codex approval, The Codex hook): protected_codex with the magos_approve arguments that run
+    exactly what the command names and the ready command, protected_codex_form when its words do not map onto the tool, and under Codex's
+    approval policy never (permission_mode bypassPermissions, where Codex declines the dialog by itself) protected_codex_never.  The deny itself
+    never depends on the mapping."""
+    ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
+    v = None
+    try:
+        text, sh = shell_command(payload)
+        if os.name == "nt" and isinstance(ti.get("command"), str):  # Codex runs a string command through powershell.exe -Command on Windows
+            sh = "ps"
+        ns = _named_invocation(text, sh)
+        a = mcp_arguments(ns, cwd) if ns is not None else None
+        v = mcp_validate(a, lang)[0] if a is not None else None
+    except Exception:  # the text falls back to the form the tool takes; the call is denied either way
+        v = None
+    if payload.get("permission_mode") == "bypassPermissions":
+        ready = ready_command(v["argv"]) if v is not None else guard_cmd() + (" <子命令> <选项>" if lang == "zh" else " <subcommand> <options>")
+        return T(lang, "protected_codex_never", why=_USER_MSG, ready=ready)
+    if v is None:
+        return T(lang, "protected_codex_form", why=_USER_MSG, cmd=guard_cmd())
+    return T(lang, "protected_codex", why=_USER_MSG, call=json.dumps(v["args"], ensure_ascii=True), ready=ready_command(v["argv"]))
+
+
+def mcp_plan(arguments, lang, session=None, client=None):
+    """-> (plan, None) or (None, [error lines]): the snapshot of one magos_approve call (Codex approval, The tool call 3 to 5), taken once before
+    the dialog and never read again after the click: the validated command line, the level, the approval store and `where`, the denial
+    directory a mint prunes, the dialog text and the ready command."""
+    v, errors = mcp_validate(arguments, lang)
+    if errors:
+        return None, errors
+    row, g = v["row"], v["g"]
+    try:
+        level = approval_level(g)[0] if g is not None else "prompt"
+    except GitFail as err:
+        return None, ["repo: magos.approval cannot be read: %s: %s" % (err.code, _shown(str(err), 200))]
+    if row.scope == "repo":
+        root, where, denials = os.path.join(store(g), "approvals"), g.common, os.path.join(store(g), "denials")
+        line = T(lang, "mcp_where_repo", repo=_dialog(os.path.realpath(repo_dir(g)).replace("\\", "/"), 200),
+                 common=_dialog(os.path.realpath(g.common).replace("\\", "/"), 200))
+    else:
+        root, where, denials = os.path.join(guard_home(), "approvals"), guard_home(), None
+        line = T(lang, "mcp_where_home", home=_dialog(guard_home(), 200))
+    text = T(lang, "mcp_ask", sub=row.name, where=line, what=approval_what(lang, row, v["ns"], {"g": g, "dest": guard_home()}))
+    return {"row": row, "argv": v["argv"], "level": "terminal" if level == "terminal" else "prompt", "root": root, "where": where,
+            "denials": denials, "text": text, "ready": ready_command(v["argv"]), "session": session, "client": client}, None
+
+
+def mcp_command(argv):
+    """The runner of the MCP approval server (Codex approval, The tool call 6): this guard's command line `argv` run by main in this process, with
+    an empty stdin and its stdout and stderr captured -> (exit code, text).  No program starts: the guard starts processes only in Git.run."""
+    out, err = io.BytesIO(), io.BytesIO()
+    held = sys.stdin, sys.stdout, sys.stderr
+    fin = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+    fout = io.TextIOWrapper(out, encoding="utf-8", errors="replace", write_through=True)
+    ferr = io.TextIOWrapper(err, encoding="utf-8", errors="replace", write_through=True)
+    sys.stdin, sys.stdout, sys.stderr = fin, fout, ferr
+    try:
+        code = main(list(argv))
+    except SystemExit as stop:  # a usage error of the guard's parser
+        code = stop.code if isinstance(stop.code, int) else 2
+    finally:
+        fout.flush()
+        ferr.flush()
+        sys.stdin, sys.stdout, sys.stderr = held
+    text = (out.getvalue() + err.getvalue()).decode("utf-8", "replace")  # read while the wrappers live: a collected wrapper closes its buffer
+    return code, text
+
+
+def mcp_run(plan, runner):
+    """On Accept only: mint the token, write its record into the store of the snapshot and run the snapshot's command line with it -> (output
+    text, exit code), or (the error, None) when the record cannot be written.  The token is in no text."""
+    token, now, sub = secrets.token_urlsafe(32), time.time(), plan["row"].name
+    rec = {"v": 1, "sub": sub, "argv": plan["argv"], "where": plan["where"], "via": "prompt", "created": now, "expires": now + APPROVAL_S,
+           "tool_use_id": None, "session_id": plan["session"], "command_sha256": None, "used": False, "route": "mcp", "client": plan["client"]}
+    try:
+        prune_approvals(plan["root"], now)
+        if plan["denials"]:
+            prune_denials(plan["denials"], now)
+        write_atomic(os.path.join(plan["root"], hashlib.sha256(token.encode("ascii")).hexdigest() + ".json"),
+                     json.dumps(rec, ensure_ascii=False).encode("utf-8"))
+    except OSError as err:
+        return "the approval could not be recorded (%s: %s)" % (type(err).__name__, err), None
+    code, out = runner(plan["argv"] + ["--approval=" + token])
+    out = out.replace(token, "<redacted>")
+    if len(out) > MCP_TEXT:
+        out = out[:MCP_TEXT] + "\n... (%d more characters)" % (len(out) - MCP_TEXT)
+    return out, code
+
+
+def mcp_form(lang):
+    """The requestedSchema of the dialog (Codex approval, The server): one required boolean `approve` without a default.  A form without a
+    required field is accepted by Codex itself under the approval policy never with full disk access; this one it declines by itself."""
+    return {"type": "object", "properties": {"approve": {"type": "boolean", "title": "Approve", "description": T(lang, "mcp_approve_field")}},
+            "required": ["approve"]}
+
+
+class McpServer:
+    """The MCP approval server of one stdio session (Codex approval, The server): newline-delimited JSON-RPC 2.0 read from `rfile` and written
+    to `wfile`, both binary.  A reader thread fills a queue; this thread answers in arrival order and keeps at most one dialog open.  `runner`
+    runs an approved command line (mcp_command; tests pass their own)."""
+
+    def __init__(self, rfile, wfile, lang, runner=None):
+        self.rfile, self.wfile, self.lang, self.runner = rfile, wfile, lang, runner or mcp_command
+        self.inbox, self.caps, self.client, self.pending, self.last = queue.Queue(), {}, None, None, 0
+
+    def serve(self):
+        """-> 0 at the end of input (an open dialog then runs nothing), 1 when stdout cannot be written."""
+        threading.Thread(target=self._read, daemon=True).start()
+        try:
+            while True:
+                if self.pending is not None and time.monotonic() >= self.pending["deadline"]:  # before every message: none extends the wait
+                    self._late()
+                wait = None if self.pending is None else max(0.0, self.pending["deadline"] - time.monotonic())
+                try:
+                    raw = self.inbox.get(timeout=wait)
+                except queue.Empty:
+                    continue
+                if raw is None:
+                    return 0
+                if raw is _OVERSIZE:
+                    self._error(None, -32600, "Invalid Request: the line is longer than %d bytes" % MCP_LINE)
+                else:
+                    self._handle(raw)
+        except _HostGone:
+            return 1
+
+    def _read(self):
+        try:
+            while True:
+                line = self.rfile.readline(MCP_LINE + 1)
+                if not line:
+                    break
+                if len(line) > MCP_LINE and not line.endswith(b"\n"):  # skip the rest of a line over the limit
+                    while line and not line.endswith(b"\n"):
+                        line = self.rfile.readline(MCP_LINE + 1)
+                    self.inbox.put(_OVERSIZE)
+                    continue
+                self.inbox.put(line)
+        except (OSError, ValueError):
+            pass
+        self.inbox.put(None)
+
+    def _send(self, msg):
+        try:
+            self.wfile.write((json.dumps(msg, ensure_ascii=True) + "\n").encode("ascii"))
+            self.wfile.flush()
+        except (OSError, ValueError):
+            raise _HostGone()
+
+    def _reply(self, ident, result):
+        self._send({"jsonrpc": "2.0", "id": ident, "result": result})
+
+    def _error(self, ident, code, text):
+        self._send({"jsonrpc": "2.0", "id": ident, "error": {"code": code, "message": text}})
+
+    def _result(self, ident, text, approved=False, code=None):
+        self._reply(ident, {"content": [{"type": "text", "text": text}], "structuredContent": {"approved": approved, "exit_code": code, "text": text},
+                            "isError": code is None or code != 0})
+
+    def _handle(self, raw):
+        body = raw.strip()
+        if not body:
+            return
+        try:
+            msg = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError, RecursionError):
+            return self._error(None, -32700, "Parse error")
+        ident = msg.get("id") if isinstance(msg, dict) else None
+        good_id = isinstance(ident, (str, int)) and not isinstance(ident, bool)
+        if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0" or ("id" in msg and not good_id and "method" in msg):
+            return self._error(None, -32600, "Invalid Request")
+        if "method" not in msg:
+            return self._answered(msg)  # an answer to the server's own request
+        method = msg["method"]
+        if not isinstance(method, str):
+            return self._error(None, -32600, "Invalid Request")
+        params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+        if "id" not in msg:
+            if method == "notifications/cancelled":
+                self._cancelled(params)
+            return  # every other notification, notifications/initialized among them, needs no answer
+        handler = {"initialize": self._initialize, "ping": self._ping, "tools/list": self._list, "tools/call": self._call}.get(method)
+        if handler is None:
+            return self._error(ident, -32601, "Method not found")
+        try:
+            handler(ident, params)
+        except _HostGone:
+            raise
+        except Exception as err:  # the request fails, the session goes on; nothing ran
+            self._error(ident, -32603, "Internal error: %s" % type(err).__name__)
+
+    def _initialize(self, ident, params):
+        caps = params.get("capabilities")
+        self.caps, self.client = (caps if isinstance(caps, dict) else {}), _client_name(params.get("clientInfo"))
+        v = params.get("protocolVersion")
+        self._reply(ident, {"protocolVersion": v if isinstance(v, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", v) else MCP_PROTOCOL,
+                            "capabilities": {"tools": {}}, "serverInfo": {"name": MCP_SERVER, "version": GUARD_VERSION}})
+
+    def _ping(self, ident, params):
+        self._reply(ident, {})
+
+    def _list(self, ident, params):
+        self._reply(ident, {"tools": [MCP_TOOL_SPEC]})
+
+    def _form(self):
+        """Does the client declare the elicitation form (an elicitation capability that names form, or names neither form nor url)?"""
+        e = self.caps.get("elicitation")
+        return isinstance(e, dict) and ("form" in e or not any(k in e for k in ("form", "url")))
+
+    def _call(self, ident, params):
+        if params.get("name") != MCP_TOOL:
+            return self._error(ident, -32602, "Unknown tool: %s" % _shown(str(params.get("name")), 80))
+        if self.pending is not None:  # one dialog at a time, nothing queued: Codex does not cancel a call its own timeout ended
+            return self._result(ident, T(self.lang, "mcp_busy"))
+        meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
+        plan, errors = mcp_plan(params.get("arguments", {}), self.lang, _payload_id(meta.get("threadId")), self.client)
+        if errors:
+            return self._result(ident, T(self.lang, "mcp_invalid", errors="\n".join("  " + e for e in errors)))
+        if plan["level"] == "terminal":
+            return self._result(ident, T(self.lang, "mcp_terminal", sub=plan["row"].name, ready=plan["ready"]))
+        if not self._form():
+            return self._result(ident, T(self.lang, "mcp_no_form", ready=plan["ready"]))
+        self.last += 1
+        self.pending = {"id": ident, "elicit": self.last, "plan": plan, "deadline": time.monotonic() + MCP_CLICK_S}
+        self._send({"jsonrpc": "2.0", "id": self.last, "method": "elicitation/create",
+                    "params": {"mode": "form", "message": plan["text"], "requestedSchema": mcp_form(self.lang)}})
+
+    def _withdraw(self, eid, why):
+        self._send({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": eid, "reason": why}})
+
+    def _late(self):
+        p, self.pending = self.pending, None
+        self._withdraw(p["elicit"], "no answer within %s s" % MCP_CLICK_S)
+        self._result(p["id"], T(self.lang, "mcp_late", sub=p["plan"]["row"].name, s=MCP_CLICK_S, ready=p["plan"]["ready"]))
+
+    def _cancelled(self, params):
+        p, rid = self.pending, params.get("requestId")
+        if p is not None and rid == p["id"] and not isinstance(rid, bool):  # the cancelled call gets no answer
+            self.pending = None
+            self._withdraw(p["elicit"], "the tool call was cancelled")
+
+    def _answered(self, msg):
+        p, rid = self.pending, msg.get("id")
+        if p is None or rid != p["elicit"] or isinstance(rid, bool):
+            return  # an answer to no open dialog (withdrawn, cancelled or unknown): nothing runs
+        self.pending = None
+        sub, ready = p["plan"]["row"].name, p["plan"]["ready"]
+        res = msg.get("result")
+        if "error" in msg or not isinstance(res, dict):
+            why = "the dialog ended with an error: %s" % _shown(json.dumps(msg.get("error"), ensure_ascii=True), 200)
+            return self._result(p["id"], T(self.lang, "mcp_failed", sub=sub, err=why, ready=ready))
+        action = res.get("action")
+        if action != "accept":
+            shown = _dialog(action, 20) if isinstance(action, str) else '"none"'
+            return self._result(p["id"], T(self.lang, "mcp_refused", sub=sub, action=shown, ready=ready))
+        content = res.get("content")
+        if not (isinstance(content, dict) and content.get("approve") is True):  # Codex checks no answer against the form, and under never
+            return self._result(p["id"], T(self.lang, "mcp_unticked", sub=sub, ready=ready))  # accepts an empty form by itself
+        try:
+            out, code = mcp_run(p["plan"], self.runner)
+        except Exception as err:  # before the command ran: nothing ran
+            out, code = "%s: %s" % (type(err).__name__, err), None
+        if code is None:
+            return self._result(p["id"], T(self.lang, "mcp_failed", sub=sub, err=out, ready=ready), approved=True)
+        self._result(p["id"], T(self.lang, "mcp_ran", sub=sub, code=code, out=out), approved=True, code=code)
+
+
+def cmd_mcp(args):
+    """The MCP approval server (Codex approval): started by the host, never by a tool command (every host's hook denies that).  Only the
+    protocol reaches stdout: for the session sys.stdout is stderr.  Exit 0 at the end of input, 1 when the host cannot be written or the
+    server fails."""
+    wfile = getattr(sys.stdout, "buffer", sys.stdout)
+    held = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        return McpServer(sys.stdin.buffer, wfile, args.lang).serve()
+    except Exception as err:  # never main's fail(), which may write to stdout
+        sys.stderr.write("MAGOS mcp server error: %s: %s\n" % (type(err).__name__, err))
+        return 1
+    finally:
+        sys.stdout = held
+
+
+def mcp_selftest():
+    """-> (ok, why): this guard's approval server, in process, answers initialize and tools/list with magos_approve (doctor)."""
+    lines = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": MCP_PROTOCOL, "capabilities": {}}},
+             {"jsonrpc": "2.0", "method": "notifications/initialized"}, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
+    out = io.BytesIO()
+    try:
+        code = McpServer(io.BytesIO(b"".join(json.dumps(m).encode("ascii") + b"\n" for m in lines)), out, "en").serve()
+        got = [json.loads(x) for x in out.getvalue().splitlines() if x.strip()]
+        ok = code == 0 and [m.get("id") for m in got] == [1, 2] and got[0]["result"]["serverInfo"]["version"] == GUARD_VERSION and \
+            [t.get("name") for t in got[1]["result"]["tools"]] == [MCP_TOOL]
+        return ok, "" if ok else "unexpected answers (exit %s): %s" % (code, _shown(out.getvalue().decode("utf-8", "replace"), 200))
+    except Exception as err:
+        return False, "%s: %s" % (type(err).__name__, err)
+
+
+# ---------------------------------------------------------------- Hermes approval (1.0.8): the hook that the MAGOS Hermes plugin runs, and the Hermes config
+def _yaml_scalar(raw):
+    """(text, quoted) of a one-line YAML scalar as the reader of the Hermes config takes it (Hermes approval, Reading the Hermes config), or None
+    when it is no such scalar: an anchor, an alias, a tag, a block scalar, a flow collection, an unclosed quote, a double-quoted value with a
+    backslash, or text after a closing quote that is no comment.  An unquoted value loses a trailing ` #` comment; in single quotes '' is '."""
+    s = raw.strip()
+    if not s or s.startswith("#"):
+        return "", False
+    if s[0] in "&*!|>[{@`%":
+        return None
+    if s[0] in "'\"":
+        out, k = [], 1
+        while k < len(s):
+            ch = s[k]
+            if ch == "\\" and s[0] == '"':
+                return None
+            if ch == s[0]:
+                if s[0] == "'" and s[k + 1:k + 2] == "'":
+                    out.append("'")
+                    k += 2
+                    continue
+                rest = s[k + 1:].strip()
+                return ("".join(out), True) if not rest or rest.startswith("#") else None
+            out.append(ch)
+            k += 1
+        return None
+    m = re.search(r"\s#", s)
+    return (s[:m.start()].rstrip() if m else s), False
+
+
+def _yaml_block(lines, key):
+    """-> (the lines of the top-level `key:` block, error): ([], None) when the key is absent; an error for a key that occurs twice, a value on
+    the key's own line (a flow mapping or a scalar) and a tab in the indentation of the block."""
+    block, found, inside = [], 0, False
+    for line in lines:
+        body = line.strip()
+        if not body or body.startswith("#"):
+            continue
+        if line[0] not in " \t":  # a top-level line ends the block
+            inside = False
+            if re.match(r"""(['"])%s\1[ \t]*:""" % re.escape(key), line):  # a quoted spelling of the key: read for certain or not at all
+                return [], "a quoted %s: key" % key
+            m = re.match(r"%s[ \t]*:(.*)$" % re.escape(key), line)
+            if m:
+                found += 1
+                if found > 1:
+                    return [], "more than one top-level %s: key" % key
+                value = m.group(1).strip()
+                if value and not value.startswith("#"):
+                    return [], "%s: holds a value on its own line" % key
+                inside = True
+            continue
+        if inside:
+            if "\t" in line[:len(line) - len(line.lstrip(" \t"))]:
+                return [], "a tab in the indentation of %s:" % key
+            block.append(line)
+    return block, None
+
+
+def _yaml_children(block):
+    """-> ({key: (raw value, [deeper lines])}, error) of a block: the lines indented as its first line are its keys; a deeper line, and a `-` item
+    at that indentation (a block sequence), belongs to the key before it.  A repeated key and any other line are errors."""
+    kids, indent, last = {}, None, None
+    for line in block:
+        body = line.strip()
+        if not body or body.startswith("#"):
+            continue
+        n = len(line) - len(line.lstrip(" "))
+        indent = n if indent is None else indent
+        if n > indent or (n == indent and last is not None and (body == "-" or body.startswith("- "))):
+            if last is None:
+                return {}, "a line before the first key"
+            kids[last][1].append(line)
+            continue
+        m = re.match(r"([A-Za-z0-9_][A-Za-z0-9_.-]*)[ ]*:(?:[ ]+(.*))?$", body) if n == indent else None
+        if m is None:
+            return {}, "a line that is no key: %s" % _shown(body, 40)
+        if m.group(1) in kids:
+            return {}, "%s occurs twice" % m.group(1)
+        last = m.group(1)
+        kids[last] = (m.group(2) or "", [])
+    return kids, None
+
+
+def _hermes_config(home=None):
+    """-> (path, the lines of <hermes home>/config.yaml or None when it is missing, error): UTF-8, a byte order mark and CR LF allowed."""
+    path = os.path.join(home or hermes_home(), "config.yaml").replace("\\", "/")
+    try:
+        data = read_bytes(path)
+        return path, (None if data is None else data.decode("utf-8-sig").splitlines()), None
+    except (OSError, ValueError) as err:  # a directory, no permission, no UTF-8
+        return path, None, "%s: %s" % (type(err).__name__, err)
+
+
+def hermes_settings(home=None):
+    """What the Hermes config says about Hermes's approval gate (Hermes approval, Reading the Hermes config) -> {"path", "error", "mode",
+    "mode_quoted", "timeout"}.  A missing file is Hermes's defaults (mode and timeout None); a file that cannot be read, or an approvals: block
+    this line reader cannot read for certain, sets "error" and leaves mode and timeout None."""
+    path, lines, err = _hermes_config(home)
+    s = {"path": path, "error": err, "mode": None, "mode_quoted": False, "timeout": None}
+    if lines is None:
+        return s
+    block, err = _yaml_block(lines, "approvals")
+    kids, err = _yaml_children(block) if err is None else ({}, err)
+    got = {}
+    for key in ("mode", "timeout"):
+        if err is None and key in kids:
+            raw, deeper = kids[key]
+            got[key] = None if deeper else _yaml_scalar(raw)
+            if got[key] is None:
+                err = "approvals.%s is no plain one-line value" % key
+    if err is not None:
+        s["error"] = err
+        return s
+    if got.get("mode") and got["mode"][0]:
+        s["mode"], s["mode_quoted"] = got["mode"]
+    if got.get("timeout") and re.fullmatch(r"[+-]?[0-9]+", got["timeout"][0]):
+        s["timeout"] = int(got["timeout"][0])
+    return s
+
+
+def hermes_mode_off(s):
+    """Does approvals.mode read as off: `off` in any case and quoting, or unquoted false, no or n (YAML 1.1, which Hermes reads, makes them
+    false, and Hermes treats false as off)?"""
+    v = (s.get("mode") or "").strip().lower()
+    return v == "off" or (not s.get("mode_quoted") and v in ("false", "no", "n"))
+
+
+def hermes_lifetime(s):
+    """The lifetime of a Hermes record that asks: min(max(T, 120), 900) + 30 s, T being approvals.timeout (300 when unset or no integer)."""
+    t = s.get("timeout") if isinstance(s.get("timeout"), int) else HERMES_TIMEOUT_S
+    return min(max(t, HERMES_LIFE_MIN_S), HERMES_LIFE_MAX_S) + HERMES_LIFE_MARGIN_S
+
+
+def hermes_noask(gate, s):
+    """-> (the key of the reason, its fields) when Hermes would not ask a human for this call, else None: the plugin's gate value (bypass,
+    absent), HERMES_YOLO_MODE in the hook's environment, a Hermes config that cannot be read, approvals.mode off."""
+    if gate == "bypass":
+        return "hermes_how_session", {}
+    if gate != "ask":
+        return "hermes_how_gate", {}
+    if os.environ.get("HERMES_YOLO_MODE", "").strip().lower() in _TRUTHY:
+        return "hermes_how_env", {}
+    if s["error"]:
+        return "hermes_how_config", {"path": _dialog(s["path"], 200), "err": _dialog(s["error"], 200)}
+    if hermes_mode_off(s):
+        return "hermes_how_mode", {"path": _dialog(s["path"], 200), "value": _dialog(s["mode"], 40)}
+    return None
+
+
+def hermes_answer(payload, crs, lang, gate):
+    """The Hermes hook's answer when the MAGOS Hermes plugin runs it (`--hermes-gate`) for a command in which the tamper filter found a
+    user-only subcommand (Hermes approval): a HermesApproval that hands Hermes the command rebuilt with a one-time token (modify) and, except
+    where auto-safe allows the subcommand, a guard-written question with a request-unique rule key (approve), or a deny (code, message) whose
+    last line names the cause.  The directory comes from the call: its absolute workdir, else absolute paths only."""
+    why = _USER_MSG
+    ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
+
+    def shape(cause):
+        return "PROTECTED", T(lang, "protected_shape_hermes", why=why, cmd=guard_cmd()) + "\n[%s]" % cause
+    if _carries_approval(str(ti.get("command") or "")):  # Hermes runs its hooks once per call: no rewritten command comes back here
+        return "PROTECTED", T(lang, "approval_given_hermes", why=why)
+    if payload.get("tool_name") != "terminal" or any(ti.get(k) not in (None, False) for k in ("background", "pty")):
+        return shape("APPROVAL_TOOL")
+    wd, base = ti.get("workdir"), None
+    if wd is not None:
+        if not isinstance(wd, str) or not wd or wd.startswith("~") or not all(ch.isalnum() or ch in _HERMES_WORKDIR_CHARS for ch in wd):
+            return shape("APPROVAL_DIRECTORY")
+        p = _norm_path(wd)
+        if not _rooted(p) or len(p) > MAX_DIR:
+            return shape("APPROVAL_DIRECTORY")
+        base = os.path.normpath(p)
+    inv, cause = approval_invocation(payload, base, _HERMES_APPROVAL_TOOLS)
+    if inv is None:
+        return shape(cause)
+    if crs:
+        return shape("APPROVAL_SHAPE")
+    probe = "A" * 43  # the shape of a token: the guard's own parser must read the appended word as the approval option
+    ns = parse_quiet(inv["args"] + ["--approval=" + probe])
+    row = user_only_row(ns) if ns is not None and getattr(ns, "approval", None) == probe else None
+    if row is None:
+        return shape("APPROVAL_ARGS")
+    if row.name == "install" and not same_file(inv["words"][-1], os.path.abspath(__file__)):
+        return shape("APPROVAL_SCRIPT")  # install copies the launcher beside the script it runs as: only this very file names a trusted one
+
+    def relative(v):
+        return v is not None and (v.startswith("~") or not _rooted(_norm_path(v)))
+    if base is None and (relative(ns.repo) or (row.scope == "repo" and ns.repo is None) or (row.name == "install" and relative(ns.home))):
+        return shape("APPROVAL_DIRECTORY")
+    cause = approval_intact(inv["words"], inv["args"], "bash")
+    if cause:
+        return shape(cause)
+    t = approval_target(ns, row, base)
+    if not isinstance(t, dict):
+        return shape(t)
+    if t["level"] == "terminal":
+        return "PROTECTED", T(lang, "protected_level", why=why)
+    auto = t["level"] == "auto-safe" and row.auto_safe and \
+        (row.scope != "home" or (pkey(t["dest"]) == pkey(guard_home()) and not getattr(ns, "allow_downgrade", False)))
+    life = APPROVAL_S
+    if not auto:
+        settings = hermes_settings()
+        no = hermes_noask(gate, settings)
+        if no:
+            return "PROTECTED", T(lang, "protected_hermes_noask", why=why, how=T(lang, no[0], **no[1]))
+        life = hermes_lifetime(settings)
+    now, token = time.time(), secrets.token_urlsafe(32)
+    command = approval_command("bash", inv["words"] + inv["args"], token)
+    extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
+    rec = {"v": 1, "sub": row.name, "argv": inv["args"], "where": t["where"], "via": "auto-safe" if auto else "prompt", "created": now,
+           "expires": now + life, "tool_use_id": _payload_id(payload.get("tool_use_id")) or _payload_id(extra.get("tool_call_id")),
+           "session_id": _payload_id(payload.get("session_id")), "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest(), "used": False,
+           "route": "hermes"}
+    try:
+        prune_approvals(t["root"], now)
+        if row.scope == "repo":
+            prune_denials(os.path.join(store(t["g"]), "denials"), now)
+        write_atomic(os.path.join(t["root"], hashlib.sha256(token.encode("ascii")).hexdigest() + ".json"), json.dumps(rec, ensure_ascii=False).encode("utf-8"))
+    except OSError as err:
+        return "PROTECTED", T(lang, "approval_unrecorded", why=why, err="%s: %s" % (type(err).__name__, err))
+    if auto:
+        return HermesApproval(command, None, None)
+    return HermesApproval(command, T(lang, "approval_ask_hermes", sub=row.name, what=approval_what(lang, row, ns, t), secs=int(life)),
+                          "magos:%s:%s" % (row.name, secrets.token_hex(16)))
+
+
+def decide(payload, lang, host=None, gate=None):
+    """-> None (allow), (code, message) (deny), an Approval (host claude: the ask or allow of a user-only command) or a HermesApproval (host
+    hermes with the gate value of the MAGOS Hermes plugin: the modify and approve of a user-only command)."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     if tool.startswith("mcp__") and not isinstance(ti.get("command"), str) and not _MCP_SESSION.fullmatch(tool):
@@ -6301,8 +7164,14 @@ def decide(payload, lang, host=None):
     if not prot and text and len(text) <= MAX_TEXT and _WRITE_HINT.search(re.sub(r"[\\`^'\"]", "", text)):
         prot = protected(text, roots=tuple(tamper_roots()), lazy=lambda: [pkey(store(repo()))] if repo() else [])
     if prot:
-        if host == "claude" and prot[1] == _USER_MSG:  # Claude Code asks the user in its own dialog (Approval); Codex and Hermes deny
+        if prot[1] == _HOST_MSG:  # mcp: only the host starts the approval server, on every host (Codex approval)
+            return "PROTECTED", T(lang, "protected_mcp")
+        if host == "hermes" and gate is not None and prot[1] == _USER_MSG:  # the MAGOS Hermes plugin: modify and approve (Hermes approval)
+            return hermes_answer(payload, crs, lang, gate)
+        if host == "claude" and prot[1] == _USER_MSG:  # Claude Code asks the user in its own dialog (Approval)
             return approval_answer(payload, cwd, crs, lang)
+        if host == "codex" and prot[1] == _USER_MSG:  # Codex: the MCP tool magos_approve and Codex's own dialog (Codex approval)
+            return "PROTECTED", codex_denial(payload, cwd, lang)
         g = repo()
         if prot[0] == "always" or (g and (guard_mode(g) == "armed" or holds_claims(g))):
             return "PROTECTED", T(lang, "protected", why=prot[1])
@@ -6329,6 +7198,17 @@ def emit_approval(a):
     decision field: it has no ask, and its approve would skip the dialog)."""
     obj = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": a.decision, "permissionDecisionReason": a.reason,
                                   "updatedInput": a.updated}}
+    sys.stdout.buffer.write((json.dumps(obj, ensure_ascii=True) + "\n").encode("ascii"))
+    sys.stdout.buffer.flush()
+    return 0
+
+
+def emit_hermes(a):
+    """The Hermes hook's modify and approve for the MAGOS Hermes plugin (Hermes approval): one ASCII-escaped JSON object on stdout, exit 0.  No
+    Hermes directive: a Hermes entry under hooks: that ran it would contribute nothing."""
+    obj = {"hermesApproval": {"modify": {"command": a.command}}}
+    if a.message is not None:
+        obj["hermesApproval"]["approve"] = {"message": a.message, "rule_key": a.rule_key}
     sys.stdout.buffer.write((json.dumps(obj, ensure_ascii=True) + "\n").encode("ascii"))
     sys.stdout.buffer.flush()
     return 0
@@ -6370,7 +7250,7 @@ def _hook(args):
         sys.stderr.write("MAGOS guard warning: unparseable hook payload (%s); the call shows no lane word and is allowed\n" % type(err).__name__)
         return (out_text("{}"), 0)[1]
     try:
-        res = decide(payload, args.lang, args.host)
+        res = decide(payload, args.lang, args.host, getattr(args, "hermes_gate", None))
     except BaseException as err:  # fail closed only when the call looks lane-creating or protected
         try:
             looks = any(extract(payload)[:2])
@@ -6380,7 +7260,9 @@ def _hook(args):
             return emit_deny("MAGOS guard error (%s: %s); the lane-creating call is denied. Diagnose: %s doctor" % (type(err).__name__, err, guard_cmd()))
         sys.stderr.write("MAGOS guard warning: %s: %s\n" % (type(err).__name__, err))
         res = None
-    if isinstance(res, Approval):  # first: an Approval is a tuple too
+    if isinstance(res, HermesApproval):  # first: a HermesApproval and an Approval are tuples too
+        return emit_hermes(res)
+    if isinstance(res, Approval):
         return emit_approval(res)
     return emit_deny(res[1]) if res else (out_text("{}"), 0)[1]
 
@@ -6667,6 +7549,111 @@ def host_snippet(host, home):
          "hooks": [{"type": "command", "command": "%s hook claude pre-tool" % sh_quote(launcher), "shell": "bash", "timeout": 25}]}]}}, indent=2)
 
 
+def _toml_str(s):
+    """`s` as a TOML basic string: " and \\ escaped, every control character but the tab (DEL included) as \\uXXXX, everything else literal."""
+    return '"%s"' % "".join("\\\\" if c == "\\" else '\\"' if c == '"' else "\\u%04X" % ord(c) if (ord(c) < 0x20 and c != "\t") or c == "\x7f"
+                            else c for c in s)
+
+
+def codex_mcp_toml(home):
+    """The [mcp_servers.magos] entry for Codex (Codex approval, install and doctor): the interpreter that runs install, isolated (-I) and without
+    byte-code files (-B), runs the copy under the guard home; env_vars passes MAGOS_HOME and MAGOS_LANG through Codex's short environment."""
+    args = ", ".join(_toml_str(a) for a in ("-I", "-B", "%s/guard/scripts/magos_guard.py" % home, "mcp"))
+    return ('[mcp_servers.%s]\ncommand = %s\nargs = [%s]\nenv_vars = ["MAGOS_HOME", "MAGOS_LANG"]\nstartup_timeout_sec = 30\ntool_timeout_sec = 600\n'
+            % (MCP_SERVER, _toml_str(sys.executable), args))
+
+
+def codex_mcp_add(home):
+    """The one-line alternative of codex_mcp_toml, each word quoted for the user's shell; it sets neither env_vars nor the timeouts."""
+    win = sys.platform == "win32"
+    bare, quote = (_BARE_PS, ps_quote) if win else (_BARE_SH, sh_quote)
+    words = [sys.executable, "-I", "-B", "%s/guard/scripts/magos_guard.py" % home, "mcp"]
+    return "codex mcp add %s -- %s" % (MCP_SERVER, " ".join(w if bare.fullmatch(w) else quote(w) for w in words))
+
+
+def _hermes_list(raw, deeper):
+    """The names of a plugins.enabled or plugins.disabled value: a flow list [a, b] of plain or quoted scalars on the key's line, or a block
+    sequence of `- name` lines under it; None when it is neither."""
+    raw = raw.strip()
+    if raw and not raw.startswith("#"):
+        m = re.fullmatch(r"\[(.*)\](?:\s+#.*)?", raw)
+        if m is None or deeper:
+            return None
+        items = [x.strip() for x in m.group(1).split(",")] if m.group(1).strip() else []
+        got = [_yaml_scalar(x) for x in items]
+        return None if any(x is None or not x[0] for x in got) else [x[0] for x in got]
+    names = []
+    for line in deeper:
+        body = line.strip()
+        if not body or body.startswith("#"):
+            continue
+        got = _yaml_scalar(body[1:]) if body == "-" or body.startswith("- ") else None
+        if got is None or not got[0]:
+            return None
+        names.append(got[0])
+    return names
+
+
+def hermes_route(home=None):
+    """What doctor and install --host hermes read about the route of the guard in Hermes (Hermes approval, doctor) -> {"dir": the MAGOS plugin
+    directory, "plugin": it holds __init__.py and scripts/magos_guard.py, "version": that guard's GUARD_VERSION, "callbacks": its __init__.py
+    registers the guard callbacks, "enabled": plugins.enabled names magos and plugins.disabled does not (None: no such list, or the config
+    cannot be read), "entry": a line of the top-level hooks: block runs `hook hermes pre-tool` (None: unreadable), "consented":
+    shell-hooks-allowlist.json lists that entry's exact command for pre_tool_call (None: no entry, or the file or the command cannot be read),
+    "config": the config's path}."""
+    hh = home or hermes_home()
+    plugin = os.path.abspath(os.path.join(hh, "plugins", "magos")).replace("\\", "/")
+    init = read_quiet(plugin + "/__init__.py")
+    guard = read_quiet(plugin + "/scripts/magos_guard.py")
+    path, lines, err = _hermes_config(hh)
+    r = {"dir": plugin, "plugin": init is not None and guard is not None, "version": version_of(guard),
+         "callbacks": b'register_hook("pre_tool_call"' in (init or b""), "enabled": None, "entry": False if lines is None and err is None else None,
+         "consented": None, "config": path}
+    if lines is None:
+        return r
+    block, err = _yaml_block(lines, "plugins")
+    kids, err = _yaml_children(block) if err is None else ({}, err)
+    if err is None and ("enabled" in kids or "disabled" in kids):
+        on = _hermes_list(*kids["enabled"]) if "enabled" in kids else []
+        off = _hermes_list(*kids["disabled"]) if "disabled" in kids else []
+        r["enabled"] = None if on is None or off is None else ("magos" in on and "magos" not in off)
+    hooks, err = _yaml_block(lines, "hooks")
+    if err is not None:
+        return r
+    hits = [line for line in hooks if "hook hermes pre-tool" in line]
+    r["entry"] = bool(hits)
+    if not hits:
+        return r
+    body = hits[0].strip()
+    body = body[2:].lstrip() if body.startswith("- ") else body
+    got = _yaml_scalar(body[len("command:"):]) if body.startswith("command:") else None
+    raw = read_quiet(os.path.join(hh, "shell-hooks-allowlist.json"))
+    try:
+        doc = {"approvals": []} if raw is None else json.loads(raw.decode("utf-8-sig"))
+        listed = doc.get("approvals") if isinstance(doc, dict) else None
+        if got is not None and isinstance(listed, list):
+            r["consented"] = any(isinstance(a, dict) and a.get("event") == "pre_tool_call" and a.get("command") == got[0].strip() for a in listed)
+    except ValueError:
+        pass
+    return r
+
+
+def hermes_route_on(r):
+    """Does the MAGOS Hermes plugin run the guard of this version and ask in Hermes's approval prompt (enabled, or plugins.enabled unread)?"""
+    return r["plugin"] and r["version"] == GUARD_VERSION and r["callbacks"] and r["enabled"] is not False
+
+
+def hermes_route_note(r):
+    """The NOTE of install --host hermes on the route of the guard in Hermes (Hermes approval)."""
+    if hermes_route_on(r):
+        return ("the Hermes plugin %s (guard %s) runs the guard and asks for a user-only command in Hermes's approval prompt; with it, leave the entry "
+                "below out of the Hermes config: a MAGOS entry under hooks: denies every user-only command before Hermes can ask" % (r["dir"], r["version"]))
+    return ("the entry below runs the guard in Hermes once it is approved (hooks_auto_accept: true, or HERMES_ACCEPT_HOOKS=1 for hermes acp; an entry "
+            "that is not approved is skipped without a word), and a user-only command then runs in the user's own terminal; the MAGOS Hermes plugin "
+            "of this version (hermes plugins install UlyssesLeoLee/MAGOS --enable, or hermes plugins update magos, then a restart of Hermes) runs the "
+            "guard without an entry and without that approval, and asks in Hermes's approval prompt")
+
+
 def home_audit(home, **rec):
     """One JSON line (ts first) appended to <guard home>/audit.log."""
     os.makedirs(home, exist_ok=True)
@@ -6803,11 +7790,19 @@ def cmd_install(args):
     note = hermes_plugin()[1] if args.host == "hermes" else None
     if not dry:
         put_text("%s/guard/generated/%s.%s" % (home, args.host, "yaml" if args.host == "hermes" else "json"), snippet)
+        if args.host == "codex":  # the entry of the MCP approval server (Codex approval)
+            put_text("%s/guard/generated/codex-mcp.toml" % home, codex_mcp_toml(home))
         home_audit(home, op="install", host=args.host, to=GUARD_VERSION, source=src0.replace("\\", "/"), via=via, **approval_fields(rec),
                    **{"from": "none" if old is None else version_of(old) or "unversioned"})
     if note:
         out_text("NOTE: " + note + ".")
-    out_text(snippet + "\nMerge it into your own host configuration; the guard never edits it. Codex: trust the entry in /hooks. Hermes: approve it on first use.")
+    if args.host == "hermes":
+        out_text("NOTE: " + hermes_route_note(hermes_route()) + ".")
+    extra = ("\n" + codex_mcp_toml(home) + "Or add the server with: %s (this sets neither env_vars nor the timeouts)\n" % codex_mcp_add(home)
+             if args.host == "codex" else "")
+    out_text(snippet + "\n" + extra + "Merge it into your own host configuration; the guard never edits it. Codex: trust the entry in /hooks. "
+             "Hermes: with the MAGOS Hermes plugin no entry is needed; without it, approve the entry once (hooks_auto_accept: true, or "
+             "HERMES_ACCEPT_HOOKS=1), or Hermes skips it without a word.")
     return 0
 
 
@@ -6923,6 +7918,109 @@ def hermes_report(home, home_arg=None):
     return False
 
 
+def codex_toml_entry(text):
+    """(command, args) of the [mcp_servers.magos] entry install generated, read in the form codex_mcp_toml writes (one `command = "..."` and one
+    `args = [...]` line, both JSON-compatible for what install writes); (None, []) when the text holds no such lines."""
+    command, args = None, []
+    for line in text.splitlines():
+        key, _eq, value = line.partition(" = ")
+        try:
+            if key == "command":
+                command = json.loads(value)
+            elif key == "args":
+                args = [a for a in json.loads(value) if isinstance(a, str)]
+        except (ValueError, TypeError):
+            continue
+    return (command if isinstance(command, str) else None), args
+
+
+def codex_report(home_arg=None):
+    """doctor's Codex lines (Codex approval, install and doctor): the approval server answers in process; the entry install generated names an
+    interpreter and a guard of this version; the sha256 of the plugin's root mcp.json beside the running guard; what only Codex shows.
+    -> True on a problem."""
+    ok, why = mcp_selftest()
+    out_text("mcp server: " + ("answers initialize and tools/list (%s)" % MCP_TOOL if ok else "FAILED: " + why))
+    problem = not ok
+    home = guard_home(home_arg)
+    path = "%s/guard/generated/codex-mcp.toml" % home
+    raw = read_quiet(path)
+    redo = "%s install --host codex%s" % (guard_cmd(), ' --home "%s"' % home if home_arg else "")
+    if raw is None:
+        out_text("codex mcp entry: none generated under %s/guard/generated (the MAGOS plugin for Codex starts the server from its mcp.json; "
+                 "a Codex without the plugin takes the [mcp_servers.magos] entry that installing the guard for Codex prints)" % home)
+    else:
+        command, args = codex_toml_entry(raw.decode("utf-8", "replace"))
+        script = next((a for a in args if a.endswith("magos_guard.py")), None)
+        v = version_of(read_quiet(script)) if script else None
+        if not command or not script:
+            out_text("codex mcp entry %s: no command and guard script found in it; run %s (%s) and merge the new block" % (path, redo, _USER_RUN))
+            problem = True
+        elif not os.path.isfile(command) or not os.path.isfile(script):
+            out_text("codex mcp entry %s: %s does NOT EXIST; run %s (%s) and merge the new block"
+                     % (path, command if not os.path.isfile(command) else script, redo, _USER_RUN))
+            problem = True
+        elif newer(v, GUARD_VERSION):  # install would refuse it (exit 18): name the newer MAGOS instead of an install command
+            out_text("codex mcp entry %s: its guard %s declares %s, NEWER than this guard %s; run doctor from that MAGOS" % (path, script, v, GUARD_VERSION))
+            problem = True
+        elif v != GUARD_VERSION:
+            out_text("codex mcp entry %s: its guard %s declares %s, not this guard %s; run %s (%s) and merge the new block"
+                     % (path, script, v or "no version", GUARD_VERSION, redo, _USER_RUN))
+            problem = True
+        else:
+            out_text("codex mcp entry %s: %s %s (guard %s)" % (path, command, script, v))
+    plugin = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mcp.json")
+    data = read_quiet(plugin)
+    if data is not None:
+        out_text("codex plugin file: mcp.json %s" % sha256_of(data)[:12])
+    out_text("codex: only Codex shows whether it runs the server (/mcp) and trusts the MAGOS hooks (/hooks); its approval policy never "
+             "declines every approval dialog, and the user then runs the command in a real terminal")
+    return problem
+
+
+def hermes_route_report():
+    """doctor's Hermes route lines (Hermes approval, doctor), printed when the Hermes home is a directory: which route runs the guard in Hermes,
+    a MAGOS entry under hooks: that Hermes skips or that stands beside the plugin, and whether Hermes asks.  -> True on a problem: the entry
+    beside the plugin route (a double route), or an entry that is the only route and is not approved."""
+    hh = hermes_home()
+    if not os.path.isdir(hh):
+        return False
+    r = hermes_route()
+    on = hermes_route_on(r)
+    problem = False
+    if on:
+        out_text("hermes route: the plugin %s (guard %s) runs the guard and asks for a user-only command in Hermes's approval prompt" % (r["dir"], r["version"]))
+    elif r["plugin"] and (r["version"] != GUARD_VERSION or not r["callbacks"]):
+        out_text("hermes route: the plugin %s holds guard %s, not %s; update it (hermes plugins update magos) and restart Hermes"
+                 % (r["dir"], r["version"] or "unversioned", GUARD_VERSION))
+    elif r["plugin"]:
+        out_text("hermes route: magos is not in plugins.enabled of %s; Hermes loads no MAGOS callbacks" % r["config"])
+    else:
+        out_text("hermes route: no MAGOS plugin under %s/plugins; the entry under hooks: (install --host hermes) runs the guard, and user-only "
+                 "commands run in the user's own terminal" % hh.replace("\\", "/"))
+    if r["consented"] is False:
+        out_text("hermes entry: %s holds the MAGOS entry under hooks:, but %s/shell-hooks-allowlist.json does not list its command, so Hermes skips "
+                 "it without a word; approve it once (hooks_auto_accept: true, or HERMES_ACCEPT_HOOKS=1 for hermes acp)" % (r["config"], hh.replace("\\", "/")))
+        problem = not on  # the guard then runs nowhere in Hermes
+    if on and r["entry"] is True:
+        out_text("hermes route: %s also holds a MAGOS entry under hooks:; it denies every user-only command before Hermes can ask and runs the guard "
+                 "a second time on every terminal call; remove that entry from the Hermes config, the plugin runs the guard" % r["config"])
+        problem = True
+    s = hermes_settings(hh)
+    if os.environ.get("HERMES_YOLO_MODE", "").strip().lower() in _TRUTHY:
+        out_text("hermes approvals: HERMES_YOLO_MODE is set here: Hermes approves without asking, so the guard refuses the click and user-only "
+                 "commands run in the user's own terminal")
+    elif s["error"]:
+        out_text("hermes approvals: %s cannot be read (%s): the guard refuses the click" % (s["path"], s["error"]))
+    elif hermes_mode_off(s):
+        out_text("hermes approvals: approvals.mode is %s in %s: Hermes approves without asking, so the guard refuses the click and user-only "
+                 "commands run in the user's own terminal" % (s["mode"], s["path"]))
+    else:
+        out_text("hermes approvals: Hermes asks (%s), within %d s; a session /yolo is not visible here"
+                 % ("approvals.mode " + s["mode"] if s["mode"] else "approvals.mode unset",
+                    s["timeout"] if isinstance(s["timeout"], int) else HERMES_TIMEOUT_S))
+    return problem
+
+
 _VETO = re.compile(r"^MAGOS (?:BLOCKED|拒绝): ", re.M)  # the line the backstop's deny() writes; nothing else counts as its veto
 SELFTEST_S = 30.0
 
@@ -6976,9 +8074,11 @@ def set_report(g, claims, bad_claims, heads):
 
 
 _APPROVAL_SAYS = {"terminal": "every user-only command runs in the user's own terminal",
-                  "prompt": "Claude Code asks in its own dialog for a user-only command; Codex and Hermes use the terminal",
-                  "auto-safe": "Claude Code runs arm, and install to the default guard home without --allow-downgrade, without a click and asks "
-                               "for every other user-only command; Codex and Hermes use the terminal"}
+                  "prompt": "Claude Code asks in its own dialog for a user-only command, Codex in its own dialog through the MCP tool magos_approve, "
+                            "and Hermes in its approval prompt through the MAGOS Hermes plugin",
+                  "auto-safe": "Claude Code and Hermes (through the MAGOS Hermes plugin) run arm, and install to the default guard home without "
+                               "--allow-downgrade, without a click and ask for every other user-only command; Codex asks for every user-only "
+                               "command through the MCP tool magos_approve"}
 
 
 def approval_report(g):
@@ -7014,12 +8114,15 @@ def cmd_doctor(args):
         out_text("git: %s" % err)
         ver = None
     problems = copy_report(args.home) or problems  # before the repository: the copy matters wherever the Codex and Hermes hooks run
+    problems = codex_report(args.home) or problems
+    problems = hermes_route_report() or problems
     if ver is None:
         return 1
     g = open_repo(args.repo)
     if g is None:
         out_text("repository: none at %s (guard is inert here)" % args.repo)
-        out_text("approval: prompt (no repository): install asks in Claude Code's dialog; Codex and Hermes use the terminal")
+        out_text("approval: prompt (no repository): install asks in Claude Code's dialog, in Codex's (magos_approve) and in Hermes's approval prompt "
+                 "(MAGOS Hermes plugin)")
         return 1 if problems else 0
     claims, bad = read_claims(g)
     heads = list_refs(g)[0]
@@ -7142,6 +8245,7 @@ def build_parser(repo_default=None):
     p = sub.add_parser("hook", parents=[common])
     p.add_argument("host", choices=("claude", "codex", "hermes"))
     p.add_argument("event", choices=("pre-tool",))
+    p.add_argument("--hermes-gate", choices=HERMES_GATES, help=argparse.SUPPRESS)  # set by the MAGOS Hermes plugin only (Hermes approval)
     p = sub.add_parser("arm", parents=[common])
     p.add_argument("--dry-run", action="store_true")
     sub.add_parser("disarm", parents=[common]).add_argument("--dry-run", action="store_true")
@@ -7174,10 +8278,12 @@ def build_parser(repo_default=None):
     p.add_argument("--set", required=True)
     p.add_argument("--reason", default="")
     p.add_argument("--abandon", action="store_true")
+    sub.add_parser("mcp", parents=[common])  # the MCP approval server, which only the host starts (Codex approval)
     for u in USER_ONLY:
         sub.choices[u.name].add_argument("--approval", help=argparse.SUPPRESS)
     for p in sub.choices.values():  # a usage error of a subcommand also hides a value the main parser saw (Parser.error)
         p.hidden = ap.hidden
+    sub.metavar = "{%s}" % ",".join(n for n in sub.choices if n not in HOST_ONLY)  # mcp is hidden (help=SUPPRESS would print ==SUPPRESS==)
     return ap
 
 
@@ -7202,6 +8308,8 @@ def main(argv=None):
         args = ap.parse_args(argv)
         if args.cmd == "set-plan" and args.amend != (args.expect_revision is not None):
             ap.error("set-plan: --amend and --expect-revision go together")
+        if args.cmd == "hook" and args.hermes_gate is not None and args.host != "hermes":
+            ap.error("--hermes-gate goes with hook hermes")
     except SystemExit as err:
         if any(a == "hook" for a in (sys.argv[1:] if argv is None else argv)) and err.code:
             return 1  # a usage error is a failure (the launcher maps it), never a deny
@@ -7212,7 +8320,7 @@ def main(argv=None):
             return cmd_plan(args, args.cmd == "plan")
         return {"list": cmd_list, "release": cmd_release, "override": cmd_override, "hook": cmd_hook, "arm": cmd_arm, "disarm": cmd_disarm,
                 "install": cmd_install, "doctor": cmd_doctor, "version": cmd_version, "set-plan": cmd_set_plan, "set-show": cmd_set_show,
-                "set-update": cmd_set_update, "set-release": cmd_set_release}[args.cmd](args)
+                "set-update": cmd_set_update, "set-release": cmd_set_release, "mcp": cmd_mcp}[args.cmd](args)
     except GitFail as err:
         return fail(args, err.code, str(err), "MAGOS guard: %s: %s" % (err.code, err))
     except BaseException as err:  # never exit 1 silently: every failure is a deny-class exit

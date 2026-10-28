@@ -726,7 +726,8 @@ def test_hermes_entry_follows_the_plugin_only_at_the_same_version(repo, guard, t
     saved, copy = home / "guard" / "generated" / "hermes.yaml", P(home) + "/guard/hooks/run-guard.cmd"
     own = plugin_at(hermes, SCRIPT.read_bytes())
     r = guard(repo, "install", "--host", "hermes", "--home", str(home))
-    assert r.rc == 0 and own in saved.read_text(encoding="utf-8") and "NOTE" not in r.out
+    assert r.rc == 0 and own in saved.read_text(encoding="utf-8") and "holds guard" not in r.out
+    assert [x for x in r.out.splitlines() if x.startswith("NOTE: ")] == ["NOTE: %s." % G.hermes_route_note(G.hermes_route())]  # the route NOTE only
     for guard_bytes, shown in ((stale(None), "unversioned"), (stale("9.9.9"), "9.9.9")):
         plugin_at(hermes, guard_bytes)
         r = guard(repo, "install", "--host", "hermes", "--home", str(home))

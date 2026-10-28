@@ -281,9 +281,11 @@ def test_a_command_that_carries_approval_is_denied(repo):
                       ("Bash", "bash -c 'py -3 %s arm --appr\"\"oval=x'" % S), ("PowerShell", "py -3 '%s' disarm '--approval=x'" % S),
                       ("Bash", "py -3 %s -- arm --approval=x" % QS), ("Bash", "py -3 %s arm -- --approval=x" % QS)):
         assert denied(hook(repo.path, cmd, tool=tool)) == given, cmd
-    protected = G.T("en", "protected", why=G._USER_MSG)
+    codex = G.T("en", "protected_codex", why=G._USER_MSG, call=json.dumps({"subcommand": "arm", "repo": P(repo.path)}),
+                ready=G.ready_command(["--repo=" + P(repo.path), "--lang=en", "arm"]))  # the approval word dropped
     for cmd in ("py -3 %s arm --approval=abc" % QS, ["py", "-3", S, "arm", "--approval=abc"]):
-        assert denied(hook(repo.path, cmd, host="codex")) == protected, cmd
+        assert denied(hook(repo.path, cmd, host="codex")) == codex, cmd
+    protected = G.T("en", "protected", why=G._USER_MSG)
     assert denied(hook(repo.path, "py -3 %s arm --approval=abc" % QS, tool="terminal", host="hermes")) == protected
     assert not approvals(repo).exists()
 
@@ -327,15 +329,17 @@ def test_auto_safe_allows_arm_and_install_and_asks_for_the_rest(repo, tmp_path, 
     assert h["permissionDecision"] == "ask" and h["updatedInput"]["dangerouslyDisableSandbox"] is True
 
 
-def test_codex_and_hermes_keep_todays_denial(repo):
+def test_codex_names_the_mcp_route_and_hermes_keeps_todays_denial(repo):
     cmd = "py -3 %s --lang en arm" % QS
     assert answer(hook(repo.path, cmd))["permissionDecision"] == "ask"
     shutil.rmtree(str(approvals(repo)))
     protected = G.T("en", "protected", why=G._USER_MSG)
     assert protected == ("MAGOS DENIES: this command would change the guard's own claims/switches/hooks (override / arm / disarm / install are user-only). "
                          "Only the user may do this, in their own terminal.")
-    for host, tool, c in (("codex", "Bash", cmd), ("codex", "Bash", ["py", "-3", S, "arm"]), ("hermes", "terminal", cmd)):
-        assert denied(hook(repo.path, c, tool=tool, host=host)) == protected, (host, c)
+    codex = G.T("en", "protected_codex", why=G._USER_MSG, call=json.dumps({"subcommand": "arm", "repo": P(repo.path)}),
+                ready=G.ready_command(["--repo=" + P(repo.path), "--lang=en", "arm"]))  # --lang of the payload is dropped
+    for host, tool, c, want in (("codex", "Bash", cmd, codex), ("codex", "Bash", ["py", "-3", S, "arm"], codex), ("hermes", "terminal", cmd, protected)):
+        assert denied(hook(repo.path, c, tool=tool, host=host)) == want, (host, c)
     assert not approvals(repo).exists()
 
 
@@ -878,9 +882,10 @@ def test_comma_and_array_lists_of_the_guard_are_denied_on_every_host(repo, isola
     for level in ("prompt", "auto-safe"):  # Claude Code neither asks nor allows: no strict single direct invocation
         repo.git("config", "magos.approval", level)
         shape_denied(hook(repo.path, text, tool=tool), "DYNAMIC" if "(" in cmd else "SHAPE")  # the lexer reads a parenthesis as dynamic
+    form = G.T("en", "protected_codex_form", why=G._USER_MSG, cmd=G.guard_cmd())  # no single direct invocation the tool takes
     protected = G.T("en", "protected", why=G._USER_MSG)
-    for host, t in (("codex", "Bash"), ("hermes", "terminal")):
-        assert denied(hook(repo.path, text, tool=t, host=host)) == protected, (host, text)
+    for host, t, want in (("codex", "Bash", form), ("hermes", "terminal", protected)):
+        assert denied(hook(repo.path, text, tool=t, host=host)) == want, (host, text)
     assert not approvals(repo).exists() and not (isolated_env / ".magos" / "approvals").exists()
 
 

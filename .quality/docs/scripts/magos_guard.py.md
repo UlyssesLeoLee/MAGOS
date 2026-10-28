@@ -689,7 +689,8 @@ that holds a comma).
   and writes nothing. It writes the exact host snippet to `guard/generated/<host>.json|yaml` and prints it; with
   `--host codex` it also writes `guard/generated/codex-mcp.toml`, the `[mcp_servers.magos]` entry of the MCP approval
   server, and prints it with the `codex mcp add` line (Codex approval (version 1.0.8)).
-  It never edits `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.codex/config.toml` or Hermes config. The Codex snippet matches
+  It never edits `~/.claude/settings.json`, `~/.codex/hooks.json` or Hermes config, nor the Codex configuration file the user
+  merges the printed MCP entry into. The Codex snippet matches
   `Bash|mcp__.*(start_session|worktree|branch|hand_off_to_session)` and runs `sh '<launcher>' hook codex pre-tool`
   (`commandWindows`: `& '<launcher>' hook codex pre-tool; exit $LASTEXITCODE`), timeout 25; the launcher path is quoted
   for each shell, every `'` written `'\''` in the sh form and `''` in the PowerShell form. The Claude snippet, whose
@@ -2335,8 +2336,8 @@ works without that hook.
   The strings are TOML basic strings: `"` and `\` are escaped and every control character but the tab is written
   `\uXXXX`. Codex starts a stdio server with a short list of environment variables; `env_vars` passes `MAGOS_HOME` and
   `MAGOS_LANG`, so the server uses the guard home and the language of the user's hooks. The `codex mcp add` line
-  (`codex mcp add magos -- <interpreter> -I -B <script> mcp`) sets neither `env_vars` nor the timeouts. The guard never
-  edits `~/.codex/config.toml`.
+  (`codex mcp add magos -- <interpreter> -I -B <script> mcp`) sets neither `env_vars` nor the timeouts. The guard leaves
+  the Codex configuration file that the user merges the printed entry into as it is.
   A server started from the plugin's `mcp.json` gets neither variable: that file cannot name `env_vars` (Dependencies,
   Downstream callers), and Codex passes a stdio server only a short list of environment variables. It then uses the
   guard's defaults: the guard home `~/.magos` in the user's home directory (on Windows from `USERPROFILE`, which Codex
@@ -2345,7 +2346,8 @@ works without that hook.
 - `doctor` prints, before the repository part: `mcp server: answers initialize and tools/list (magos_approve)`, from an
   in-process exchange with the server (any other answer is a problem); the entry in `guard/generated/codex-mcp.toml`
   (a problem when its interpreter or its guard script does not exist or the script declares another `GUARD_VERSION`,
-  with the refresh command), or that none was generated; the first 12 hex digits of the sha256 of the
+  with the refresh command, or, for a newer `GUARD_VERSION`, with `run doctor from that MAGOS`, since install would
+  refuse the downgrade), or that none was generated; the first 12 hex digits of the sha256 of the
   plugin's `mcp.json` in the directory above the running guard's `scripts/` directory, when it exists (`codex plugin
   file: mcp.json <12 hex>`); and that only Codex shows whether it runs the server and trusts the MAGOS hooks.
 
@@ -2431,11 +2433,11 @@ command that does not meet Recognition 1 to 7 of Approval (version 1.0.7) read w
    or false (`APPROVAL_TOOL` otherwise: the agent drives a background or PTY shell itself). Its dialect is bash, the
    shell Hermes runs every command in (Git Bash on Windows), so the Git Bash word rule (`APPROVAL_PATHCONV`) applies on
    Windows.
-2. The directory comes from the call. With `workdir` (an absolute path whose characters Hermes accepts: letters, digits
-   and `/ \ : _ - . ~ + @ = ,` and the space) a relative path is joined to it; without `workdir` the script word, an
-   interpreter path, `--repo` and `--home` must be absolute, and `override`, `arm` and `disarm` must name `--repo`
-   (`APPROVAL_DIRECTORY` otherwise). The payload's `cwd` is the directory of the Hermes process (its checkout), not the
-   directory the terminal command runs in.
+2. The directory comes from the call. With `workdir` (an absolute path, not starting with `~`, whose characters Hermes
+   accepts: letters, digits and `/ \ : _ - . ~ + @ = ,` and the space) a relative path is joined to it; without `workdir`
+   the script word, an interpreter path, `--repo` and `--home` must be absolute (a path starting with `~` is not), and
+   `override`, `arm` and `disarm` must name `--repo` (`APPROVAL_DIRECTORY` otherwise). The payload's `cwd` is the
+   directory of the Hermes process (its checkout), not the directory the terminal command runs in.
 3. A command that names `--approval` is denied with the `approval_given_hermes` text. Hermes runs its hooks once per call,
    so no rewritten command comes back to the hook.
 4. The level is that of the repository `--repo` or `workdir` names; `install` without either has level `prompt`.
@@ -2471,9 +2473,10 @@ command that does not meet Recognition 1 to 7 of Approval (version 1.0.7) read w
 The hook and `doctor` read `<hermes home>/config.yaml` (UTF-8, a byte order mark and CRLF allowed) with a line reader of
 the standard library:
 - A missing file means Hermes's defaults (`approvals.mode` manual, `approvals.timeout` 300). A file that cannot be read or
-  decoded, more than one top-level `approvals:` key, an `approvals:` with a value on its own line (a flow mapping or a
-  scalar), a tab in its indentation, a repeated child key, or a `mode` or `timeout` value that is an anchor, an alias, a
-  tag, a block scalar, a flow collection or an unclosed quote is "cannot be read".
+  decoded, more than one top-level `approvals:` key, a quoted `approvals` key, an `approvals:` with a value on its own
+  line (a flow mapping or a scalar), a tab in its indentation, a line of the block that is no `key:` line, a repeated
+  child key, or a `mode` or `timeout` value that is an anchor, an alias, a tag, a block scalar, a flow collection, an
+  unclosed quote, text after its closing quote that is no comment, or continued on deeper lines is "cannot be read".
 - The child keys are the lines indented exactly as the first non-blank, non-comment line under `approvals:`; deeper lines
   belong to nested values and are skipped. A value loses a trailing ` #` comment when it is not quoted; a quoted value is
   read with `''` standing for `'` (single quotes) and without escapes (double quotes; a backslash makes it unreadable).
@@ -2486,7 +2489,8 @@ the standard library:
 When `<hermes home>` is a directory, after the copy lines:
 - `hermes route: the plugin <dir> (guard <v>) runs the guard and asks for a user-only command in Hermes's approval prompt`
   when `<dir>/scripts/magos_guard.py` declares this guard's version, `<dir>/__init__.py` registers the guard callbacks and
-  `plugins.enabled` of the Hermes config names `magos` (or cannot be read);
+  `plugins.enabled` of the Hermes config names `magos` and `plugins.disabled` does not (or the config holds neither list, or
+  cannot be read); each list is a flow list `[a, b]` or a block sequence of `- name` lines, of plain or quoted names;
 - `hermes route: the plugin <dir> holds guard <v>, not <this version>; update it (hermes plugins update magos) and restart Hermes`
   when the plugin holds another guard or registers no callbacks;
 - `hermes route: magos is not in plugins.enabled of <config>; Hermes loads no MAGOS callbacks`;
@@ -2499,7 +2503,9 @@ When `<hermes home>` is a directory, after the copy lines:
 - one approvals line: `hermes approvals: approvals.mode is <v> in <config>: Hermes approves without asking, so the guard refuses the click and user-only commands run in the user's own terminal`,
   `hermes approvals: HERMES_YOLO_MODE is set here: Hermes approves without asking, ...` (same ending),
   `hermes approvals: <config> cannot be read (<error>): the guard refuses the click`, or
-  `hermes approvals: Hermes asks (approvals.mode <v>|approvals.mode unset), within <T> s; a session /yolo is not visible here`.
+  `hermes approvals: Hermes asks (approvals.mode <v>|approvals.mode unset), within <T> s; a session /yolo is not visible here`,
+  in this order of precedence: `HERMES_YOLO_MODE`, a config that cannot be read, `approvals.mode` off; `<T>` is
+  `approvals.timeout` (300 when unset or not an integer).
 The double-route line, and the entry line when no plugin route applies, are problems; the others are information. Doctor cannot see what Hermes registered at start, the
 shell-hook consent file's effect on a running Hermes, a session `/yolo` or a hosted-room policy.
 
