@@ -1011,9 +1011,9 @@
   {
     "id": "package/approval-levels",
     "skill": "package",
-    "feature": "A user-only guard command (override, arm, disarm, install) runs only with the user's approval, a click in Claude Code's permission dialog or the user's own terminal, at the three levels of magos.approval, and no level lets an agent override or disarm unattended",
+    "feature": "A user-only guard command (override, arm, disarm, install) runs only with the user's approval, a click in the host's own approval prompt (Claude Code's permission dialog, Codex's dialog for the MCP tool magos_approve, Hermes' approval prompt) or the user's own terminal, at the three levels of magos.approval, and no level lets an agent override or disarm unattended",
     "invocations": {
-      "activation": "source contract of the documents; the permission dialog of a host is not started here"
+      "activation": "source contract of the documents; no host's approval prompt is started here"
     },
     "test_object": {
       "files": [
@@ -1025,7 +1025,7 @@
         "README.en.md",
         "README.ja.md"
       ],
-      "scope": "source contract only; the dialog and the click are checked in a real Claude Code session"
+      "scope": "source contract only; the prompt and the click are checked in a real session of each host"
     },
     "expected": [
       "SKILL.md and references/lane-split.md say that override, arm, disarm and install run only with the user's approval and that magos.approval is written only by the user.",
@@ -1096,6 +1096,100 @@
         "contains": [
           "### Approval of an override",
           "### An agent supplies its own approval"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "package/approval-hosts",
+    "skill": "package",
+    "feature": "A user-only guard command is approved with a click in the host's own approval prompt on all three hosts: Claude Code's permission dialog, Codex's dialog for the MCP tool magos_approve of the plugin's MCP server magos (root mcp.json; the user ticks Approve, then accepts), and Hermes' approval prompt through the callbacks of the Hermes plugin; the terminal route remains; the guard's mcp subcommand is started only by the host",
+    "invocations": {
+      "activation": "source contract of the documents and of mcp.json; no host and no MCP server is started here"
+    },
+    "test_object": {
+      "files": [
+        "mcp.json",
+        "SKILL.md",
+        "references/lane-split.md",
+        "references/installation.md",
+        "references/pressure-tests.md",
+        "README.md",
+        "README.en.md",
+        "README.ja.md"
+      ],
+      "scope": "source contract only; the Codex dialog and the Hermes prompt are checked in real host sessions (the guard's mcp server and the Hermes plugin callbacks have their own tests)"
+    },
+    "expected": [
+      "mcp.json is the Agent Plugins 1.0.0 MCP file with one stdio server magos that Codex starts through a git alias running scripts/magos_guard.py mcp in the plugin directory.",
+      "SKILL.md and references/lane-split.md describe the Codex route (magos_approve, Codex's dialog with its one Approve checkbox, no path without a click), the Hermes route (the plugin's callbacks, Hermes' approval prompt, refused where Hermes would approve without a human), the denial of a tool command that starts the mcp subcommand, and the limits of both routes.",
+      "references/installation.md and the three READMEs state the same in their language, including the disclosure of the MCP server and of the Hermes callbacks that run the guard on every terminal call; the pressure tests describe an agent that starts the approval server itself and a Hermes that approves without a person."
+    ],
+    "checks": [
+      {
+        "file": "mcp.json",
+        "contains": [
+          "\"$schema\": \"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json\"",
+          "\"type\": \"stdio\"",
+          "\"command\": \"git\"",
+          "alias.magos-mcp=!",
+          "scripts/magos_guard.py mcp",
+          "\"cwd\": \"./\""
+        ]
+      },
+      {
+        "file": "SKILL.md",
+        "contains": [
+          "Never start the guard's `mcp` subcommand yourself: only the host starts that server."
+        ]
+      },
+      {
+        "file": "references/lane-split.md",
+        "contains": [
+          "In Codex the route is the MCP tool `magos_approve` of the plugin's MCP server `magos`",
+          "In Codex `auto-safe` asks like `prompt`: the MCP route has no path without a click.",
+          "the MAGOS Hermes plugin runs the guard on every `terminal` call through two `pre_tool_call` callbacks",
+          "A tool command that starts the guard's `mcp` subcommand is denied on every host",
+          "- The Codex approval route proves a human only as far as Codex does.",
+          "- The Hermes route is as strong as Hermes' approval gate."
+        ]
+      },
+      {
+        "file": "references/installation.md",
+        "contains": [
+          "Codex 里的批准路径是插件的 MCP 服务器 `magos` 的工具 `magos_approve`",
+          "| Codex 批准服务器 |",
+          "| Hermes 插件回调 |",
+          "Hermes 插件通过两个 `pre_tool_call` 回调对每一次 `terminal` 调用运行守卫"
+        ]
+      },
+      {
+        "file": "README.en.md",
+        "contains": [
+          "In Codex the plugin's `mcp.json` declares one local MCP server, `magos`",
+          "In Hermes the plugin's `__init__.py` registers two `pre_tool_call` callbacks",
+          "Codex asks again in `/hooks` when a hook changes, not when the MCP server changes."
+        ]
+      },
+      {
+        "file": "README.md",
+        "contains": [
+          "在 Codex 里，插件的 `mcp.json` 声明一个本地 MCP 服务器 `magos`",
+          "在 Hermes 里，插件的 `__init__.py` 注册两个 `pre_tool_call` 回调"
+        ]
+      },
+      {
+        "file": "README.ja.md",
+        "contains": [
+          "Codex では、プラグインの `mcp.json` がローカルの MCP サーバー `magos` を 1 つ宣言します。",
+          "Hermes では、プラグインの `__init__.py` が `pre_tool_call` コールバックを 2 つ登録します。"
+        ]
+      },
+      {
+        "file": "references/pressure-tests.md",
+        "contains": [
+          "### An agent starts the approval server itself",
+          "### Hermes approves without a person"
         ]
       }
     ]
