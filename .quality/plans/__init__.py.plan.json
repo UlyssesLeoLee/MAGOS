@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "source": "__init__.py",
-  "baseline_source_sha256": "a386beedea7f62fabc618073ce87e14de53d95bfef8ccb6681c41ef571bd9b07",
-  "prepared_branch": "agent/gitplan-1.0.4",
+  "baseline_source_sha256": "76db96aa4767e257b2bbcdd172f6cc32b4dabdfef27979750ec439e60b434bb5",
+  "prepared_branch": "agent/codex-hermes-1.0.8",
   "technical_design": ".quality/docs/__init__.py.md",
   "test_design": ".quality/test-design/__init__.py.test.md",
-  "prepared_technical_design_sha256": "0e24fe7e8d6050857538bfe908dd6350f3e13f6c7d5e9eae182b82d72602ff70",
-  "prepared_test_design_sha256": "36ae615de612ca036c92a5e9cbac8625dd2e8af195f45383a49f57ecc0333ec1",
+  "prepared_technical_design_sha256": "b0adad367e6fbe5e7eb9b9581f58de926f3add4b5f729e58934160ec7a312ae5",
+  "prepared_test_design_sha256": "e7b2424616b083784b1605314616923d09bb94a39c659ef876773eb2b30a68db",
   "prepared_related_design_sha256": {}
 }

@@ -6,14 +6,16 @@ Source-SHA256: `76db96aa4767e257b2bbcdd172f6cc32b4dabdfef27979750ec439e60b434bb5
 
 ## Test Strategy
 
-The in-process cases live in `tests/codex/guard/test_project_sources.py` and run with `pytest` as part of the guard
-suite, so the coverage commands in `.quality/qguard.json` measure the real `__init__.py` (line coverage strictly above 90
+The in-process cases live in `tests/codex/guard/test_project_sources.py` and, for the two `pre_tool_call` callbacks,
+in `tests/codex/guard/test_hermes_approval.py`; they run with `pytest` as part of the guard suite, so the coverage
+commands in `.quality/qguard.json` measure the real `__init__.py` (line coverage strictly above 90
 percent for the file and for the project). The contract rows live in `tests/codex/contracts/` and run with
 `python -X utf8 tests/codex/contracts/test_agent_plugin.py`; they read the module as text and syntax tree.
 
 - The module is loaded from the repository path with `importlib.util.spec_from_file_location` under the name
   `magos_plugin_init`; `register()` runs against a recording context whose `register_skill(name, path, description="")`
-  appends `(name, Path(path).name, description)` to a list.
+  appends `(name, Path(path).name, description)` to a list and whose `register_hook(name, callback)` appends
+  `(name, callback)` to another.
 - The cases on the real tree read the repository's `skills/` directory and the `SKILL.md` of every adapter, so they
   follow the shipped files. The cases on a synthetic tree build `skills/` in `tmp_path` and point the loaded module at it
   with `monkeypatch.setattr(mod, "__file__", <tmp_path>/__init__.py)`, because `register()` resolves `skills/` from the
@@ -21,7 +23,10 @@ percent for the file and for the project). The contract rows live in `tests/code
 - The write commands are derived, not listed in the helper that checks them: a skill is a write command when its
   `SKILL.md` contains the line `## Explicit invocation only`; the expected set is then asserted against the five
   names, so an adapter that loses the section turns the case red.
-- No case needs Hermes, a network or a git repository.
+- No case needs Hermes or a network. The cases of `test_project_sources.py` need no git repository; the callback
+  cases of `test_hermes_approval.py` load the module under the name `magos_plugin_hermes`, run the real guard as the
+  child of `verdict` against throw-away repositories, feed the directives to a reimplementation of Hermes's
+  directive aggregation, and run the gate probe against stub `tools` modules installed for the test.
 - The suite runs on Python 3.9 and 3.14 on Windows and Linux (CI matrix of `.github/workflows/test.yml`).
 
 ## Test Cases
@@ -37,12 +42,15 @@ percent for the file and for the project). The contract rows live in `tests/code
 | TC-007 | A synthetic `skills/` with `a/SKILL.md`, `z/SKILL.md`, a directory `b/` without `SKILL.md`, a directory `c/` whose `SKILL.md` is a directory, and a plain file `notes.txt` | `register()` records `a` then `z` with the path of their `SKILL.md` and the empty description (neither name is in the table); `b`, `c` and `notes.txt` are skipped without an error | tests/codex/guard/test_project_sources.py::test_register_skips_non_skills_and_defaults_the_description |
 | TC-008 | A synthetic tree without any `skills/` directory next to the module | `register()` raises `FileNotFoundError` and the context records no call | tests/codex/guard/test_project_sources.py::test_register_without_a_skills_directory_raises |
 | TC-009 | A synthetic `skills/` with `a/SKILL.md` and `z/SKILL.md` and a context whose `register_skill` raises `RuntimeError` on its second call | The `RuntimeError` reaches the caller; only the first skill was recorded; nothing is rolled back and nothing else is registered | tests/codex/guard/test_project_sources.py::test_register_propagates_a_failing_context |
-| TC-010 | The syntax tree of `__init__.py` under the supply-chain rules | No network or process module, no dynamic import, no `exec`, `eval` or `compile`, `os`, `subprocess` and `ctypes` unused | tests/codex/guard/test_supply_chain.py::test_the_hook_code_opens_no_network_connection |
-| TC-011 | The package copy of the contract tests, unmodified | Every Hermes native row passes: `plugin.yaml` name and version equal `plugin.json`, no `provides_` or capability key, only `ctx.register_skill`, an `INDEX_DESCRIPTIONS` line for each of the nine skills and none for a non-skill, the line passed as `description=`, the orchestrator line 100 to 400 characters, `Never load it yourself` in the line of each write adapter, no line naming another command | tests/codex/contracts/test_agent_plugin.py::AgentPluginChecks::test_unmodified_package_passes |
+| TC-010 | The syntax tree of `__init__.py` under the supply-chain rules | No network module, no dynamic import, no `exec`, `eval` or `compile`, no `sys.modules`; `os`, `subprocess` and `ctypes` only by attribute; `subprocess.run` exactly once, inside `_run_guard`, whose argument list starts with `sys.executable` and names the plugin's `scripts/magos_guard.py` and `hook hermes pre-tool --hermes-gate`; the `subprocess` attributes are exactly `run`, `TimeoutExpired` and `CREATE_NO_WINDOW` | tests/codex/guard/test_supply_chain.py::test_the_hook_code_opens_no_network_connection |
+| TC-011 | The package copy of the contract tests, unmodified | Every Hermes native row passes: `plugin.yaml` name and version equal `plugin.json`, `provides_hooks` with the one item `pre_tool_call` and no other `provides_` or capability key, `ctx.register_skill` for the skills and `ctx.register_hook("pre_tool_call", ...)` exactly twice, no other `ctx.register_*`, an `INDEX_DESCRIPTIONS` line for each of the nine skills and none for a non-skill, the line passed as `description=`, the orchestrator line 100 to 400 characters, `Never load it yourself` in the line of each write adapter, no line naming another command | tests/codex/contracts/test_agent_plugin.py::AgentPluginChecks::test_unmodified_package_passes |
 | TC-012 | The mutations of `__init__.py`: a `ctx.register_tool` call; the `git-recon` line removed; the `git-integrate` line ending with `Load it when useful.`; the `description=` argument dropped, also with a comment that keeps its text; an entry that is not a string; the `git-analyze` line naming `/magos:git-recon` | The row `plugin.yaml is the Hermes native manifest` turns red for every mutation; the anchors stay valid because the earlier lines keep their text and order and `git-plan` is the last entry | tests/codex/contracts/test_agent_plugin.py::AgentPluginChecks::test_each_mutation_turns_its_row_red |
 | TC-013 | The shipped `.py` files, parsed with the 3.9 grammar | `__init__.py` parses on Python 3.9 and uses no newer API | tests/codex/guard/test_package.py::test_sources_parse_as_python_3_9_and_tests_use_no_newer_api |
 | TC-014 | The coverage gate's tracked source list and the CI job of the quality commands | `__init__.py` is a tracked source gated strictly above 90 percent, per file and for the project | tests/codex/guard/test_package.py::test_ci_coverage_job_runs_the_qguard_commands |
-| TC-015 | The contract case `package/install-layout`: the package installed into a scratch home, and the checkout rows | The row `install:plugin.yaml is the Hermes native manifest of plugin.json, and __init__.py registers skills/` passes and the replicas find ten skills in a checkout (the root skill, the entry skill and the eight adapters) and nine in an installed package | tests/codex/contracts/run_contract_cases.py |
+| TC-015 | The contract case `package/install-layout`: the package installed into a scratch home, and the checkout rows | The row that checks `plugin.yaml` against `plugin.json` and the registrations of `__init__.py` (the skills and the two `pre_tool_call` callbacks) passes and the replicas find ten skills in a checkout (the root skill, the entry skill and the eight adapters) and nine in an installed package | tests/codex/contracts/run_contract_cases.py |
+| TC-016 | `register(ctx)` with a recording context that also records `register_hook(name, callback)` | Nine skills as TC-001, then exactly two hooks, both `pre_tool_call`, in the order verdict, approval | tests/codex/guard/test_project_sources.py::test_init_registers_the_two_guard_callbacks |
+| TC-017 | TC-668, TC-669, TC-670, TC-671, TC-677 of the guard's test design (the callbacks, failures, gate probe, payload, pairing) | As stated there | tests/codex/guard/test_hermes_approval.py |
+| TC-018 | `plugin.yaml` read as text | Holds `provides_hooks:` with the one item `pre_tool_call`, name and version equal to `plugin.json` | tests/codex/contracts/test_agent_plugin.py::AgentPluginChecks::test_unmodified_package_passes |
 
 ## Boundary & Failure Cases
 
@@ -57,6 +65,15 @@ percent for the file and for the project). The contract rows live in `tests/code
   contract row, none can pass the in-process cases).
 - Ordering: `sorted()` over the lowercase directory names gives one order on every platform; the table order does not
   affect registration.
+- Callbacks: a guard that cannot start, exits non-zero, prints no JSON object or an object of no known shape (`[]`, a
+  modify without a command, an approve whose rule key lacks `magos:`), or runs longer than 25 s gives a `block` that
+  names the cause and the off switches; `MAGOS_GUARD` `off` (any case, blanks around it) and a tool other than
+  `terminal` start nothing and return `None`; a command that names `magos_guard` and has no mark gets a `block` from
+  the approval callback; two calls interleaved between the callbacks each get their own approve directive (TC-017).
+- Gate probe: a Hermes whose `request_tool_approval` has no `rule_key` parameter or whose `hermes_cli.plugins` has no
+  `_PreToolCallDirective` with a `rule_key` field, an import or a probe that raises, no `tools` package and a
+  plugin-host process give `absent`; a yolo state, `approvals.mode` `off` and a run nobody attends give `bypass`
+  (TC-017).
 
 ## Regression Scope
 
@@ -69,4 +86,8 @@ installed package holds nine skills and a checkout ten; the contract cases `pack
 of `tests/codex/contracts/test_agent_plugin.py` rely on. The Hermes probe and host cases
 (`tests/codex/hermes_probe.py`, `tests/codex/run_host_cases.py`) resolve `/git-plan` through the skill package, not
 through this module, and are unaffected. The module remains outside the Codex and Hermes skill packages
-(`scripts/sync_hosts.py`) and outside the Claude Code plugin.
+(`scripts/sync_hosts.py`) and outside the Claude Code plugin. `plugin.yaml` and `plugin-catalog/magos.yaml` declare
+`provides_hooks: [pre_tool_call]`, which Hermes's plugin validation and the catalog compare with the two
+registrations (TC-011, TC-018); the guard's `doctor` and `install --host hermes` find the callbacks by the text
+`register_hook("pre_tool_call"` in this module, and `scripts/magos_guard.py` answers the `hook hermes pre-tool
+--hermes-gate` call that `verdict` makes (its own test design, TC-650 to TC-681).

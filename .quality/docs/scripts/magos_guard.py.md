@@ -18,7 +18,7 @@ The guard stops the lane that is being created, never a lane that already exists
 - "Changed" is measured against the integration target. Every worktree contains every file; a lane claims a file only
   if it differs from the target in that file (committed, staged, unstaged, untracked or in progress) or declared it.
 
-The file holds nine cooperating parts.
+The file holds ten cooperating parts.
 
 1. **Manifest and overlap engine.** Entries are normalised (NFC, case-folded, separators unified, trailing dots and
    spaces stripped) and compared with an exact glob-intersection dynamic programme at character level and at path level.
@@ -383,7 +383,9 @@ The file holds nine cooperating parts.
      found inside the line is judged are kept apart by the same fields.
 5. **Host hook entry.** `hook <claude|codex|hermes> pre-tool` reads one PreToolUse payload from stdin and prints
    `{}` (allow), one deny object that carries the full conflict message, or, for exactly one direct invocation of a
-   user-only guard subcommand in Claude Code, the ask or allow of part 9. The hooked tools are named in one constant:
+   user-only guard subcommand, the ask or allow of part 9 in Claude Code and, when the MAGOS Hermes plugin runs it
+   (`--hermes-gate`), the modify and approve of part 9 in Hermes; the Codex hook's denial of a user-only command names
+   the MCP route of part 10. The hooked tools are named in one constant:
    the shell tools `Bash`, `PowerShell`, `Monitor`, `terminal`, `shell` and `local_shell`; the worktree-creating tools
    (`EnterWorktree`, `Agent`, `Task` and `Workflow` with worktree isolation); the MCP session tools, whose name contains
    `start_session`, `worktree`, `branch` or `hand_off_to_session`; and the names and substrings that route an MCP tool
@@ -415,7 +417,8 @@ The file holds nine cooperating parts.
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the
-   copy, the Hermes entry, the repository, the backstop, the sets and the approval level.
+   copy, the Hermes entry, the Hermes route, the MCP approval server, the Codex entry and the plugin's `mcp.json`,
+   the repository, the backstop, the sets and the approval level.
 8. **Sets.** `set-plan`, `set-show`, `set-update` and `set-release` register, read, update and retire a set: one task
    divided into lanes with exclusive file ownership, merged back as one whole. They reuse the manifest engine for the
    disjointness proof, the evidence gatherer and the judge for the comparison with every other claimant, the claim store
@@ -429,12 +432,19 @@ The file holds nine cooperating parts.
    real terminal on every host, or, in Claude Code, by a click in Claude Code's own permission dialog. The host hook
    opens that dialog for exactly one direct invocation of this guard and hands the host a rewritten command that
    carries a one-time token, which the command verifies and consumes instead of asking the console. The repository's
-   `magos.approval` sets the level. The section Approval (version 1.0.7) states it.
+   `magos.approval` sets the level. The section Approval (version 1.0.7) states it. In Hermes the MAGOS Hermes plugin
+   runs the guard and Hermes asks the same question in its own approval prompt; the section Hermes approval (version
+   1.0.8) states it. The section Approval routes (version 1.0.8) compares the routes of the three hosts.
+10. **MCP approval server.** `mcp` is an MCP server over stdio that the host starts (Codex, from the root `mcp.json`
+    of the MAGOS plugin or from its own configuration); no tool command may start it. Its one tool, `magos_approve`,
+    asks the user in the host's own dialog (MCP elicitation) to approve one user-only command, then records the
+    approval of part 9 and runs this guard's command with it in its own process. The section Codex approval (version
+    1.0.8) states it.
 
 ## Dependencies
 
 Upstream: Python 3.9+ standard library only (`argparse`, `base64`, `collections`, `contextlib`, `functools`, `getpass`,
-`hashlib`, `io`, `json`, `os`, `re`, `secrets`, `shlex`, `shutil`, `subprocess`, `sys`, `threading`, `time`,
+`hashlib`, `io`, `json`, `os`, `queue`, `re`, `secrets`, `shlex`, `shutil`, `subprocess`, `sys`, `threading`, `time`,
 `unicodedata`, `concurrent.futures`, `msvcrt` or
 `fcntl`, and `ctypes` for the Windows console check). On Windows the module
 sets `NoDefaultCurrentDirectoryInExePath=1` in its own environment at import, before any subprocess starts, so `git`
@@ -480,6 +490,25 @@ Downstream callers:
   exists, the guard script beside it (`<hermes home>/plugins/magos/scripts/magos_guard.py`) declares the installing
   guard's `GUARD_VERSION` and, on Windows, its path holds none of the characters `install` refuses in a guard home
   (Public Contract), else the copied launcher.
+- Codex starts `mcp`, the MCP approval server, from the root `mcp.json` of the MAGOS plugin or from the
+  `[mcp_servers.magos]` entry that `install --host codex` prints, and the agent calls its tool `magos_approve` (Codex
+  approval (version 1.0.8)). `mcp.json` is an Agent Plugins MCP file (schema 1.0.0) with one stdio server, `magos`:
+  `type` `stdio`, `command` `git`, `args` `-c`, `alias.magos-mcp=!<sh script>` and `magos-mcp`, and `cwd` `./`, the
+  plugin root. Git runs the alias with its own `sh`, on Windows as well. The script returns to the plugin root through
+  `GIT_PREFIX`, exports `PYTHONUTF8=1`, `PYTHONDONTWRITEBYTECODE=1` and `NoDefaultCurrentDirectoryInExePath=1`, and
+  runs `scripts/magos_guard.py mcp` with `-X utf8 -B` under the first of `python3`, `py -3` and `python` that is
+  Python 3.9 or later (each probed with all its output discarded); without one it prints `MAGOS guard: no Python 3.9
+  or later found (tried python3, py -3, python)` on stderr and exits 127. Only the guard writes to stdout. Codex
+  accepts only the keys `type`, `command`, `args`, `env` and `cwd` in this file and drops a server that holds any
+  other, so the file names neither `env_vars` nor a timeout: Codex sets `PLUGIN_ROOT` and `PLUGIN_DATA` for the
+  server, allows it 30 s to start and ends a tool call after 300 s (Codex 0.163). The Git runner's scrubbed
+  environment (part 2) removes the `GIT_CONFIG_PARAMETERS` and `GIT_PREFIX` that the launch leaves. Claude Code does
+  not read the file, and Hermes reads an `mcp.json` only for a plugin without `plugin.yaml`; MAGOS ships
+  `plugin.yaml`, so Hermes never starts the server.
+- The MAGOS Hermes plugin entry (`__init__.py`) registers, besides the skills, two `pre_tool_call` callbacks for the
+  Hermes `terminal` tool. They run the plugin's own guard as `hook hermes pre-tool --hermes-gate <ask|bypass|absent>`
+  without a shell (Hermes approval (version 1.0.8)). The Hermes entry under `hooks:` runs `hook hermes pre-tool`
+  without that option and denies every user-only command.
 - `references/lane-split.md` and `SKILL.md` tell agents to run `check`, `plan`, `list` and `release`, and, for sets,
   `set-plan`, `set-show`, `set-update` and `set-release`; `version` is read-only and agents may run it as well.
 - `/GitIntegrate`, `/GitRecon`, `/GitCleanup`, `/GitConverge` and `/GitSweep` read or release claims through `list` and
@@ -493,7 +522,8 @@ Downstream callers:
   the `changes` of every integrated lane), never from memory.
 - Package manifests: `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` (`metadata.version`),
   `skills/git-orchestrator/SKILL.md` (when it states a version) and line 3 of `references/commands.md` carry the same
-  version as `GUARD_VERSION`; a contract test reads all of them. `__init__.py` registers the skills only.
+  version as `GUARD_VERSION`; a contract test reads all of them. `__init__.py` registers the skills and the two Hermes
+  `pre_tool_call` callbacks (Hermes approval (version 1.0.8)).
   `scripts/sync_hosts.py` copies `SKILL.md`, `references/*.md` and the skill adapters, never the guard, so `install`
   copies the guard to `~/.magos/guard/` for the hosts that run it outside the plugin directory.
 
@@ -506,8 +536,11 @@ abbreviated (every parser is built with `allow_abbrev=False`), so `--rep` is a u
 
 Commands an agent may run: `check`, `plan`, `list`, `release`, `doctor`, `version`, `set-plan`, `set-show`,
 `set-update`, `set-release`. Commands only the user runs:
-`override`, `arm`, `disarm`, `install`: the user runs them in a real terminal or, in Claude Code, approves them by a click
-in Claude Code's own dialog (Approval (version 1.0.7)). The set subcommands are not user-only: the host hook lets them through like
+`override`, `arm`, `disarm`, `install`: the user runs them in a real terminal or approves them by a click: in Claude Code
+in Claude Code's own dialog (Approval (version 1.0.7)), in Codex in Codex's own dialog through the MCP tool
+`magos_approve` (Codex approval (version 1.0.8)), and in Hermes with the MAGOS Hermes plugin in Hermes's own approval
+prompt (Hermes approval (version 1.0.8)). Only the host starts the hidden `mcp`, the MCP approval server; a tool command
+never does. The set subcommands are not user-only: the host hook lets them through like
 `plan`, `release` and `list` (Sets, Hook). The host hook recognises a user-only command whatever the global options before
 it look like. A guard word is a word ending in `magos_guard` or `magos_guard.py`, or a word whose case-folded base name
 (after the last `/` or `\`) is `run-guard.cmd` or `run-guard`, after which a leading `--strict` is skipped. After the
@@ -581,15 +614,21 @@ that holds a comma).
   the fingerprint, and with `--approval` verifies and consumes the token instead (exit 25 to 28 when it does not
   verify; Approval (version 1.0.7)); writes a one-shot record valid for one hour (`fp`, `reason`, `by`, `at`,
   `expires`, `via`, `reason_by`) and appends an audit line (`ts`, `by`, `op` `override`, `fingerprint`, `reason`,
-  `reason_by`, `via`, `host` `cli`, and `tool_use_id` for a run approved in Claude Code). Only `plan` reads override
+  `reason_by`, `via`, `host` `cli`, `tool_use_id` for a run approved with a token (null through the MCP approval
+  server), and `route` for one approved through the MCP approval server (`mcp`, with `client`) or in Hermes
+  (`hermes`)). Only `plan` reads override
   records: the next `plan` whose denial has the same fingerprint consumes the
   record and stores the fingerprint in the claim's `override` field. The host hook honours only that field, so a re-plan
   is required after an override, and the deny text says so. A lane of a set that has a record is not overridden this
   way: its re-plan is refused (exit 14, `lane_in_set`; see `plan`) and leaves the record unconsumed.
 - `hook <host> pre-tool`: the PreToolUse entry; it also guards `git worktree add --detach` and `<path> <commit>`, whose
   lane is keyed `detached/<directory name>`. Allow is `{}` with exit 0. For a user-only subcommand the Claude Code hook
-  (`hook claude`) answers with the ask or allow of Approval (version 1.0.7), or denies; the Codex and Hermes hooks deny
-  it. Deny is exactly one ASCII-escaped JSON object on
+  (`hook claude`) answers with the ask or allow of Approval (version 1.0.7), or denies; the Codex hook denies it with
+  the text that names the MCP tool `magos_approve`, its exact arguments and the command for a real terminal (Codex
+  approval (version 1.0.8)); the Hermes hook that the MAGOS Hermes plugin runs (`hook hermes pre-tool --hermes-gate
+  <gate>`) answers with the modify and approve of Hermes approval (version 1.0.8), or denies, and the Hermes entry under
+  `hooks:` denies it. Every hook denies a command that starts `mcp` with the `protected_mcp` text. Deny is exactly one
+  ASCII-escaped JSON object on
   stdout, exit 0:
   `{"decision":"block","reason":MSG,"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":MSG}}`.
   A deny is never an exit code. Stderr stays empty except for one warning line when engagement could not be decided
@@ -597,11 +636,15 @@ that holds a comma).
   (Invariant 8). An auto-named creation (a tool that names the branch or worktree itself) is denied `UNPLANNABLE` with
   the instruction to plan the branch `worktree-<name>` first and then call `EnterWorktree name=<name>`, or to run
   `git worktree add` directly; `EnterWorktree name=N` creates the branch `worktree-N`.
+- `mcp [--lang L]`: the MCP approval server (Codex approval (version 1.0.8)), started by the host and hidden from the
+  help. It reads JSON-RPC 2.0 from stdin and writes it to stdout, asks for every approval in the host's dialog, and on
+  Accept runs the approved user-only command in its own process with a one-time token. Exit 0 when stdin ends, 1 when
+  stdout cannot be written or the server fails outside a request.
 - `arm [--lang L] [--dry-run] [--approval TOKEN]`: needs a real console or an approval token that verifies (exit 17
   without either, except with `--dry-run`; Approval (version 1.0.7)). Writes
   `<hooks dir>/reference-transaction` (a foreign hook is chained as `.magos-prev`; the backstop runs it, with the
   transaction on its stdin, only when it is executable, as git runs only executable hooks), `<store>/ARMED`, `lang` and `guard`,
-  and appends an audit line (`ts`, `by`, `op` `arm`, `lang`, `via`, and `tool_use_id` for a run approved in Claude Code) to `<store>/audit.log`. `guard` holds the command the backstop's deny message
+  and appends an audit line (`ts`, `by`, `op` `arm`, `lang`, `via`, `tool_use_id` for a run approved with a token (null through the MCP approval server), and `route` for one approved through the MCP approval server (`mcp`, with `client`) or in Hermes (`hermes`)) to `<store>/audit.log`. `guard` holds the command the backstop's deny message
   prints: the command that runs the copy under the guard home (`~/.magos` or `MAGOS_HOME`) when that copy exists and
   declares the same `GUARD_VERSION` as the running guard, else the running script. Before it sets
   `maintenance.pack-refs.enabled` and `gc.packRefs` to `false` for the repository, it records their previous local
@@ -616,7 +659,8 @@ that holds a comma).
   hook if it is MAGOS's and restores `.magos-prev`; restores both settings from `arm-config.json` (unsetting a key that
   was unset) and deletes the record; without a record both settings stay as they are, and a record that does not parse
   leaves both settings and the record as they are; keeps claims and audit, and appends an audit line (`ts`, `by`, `op`
-  `disarm`, `via`, and `tool_use_id` for a run approved in Claude Code).
+  `disarm`, `via`, `tool_use_id` for a run approved with a token (null through the MCP approval server), and `route`
+  for one approved through the MCP approval server (`mcp`, with `client`) or in Hermes (`hermes`)).
 - Console gate. The gate of `override`, `arm`, `disarm` and `install` refuses a call whose stdin and stdout are not a
   console, unless the call carries `--approval` with a token that verifies (Approval (version 1.0.7)): such a call never
   asks the console, and a token that does not verify ends it with exit 25 to 28. A command started in a new console
@@ -641,9 +685,11 @@ that holds a comma).
   `guard copy <old> -> <new>` (`none` when there was no copy, `unversioned` for a copy that declares no
   `GUARD_VERSION`). Every install that is not a dry run then rewrites `guard/VERSION.json` (also when the copy was
   unchanged) with `{version, sha256, source, installed_at}` of the copied guard and appends one JSON line (`ts`, `op`
-  `install`, `host`, `from`, `to`, `source`, `via`, and `tool_use_id` for a run approved in Claude Code) to `<home>/audit.log`. `--dry-run` prints what it would copy and the snippet
-  and writes nothing. It writes the exact host snippet to `guard/generated/<host>.json|yaml` and prints it.
-  It never edits `~/.claude/settings.json`, `~/.codex/hooks.json` or Hermes config. The Codex snippet matches
+  `install`, `host`, `from`, `to`, `source`, `via`, `tool_use_id` for a run approved with a token (null through the MCP approval server), and `route` for one approved through the MCP approval server (`mcp`, with `client`) or in Hermes (`hermes`)) to `<home>/audit.log`. `--dry-run` prints what it would copy and the snippet
+  and writes nothing. It writes the exact host snippet to `guard/generated/<host>.json|yaml` and prints it; with
+  `--host codex` it also writes `guard/generated/codex-mcp.toml`, the `[mcp_servers.magos]` entry of the MCP approval
+  server, and prints it with the `codex mcp add` line (Codex approval (version 1.0.8)).
+  It never edits `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.codex/config.toml` or Hermes config. The Codex snippet matches
   `Bash|mcp__.*(start_session|worktree|branch|hand_off_to_session)` and runs `sh '<launcher>' hook codex pre-tool`
   (`commandWindows`: `& '<launcher>' hook codex pre-tool; exit $LASTEXITCODE`), timeout 25; the launcher path is quoted
   for each shell, every `'` written `'\''` in the sh form and `''` in the PowerShell form. The Claude snippet, whose
@@ -656,7 +702,11 @@ that holds a comma).
   (Hermes home: `HERMES_HOME`, else `%LOCALAPPDATA%/hermes` on Windows, else `~/.hermes`), else the copied launcher;
   when the Hermes plugin holds another version, install says so, names that version (`unversioned` when it declares
   none) and tells the user to update the Hermes plugin, and when its path holds such a character, install names the
-  character and the path. Only Claude's
+  character and the path. For `--host hermes` install also prints one `NOTE:` line on the Hermes route (Hermes approval
+  (version 1.0.8)): when the Hermes plugin runs the guard of this version, that the plugin asks in Hermes's approval
+  prompt and that a MAGOS entry under `hooks:` would deny every user-only command before Hermes can ask; otherwise that
+  the entry runs the guard once Hermes has approved it (an entry that is not approved is skipped without a word) and
+  user-only commands run in the user's own terminal, and how the plugin is installed or updated. Only Claude's
   EnterWorktree group carries `--strict`; for the other entries `--strict` is a documented opt-in.
 - `doctor [--home DIR]`: prints the running guard's version, the first 12 hex digits of its sha256 and its path; checks
   Python (3.9+) and Git, and reports `git X.Y TOO OLD for the lane guard (need 2.36+)` below 2.36. Before it looks for a
@@ -677,7 +727,10 @@ that holds a comma).
   `guard/generated/hermes.yaml` exists, doctor reads the launcher path from its command and reports, as a problem, a
   launcher that does not exist (the Hermes plugin was removed, and `fail_closed` then blocks every Hermes terminal call)
   and a launcher whose guard script (`../scripts/magos_guard.py` beside it) declares a `GUARD_VERSION` other than the
-  running guard's. Outside a repository it then reports that the guard is inert there and prints `approval: prompt (no
+  running guard's. It then prints the Codex lines of Codex approval (version 1.0.8): the approval server's answer to an
+  in-process `initialize` and `tools/list`, the entry that `install --host codex` generated, and the sha256 of the
+  plugin's `mcp.json` beside the running guard; and, when the Hermes home is a directory, the Hermes route, entry and
+  approvals lines of Hermes approval (version 1.0.8). Outside a repository it then reports that the guard is inert there and prints `approval: prompt (no
   repository): ...`. In a repository it prints the approval line of Approval (version 1.0.7) after the repository line,
   a problem when `magos.approval` holds a value that is no level, and checks mode,
   hook uniformity, hook content, claim parsing (unreadable and newer-format claims), orphan claims, the sets (the
@@ -753,8 +806,9 @@ cannot run its version probe as a problem and exits 1); with `--json` it also pr
 `{"decision":"deny","code":"UNKNOWN","unknowns":[{"code":<GIT_MISSING|GIT_FAILED|BUDGET_EXCEEDED|INTERNAL_ERROR>,"text":...}],"message":...,"exit_code":11}`
 on stdout.
 
-Exit codes: 0 allow, registered, ok or unchanged; 1 `doctor` found a problem, or a usage error of `hook` (a failure the
-launcher maps, never a deny); 2 usage error of any other command, not a git repository, a malformed fingerprint, or a
+Exit codes: 0 allow, registered, ok or unchanged, and the end of `mcp`'s input; 1 `doctor` found a problem, a usage
+error of `hook` (a failure the launcher maps, never a deny), or `mcp` could not write to the host or failed outside a
+request; 2 usage error of any other command, not a git repository, a malformed fingerprint, or a
 guard home whose launcher path `install` refuses on Windows; 3 arm refused; 10 CONFLICT, NO_MANIFEST, UNPLANNABLE,
 UNPARSEABLE or PROTECTED; 11 UNKNOWN (also any engine exception, an exhausted budget, a claim in a newer format, a set
 record that cannot be read or a failed install: plan and check fail closed); 12 INVALID_MANIFEST (also an invalid
@@ -835,9 +889,10 @@ Invariants:
    `arm-config.json`), `disarm` and `install` (including `VERSION.json` and the generated snippet) print, the audit
    lines `arm` and `disarm` append to `<store>/audit.log` and `install` appends to `<guard home>/audit.log`, the
    approval records the Claude Code hook writes and a verifying command renames, and the denial records `plan` and the
-   host hook write (Approval (version 1.0.7)). `check`, `list`, `version` and `set-show` never write, every
-   `--dry-run` writes nothing but the consumption of its `--approval` token, and the host hook writes nothing but
-   approval and denial records; `set-plan`, `set-update` and `set-release`
+   host hook write (Approval (version 1.0.7)), and the approval records the MCP approval server writes on an Accept
+   (Codex approval (version 1.0.8)). `check`, `list`, `version` and `set-show` never write, every `--dry-run` writes
+   nothing but the consumption of its `--approval` token, the host hook writes nothing but approval and denial records,
+   and `mcp` writes nothing but approval records and what the command it runs writes; `set-plan`, `set-update` and `set-release`
    write only the claim and set-record files of their own set and an audit line, and never a branch, a ref, a worktree or
    the index.
 6. Engagement: ARMED (marker file) guards every new branch and worktree; AUTO (default) always guards named worktree
@@ -852,7 +907,9 @@ Invariants:
    PowerShell comma or array list such as `Start-Process py <guard>,disarm`) and `git config magos.*` writes are
    denied by the host hook in every repository and outside any repository, and so is a git invocation that carries a
    word beginning with `magos.` beside an alias it defines with `-c alias.<name>=` or a subcommand that is not a
-   built-in git command, because an alias can run `config`. The one exception is the ask or allow of the Claude Code
+   built-in git command, because an alias can run `config`. `mcp`, the MCP approval server that only the host starts,
+   is denied in the same spellings and places, on every host, with the `protected_mcp` text (Codex approval (version
+   1.0.8)). The one exception is the ask or allow of the Claude Code
    hook for exactly one direct invocation of this guard (Approval (version 1.0.7)). A writer or a redirect aimed at an
    approval store (`.git/magos/approvals`, `.magos/approvals`, the absolute `<git-common-dir>/magos/approvals` or
    `<guard home>/approvals`) is denied in every repository and outside any repository. Edits of the guard's state are denied once
@@ -1855,7 +1912,10 @@ The user-only subcommands (`override`, `arm`, `disarm`, `install`) run only when
 approves a run in one of two ways. In a real terminal: the console gate, and for `override` the retyped fingerprint, on
 every host and at every level. Or, in Claude Code, by a click in Claude Code's own permission dialog: the host hook
 opens it for exactly one direct invocation of this guard, and the host then runs a command that carries a one-time
-approval token. Codex and Hermes have no such dialog; their hooks deny every user-only command with the `protected` text.
+approval token. In Codex the user approves by a click in Codex's own dialog through the MCP approval server, and the
+Codex hook names that route when it denies (Codex approval (version 1.0.8)). In Hermes the MAGOS Hermes plugin hands the
+same command and a guard-written question to Hermes's own approval prompt (Hermes approval (version 1.0.8)); the Hermes
+entry under `hooks:` denies every user-only command with the `protected` text.
 
 ### Registry and levels
 
@@ -1873,7 +1933,8 @@ approval token. Codex and Hermes have no such dialog; their hooks deny every use
   names: its `--repo` joined to the session directory, else the session directory; where that is no repository
   (`install` outside a repository) the level is `prompt`. No guard command writes the key, and the tamper filter
   denies an agent's `git config magos.*` (Invariant 7), so only the user sets it. No level runs `override` or `disarm`
-  without a click.
+  without a click, and the MCP approval server runs nothing without a click at any level (Codex approval (version
+  1.0.8)).
 - `doctor` prints the level after the repository line: `approval: <level> (magos.approval <value>): <what it means>`,
   or `(magos.approval unset)`; outside a repository `approval: prompt (no repository): ...`. A value that is no level
   prints `approval: terminal (magos.approval is "<value>", which is not terminal, prompt or auto-safe, so the guard fails
@@ -1995,12 +2056,16 @@ nothing runs, and the record stays for the command or a prune. At level `termina
     separator-insensitively where the platform is, or as the same directory.
 - Record `<sha256>.json`, written to a temporary file and moved into place with `os.replace`:
   `{"v": 1, "sub", "argv", "where", "via", "created", "expires", "tool_use_id", "session_id", "command_sha256",
-  "used": false}`.
+  "used": false}`. A record of the MCP approval server or of the Hermes hook also holds `route` (Approval routes
+  (version 1.0.8)), which the command does not check.
   - `argv`: the guard's arguments as the hook read them, without the approval word.
   - `via`: `prompt` (ask) or `auto-safe` (allow).
-  - `created`, `expires`: seconds since the epoch; `expires` is 120 s after `created`.
+  - `created`, `expires`: seconds since the epoch; `expires` is 120 s after `created`, and for a Hermes record that asks
+    the lifetime that Hermes approval (version 1.0.8) states.
   - `tool_use_id`, `session_id`: from the payload, at most 200 characters, null when absent.
   - `command_sha256`: the SHA-256 of the rewritten command.
+  - A record of the MCP approval server holds `tool_use_id` null, `command_sha256` null and, besides `route`, the key
+    `client` (Codex approval (version 1.0.8)).
 - Every mint first prunes its store. It removes a record (`.json` or `.used`) whose `expires` passed more than 600 s
   ago, a record that cannot be read and is older than that, and a temporary file older than that; in a repository
   store it also removes a denial record whose `expires` has passed, or that cannot be read and is older than one hour.
@@ -2041,7 +2106,10 @@ nothing runs, and the record stays for the command or a prune. At level `termina
 
 Every run of a user-only subcommand that is not a dry run records how it was approved:
 - `via`: `terminal` (a real console), `prompt` (a click) or `auto-safe` (allowed without a click);
-- `tool_use_id`: that of its record, for a run approved in Claude Code.
+- `tool_use_id`: that of its record, for a run approved in Claude Code (its `tool_use_id`) or in Hermes (its
+  `tool_call_id`), and null for a run approved through the MCP approval server;
+- `route` `mcp` and `client`: for a run approved through the MCP approval server (Codex approval (version 1.0.8));
+- `route` `hermes`: for a run approved in Hermes (Hermes approval (version 1.0.8)).
 
 The lines are those of Public Contract with these fields added: `arm` and `disarm` in `<store>/audit.log`, `install`
 in `<home>/audit.log`, and `override` in `<store>/audit.log`. The `override` line also carries `reason_by`: `user` for
@@ -2079,6 +2147,384 @@ repository and outside any repository. Reading a store is allowed: it holds no t
 - The PowerShell and Git Bash word rules are those of Recognition. A word that another shell version passes otherwise
   ends the command with exit 28. A PowerShell `''` inside a single-quoted word and the typographic quotes are read as
   Known limits states, and the rewritten command shows the words that run.
+
+## Approval routes (version 1.0.8)
+
+The user approves a user-only subcommand by a click in the host's own dialog on all three hosts, each through a route
+of its own; a real terminal stays valid on every host and at every level.
+
+| Host | Route | Who asks | Token minted | `auto-safe` |
+| --- | --- | --- | --- | --- |
+| Claude Code | `hook claude` answers with an ask or allow (Approval (version 1.0.7)) | Claude Code's permission dialog | by the hook, before the click | runs `arm`, and `install` to the default guard home without `--allow-downgrade`, without a click |
+| Codex | the MCP approval server `mcp` and its tool `magos_approve` (Codex approval (version 1.0.8)) | Codex's dialog for the server's elicitation form | by the server, after an Accept with `Approve` ticked | asks like `prompt` |
+| Hermes | the MAGOS Hermes plugin's callbacks hand Hermes a modify and an approve (Hermes approval (version 1.0.8)) | Hermes's approval prompt | by the hook that the plugin runs, before the answer | runs `arm`, and `install` to the default guard home without `--allow-downgrade`, without a question |
+
+The routes share the machinery of Approval (version 1.0.7): the `USER_ONLY` table; the level, read from
+`magos.approval` of the repository the command names (`prompt` for `install` without one), where `terminal` and every
+value that counts as `terminal` refuse on every route; the text that says what is approved, `approval_what` (the
+content of `TEXT` in The answer, without the frame of the Claude Code dialog), with its sanitiser; the token, its
+store, its record of format 1 and its verification in the command with the exit codes 25 to 28; and the audit field
+`via`. Each route adds to it:
+
+- `route`. A record of the MCP approval server holds `route` `mcp` and `client`, and a record of the Hermes hook holds
+  `route` `hermes`; a record of the Claude Code hook holds neither. The command does not check them.
+  `approval_fields` adds `route`, and `client` for `mcp`, to the audit line of a run whose record holds one of these
+  two values, and nothing for any other value, so the records and audit lines of Claude Code and of a real terminal
+  stay those of 1.0.7.
+- `mcp`. The MCP approval server is no user-only subcommand: only a host starts it, from its own configuration, and
+  every host's hook denies a tool command that starts it with the `protected_mcp` text (Codex approval (version
+  1.0.8), The approval server and the tamper filter).
+
+## Codex approval (version 1.0.8)
+
+In Codex the user approves a user-only subcommand (`override`, `arm`, `disarm`, `install`) in Codex's own dialog: the
+user ticks `Approve`, then accepts. The route is the guard's MCP approval server, the subcommand `mcp`: Codex starts it,
+from the root `mcp.json` of the MAGOS plugin or from the `[mcp_servers.magos]` entry that `install --host codex`
+prints, and the agent calls its one tool `magos_approve`. The server asks the user through MCP elicitation and, only
+on an Accept with `Approve` ticked, records a one-time approval (Approval (version 1.0.7), Token and store) and runs
+this guard's command with it. Codex's PreToolUse hooks have no `ask`, so the Codex hook denies every user-only
+command; its text names the tool, the exact arguments and the command for a real terminal. A real terminal stays valid
+on every host and at every level. The server, its record and its dialog text are host-neutral (Approval routes
+(version 1.0.8)); Codex is the host that starts it. The plugin brings the server, not the hook: Codex reads no hooks
+from a plugin whose root `plugin.json` is an Agent Plugins manifest, so the Codex hook comes from `install --host
+codex`, whose entry the user merges into `~/.codex/hooks.json` and trusts once in Codex's `/hooks`; `magos_approve`
+works without that hook.
+
+### The tool
+
+- `tools/list` holds one tool, `magos_approve`, with the title `MAGOS approval` and the annotations `readOnlyHint`,
+  `destructiveHint` and `openWorldHint` false. Its input schema has `additionalProperties` false and requires
+  `subcommand`:
+  - `subcommand`: `override`, `arm`, `disarm` or `install`;
+  - `repo`: the absolute path of the repository, required for `override`, `arm` and `disarm`; for `install` it names
+    the repository whose `magos.approval` applies, and without it the level is `prompt`;
+  - `fingerprint` and `reason` (`override`): the 12 lowercase hex digits a denial prints, and the user's words;
+  - `host` (`install`): `claude`, `codex` or `hermes`;
+  - `dry_run` (`arm`, `disarm`, `install`): a boolean; `false` is taken by every subcommand.
+- The tool takes nothing else: no guard home, no `--allow-downgrade`, no language, no `--json`, no token and no free
+  argument list.
+- Every result carries one text item and `structuredContent` with `approved` (the user accepted), `exit_code` (the
+  command's exit code, null when nothing ran) and `text` (the same text). `isError` is true when nothing ran or the
+  command exited non-zero.
+
+### The server
+
+- `mcp [--lang L]` reads newline-delimited JSON-RPC 2.0 from stdin and writes one ASCII-escaped JSON object per line to
+  stdout. The language of its texts is `--lang`, else `MAGOS_LANG`, else zh.
+- A line holds at most 1 MiB (`MCP_LINE`); a longer line is skipped to its end and answered with error -32600 and id
+  null. A line that is not UTF-8 JSON is answered with -32700 and id null. A message that is not an object, has no
+  `"jsonrpc": "2.0"`, names a method that is not a string, or carries an id that is neither a string nor an integer is
+  answered with -32600. Blank lines are skipped, and a line may end with CR LF.
+- Requests: `initialize`, `ping`, `tools/list` and `tools/call`. `initialize` keeps the client's capabilities and
+  `clientInfo` and answers with the client's `protocolVersion` when it is a date (`YYYY-MM-DD`), else `2025-06-18`,
+  the capability `tools` (an empty object) and `serverInfo` with the name `magos` and the version `GUARD_VERSION`.
+  `ping` gets an empty result. Every other request is answered with -32601 (Codex also asks `resources/list` and
+  `resources/templates/list` and takes that answer), a `tools/call` of another tool with -32602. A notification gets no
+  answer. A response that answers no open request of the server is ignored. A request that fails inside the server is
+  answered with -32603, and the session goes on.
+- A reader thread reads stdin into a queue; the server answers in arrival order and keeps at most one dialog open. A
+  `tools/call` that comes while a dialog is open is answered at once with the `mcp_busy` text and runs nothing.
+- The dialog is one `elicitation/create` request with `mode` `form`, the dialog text as `message` and a
+  `requestedSchema` of type `object` with one property, `approve`: type `boolean`, title `Approve`, the description
+  `mcp_approve_field`, listed in `required`, with no default anywhere. Only an answer with the action `accept` and a
+  `content` object whose `approve` is the JSON value `true` approves. An Accept with `content` empty, missing or null,
+  with `approve` false, a string, a number or absent gets the `mcp_unticked` text; `decline`, `cancel` and any other
+  action get `mcp_refused`; an answer that is no object and an error answer get `mcp_failed`. None of them runs
+  anything. Codex does not check an answer against the form, and under the approval policy `never` with full disk
+  access it accepts a form without a required field by itself (with empty `content`); a form with a required field it
+  declines by itself under `never`.
+- The server waits 120 s for the answer (`MCP_CLICK_S`). It then withdraws the dialog with `notifications/cancelled`
+  for its own request id (Codex then closes the dialog and forwards no later answer) and answers the call with the
+  `mcp_late` text. The deadline is checked before each message is handled, so other messages do not extend it. Codex
+  does not count the time a dialog is open against its tool timeout.
+- `notifications/cancelled` for the open call withdraws its dialog the same way, and the cancelled call gets no answer.
+  Codex sends no cancellation when its own tool timeout ends a call, so no call waits behind an open dialog.
+- A client that declares no elicitation form (no `elicitation` capability, or one that names `url` only) gets the
+  `mcp_no_form` text. Codex declares `form` and `url`; it declines this form by itself under the approval policy
+  `never` (every sandbox) and under a granular policy without MCP elicitations, and shows it to the user under
+  `on-request`, `untrusted`, a granular policy with MCP elicitations and an automatic reviewer of tool calls.
+- With the annotations of The tool, Codex asks no tool-call approval of its own before `magos_approve`: the form is the
+  only question.
+- Only the protocol reaches stdout: for the session `sys.stdout` is stderr, and the command the server runs writes into
+  buffers of its own. The server exits 0 when stdin ends (an open dialog then runs nothing) and 1 when stdout cannot be
+  written or the server fails outside a request.
+
+### The tool call
+
+1. Arguments. Every key is one of the six; a key the subcommand does not take is refused (`dry_run` false is taken by
+   every subcommand). A string holds at most 4096 characters (`MCP_FIELD`), no control character but the tab and no
+   lone surrogate. `repo` is the absolute path of an existing directory: a drive or UNC path on Windows (a Git Bash
+   drive spelling is mapped), a `/`-rooted path elsewhere, never relative, drive-relative or starting with `~`; for
+   `override`, `arm` and `disarm` it lies in a Git repository. `fingerprint` is 12 lowercase hex digits, `reason`
+   holds a character that is not blank, `host` is a host name and `dry_run` a boolean. The text lists every error, and
+   nothing runs.
+2. The command line is built from these values only, every option one word: `--repo=<repo>` (not for `install`),
+   `--lang=<the server's language>`, the subcommand, `--fingerprint=<fp>` and `--reason=<reason>` (`override`),
+   `--host=<host>` (`install`) and `--dry-run`. A value that starts with `-` or holds `=` or a blank stays the value of
+   its option. The guard's own parser (`build_parser`, `--repo` unset) reads it back with a probe
+   `--approval=<43 characters>` appended; the row, the probe and every value must come back as given, else nothing
+   runs.
+3. The snapshot. Before the dialog the server computes, once, the level, the dialog text, the command line, the
+   approval store and `where`, and the ready command. After the click it reads none of them again: not
+   `magos.approval`, not the denial record, not the repository's spelling.
+4. The level is `magos.approval` of `repo` (Approval (version 1.0.7), Registry and levels), or `prompt` for `install`
+   without `repo`. At `terminal`, and at every value that counts as `terminal`, the call is answered with the
+   `mcp_terminal` text and no dialog opens. At `prompt` and `auto-safe` the dialog opens: the MCP route never runs a
+   command without a click.
+5. The dialog text (`mcp_ask`), in the server's language, has four lines: the question with the subcommand; the
+   repository and its Git directory, both as real paths, or for `install` the guard home; what is approved, in the
+   words of Approval (version 1.0.7), The answer (`approval_what_*`: the fingerprint, the lane, target and branches of
+   the denial record, and the reason marked as written by the agent); and `Tick Approve, then Accept: that approves
+   exactly this, once. Anything else runs nothing.` Every value the agent chose passes the sanitiser of that section.
+6. The run, only on an Accept with `approve` true. The server mints the token (`secrets.token_urlsafe(32)`), prunes the store of the snapshot
+   and writes the record there: the record of Approval (version 1.0.7), Token and store, with `via` `prompt`,
+   `tool_use_id` null, `session_id` the `_meta.threadId` of the call (at most 200 characters, else null),
+   `command_sha256` null, and two more keys: `route` `mcp` and `client`, the client's `clientInfo` `name/version` with
+   control characters as spaces, at most 80 characters. It then runs this guard's own command line with
+   `--approval=<token>` appended through `main` in its own process, with an empty stdin and its output captured. The
+   command verifies and consumes the token as Approval (version 1.0.7), Verification in the command states, and the
+   guard starts no program but Git. The result text holds the command's stdout and stderr, every occurrence of the
+   token replaced by `<redacted>`, cut to 8000 characters (`MCP_TEXT`).
+7. The ready command, in every text that sends the user to a real terminal, is the guard command (`py -3 "<guard>"` on
+   Windows, `python3 "<guard>"` elsewhere) and the command line; a word that is not a plain word is single-quoted for
+   PowerShell on Windows and for sh elsewhere.
+
+### The Codex hook
+
+- `hook codex` denies every user-only command: Codex PreToolUse hooks support no `ask` and run the call when a hook
+  answers with one, or with an `allow` that carries no command. Codex blocks the call on the guard's deny object (exit
+  0), also for a command that a code-mode tool runs (its `tool_name` is `Bash` as well).
+- When the payload's `permission_mode` is `bypassPermissions` (Codex's approval policy `never`, under which Codex
+  declines the form by itself), the text is `protected_codex_never`: only the command for a real terminal.
+- Otherwise the hook reads the command in the dialect of its tool (for an argv, the script of its shell; on Windows a
+  string command in the PowerShell dialect, because Codex runs it through `powershell.exe -Command`) and takes the first
+  command of the line in which a guard script word is followed by a user-only subcommand; the guard's parser reads the
+  words after the script word. When that invocation maps onto the tool and its arguments pass step 1 of The tool
+  call, the text is `protected_codex`: the tool, its arguments as one JSON object, and the ready command. The mapping
+  drops `--lang`, `--json` and an `--approval` value, joins a relative `--repo` to the session directory, and takes the
+  session directory as `repo` when no `--repo` is named (for `install` only when that directory lies in a repository);
+  `--home` and `--allow-downgrade` do not map. Every other command gets `protected_codex_form`, which says what the
+  tool takes.
+- The Codex hook entry matches `Bash` and the MCP session tools only, so it does not run for the tool
+  `mcp__magos__magos_approve`, and the hook answers an MCP tool without a string `command` with `{}` in any case.
+
+### The approval server and the tamper filter
+
+- `mcp` is no user-only subcommand: the host starts it, and a tool command never does. `HOST_ONLY` holds it. The tamper
+  filter reads it after a guard word as it reads the user-only subcommands (the global options and `--` before it,
+  both readings of every word, quoted words that name the guard, child shells, PowerShell comma and array lists) and
+  returns scope `always` with a reason of its own. Every host's hook denies such a command with the `protected_mcp`
+  text, in every repository and outside any repository; the Claude Code hook never answers it with an ask.
+- The help and the usage list every subcommand but `mcp` (the metavar of the subcommand list); a usage error that
+  names the choices of the subcommand lists it.
+
+### install and doctor
+
+- `install --host codex` writes and prints the hook entry of Public Contract, and also writes
+  `guard/generated/codex-mcp.toml` and prints it, then the `codex mcp add` line:
+
+  ```toml
+  [mcp_servers.magos]
+  command = "<the interpreter that runs install>"
+  args = ["-I", "-B", "<home>/guard/scripts/magos_guard.py", "mcp"]
+  env_vars = ["MAGOS_HOME", "MAGOS_LANG"]
+  startup_timeout_sec = 30
+  tool_timeout_sec = 600
+  ```
+
+  The strings are TOML basic strings: `"` and `\` are escaped and every control character but the tab is written
+  `\uXXXX`. Codex starts a stdio server with a short list of environment variables; `env_vars` passes `MAGOS_HOME` and
+  `MAGOS_LANG`, so the server uses the guard home and the language of the user's hooks. The `codex mcp add` line
+  (`codex mcp add magos -- <interpreter> -I -B <script> mcp`) sets neither `env_vars` nor the timeouts. The guard never
+  edits `~/.codex/config.toml`.
+  A server started from the plugin's `mcp.json` gets neither variable: that file cannot name `env_vars` (Dependencies,
+  Downstream callers), and Codex passes a stdio server only a short list of environment variables. It then uses the
+  guard's defaults: the guard home `~/.magos` in the user's home directory (on Windows from `USERPROFILE`, which Codex
+  passes) and Chinese texts. `install` through it copies the guard to `~/.magos/guard`, and `arm` through it records
+  the backstop command of the copy under `~/.magos` (Public Contract, `arm`). The printed entry passes both variables.
+- `doctor` prints, before the repository part: `mcp server: answers initialize and tools/list (magos_approve)`, from an
+  in-process exchange with the server (any other answer is a problem); the entry in `guard/generated/codex-mcp.toml`
+  (a problem when its interpreter or its guard script does not exist or the script declares another `GUARD_VERSION`,
+  with the refresh command), or that none was generated; the first 12 hex digits of the sha256 of the
+  plugin's `mcp.json` in the directory above the running guard's `scripts/` directory, when it exists (`codex plugin
+  file: mcp.json <12 hex>`); and that only Codex shows whether it runs the server and trusts the MAGOS hooks.
+
+### Limits
+
+- The server cannot tell who started it, so it proves a human only as far as the host does. A same-user agent that runs
+  code of its own can start a server of its own (a copy of the guard under another name, the guard imported by
+  `python -c`) and answer its own dialog; that is the class of the forged records of Approval (version 1.0.7), Limits.
+- The files that start the server (the plugin's root `mcp.json`, whose git alias holds the launch, and the guard
+  script it runs, or the user's `config.toml` entry) run whenever Codex starts. Codex trusts hooks by hash, not these
+  files; `doctor` prints the sha256 of the plugin's `mcp.json`.
+- The denial record the dialog quotes can be forged like the store; its values are sanitised.
+- How the Codex desktop app shows the form, and what an interrupted turn does to an open dialog, is Codex's; without an
+  Accept with `Approve` ticked nothing runs. A client that ticks and accepts by itself (an automatic answer configured
+  outside Codex's approval policies) approves as a human would; the server cannot tell them apart.
+- Codex's tool timeout counts the run after the click, not the wait for the answer: the generated entry sets 600 s,
+  and Codex ends a tool call to the server of the plugin's `mcp.json`, which cannot set a timeout, after 300 s (Codex
+  0.163).
+- A server started from the plugin's `mcp.json` sees neither `MAGOS_HOME` nor `MAGOS_LANG` (install and doctor) and
+  uses `~/.magos` and Chinese texts; the mint and the verification of its tokens run in its one process, so they
+  agree.
+- Another client that reads the Agent Plugins `mcp.json` starts the server as well; a client that declares no
+  elicitation form gets the `mcp_no_form` text, and nothing runs.
+
+## Hermes approval (version 1.0.8)
+
+In Hermes the user approves a user-only subcommand with one answer in Hermes's own approval prompt (the CLI panel, the
+TUI and desktop dialog, or the buttons of a messaging gateway). The MAGOS Hermes plugin entry (`__init__.py`) registers two
+`pre_tool_call` callbacks; for exactly one direct invocation of this guard by the `terminal` tool, one run of the guard
+hands Hermes the command rebuilt with a one-time token (a `modify` directive) and a guard-written question with a
+request-unique rule key (an `approve` directive). Hermes applies every `modify`, lets any `block` win, and otherwise asks
+the human with the first `approve` before the command runs; a denial, a timeout and a gate error run nothing. The token,
+its store, its verification, the levels and the exit codes 25 to 28 are those of Approval (version 1.0.7). The Hermes
+entry under `hooks:` (`install --host hermes`) runs `hook hermes pre-tool` without `--hermes-gate` and denies every
+user-only command with the `protected` text. Approval routes (version 1.0.8) compares this route with those of
+Claude Code and Codex.
+
+### The plugin callbacks
+
+- `register(ctx)` registers the skills, then `ctx.register_hook("pre_tool_call", <verdict>)` and
+  `ctx.register_hook("pre_tool_call", <approval>)`, in this order, and nothing else. `plugin.yaml` declares
+  `provides_hooks: [pre_tool_call]`.
+- Both callbacks act only for the tool `terminal` and return nothing for every other tool, and both return nothing
+  when `MAGOS_GUARD` is `off` (any case, surrounding blanks ignored) in Hermes's environment.
+- The verdict callback starts `sys.executable -X utf8 -B <plugin>/scripts/magos_guard.py hook hermes pre-tool
+  --hermes-gate <gate>` as an argument list without a shell, with the payload on stdin and a limit of 25 s, below
+  Hermes's 30 s callback limit. The payload has the shape of a Hermes shell-hook payload:
+  `{"hook_event_name": "pre_tool_call", "tool_name", "tool_input": <args>, "session_id", "tool_use_id": <tool_call_id>,
+  "cwd": <Hermes's directory>, "extra": <the other keyword arguments>}`, and the child's `HERMES_HOME` is Hermes's active
+  home when Hermes names one.
+- The verdict callback maps the guard's answer:
+  - `{}`: nothing;
+  - a deny object: `{"action": "block", "message": <its reason>}`;
+  - `{"hermesApproval": {"modify": {"command": C}, "approve": {"message": M, "rule_key": K}}}`: it keeps the approve part
+    for this call and returns `{"action": "modify", "args": {"command": C}}`;
+  - `{"hermesApproval": {"modify": {"command": C}}}` (`auto-safe`): `{"action": "modify", "args": {"command": C}}`;
+  - anything else, a non-zero exit, a run longer than 25 s or a guard that cannot start: a block that names the cause and
+    the off switches. A callback that raises or exceeds Hermes's own limit is a block as well (Hermes's rule for
+    `pre_tool_call`).
+- The verdict callback keeps a mark for every call it answers, under a key of the session id, the `tool_call_id`, the
+  `turn_id` and the command text: the approve part for a question, nothing for every other answer. The approval
+  callback takes the mark once and returns its approve part, or nothing. When a call has no mark and its command names `magos_guard` (read with
+  every backslash, backtick, caret, `'` and `"` removed, case ignored), it returns a block: an approve that the verdict
+  could not hand over never turns into a modify without a question. Marks older than 120 s are dropped.
+- The gate value is computed in Hermes's process before the guard runs:
+  - `absent` when the plugin runs in a plugin-host process (`HERMES_PLUGIN_HOST_PROCESS` set, `plugins.isolation:
+    host`), when `tools.approval.request_tool_approval` has no `rule_key` parameter or `hermes_cli.plugins` has no
+    `_PreToolCallDirective` with a `rule_key` field (a Hermes without the plugin approve directive), or when an import or
+    any probe below raises;
+  - `bypass` when Hermes's approval gate would answer without a human: `tools.approval._yolo_active()` (`--yolo`,
+    `HERMES_YOLO_MODE`, a session `/yolo`, `hermes -z`), `tools.approval_context._get_approval_mode()` is `off`
+    (configuration or a hosted-room policy), or `tools.approval._presence()` finds neither an interactive CLI, a gateway
+    nor an ask bridge (cron, `-q`, unattended platforms);
+  - `ask` otherwise.
+
+### Recognition
+
+The Hermes hook takes the click route only with `--hermes-gate` and only for a command in which the tamper filter finds a
+user-only subcommand. It denies with the `protected_shape_hermes` text, whose last line is one cause code, every such
+command that does not meet Recognition 1 to 7 of Approval (version 1.0.7) read with these differences:
+
+1. The call is of the `terminal` tool, in the foreground and without a pseudo-terminal: `background` and `pty` absent
+   or false (`APPROVAL_TOOL` otherwise: the agent drives a background or PTY shell itself). Its dialect is bash, the
+   shell Hermes runs every command in (Git Bash on Windows), so the Git Bash word rule (`APPROVAL_PATHCONV`) applies on
+   Windows.
+2. The directory comes from the call. With `workdir` (an absolute path whose characters Hermes accepts: letters, digits
+   and `/ \ : _ - . ~ + @ = ,` and the space) a relative path is joined to it; without `workdir` the script word, an
+   interpreter path, `--repo` and `--home` must be absolute, and `override`, `arm` and `disarm` must name `--repo`
+   (`APPROVAL_DIRECTORY` otherwise). The payload's `cwd` is the directory of the Hermes process (its checkout), not the
+   directory the terminal command runs in.
+3. A command that names `--approval` is denied with the `approval_given_hermes` text. Hermes runs its hooks once per call,
+   so no rewritten command comes back to the hook.
+4. The level is that of the repository `--repo` or `workdir` names; `install` without either has level `prompt`.
+   `terminal` denies with the `protected_level` text.
+5. Under `prompt`, and under `auto-safe` for every subcommand it does not allow, the hook asks only when Hermes would ask
+   a human. It denies with the `protected_hermes_noask` text, which names the reason, when `--hermes-gate` is `bypass` or
+   `absent`, when `HERMES_YOLO_MODE` is `1`, `true`, `yes` or `on` (any case) in its environment, when `approvals.mode`
+   in the Hermes config (`<hermes home>/config.yaml`) reads as off, or when that file exists and cannot be read.
+
+### The answer
+
+- One ASCII-escaped JSON object on stdout, exit 0, stderr empty:
+  `{"hermesApproval": {"modify": {"command": C}, "approve": {"message": M, "rule_key": K}}}`; under `auto-safe` for
+  `arm` and for `install` to the default guard home without `--allow-downgrade` the `approve` key is absent. This shape is
+  no Hermes directive: a Hermes entry under `hooks:` that ran it would contribute nothing, and the command would meet the
+  console gate.
+- `C` is the rewritten command of Approval (version 1.0.7), The answer, quoted for bash. The plugin hands only `command`
+  to Hermes, which merges it over the call's other arguments (`workdir`, `timeout` stay as the agent sent them).
+- `M` is `approval_ask_hermes`: the question, the `what` text of Approval (version 1.0.7) (subcommand, repository,
+  fingerprint, lane, target, branches, the reason marked as the agent's, the install source and destination, a dry run
+  and `--allow-downgrade`), the record's lifetime in seconds, and that `once`, `session` and `always` each approve this
+  one request only. It holds neither the token nor the command: Hermes shows the gate target `<terminal> (plugin approval
+  rule)` and this text, and passes the text through its redactor.
+- `K` is `magos:<subcommand>:<32 hex digits>` from `secrets.token_hex(16)`, new for every request, so no `session` or
+  `always` answer can approve a later request.
+- The record is that of Approval (version 1.0.7) with `"route": "hermes"`, `tool_use_id` the payload's `tool_use_id`, else
+  `extra.tool_call_id`. A record that asks expires `min(max(T, 120), 900) + 30` s after `created`, T being
+  `approvals.timeout` of the Hermes config (300 when unset or not an integer); a record under `auto-safe` expires after
+  120 s.
+
+### Reading the Hermes config
+
+The hook and `doctor` read `<hermes home>/config.yaml` (UTF-8, a byte order mark and CRLF allowed) with a line reader of
+the standard library:
+- A missing file means Hermes's defaults (`approvals.mode` manual, `approvals.timeout` 300). A file that cannot be read or
+  decoded, more than one top-level `approvals:` key, an `approvals:` with a value on its own line (a flow mapping or a
+  scalar), a tab in its indentation, a repeated child key, or a `mode` or `timeout` value that is an anchor, an alias, a
+  tag, a block scalar, a flow collection or an unclosed quote is "cannot be read".
+- The child keys are the lines indented exactly as the first non-blank, non-comment line under `approvals:`; deeper lines
+  belong to nested values and are skipped. A value loses a trailing ` #` comment when it is not quoted; a quoted value is
+  read with `''` standing for `'` (single quotes) and without escapes (double quotes; a backslash makes it unreadable).
+- `mode` reads as off when its value, without surrounding blanks and case, is `off`, or, unquoted, `false`, `no` or `n`
+  (Hermes reads the configuration as YAML 1.1, where these are false, and treats false as off).
+- `timeout` is the integer the value spells (an optional sign and digits), else unset.
+
+### doctor
+
+When `<hermes home>` is a directory, after the copy lines:
+- `hermes route: the plugin <dir> (guard <v>) runs the guard and asks for a user-only command in Hermes's approval prompt`
+  when `<dir>/scripts/magos_guard.py` declares this guard's version, `<dir>/__init__.py` registers the guard callbacks and
+  `plugins.enabled` of the Hermes config names `magos` (or cannot be read);
+- `hermes route: the plugin <dir> holds guard <v>, not <this version>; update it (hermes plugins update magos) and restart Hermes`
+  when the plugin holds another guard or registers no callbacks;
+- `hermes route: magos is not in plugins.enabled of <config>; Hermes loads no MAGOS callbacks`;
+- `hermes route: no MAGOS plugin under <hermes home>/plugins; the entry under hooks: (install --host hermes) runs the guard, and user-only commands run in the user's own terminal`;
+- `hermes entry: <config> holds the MAGOS entry under hooks:, but <hermes home>/shell-hooks-allowlist.json does not list its command, so Hermes skips it without a word; approve it once (hooks_auto_accept: true, or HERMES_ACCEPT_HOOKS=1 for hermes acp)`
+  when a line of the `hooks:` block holds `hook hermes pre-tool` and no allowlist entry of event `pre_tool_call` has that
+  exact command: a problem when no plugin route applies (the guard then runs nowhere in Hermes), information otherwise;
+- `hermes route: <config> also holds a MAGOS entry under hooks:; it denies every user-only command before Hermes can ask and runs the guard a second time on every terminal call; remove that entry from the Hermes config, the plugin runs the guard`
+  when the first line applies and a line of the top-level `hooks:` block holds `hook hermes pre-tool`: a problem (exit 1);
+- one approvals line: `hermes approvals: approvals.mode is <v> in <config>: Hermes approves without asking, so the guard refuses the click and user-only commands run in the user's own terminal`,
+  `hermes approvals: HERMES_YOLO_MODE is set here: Hermes approves without asking, ...` (same ending),
+  `hermes approvals: <config> cannot be read (<error>): the guard refuses the click`, or
+  `hermes approvals: Hermes asks (approvals.mode <v>|approvals.mode unset), within <T> s; a session /yolo is not visible here`.
+The double-route line, and the entry line when no plugin route applies, are problems; the others are information. Doctor cannot see what Hermes registered at start, the
+shell-hook consent file's effect on a running Hermes, a session `/yolo` or a hosted-room policy.
+
+### Limits
+
+- The click route is as strong as Hermes's approval gate. A same-user agent that can run code outside the hooked tool can
+  forge a record (Approval (version 1.0.7), Limits) or replace the plugin's files, which Hermes loads and runs.
+- Among several `approve` directives of one call the first wins: a Python plugin loaded before MAGOS that escalates
+  `terminal` calls sets the text and the rule key, and a rule key it had approved for the session or always passes the gate
+  without the MAGOS question. No plugin shipped with Hermes returns `approve`.
+- A session `/yolo` and the other in-process bypasses are seen only by the in-process probe; in a plugin-host process the
+  plugin passes `absent`, and the user runs the command in their own terminal. A bypass switched on between the hook and
+  the gate (seconds) is not seen.
+- `always` makes Hermes write an inert `plugin_rule:magos:<subcommand>:<hex>` line into `command_allowlist` of its config;
+  it approves nothing later and may be deleted. A plugin that asks without a rule key gets the key `terminal`, so one
+  `always` for it silences its later questions; when such a plugin runs before MAGOS its approve is the one Hermes uses.
+- Hermes shows the guard's text and the target `<terminal> (plugin approval rule)`, never the command; once the call runs it
+  sends the rewritten command, token included, to every ACP viewer of the session. That command consumes the token at once,
+  and the token is good only once, for that subcommand, those arguments and that repository or guard home.
+- A click after the record's lifetime ends the command with exit 26; Hermes itself refuses a click after
+  `approvals.timeout`.
+- The hook and the command must see the same `MAGOS_HOME`; Hermes runs the command in a bash that sources the login
+  snapshot, so a `MAGOS_HOME` that only the login shell sets ends `install` with exit 25.
+- A MAGOS entry under `hooks:` next to the plugin denies every user-only command before Hermes can ask (`doctor` reports
+  it).
 
 ## Change Notes
 
@@ -2249,6 +2695,35 @@ Version 1.0.7 of the guard (`GUARD_VERSION` 1.0.7). Relative to the 1.0.6 produc
 Its claims, set records and every other command are those of 1.0.6; a guard of 1.0.6 refuses `--approval` as a usage
 error.
 
+Version 1.0.8 of the guard (`GUARD_VERSION` 1.0.8). Relative to the 1.0.7 product it:
+
+- adds the hidden subcommand `mcp`, an MCP approval server over stdio with the one tool `magos_approve`: the user
+  approves a user-only subcommand in the host's own dialog (an MCP elicitation form: tick `Approve`, then Accept), and
+  only on that answer the server records a one-time approval and runs this guard's command with it in its own process,
+  at every level but `terminal` and never without the user's answer; the MAGOS plugin for Codex starts it
+  from its root `mcp.json` (Codex approval (version 1.0.8));
+- has the Codex hook name `magos_approve`, its exact arguments and the command for a real terminal when it denies a
+  user-only command;
+- denies a tool command that starts `mcp`, on every host, with the `protected_mcp` text;
+- writes and prints the `[mcp_servers.magos]` entry in `install --host codex`, and reports the approval server, that
+  entry and the plugin's `mcp.json` in `doctor`;
+- records `route` `mcp` and `client` in the audit lines of the runs the approval server approved;
+- lets the user approve a user-only subcommand in Hermes's own approval prompt. The MAGOS Hermes plugin registers two
+  `pre_tool_call` callbacks for the `terminal` tool that run the plugin's guard as `hook hermes pre-tool --hermes-gate
+  <gate>`; for exactly one direct invocation of this guard (bash, in the foreground, with its directory named by
+  `workdir` or absolute paths) one guard run returns the command rebuilt with a one-time token and a question with a
+  request-unique rule key, and Hermes asks before it runs the command. Where Hermes would approve without a human (a
+  session `/yolo`, `--yolo`, `approvals.mode off`, a run nobody attends) or has no plugin approval request, the hook denies
+  with the terminal text (Hermes approval (version 1.0.8));
+- gives an approval record of the Hermes hook the field `route` `hermes` and a lifetime that follows Hermes's `approvals.timeout`,
+  and records `route` `hermes` in the audit line of a run it approved;
+- adds the cause code `APPROVAL_DIRECTORY`, the Hermes texts of the user-only denials and the Hermes question, and the
+  Hermes route, entry and approvals lines of `doctor` and the `NOTE:` of `install --host hermes`;
+- keeps the Hermes entry under `hooks:`, its snippet and its denial of every user-only command unchanged.
+
+Its claims, set records, the approval in Claude Code, the Hermes entry under `hooks:` and every other command
+are those of 1.0.7.
+
 Compatibility: claim files of format 1 written by 1.0.0 to 1.0.3 are read unchanged, and line 1 of every claim stays
 `state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule
 refuses allows the creation of its branch. The git-layer hook reads `refs/heads/` in any case of `refs` and `heads`, so `doctor` reports an armed
@@ -2261,7 +2736,9 @@ version, `doctor` reports the difference and `install` points the entry at the c
 `references/lane-split.md` is a flat reference shipped to Codex and Hermes by the `references/*.md` glob.
 `hooks/hooks.json` and `hooks/run-guard.cmd` sit at the repository root, outside `.claude-plugin/`. The root
 `description` stays within 1024 characters. The git layer is opt-in per repository (`arm`) and the Codex and Hermes entries are
-generated, never merged automatically.
+generated, never merged automatically; the MAGOS plugin for Codex starts the MCP approval server from its root
+`mcp.json`, and the MAGOS Hermes plugin runs the guard through its own `pre_tool_call` callbacks, each without any
+entry.
 
 Known limits, stated in `references/lane-split.md` section 12:
 
@@ -2414,7 +2891,9 @@ Known limits, stated in `references/lane-split.md` section 12:
 - A plugin directory whose Windows path holds a cmd metacharacter breaks the plugin's own Windows hook entry, which
   `install` cannot choose.
 - Claims are per clone, and neither an override, the console gate nor an approval token is access control (Approval
-  (version 1.0.7), Limits).
+  (version 1.0.7), Limits); the MCP approval server proves a human only as far as the host does (Codex approval
+  (version 1.0.8), Limits), and the Hermes route only as far as Hermes's approval gate (Hermes approval (version
+  1.0.8), Limits).
 - Sets live in one clone: the record and the claims are in the clone's store, are shared by its worktrees and are not
   carried by fetch, push, clone, bundle or mirror, so a second clone neither sees nor honours the set, and the set record
   never travels with the integration branch.
