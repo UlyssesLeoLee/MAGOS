@@ -2,6 +2,39 @@
 
 Every version of the `magos` package (the `version` in `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` and the lane guard's `GUARD_VERSION`). A release is tagged `v<version>` on its release commit. The tag `v1.0` marks the skill release 3.4.0 from before the package became a plugin and was renumbered; it is not a plugin version. Install, pin, upgrade and roll back as `references/installation.md` describes.
 
+## 1.0.8
+
+Tag `v1.0.8`. A feature release: the click that 1.0.7 gave Claude Code now exists in Codex and in Hermes, each through the approval prompt of that host, so a user-only guard command (`override`, `arm`, `disarm`, `install`) no longer has to be typed in a terminal there either.
+
+### Added
+
+- **One click in Codex.** The guard has a hidden subcommand `mcp`: a local MCP server (standard input and output, no network) with one tool, `magos_approve`. After a denial the agent calls the tool; Codex shows the user a form with one required checkbox, Approve. Only the answer accept with the box ticked runs the command; an unticked box, decline, cancel, no answer within 120 seconds or a client that cannot ask runs nothing. Under Codex's approval policy `never` (and `danger-full-access`) Codex declines the form by itself, then the terminal remains. There is no click-free path in this route: `auto-safe` asks here. The plugin brings the server in the new root `mcp.json` (Codex starts it through `git`); `install --host codex` prints the same server as a `config.toml` entry for installs without the plugin.
+- **One click in Hermes.** The plugin entry registers two `pre_tool_call` callbacks that run the guard: the verdict (the command rebuilt with a one-time token) and the approval (Hermes's own human-approval prompt, with a request key of its own so that "always" can never pre-approve a later request). The plugin sends the click route only when Hermes will really ask a person: with `/yolo`, `--yolo`, `-z`, `-q`, `approvals.mode off`, an unattended run or an older Hermes without the approval directive, the terminal remains. The record lives `min(max(approvals.timeout, 120), 900) + 30` seconds, 330 by default.
+- **`doctor` and `install` know both routes.** `doctor` reports the Codex server file, the Hermes plugin route, a `hooks:` entry that Hermes has not approved (Hermes skips it without a word) and the double route (a `hooks:` entry next to the plugin denies before Hermes asks); `install --host codex|hermes` prints the entries and what to do next.
+- **A route field in records and audit.** Approved runs through the Codex server carry `route` `mcp` and the client name; Hermes runs carry `route` `hermes`.
+
+### Changed
+
+- **The subcommand of a guard run must be a plain word.** A shell command that runs the guard with a variable, a substitution, an `xargs` or `find -exec` feed, `hook`, an empty slot or an unknown word in the subcommand position is denied on every host (a plain command such as `py -3 magos_guard.py plan --branch x --paths a b` is unaffected). The user-only subcommands and `mcp` keep their own handling: a tool command may never start `mcp`.
+- **The Hermes plugin turns the guard on.** After `hermes plugins update magos` and a restart, every Hermes `terminal` call goes through the guard, as the Claude Code plugin does for Bash. Turn it off with `MAGOS_GUARD=off`, `git config --local magos.guard off` or `hermes plugins disable magos`.
+- **The ready terminal command** printed with a denial is quoted for Windows PowerShell 5.1; a value it cannot carry (a double quote, or a blank before a trailing backslash) is replaced by a placeholder for the user's own words.
+- **Texts and documents.** The denial (`options`), `need_tty`, the token errors, the install footer and `doctor` name the click in each host and the terminal fallback; `SKILL.md`, `references/lane-split.md`, `references/installation.md`, `references/pressure-tests.md` and the three READMEs describe the three routes, what the plugin runs and writes, and the limits.
+
+### Known limits
+
+- The Codex server cannot authenticate its client: an agent that starts its own copy of the server by a route the text detector cannot read (a renamed copy, `python -c`) and plays the MCP client can answer its own form. It is the same class as forging state files, which 1.0.6 and 1.0.7 already state; the barrier remains the hook that denies every plain shell command reaching the server.
+- Nobody has clicked the real Codex app or the real Hermes prompt yet: the routes were checked with each host's own test protocol (the Codex 0.163 app-server and Hermes' ACP interface) and with a fake model, not with a person. The first real click is the user's.
+- The Codex hook (the lane guard itself) still comes from `install --host codex`: merge the printed entry into your Codex hook file and review it once in `/hooks`; the plugin brings the approval server, not the hook.
+- In Hermes a session `/yolo` and `-z` cannot be seen by a shell hook; the plugin sees them through Hermes internals that are not documented. If those names change, the plugin falls back to the terminal.
+- An open Codex form does not count against the 300 second tool limit of a plugin server, but the server withdraws it after 120 seconds.
+- Hermes shows the approval card with the guard's message only; once the user allows, Hermes sends the rewritten command, token included, to every connected viewer. The token is single use and bound to that command.
+
+### Upgrade
+
+1. Upgrade the plugin on each host and restart it: Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`; Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`. After the Hermes update the guard is on for every terminal call.
+2. Codex: merge the hook entry that `py -3 scripts/magos_guard.py install --host codex` prints into your Codex hook file and review it once in `/hooks` (the plugin does not carry the hook). Hermes: remove any MAGOS `hooks:` entry from the Hermes config (the plugin replaces it; `doctor` reports the double route).
+3. Nothing needs configuring: `prompt` is the default level; `git config --local magos.approval terminal` keeps the terminal route.
+
 ## 1.0.7
 
 Tag `v1.0.7`. A feature release: a user-only guard command (`override`, `arm`, `disarm`, `install`) is approved with one click in Claude Code instead of a command typed in a terminal, at three levels of the new setting `magos.approval`.

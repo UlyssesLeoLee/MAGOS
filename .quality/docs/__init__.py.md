@@ -2,7 +2,7 @@
 
 Source: `__init__.py`
 
-Source-SHA256: `76db96aa4767e257b2bbcdd172f6cc32b4dabdfef27979750ec439e60b434bb5`
+Source-SHA256: `90761fae2f050ef60c54dc85458b3fddce890a793d256cf8f6621ce5f1fdc101`
 
 ## Responsibility
 
