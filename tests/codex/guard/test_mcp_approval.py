@@ -1,6 +1,6 @@
 """1.0.8 approval in Codex: the MCP approval server (`mcp`, its tool magos_approve, the elicitation form, the snapshot, the in-process run), the
 Codex hook's denial that names the tool and its exact arguments, the deny of `mcp` on every host, the subcommand slot of a guard run, the
-generated [mcp_servers.magos] entry and the Codex lines of doctor (TC-600 to TC-649, TC-683 to TC-697)."""
+generated [mcp_servers.magos] entry and the Codex lines of doctor (TC-600 to TC-649, TC-683 to TC-697, TC-701 to TC-705)."""
 from __future__ import annotations
 
 import io
@@ -1043,6 +1043,74 @@ def test_the_reviewers_self_click_is_denied_before_it_runs(repo, isolated_env):
     assert not armed(repo) and not store_exists(approvals(repo), isolated_env / ".magos" / "approvals")
 
 
+# ---- here-documents a shell reads, and a text too long to read (TC-701 to TC-705) -------------------------------------------------------
+FED_DOCS = [  # (tool, template): a here-document or here-string that a shell (or Invoke-Expression) reads as commands
+    ("Bash", "bash <<'E'\npython3 {s} {sub}\nE"), ("Bash", "sh -s <<E\npython3 {s} {sub}\nE"), ("Bash", "cat <<E | bash\npython3 {s} {sub}\nE"),
+    ("Bash", "bash -s <<-E\n\tpython3 {s} {sub}\n\tE"), ("Bash", "bash -c \"$(cat <<'E'\npython3 {s} {sub}\nE\n)\""),
+    ("Bash", "bash <<A\nbash <<B\npython3 {s} {sub}\nB\nA"), ("PowerShell", "pwsh -c @'\npy {s} {sub}\n'@"),
+    ("PowerShell", "Invoke-Expression @'\npy {s} {sub}\n'@"), ("PowerShell", "@'\npy {s} {sub}\n'@ | pwsh -Command -"),
+]
+FED_SUBS = [("mcp", "_HOST_MSG"), ("hook claude pre-tool", "_SLOT_MSG"), ("disarm", "_USER_MSG"), ("install --host codex", "_USER_MSG"),
+            ("override --fingerprint 0123456789ab --reason r", "_USER_MSG"), ("$x", "_SLOT_MSG")]
+
+
+def test_a_here_document_a_shell_reads_is_read_with_every_check():
+    for tool, form in FED_DOCS:
+        for sub, reason in FED_SUBS:
+            text = form.format(s=S, sub=sub)
+            assert G.protected(text) == ("always", getattr(G, reason)), (tool, text)
+    for sub, reason in FED_SUBS:  # a finding of scope always wins over a guarded one before it
+        assert G.protected("rm .git/hooks/x; python3 %s %s" % (S, sub)) == ("always", getattr(G, reason)), sub
+        assert G.protected("rm .git/hooks/x; bash <<E\npython3 %s %s\nE" % (S, sub)) == ("always", getattr(G, reason)), sub
+
+
+def test_every_host_denies_a_here_document_that_runs_the_guard(repo, isolated_env):
+    want = {"mcp": G.T("en", "protected_mcp"), "hook claude pre-tool": slot_text()}
+    for tool, form in FED_DOCS:
+        for sub, text in want.items():
+            cmd = form.format(s=QS, sub=sub)
+            for host, gate, t in ((None, None, "Bash"), ("claude", None, tool), ("codex", None, "Bash"), ("hermes", None, "terminal"),
+                                  ("hermes", "ask", "terminal")):
+                assert decided(repo, cmd, host, gate, t) == text, (host, gate, cmd)
+    for cmd in ("bash <<'E'\npython3 %s mcp\nE" % QS, "cat <<E | bash\npython3 %s --repo . disarm\nE" % QS):
+        for host, tool, extra in (("claude", "Bash", []), ("codex", "Bash", []), ("hermes", "terminal", []), ("hermes", "terminal", ["--hermes-gate", "ask"])):
+            assert denied(hook(repo.path, cmd, host=host, tool=tool, extra_args=extra)) is not None, (host, cmd)
+    assert not armed(repo) and not store_exists(approvals(repo), isolated_env / ".magos" / "approvals")
+
+
+def test_here_documents_that_are_data_still_pass(repo):
+    for cmd in ("git commit -F - <<'E'\nfix: magos_guard.py mcp server notes\nE", "cat > notes.md <<'E'\npython3 %s mcp\nE" % S,
+                "cat <<'E' > run.txt\npython3 %s hook claude pre-tool\nE" % S, "git commit -F - <<E\nmagos_guard.py and __init__.py: x\nE",
+                "bash <<E\npython3 %s plan --branch agent/x --paths a\nE" % S, "python3 - <<'E'\nprint('magos_guard.py mcp')\nE"):
+        assert G.protected(cmd) is None, cmd
+        for host, gate, t in ((None, None, "Bash"), ("claude", None, "Bash"), ("codex", None, "Bash"), ("hermes", "ask", "terminal")):
+            assert decided(repo, cmd, host, gate, t) is None, (host, cmd)
+
+
+def padded(head, n):
+    return head + "A" * (n - len(head))
+
+
+def test_a_text_too_long_to_read_that_names_magos_is_denied_on_every_host(repo, isolated_env):
+    long_text = G.T("en", "protected_long", n=G.MAX_TEXT)
+    mcp, user = "python3 %s mcp #" % QS, "python3 %s --repo . disarm; echo " % QS
+    assert len(padded(mcp, G.MAX_TEXT)) == G.MAX_TEXT == 200000
+    assert G.protected(padded(mcp, G.MAX_TEXT)) == ("always", G._HOST_MSG)  # read: the limit itself is inside
+    assert G.protected(padded(user, G.MAX_TEXT)) == ("always", G._USER_MSG)
+    for n in (G.MAX_TEXT + 1, 5 * G.MAX_TEXT):
+        for head in (mcp, user, "echo x; python3 %s MAG\\OS " % QS):
+            assert G.protected(padded(head, n)) == ("always", G._LONG_MSG), (head, n)
+            for host, gate, t in ((None, None, "Bash"), ("claude", None, "Bash"), ("claude", None, "PowerShell"), ("codex", None, "Bash"),
+                                  ("hermes", None, "terminal"), ("hermes", "ask", "terminal")):
+                assert decided(repo, padded(head, n), host, gate, t) == long_text, (host, gate, n)
+    for host, tool, extra in (("claude", "Bash", []), ("codex", "Bash", []), ("hermes", "terminal", ["--hermes-gate", "ask"])):
+        assert denied(hook(repo.path, padded(mcp, G.MAX_TEXT + 1), host=host, tool=tool, extra_args=extra)) == long_text, host
+    plain = padded("echo ", G.MAX_TEXT + 1)  # a text too long to read that names no MAGOS: the existing rule (guarded: denied once armed)
+    assert G.protected(plain) == ("guarded", "the command is too long to inspect")
+    assert decided(repo, plain, "claude") is None and decided(repo, plain, "codex") is None
+    assert not store_exists(approvals(repo), isolated_env / ".magos" / "approvals")
+
+
 # ---- install and doctor (TC-638 to TC-641)-------------------------------------------------------------------------------------------------
 def test_install_for_codex_prints_and_writes_the_mcp_entry(repo, guard, tmp_path):
     tomllib = pytest.importorskip("tomllib") if sys.version_info >= (3, 11) else None
@@ -1149,7 +1217,7 @@ def test_audit_fields_name_the_route():
 
 CODEX_KEYS = ("protected_codex", "protected_codex_form", "protected_codex_never", "protected_mcp", "mcp_ask", "mcp_approve_field", "mcp_where_repo",
               "mcp_where_home", "mcp_ran", "mcp_refused", "mcp_unticked", "mcp_late", "mcp_busy", "mcp_no_form", "mcp_terminal", "mcp_invalid",
-              "mcp_failed", "protected_slot", "ready_own")
+              "mcp_failed", "protected_slot", "ready_own", "protected_long")
 
 
 def test_messages_of_the_codex_route(repo, guard, tmp_path):

@@ -83,7 +83,9 @@ The file holds ten cooperating parts.
    `nohup`, `nice`, `time`, `setsid`, `stdbuf`, `sudo`, `doas`) and their options stand between the pipe and the shell
    (`FOO=1 sh`, `env FOO=1 bash`, `sudo -E sh`, `command sh`, `doas -u <user> sh`). Command text longer than 200,000
    characters is not inspected: it counts as an unparseable creation and, once claims or the git layer exist, as a
-   protected command. Every pattern runs in time linear in the command length: each word a pattern reads excludes `|`,
+   protected command; when it names MAGOS (`magos` or `run-guard`, read with every backslash, backtick, caret and quote
+   removed) every host's hook denies it in every repository with the `protected_long` text, since what it runs cannot be
+   read (Approval routes (version 1.0.8), The subcommand of a guard run). Every pattern runs in time linear in the command length: each word a pattern reads excludes `|`,
    `;` and `&`, and has one reading; the lexer reads each character once. A directory spelling longer than 4,096
    characters is an unknown directory: a chain of relative `-C` values or `cd` targets never grows a path past that
    length, so a line of 200,000 characters of `git -C a/b -C a/b ...` costs time linear in its length (the creation after
@@ -2229,7 +2231,20 @@ option (`--repo` and `--lang` with their value, `--json`, any `--name=value`, in
      that is run weakly.
 - A quoted word that names the guard and holds a blank is read as a command with the same rules; there rule 3 applies
   only to a guard word that an interpreter, a dynamic program word or `Start-Process` runs, so a commit message that
-  starts with the script name passes. The text of a child shell takes rule 2 from the command that starts it.
+  starts with the script name passes when its next word is neither `mcp` nor a user-only word nor dynamic: those keep
+  their rule in every quoted word (`git commit -m "magos_guard.py mcp notes"` is denied, `git commit -m "magos_guard.py
+  hook text"` passes). The text of a child shell takes rule 2 from the command that starts it.
+- A here-document that a shell reads (`bash <<E`, `sh -s <<E`, `bash -s <<-E`, `cat <<E | bash`, the line naming a POSIX
+  shell, PowerShell, `source` or `Invoke-Expression`) is read as commands with every check at the next depth, as the
+  walk reads it; a here-document fed to `cat`, to a file, to `git commit -F -` or to an interpreter without a shell is
+  data. A PowerShell here-string (`@'..'@`) is a quoted word and is read by the quoted-word rule.
+- A finding of scope `always` anywhere in the command (a user-only word, `mcp`, this rule) wins over an edit of the
+  guard's state found before it (`rm .git/hooks/x; python3 <guard> mcp`), which counts only once claims or the git
+  layer exist.
+- A command longer than 200,000 characters (`MAX_TEXT`) is not read. When it names MAGOS (`magos` or `run-guard`, read
+  with every backslash, backtick, caret and quote removed) every host's hook denies it with the `protected_long` text,
+  which names the limit, in every repository and before any host route; one that names no MAGOS keeps the rule of
+  Responsibility (an unparseable creation, and a protected command once claims or the git layer exist).
 - Every host's hook denies such a command with the `protected_slot` text before any route of its own: no ask, no
   modify, no tool name. The text says that the subcommand must be one plain word right after the script and its plain
   options, that the guard must not take its words from xargs, parallel or find -exec, the guard command with the
@@ -2797,7 +2812,8 @@ Version 1.0.8 of the guard (`GUARD_VERSION` 1.0.8). Relative to the 1.0.7 produc
 - denies, on every host with the `protected_slot` text, a tool command that runs this guard with a subcommand that is no
   plain word of `AGENT_SUBS`: a dynamic word (a variable, a command substitution, a parameter expansion, a PowerShell
   variable, sub-expression or splat), a word xargs, parallel or find -exec supplies, an empty slot, `hook` and every
-  unknown word (Approval routes (version 1.0.8), The subcommand of a guard run);
+  unknown word, also in a here-document a shell reads; and denies a command longer than 200,000 characters that names
+  MAGOS with the `protected_long` text (Approval routes (version 1.0.8), The subcommand of a guard run);
 - writes and prints the `[mcp_servers.magos]` entry in `install --host codex`, and reports the approval server, that
   entry and the plugin's `mcp.json` in `doctor`;
 - records `route` `mcp` and `client` in the audit lines of the runs the approval server approved;

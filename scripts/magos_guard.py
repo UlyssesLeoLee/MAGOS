@@ -237,6 +237,10 @@ M = {
                        "subcommand must be one plain word written in the command, right after the script and the plain options before it, and the "
                        "guard must not take its words from xargs, parallel or find -exec. Write it as: {cmd} <{subs}> <options>. hook and mcp are "
                        "run only by the host; the user approves override, arm, disarm and install. Nothing ran."),
+    "protected_long": ("MAGOS 拒绝：此命令超过钩子读取的长度（{n} 个字符），并且提到了 MAGOS，钩子无法判断它会运行什么。请把守卫命令单独作为一条短于 {n} 个字符的命令执行。"
+                       "没有运行任何东西。",
+                       "MAGOS DENIES: this command is longer than the hook reads ({n} characters) and names MAGOS, so the hook cannot tell what it "
+                       "runs. Run the guard command as a command of its own, shorter than {n} characters. Nothing ran."),
     "mcp_ask": ("MAGOS：批准用户专属的守卫命令 {sub} 吗？\n{where}\n{what}\n先勾选 Approve，再点击 Accept（接受）：这只批准这一项，只执行一次。其他任何回答都不执行。",
                 "MAGOS: approve the user-only guard command {sub}?\n{where}\n{what}\nTick Approve, then Accept: that approves exactly this, once. "
                 "Anything else runs nothing."),
@@ -2569,6 +2573,8 @@ _HOST_MSG = "mcp is the guard's approval server, which only the host starts"
 # (hook and mcp, which only a host runs, a dynamic or empty slot, an unknown word) is denied on every host; the user-only words keep their path.
 AGENT_SUBS = ("plan", "check", "list", "release", "doctor", "version", "set-plan", "set-show", "set-update", "set-release")
 _SLOT_MSG = "the guard runs with a subcommand that is no plain word an agent may run"
+_LONG_MSG = "the command is too long to inspect and names MAGOS"
+_LONG_HINT = re.compile(r"magos|run-guard", re.I)  # a text too long to read that may run the guard: denied on every host (protected)
 MCP_ARGS = ("subcommand", "repo", "fingerprint", "reason", "host", "dry_run")  # the arguments of magos_approve, in the order the texts name them
 _MCP_TAKES = {"override": ("repo", "fingerprint", "reason"), "arm": ("repo", "dry_run"), "disarm": ("repo", "dry_run"), "install": ("repo", "host", "dry_run")}
 _HERMES_APPROVAL_TOOLS = {"terminal": "bash"}  # Hermes runs every terminal command with bash (Git Bash on Windows)
@@ -2857,17 +2863,27 @@ def protected(text, depth=0, roots=(), lazy=None, fed=False, start=False, quoted
     no plain word an agent may run (_slot_problem), and magos.* config; 'guarded': edits of the guard's own state that matter once claims or
     the hook exist.  Words are inspected, never the whole text, so a commit message or a grep for these names passes; every keyword and path
     test reads each word as written and with its escape characters removed.  The text of a child shell (bash -c, cmd /c, powershell
-    -Command ...) and a quoted word that names the guard script or its launcher are read with every check, to depth 3; `fed`, `start` and
-    `quoted` carry what the outer command tells about that text (_run_marks, _slot_problem).  `roots`: the absolute guard-home and
-    Hermes-plugin directories (pkey form) whose absolute spellings count as the guard's state; `lazy` gives the store's root (see
-    _state_word)."""
+    -Command ...), a here-document that a shell reads (bash <<E, sh -s <<E, cat <<E | bash: _heredocs) and a quoted word that names the
+    guard script or its launcher are read with every check, to depth 3; `fed`, `start` and `quoted` carry what the outer command tells
+    about that text (_run_marks, _slot_problem).  A finding of scope 'always' anywhere in the text wins over a 'guarded' one before it.  A
+    text longer than MAX_TEXT is not read: when it names MAGOS (magos or run-guard, read without escape characters and quotes) it is
+    'always' (_LONG_MSG), else 'guarded'.  `roots`: the absolute guard-home and Hermes-plugin directories (pkey form) whose absolute
+    spellings count as the guard's state; `lazy` gives the store's root (see _state_word)."""
     if len(text) > MAX_TEXT:
-        return "guarded", "the command is too long to inspect"
-    for seg in split_command(_heredocs(text)[0]):
+        return ("always", _LONG_MSG) if _LONG_HINT.search(_bare(text)) else ("guarded", "the command is too long to inspect")
+    head, bodies = _heredocs(text)
+    first = None
+    for seg in split_command(head):
         found = _protected_words([w for w, _ in seg], depth, roots, lazy, [d for _, d in seg], fed, start, quoted)
-        if found:
+        if found and found[0] == "always":
             return found
-    return None
+        first = first or found
+    for body in bodies if depth < 3 else ():  # a here-document a shell reads runs as commands, as interpret reads it
+        found = protected(body, depth + 1, roots, lazy, fed)
+        if found and found[0] == "always":
+            return found
+        first = first or found
+    return first
 
 
 def _protected_words(words, depth, roots, lazy, dyn=None, fed=False, start=False, quoted=False):
@@ -7399,6 +7415,8 @@ def decide(payload, lang, host=None, gate=None):
             return "PROTECTED", T(lang, "protected_mcp")
         if prot[1] == _SLOT_MSG:  # a guard run whose subcommand is no plain word an agent may run, on every host (The subcommand of a guard run)
             return "PROTECTED", T(lang, "protected_slot", cmd=guard_cmd(), subs="|".join(AGENT_SUBS))
+        if prot[1] == _LONG_MSG:  # a text too long to read that names MAGOS, on every host (The subcommand of a guard run)
+            return "PROTECTED", T(lang, "protected_long", n=MAX_TEXT)
         if host == "hermes" and gate is not None and prot[1] == _USER_MSG:  # the MAGOS Hermes plugin: modify and approve (Hermes approval)
             return hermes_answer(payload, crs, lang, gate)
         if host == "claude" and prot[1] == _USER_MSG:  # Claude Code asks the user in its own dialog (Approval)
