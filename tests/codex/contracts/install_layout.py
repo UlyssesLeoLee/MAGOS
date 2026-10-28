@@ -188,8 +188,10 @@ def check_checkout(repo: Path) -> list[dict]:
 
 def hermes_manifest_problems(repo: Path) -> list[str]:
     """`hermes plugins install` prefers a native plugin.yaml over the portable plugin.json; with it the skills are
-    /magos:<name> instead of /agent-plugin-magos-<digest>:<name>. Its name and version must match plugin.json, and
-    __init__.py must register the skills/ directory (and nothing else: catalog rule 6 compares declared capabilities)."""
+    /magos:<name> instead of /agent-plugin-magos-<digest>:<name>. Its name and version must match plugin.json;
+    __init__.py must register the skills/ directory and the guard's two pre_tool_call callbacks, and nothing else, and
+    plugin.yaml must declare exactly that hook (catalog rule 6 and `hermes plugins validate` compare the declared
+    capabilities with the registrations)."""
     try:
         text = (repo / "plugin.yaml").read_text(encoding="utf-8")
         package = agent_plugin.load_json(repo / "plugin.json")
@@ -199,11 +201,58 @@ def hermes_manifest_problems(repo: Path) -> list[str]:
     fields = dict(re.findall(r'^(name|version): *"?([^"\n]+?)"? *$', text, re.M))
     problems = [f"plugin.yaml {key} {fields.get(key)!r} != plugin.json {key} {package.get(key)!r}"
                 for key in ("name", "version") if fields.get(key) != package.get(key)]
-    if re.search(r"^(provides_|requires_|capabilities|python_dependencies)", text, re.M):
-        problems.append("plugin.yaml declares hooks, tools, capabilities or dependencies; MAGOS ships skills only")
-    if "ctx.register_skill(" not in entry or re.search(r"ctx\.register_(?!skill\()", entry):
-        problems.append("__init__.py must call ctx.register_skill() and no other ctx.register_*")
+    hooks = declared_hooks(text)
+    if hooks != ["pre_tool_call"]:
+        problems.append(f"plugin.yaml must declare provides_hooks with the one item pre_tool_call; it declares {hooks}")
+    if re.search(r"^(?!provides_hooks:)(provides_|requires_|capabilities|python_dependencies)", text, re.M):
+        problems.append("plugin.yaml declares tools, other capabilities or dependencies; MAGOS ships skills and one hook")
+    problems += hermes_registration_problems(entry)
     problems += hermes_index_problems(repo, entry)
+    return problems
+
+
+def declared_hooks(text: str) -> list[str] | None:
+    """The items of the one top-level provides_hooks key of plugin.yaml, written as a flow list ([a, b]) or as a block
+    list (one `- item` line each, indented below it); None when the key is missing, repeated or holds anything else."""
+    lines = text.splitlines()
+    found = [number for number, line in enumerate(lines) if re.match(r"provides_hooks:", line)]
+    if len(found) != 1:
+        return None
+    value = re.sub(r"\s+#.*$", "", lines[found[0]][len("provides_hooks:"):]).strip()
+    if value:
+        flow = re.fullmatch(r"\[(.*)\]", value)
+        return [item.strip().strip("'\"") for item in flow.group(1).split(",") if item.strip()] if flow else None
+    items = []
+    for line in lines[found[0] + 1:]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        item = re.fullmatch(r"\s+-\s*(.*?)\s*", line)
+        if not item:
+            break
+        items.append(item.group(1).strip("'\""))
+    return items
+
+
+def hermes_registration_problems(entry: str) -> list[str]:
+    """__init__.py calls ctx.register_skill() for the skills and ctx.register_hook("pre_tool_call", <callback>) exactly
+    twice, for the guard's verdict and approval callbacks, and no other ctx.register_*. The hook calls are counted in
+    the syntax tree, so a comment cannot stand in for one."""
+    try:
+        tree = ast.parse(entry)
+    except SyntaxError as error:
+        return [f"__init__.py is not Python: {error}"]
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+             and isinstance(node.func.value, ast.Name) and node.func.value.id == "ctx"
+             and node.func.attr.startswith("register_")]
+    problems = []
+    if "ctx.register_skill(" not in entry or re.search(r"ctx\.register_(?!skill\(|hook\()", entry) \
+            or {call.func.attr for call in calls} - {"register_skill", "register_hook"}:
+        problems.append("__init__.py must call ctx.register_skill() and ctx.register_hook() and no other ctx.register_*")
+    events = [call.args[0].value if call.args and isinstance(call.args[0], ast.Constant) else None
+              for call in calls if call.func.attr == "register_hook"]
+    if events != ["pre_tool_call", "pre_tool_call"]:
+        problems.append("__init__.py must call ctx.register_hook(\"pre_tool_call\", ...) exactly twice, for the guard's "
+                        f"verdict and approval; it registers {events}")
     return problems
 
 

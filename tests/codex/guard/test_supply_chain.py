@@ -428,6 +428,25 @@ def test_the_hook_code_opens_no_network_connection(monkeypatch, tmp_path):
         assert not loose, (rel, loose)
     assert "subprocess" not in _imports(ast.parse((ROOT / "scripts" / "sync_hosts.py").read_text(encoding="utf-8")))
 
+    # The Hermes plugin entry starts processes at one place, _run_guard: the interpreter Hermes runs under, this plugin's own guard
+    # and the Hermes hook arguments, as a list without a shell. It imports Hermes only to read the gate and the active home.
+    source = (ROOT / "__init__.py").read_text(encoding="utf-8")
+    tree = _parents(ast.parse(source))
+    used = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and getattr(n.value, "id", "") == "subprocess"]
+    assert {n.attr for n in used} == {"run", "TimeoutExpired", "CREATE_NO_WINDOW"}, {n.attr for n in used}
+    launches = [n for n in used if n.attr == "run"]
+    assert len(launches) == 1 and _enclosing(launches[0], ast.FunctionDef).name == "_run_guard"
+    assert ast.get_source_segment(source, launches[0].parent.args[0]) == \
+        '[sys.executable, "-X", "utf8", "-B", str(GUARD), "hook", "hermes", "pre-tool", "--hermes-gate", gate_value]'
+    assert not [k for k in launches[0].parent.keywords if k.arg in ("shell", "executable", "preexec_fn")]
+    guard = next(n for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "GUARD")
+    assert ast.get_source_segment(source, guard.value) == 'Path(__file__).parent / "scripts" / "magos_guard.py"'
+    imports = {(a.name if isinstance(n, ast.Import) else n.module, getattr(_enclosing(n, ast.FunctionDef), "name", None))
+               for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom)) for a in n.names}
+    assert imports == {(name, None) for name in ("__future__", "inspect", "json", "os", "re", "subprocess", "sys", "threading", "time",
+                                                 "pathlib")} | {("hermes_cli", "gate"), ("tools", "gate"), ("hermes_constants", "_env")}, imports
+    assert ".hermes/" + "config.yaml" not in source  # the Hermes scanner reads that text as a change to Hermes's own configuration
+
     # The guard starts processes at one place, Git.run, whose argv is git, the pinned options and the arguments.
     source = (ROOT / "scripts" / "magos_guard.py").read_text(encoding="utf-8")
     tree = _parents(ast.parse(source))

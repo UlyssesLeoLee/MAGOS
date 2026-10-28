@@ -150,6 +150,7 @@ import skill_frontmatter
 
 SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 MCP_SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+MCP_SERVER_KEYS = {"type", "command", "args", "env", "cwd"}  # the server keys Codex 0.163 accepts in the root mcp.json
 # Mirror of SCHEMA_URL as published for 1.0.0 (the 1.1.0 draft differs only in the $schema constant).
 PLUGIN_SCHEMA = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -516,7 +517,19 @@ def check_mcp(root: Path) -> list[str]:
     if not isinstance(config, dict) or set(config) != {"$schema", "mcpServers"} or \
             config["$schema"] != MCP_SCHEMA_URL or not isinstance(config["mcpServers"], dict):
         return ["mcp.json must hold exactly $schema (1.0.0) and an mcpServers object (§7.2)"]
-    return []
+    # Codex reads a server of this file with the keys below only and drops a server that holds any other; a server
+    # started as a local process (command) must say "type": "stdio", or Codex refuses the file.
+    problems = []
+    for name, server in sorted(config["mcpServers"].items()):
+        if not isinstance(server, dict):
+            problems.append(f"mcp.json server {name!r} is not an object")
+            continue
+        extra = sorted(set(server) - MCP_SERVER_KEYS)
+        if extra:
+            problems.append(f"mcp.json server {name!r} holds keys Codex rejects: {', '.join(extra)}")
+        if "command" in server and server.get("type") != "stdio":
+            problems.append(f"mcp.json server {name!r} starts a command but its type is {server.get('type')!r}, not 'stdio'")
+    return problems
 
 
 def guarded(compute) -> list[str]:

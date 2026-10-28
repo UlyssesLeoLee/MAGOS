@@ -2,3 +2,4 @@ name: magos
 version: 1.0.7
 description: "Multi-Agent Git Orchestrator (MAGOS): the orchestrator skill plus eight explicit Git commands, as /magos:git-* slash commands."
 author: "Ulysses Leo Lee"
+provides_hooks: [pre_tool_call]

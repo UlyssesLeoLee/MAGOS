@@ -28,12 +28,16 @@ class RecordingContext:
 
     def __init__(self, fail_on=None):
         self.calls = []
+        self.hooks = []
         self.fail_on = fail_on
 
     def register_skill(self, name, path, description=""):
         if self.fail_on is not None and len(self.calls) + 1 == self.fail_on:
             raise RuntimeError("register_skill failed on %s" % name)
         self.calls.append((name, Path(path).name, description))
+
+    def register_hook(self, name, callback):
+        self.hooks.append((name, callback))
 
 
 COMMAND_SKILLS = ["git-recon", "git-analyze", "git-recommend", "git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan"]
@@ -60,6 +64,18 @@ def test_init_registers_the_entry_skill_and_the_eight_command_adapters():
     expected = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-orchestrator", "git-plan", "git-recommend", "git-recon", "git-sweep"]
     assert [c[0] for c in ctx.calls] == expected
     assert sorted(p.name for p in (ROOT / "skills").iterdir()) == expected  # the directory holds no other skill
+
+
+def test_init_registers_the_two_guard_callbacks():
+    class Ordered(RecordingContext):
+        def register_hook(self, name, callback):
+            self.hooks.append((name, callback, len(self.calls)))  # how many skills were registered before this hook
+
+    mod = init_module()
+    ctx = Ordered()
+    mod.register(ctx)
+    assert [c[0] for c in ctx.calls] == sorted(p.name for p in (ROOT / "skills").iterdir() if (p / "SKILL.md").is_file())
+    assert ctx.hooks == [("pre_tool_call", mod.verdict, 9), ("pre_tool_call", mod.approval, 9)]  # after the nine skills
 
 
 def test_the_index_table_is_a_literal_in_the_contract_order():

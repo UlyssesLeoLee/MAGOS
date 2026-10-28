@@ -187,7 +187,7 @@ import skill_frontmatter  # noqa: E402
 PLUGIN_ONLY_SKILLS = {"git-orchestrator"}  # scripts/sync_hosts.py leaves these out of the Codex and Hermes packages
 
 REPO = HERE.parents[2]
-PACKAGE = ["plugin.json", ".claude-plugin", "plugin.yaml", "__init__.py", "SKILL.md", "LICENSE", "references",
+PACKAGE = ["plugin.json", ".claude-plugin", "plugin.yaml", "__init__.py", "mcp.json", "SKILL.md", "LICENSE", "references",
            "skills", "scripts"]
 # Mutations that edit a shipped version line replace the current one, so they follow the shipped version instead of
 # pinning one: a hardcoded literal turns into a no-op edit the moment the package is renumbered, and a no-op mutation
@@ -393,12 +393,25 @@ MUTATIONS = [
     ("plugin.yaml drifts from the plugin.json version",
      edit("plugin.yaml", "version: " + PACKAGE_VERSION, "version: 9.9.9"),
      [HERMES_NATIVE]),
-    ("plugin.yaml declares a hook",
-     lambda root: edit("plugin.yaml", "version: " + PACKAGE_VERSION,
-                       "version: %s\nprovides_hooks:\n  - pre_tool_call" % PACKAGE_VERSION)(root),
-     [HERMES_NATIVE]),
+    ("plugin.yaml declares no hook", edit("plugin.yaml", "provides_hooks: [pre_tool_call]\n", ""), [HERMES_NATIVE]),
+    ("plugin.yaml declares a second hook",
+     edit("plugin.yaml", "provides_hooks: [pre_tool_call]", "provides_hooks: [pre_tool_call, post_tool_call]"), [HERMES_NATIVE]),
+    ("plugin.yaml declares a tool",
+     edit("plugin.yaml", "provides_hooks: [pre_tool_call]", "provides_hooks: [pre_tool_call]\nprovides_tools: [x]"), [HERMES_NATIVE]),
     ("__init__.py registers a tool", edit("__init__.py", "            ctx.register_skill(",
                                           "            ctx.register_tool(None)\n            ctx.register_skill("),
+     [HERMES_NATIVE]),
+    ("__init__.py registers a third pre_tool_call callback",
+     edit("__init__.py", '    ctx.register_hook("pre_tool_call", approval)\n',
+          '    ctx.register_hook("pre_tool_call", approval)\n    ctx.register_hook("pre_tool_call", verdict)\n'),
+     [HERMES_NATIVE]),
+    ("__init__.py registers a post_tool_call callback",
+     edit("__init__.py", '    ctx.register_hook("pre_tool_call", approval)\n',
+          '    ctx.register_hook("pre_tool_call", approval)\n    ctx.register_hook("post_tool_call", verdict)\n'),
+     [HERMES_NATIVE]),
+    ("__init__.py drops the approval callback but a comment keeps its text",
+     edit("__init__.py", '    ctx.register_hook("pre_tool_call", approval)\n',
+          '    # ctx.register_hook("pre_tool_call", approval)\n'),
      [HERMES_NATIVE]),
     ("a skill has no Hermes index description",
      edit("__init__.py", '    "git-recon": "Read-only snapshot of branches, worktrees and risks. Use /magos:git-recon when the user asks for it.",\n', ""),
@@ -421,6 +434,8 @@ MUTATIONS = [
     ("the Claude Code manifest declares monitors",
      claude_manifest(lambda data: data.update(monitors="./monitors.json")), [CLAUDE_MANIFEST]),
     ("mcp.json without $schema", write("mcp.json", '{"mcpServers": {}}\n'), [MCP]),
+    ("an MCP server field Codex rejects", edit("mcp.json", '"cwd": "./"', '"cwd": "./",\n      "tool_timeout_sec": 600'), [MCP]),
+    ("a stdio server without type", edit("mcp.json", '"type": "stdio",\n', ""), [MCP]),
     ("a symbolic link in the package", add_symlink, [CONTAINMENT]),
     ("a directory junction or link in the package", add_directory_link, [CONTAINMENT]),
     ("an empty directory link pointing outside the root", add_empty_outside_link, [CONTAINMENT]),

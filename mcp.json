@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "magos": {
+      "type": "stdio",
+      "command": "git",
+      "args": [
+        "-c",
+        "alias.magos-mcp=!cd \"./${GIT_PREFIX:-}\" || exit 1; export PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1 NoDefaultCurrentDirectoryInExePath=1; for c in python3 \"py -3\" python; do command -v \"${c%% *}\" >/dev/null 2>&1 || continue; $c -c \"import sys; sys.exit(sys.version_info < (3, 9))\" </dev/null >/dev/null 2>&1 || continue; exec $c -X utf8 -B scripts/magos_guard.py mcp; done; echo \"MAGOS guard: no Python 3.9 or later found (tried python3, py -3, python)\" >&2; exit 127",
+        "magos-mcp"
+      ],
+      "cwd": "./"
+    }
+  }
+}

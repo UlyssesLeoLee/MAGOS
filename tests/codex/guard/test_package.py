@@ -45,9 +45,10 @@ def test_hooks_json_wiring():
 
 def test_line_endings_are_pinned():
     attrs = (ROOT / ".gitattributes").read_text(encoding="utf-8")
-    for needle in ("*.cmd text eol=lf", "hooks/hooks.json text eol=lf", "scripts/magos_guard.py text eol=lf", ".quality/** text eol=lf"):
+    for needle in ("*.cmd text eol=lf", "hooks/hooks.json text eol=lf", "scripts/magos_guard.py text eol=lf", "mcp.json text eol=lf",
+                   ".quality/** text eol=lf"):
         assert needle in attrs
-    for rel in ("hooks/hooks.json", "scripts/magos_guard.py", "hooks/run-guard.cmd"):
+    for rel in ("hooks/hooks.json", "scripts/magos_guard.py", "hooks/run-guard.cmd", "mcp.json"):
         assert b"\r" not in (ROOT / rel).read_bytes(), rel
 
 
@@ -533,3 +534,79 @@ def test_docs_state_that_the_console_gate_is_not_access_control():
     install = (ROOT / "references" / "installation.md").read_text(encoding="utf-8")
     for needle in ("`start`", "`Start-Process`", "真实控制台", "控制台检查与覆盖都不是访问控制"):
         assert needle in install, needle
+
+
+# A stand-in for `scripts/magos_guard.py mcp`: it answers every JSON-RPC request with what the launch gave it.
+MCP_STAND_IN = """import json, os, sys
+for line in sys.stdin:
+    message = json.loads(line)
+    if "id" in message:
+        result = {"argv": sys.argv[1:], "cwd": os.getcwd(), "utf8": sys.flags.utf8_mode, "no_bytecode": sys.dont_write_bytecode,
+                  "version": list(sys.version_info[:2])}
+        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": result}) + "\\n")
+        sys.stdout.flush()
+"""
+
+
+def _mcp_launch(plugin_dir, script, path=None):
+    """Codex's start of the server of the root mcp.json: git with the alias, in the plugin directory, the client's lines on stdin."""
+    (plugin_dir / "scripts").mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "scripts" / "magos_guard.py").write_text(MCP_STAND_IN, encoding="utf-8")
+    lines = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}, {"jsonrpc": "2.0", "method": "notifications/initialized"},
+             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
+    env = dict(os.environ, PATH=path) if path is not None else None
+    return subprocess.run(["git", "-c", "alias.magos-mcp=!" + script, "magos-mcp"], cwd=str(plugin_dir), env=env, capture_output=True,
+                          input="".join(json.dumps(m) + "\n" for m in lines).encode("utf-8"), timeout=120)
+
+
+def _served_in(done):
+    """The stand-in's answers, after checking that stdout holds nothing but its JSON-RPC lines."""
+    answers = [json.loads(line) for line in done.stdout.decode("utf-8").splitlines()]
+    assert done.returncode == 0 and [a["id"] for a in answers] == [1, 2] and all(a["jsonrpc"] == "2.0" for a in answers), done
+    result = answers[0]["result"]
+    assert result["argv"] == ["mcp"] and result["utf8"] == 1 and result["no_bytecode"] and result["version"] >= [3, 9], result
+    return os.path.normcase(os.path.realpath(result["cwd"]))
+
+
+def test_codex_mcp_json_launch(tmp_path):
+    doc = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
+    assert list(doc) == ["$schema", "mcpServers"] and doc["$schema"] == "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+    assert list(doc["mcpServers"]) == ["magos"]
+    server = doc["mcpServers"]["magos"]
+    assert server == {"type": "stdio", "command": "git", "args": server["args"], "cwd": "./"}  # the keys Codex accepts, no other
+    prefix = "alias.magos-mcp=!"
+    assert len(server["args"]) == 3 and server["args"][0] == "-c" and server["args"][1].startswith(prefix) and server["args"][2] == "magos-mcp"
+    script = server["args"][1][len(prefix):]
+    assert script.startswith('cd "./${GIT_PREFIX:-}" || exit 1; ')  # git runs the alias at the top of an enclosing repository
+    assert "export PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1 NoDefaultCurrentDirectoryInExePath=1;" in script
+    assert 'for c in python3 "py -3" python; do command -v "${c%% *}" >/dev/null 2>&1 || continue; ' in script
+    assert '$c -c "import sys; sys.exit(sys.version_info < (3, 9))" </dev/null >/dev/null 2>&1 || continue; ' in script
+    assert script.endswith('exec $c -X utf8 -B scripts/magos_guard.py mcp; done; '
+                           'echo "MAGOS guard: no Python 3.9 or later found (tried python3, py -3, python)" >&2; exit 127')
+    if SH:  # without a POSIX sh on PATH only this parse is skipped: git runs the alias with its own sh
+        assert subprocess.run([SH, "-n"], input=script.encode("utf-8"), capture_output=True).returncode == 0
+
+    plugin = tmp_path / "plugin dir"
+    assert _served_in(_mcp_launch(plugin, script)) == os.path.normcase(os.path.realpath(str(plugin)))
+
+    # Inside an outer repository that has no .git of its own, the server still runs in the plugin directory.
+    outer = tmp_path / "outer"
+    subprocess.run(["git", "init", "-q", str(outer)], check=True, capture_output=True)
+    nested = outer / "sub dir" / "plugin"
+    assert _served_in(_mcp_launch(nested, script)) == os.path.normcase(os.path.realpath(str(nested)))
+
+    # A PATH that holds no Python: exit 127, nothing on stdout, the reason on stderr.
+    git = shutil.which("git")
+    if sys.platform == "win32":
+        if not SH:
+            pytest.skip("no sh of Git for Windows on PATH")
+        bare = os.pathsep.join([os.path.dirname(git), os.path.dirname(SH)])  # git and its usr/bin (sh); C:\Windows (py.exe) is left out
+    else:
+        bare = str(tmp_path / "bin")
+        os.mkdir(bare)
+        os.symlink(git, os.path.join(bare, "git"))  # git runs the alias with the absolute sh it was built with
+    if any(shutil.which(name, path=bare) for name in ("python3", "py", "python")):
+        pytest.skip("the directory of git holds a Python here")
+    done = _mcp_launch(tmp_path / "no python", script, path=bare)
+    assert done.returncode == 127 and done.stdout == b"", done
+    assert "MAGOS guard: no Python 3.9 or later found (tried python3, py -3, python)" in done.stderr.decode("utf-8", "replace"), done

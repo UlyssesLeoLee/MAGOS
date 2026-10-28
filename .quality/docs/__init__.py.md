@@ -41,8 +41,8 @@ Upstream: Python 3.9+ standard library (`json`, `os`, `pathlib`, `re`, `subproce
 `inspect`). The module imports no network module and builds no code at run time (no `exec`, `eval`, `compile`,
 `__import__`, `importlib`, no `sys.modules`). It starts processes at one place, `_run_guard`, whose argument list is
 `sys.executable`, `-X utf8 -B`, the plugin's own `scripts/magos_guard.py` and `hook hermes pre-tool --hermes-gate
-<gate>`, without a shell. `os` is used for the environment (`MAGOS_GUARD`, `HERMES_PLUGIN_HOST_PROCESS`, the child's
-environment) and the working directory, by attribute only. Host: Hermes passes a context object whose
+<gate>`, without a shell. `os` is used for the environment (`MAGOS_GUARD`, `MAGOS_LANG`, `HERMES_PLUGIN_HOST_PROCESS`,
+the child's environment) and the working directory, by attribute only. Host: Hermes passes a context object whose
 `register_skill(name, path, description="")` records one skill and whose `register_hook(name, callback)` adds one
 callback; the module calls `register_skill` for each skill and `register_hook("pre_tool_call", ...)` exactly twice, no
 other `ctx.register_*` method, and `plugin.yaml` declares that hook, because the plugin catalog compares declared
@@ -57,7 +57,7 @@ Downstream callers and checks:
 - `tests/codex/guard/test_project_sources.py` loads the module from the repository path in process with a recording
   context, so the coverage gate measures it (line coverage strictly above 90 percent for the file and the project, see
   `.quality/qguard.json`).
-- `tests/codex/guard/test_hermes_approval.py` loads the module the same way and drives `verdict`, `approval` and
+- `tests/codex/guard/test_hermes_plugin.py` loads the module the same way and drives `verdict`, `approval` and
   `gate` with the real guard as the child of `verdict` and a reimplementation of Hermes's directive aggregation.
 - The guard's `doctor` and `install --host hermes` read this file in the Hermes plugin directory as bytes and take the
   text `register_hook("pre_tool_call"` as the sign that the plugin runs the guard (Hermes approval (version 1.0.8) in
@@ -65,10 +65,13 @@ Downstream callers and checks:
 - `tests/codex/contracts/install_layout.py` (`hermes_manifest_problems`, `hermes_index_problems`) reads the module as
   text and syntax tree, without importing it: it needs the literal top-level `INDEX_DESCRIPTIONS` assignment and a
   `description=` argument that reads it in every `ctx.register_skill(` call, exactly two
-  `ctx.register_hook("pre_tool_call",` calls and no other `ctx.register_*` call, and `provides_hooks` with the one
-  item `pre_tool_call` in `plugin.yaml`. `tests/codex/contracts/test_agent_plugin.py`
-  runs those rows on the unmodified package and on mutations of this file.
-- `tests/codex/guard/test_supply_chain.py` (no network module and no dynamic code; one process start, in `_run_guard`) and
+  `ctx.register_hook("pre_tool_call",` calls, counted in the syntax tree, and no other `ctx.register_*` call, and one
+  top-level `provides_hooks` key in `plugin.yaml` whose list (flow or block) holds the one item `pre_tool_call`, with no
+  other `provides_`, `requires_`, `capabilities` or `python_dependencies` key. `tests/codex/contracts/test_agent_plugin.py`
+  runs those rows on the unmodified package and on mutations of this file and of `plugin.yaml`.
+- `tests/codex/guard/test_supply_chain.py` (no network module and no dynamic code; one process start, in `_run_guard`,
+  with the argument list above; the standard-library imports above at module level, and Hermes imported only in
+  `gate` and `_env`) and
   `tests/codex/guard/test_package.py` (Python 3.9 grammar, `from __future__ import annotations` when annotations are
   used, the coverage gate's tracked source list).
 - `scripts/sync_hosts.py` never ships this file: the Codex and Hermes skill packages carry no host manifest and no
@@ -87,8 +90,12 @@ function returns `None`.
 other than `terminal` and when `MAGOS_GUARD` is `off`. `verdict` runs the guard (limit 25 s) and returns `None`,
 `{"action": "block", "message": M}` or `{"action": "modify", "args": {"command": C}}` as the section Hermes approval
 (version 1.0.8), The plugin callbacks, of the guard's design states; a guard that cannot start, exits non-zero, prints no
-JSON object or an object of no known shape, or exceeds 25 s gives a block whose message names the cause and the off
-switches (`MAGOS_GUARD=off`, `hermes plugins disable magos`), in Chinese unless `MAGOS_LANG` is `en`. `verdict` keeps a mark for
+JSON object or an object of no known shape, or exceeds 25 s, and any other error inside `verdict`, gives a block whose
+message names the cause, says that nothing ran and names the off switches (`MAGOS_GUARD=off`, `hermes plugins disable
+magos`), in Chinese unless `MAGOS_LANG` is `en`. The payload reaches the guard on stdin as ASCII-escaped JSON: a value
+JSON cannot hold is written as its text and a key that is not a string is left out, so every call serialises. The
+child's environment is Hermes's own, with `HERMES_HOME` set to `hermes_constants.get_hermes_home()` when that import
+works, else inherited unchanged. `verdict` keeps a mark for
 every call it answers (the approve directive for a question, nothing otherwise); `approval` takes the mark of the same
 call once and returns its directive or nothing, and a block when a command that names `magos_guard` has no mark. `gate()` returns `ask`, `bypass` or `absent` as that section states.
 
@@ -136,8 +143,8 @@ twice on two contexts registers the same skills and callbacks twice, once per co
   yourself` is a red contract row (`the <name> index line must tell the model never to load it itself`), as is a line
   that names another command and an orchestrator line outside 100 to 400 characters.
 - A guard failure raises nothing out of a callback: a guard that cannot start, exits non-zero, prints no JSON object
-  or an object of no known shape, or runs longer than 25 s gives a `block` whose message names the cause and the off
-  switches (Public Contract). An exception that still leaves a callback, and a callback that exceeds Hermes's own
+  or an object of no known shape, or runs longer than 25 s, and any other error inside `verdict`, gives a `block` whose
+  message names the cause and the off switches (Public Contract). An exception that still leaves a callback, and a callback that exceeds Hermes's own
   limit, is a block by Hermes's rule for `pre_tool_call`.
 
 ## Change Notes
