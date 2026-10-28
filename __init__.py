@@ -50,7 +50,7 @@ GUARD = Path(__file__).parent / "scripts" / "magos_guard.py"  # the guard this p
 GUARD_TOOLS = ("terminal",)  # the Hermes tool that runs shell commands
 GUARD_LIMIT_S = 25  # the guard's run limit, below Hermes's 30 s limit for a pre_tool_call callback
 KEPT_S = 120  # a verdict's mark older than this is dropped
-_KEPT = {}  # call key -> (time.monotonic() of the verdict, the approve directive or None)
+_KEPT = {}  # id(args) of a call -> (time.monotonic() of the verdict, that args object, the approve directive or None)
 _KEPT_LOCK = threading.Lock()
 _GUARD_WORD = re.compile(r"magos_guard", re.I)
 _QUOTING = re.compile(r"[\\`^'\"]")  # removed before _GUARD_WORD is looked for, so magos_gu""ard still names the guard
@@ -97,16 +97,16 @@ def _off():
     return (os.environ.get("MAGOS_GUARD") or "").strip().lower() == "off"
 
 
-def _key(kw, args):
-    """The call a mark belongs to: Hermes hands both callbacks of one call the same keyword arguments and the same args."""
-    command = args.get("command") if isinstance(args, dict) else None
-    return (str(kw.get("session_id") or ""), str(kw.get("tool_call_id") or ""), str(kw.get("turn_id") or ""),
-            command if isinstance(command, str) else "")
+def _key(args):
+    """The call a mark belongs to: the args object itself.  Hermes hands both callbacks of one call the same args dict (each callback gets
+    a shallow copy of one keyword dict) and every call a dict of its own, so two calls with equal ids and equal commands never share a
+    mark.  The mark holds the object, so its id is not reused while the mark lives."""
+    return id(args)
 
 
 def _prune(now):
     """Drop the marks older than KEPT_S; the caller holds _KEPT_LOCK."""
-    for key in [key for key, (at, _approve) in _KEPT.items() if now - at > KEPT_S]:
+    for key in [key for key, (at, _args, _approve) in _KEPT.items() if now - at > KEPT_S]:
         del _KEPT[key]
 
 
@@ -214,7 +214,7 @@ def verdict(tool_name="", args=None, **kw):
     with _KEPT_LOCK:  # a mark for every call answered here: a question keeps its approve directive, every other answer None
         now = time.monotonic()
         _prune(now)
-        _KEPT[_key(kw, args)] = (now, approve)
+        _KEPT[_key(args)] = (now, args, approve)
     return directive
 
 
@@ -224,9 +224,9 @@ def approval(tool_name="", args=None, **kw):
         return None
     with _KEPT_LOCK:
         _prune(time.monotonic())
-        mark = _KEPT.pop(_key(kw, args), None)
-    if mark is not None:
-        return mark[1]
+        mark = _KEPT.pop(_key(args), None)
+    if mark is not None and mark[1] is args:
+        return mark[2]
     command = args.get("command") if isinstance(args, dict) else None
     if isinstance(command, str) and _GUARD_WORD.search(_QUOTING.sub("", command)):
         return _block(_text("unprepared"))  # a question the verdict could not hand over never turns into a modify without one

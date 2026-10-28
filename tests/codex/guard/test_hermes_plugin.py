@@ -65,9 +65,11 @@ class Outcome:
 
 
 def consume(callbacks, args, kw, gate_answer=lambda message, rule_key: False):
-    """Hermes's aggregation: every callback gets the original args; each modify merges its args over the merged args; the first
-    valid block wins over everything; else the first approve goes to the gate, whose denial blocks; else the merged args run."""
-    results = [r for r in (cb(tool_name="terminal", args=dict(args), **kw) for cb in callbacks) if r is not None]
+    """Hermes's aggregation: every callback gets the same args object of the call (a shallow copy of one keyword dict); each modify
+    merges its args over the merged args; the first valid block wins over everything; else the first approve goes to the gate, whose
+    denial blocks; else the merged args run."""
+    call = dict(args)
+    results = [r for r in (cb(tool_name="terminal", args=call, **kw) for cb in callbacks) if r is not None]
     merged, first_approve = None, None
     for result in results:
         if not isinstance(result, dict):
@@ -178,10 +180,11 @@ def test_plugin_failures_block_and_the_off_switch_starts_nothing(tmp_path, monke
     answering(mod, monkeypatch, *[answer for answer, _ in cases])
     for number, (_, cause) in enumerate(cases):
         kw = call_kw("call_%d" % number)
-        directive = verdict(tool_name="terminal", args={"command": GUARD_CALL}, **kw)
+        call = {"command": GUARD_CALL}  # Hermes hands both callbacks of one call the same args object
+        directive = verdict(tool_name="terminal", args=call, **kw)
         assert directive["action"] == "block" and cause in directive["message"], (cause, directive)
         assert all(switch in directive["message"] for switch in OFF_SWITCHES) and "nothing ran" in directive["message"]
-        assert approval(tool_name="terminal", args={"command": GUARD_CALL}, **kw) is None  # the verdict's mark: no second block
+        assert approval(tool_name="terminal", args=call, **kw) is None  # the verdict's mark: no second block
 
     # A real guard child that is too slow, and one that exits non-zero.
     slow = tmp_path / "slow.py"
@@ -202,9 +205,9 @@ def test_plugin_failures_block_and_the_off_switch_starts_nothing(tmp_path, monke
               done(b'{"hermesApproval": {"modify": {"command": "x --approval=t"}}}'))
     expected = [None, {"action": "block", "message": "lane taken"}, {"action": "modify", "args": {"command": "x --approval=t"}}]
     for number, want in enumerate(expected):
-        kw = call_kw("after_%d" % number)
-        assert verdict(tool_name="terminal", args={"command": GUARD_CALL}, **kw) == want
-        assert approval(tool_name="terminal", args={"command": GUARD_CALL}, **kw) is None
+        kw, call = call_kw("after_%d" % number), {"command": GUARD_CALL}
+        assert verdict(tool_name="terminal", args=call, **kw) == want
+        assert approval(tool_name="terminal", args=call, **kw) is None
 
     # The off switch and another tool: nothing starts, nothing is kept, nothing is returned.
     started = answering(mod, monkeypatch)
@@ -336,14 +339,25 @@ def test_kept_approve_parts_never_cross_calls(monkeypatch):
     answering(mod, monkeypatch, done(ask("A --approval=ta", "question A", key_a)), done(ask("B --approval=tb", "question B", key_b)))
     a, b = {"command": GUARD_CALL}, {"command": GUARD_CALL.replace("arm", "disarm")}
     kw_a, kw_b = call_kw("call_a"), call_kw("call_b")
-    results_a = [verdict(tool_name="terminal", args=dict(a), **kw_a)]
-    results_b = [verdict(tool_name="terminal", args=dict(b), **kw_b)]
-    results_b.append(approval(tool_name="terminal", args=dict(b), **kw_b))
-    results_a.append(approval(tool_name="terminal", args=dict(a), **kw_a))
+    call_a, call_b = dict(a), dict(b)  # Hermes hands both callbacks of one call the same args object
+    results_a = [verdict(tool_name="terminal", args=call_a, **kw_a)]
+    results_b = [verdict(tool_name="terminal", args=call_b, **kw_b)]
+    results_b.append(approval(tool_name="terminal", args=call_b, **kw_b))
+    results_a.append(approval(tool_name="terminal", args=call_a, **kw_a))
     assert results_a == [{"action": "modify", "args": {"command": "A --approval=ta"}},
                          {"action": "approve", "message": "question A", "rule_key": key_a}]
     assert results_b == [{"action": "modify", "args": {"command": "B --approval=tb"}},
                          {"action": "approve", "message": "question B", "rule_key": key_b}]
+    assert mod._KEPT == {}
+
+    # Two interleaved calls alike in every keyword argument and in the command: each args object keeps its own mark.
+    key_1, key_2 = "magos:arm:" + "1" * 32, "magos:arm:" + "2" * 32
+    answering(mod, monkeypatch, done(ask("A1 --approval=t1", "question 1", key_1)), done(ask("A2 --approval=t2", "question 2", key_2)))
+    one, two, kw = dict(a), dict(a), call_kw("call_same")
+    assert verdict(tool_name="terminal", args=one, **kw) == {"action": "modify", "args": {"command": "A1 --approval=t1"}}
+    assert verdict(tool_name="terminal", args=two, **kw) == {"action": "modify", "args": {"command": "A2 --approval=t2"}}
+    assert approval(tool_name="terminal", args=two, **kw) == {"action": "approve", "message": "question 2", "rule_key": key_2}
+    assert approval(tool_name="terminal", args=one, **kw) == {"action": "approve", "message": "question 1", "rule_key": key_1}
     assert mod._KEPT == {}
 
     # The same command in the same turn under another call id gets no mark of its own: the approval callback blocks it.
@@ -359,7 +373,22 @@ def test_kept_approve_parts_never_cross_calls(monkeypatch):
     passed = consume(callbacks, a, kw_a, lambda m, k: True)
     assert passed.asked == [("question A", key_a)] and passed.runs == {"command": "A --approval=ta"}
     answering(mod, monkeypatch, done(ask("A --approval=ta", "question A", key_a)))
-    verdict(tool_name="terminal", args=dict(a), **call_kw("late"))
+    late = dict(a)
+    verdict(tool_name="terminal", args=late, **call_kw("late"))
     monkeypatch.setattr(mod, "KEPT_S", -1)
-    assert approval(tool_name="terminal", args=dict(a), **call_kw("late"))["action"] == "block"
+    assert approval(tool_name="terminal", args=late, **call_kw("late"))["action"] == "block"
     assert mod._KEPT == {}
+
+
+# ---- TC-700: the verdict hands the guard the gate it probed --------------------------------------------------------------------------------
+@pytest.mark.parametrize("probe,how", [({"yolo": True}, "hermes_how_session"), ({"mode": "off"}, "hermes_how_session"),
+                                       ({"presence": (None, False, False, False)}, "hermes_how_session"), ({"raises": True}, "hermes_how_gate"),
+                                       ({"rule_key": False}, "hermes_how_gate")])
+def test_a_gate_that_would_not_ask_never_gets_a_question(tmp_path, monkeypatch, probe, how):
+    mod, callbacks = plugin()
+    stub_hermes(monkeypatch, **probe)  # the real probe reads the stubbed Hermes: bypass or absent
+    r = new_repo(tmp_path / "r")
+    cmd = {"command": "%s %s --repo '%s' --lang en arm" % (PY, QS, str(r.path).replace("\\", "/"))}
+    out = consume(callbacks, cmd, call_kw("y1"), lambda message, rule_key: True)  # a gate that would approve without a human
+    assert out.blocked == G.T("en", "protected_hermes_noask", why=G._USER_MSG, how=G.T("en", how)), out
+    assert out.asked == [] and out.runs is None and not approvals(r).exists() and mod._KEPT == {}

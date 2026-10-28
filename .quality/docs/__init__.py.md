@@ -96,8 +96,11 @@ magos`), in Chinese unless `MAGOS_LANG` is `en`. The payload reaches the guard o
 JSON cannot hold is written as its text and a key that is not a string is left out, so every call serialises. The
 child's environment is Hermes's own, with `HERMES_HOME` set to `hermes_constants.get_hermes_home()` when that import
 works, else inherited unchanged. `verdict` keeps a mark for
-every call it answers (the approve directive for a question, nothing otherwise); `approval` takes the mark of the same
-call once and returns its directive or nothing, and a block when a command that names `magos_guard` has no mark. `gate()` returns `ask`, `bypass` or `absent` as that section states.
+every call it answers (the approve directive for a question, nothing otherwise) under the call's `args` object, which
+Hermes hands both callbacks of one call (each gets a shallow copy of one keyword dict) and which is new for every call;
+the mark holds that object, so two interleaved calls alike in every keyword argument and command never share a mark.
+`approval` takes the mark of its own `args` object once and returns its directive or nothing, and a block when a
+command that names `magos_guard` has no mark. `gate()` returns `ask`, `bypass` or `absent` as that section states.
 
 `INDEX_DESCRIPTIONS`: a top-level literal `dict` from skill name to one single-line string, with no computed value, so
 a check can read it with `ast.literal_eval` without running the module. It holds exactly one non-empty entry for each

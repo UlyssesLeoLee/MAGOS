@@ -114,14 +114,16 @@ M = {
     "options": ("可选处理：① 缩小或拆分 manifest；② 等对方合入 {target} 后再创建；③ 对方若已合并或已放弃，用 {cmd} release --branch <对方分支> 释放它的登记（未合并的工作不会被释放）；"
                 "④ 仅在用户明确同意后，把 {cmd} override --fingerprint {fp} --reason \"<用户原话>\" 单独作为一条命令执行：在 Claude Code 中由用户在对话框里批准；"
                 "在 Codex 中调用 MCP 工具 magos_approve（subcommand 为 override，并给出指纹、理由和仓库），由用户在 Codex 的对话框里批准；"
-                "在装有 MAGOS Hermes 插件的 Hermes 中由用户在 Hermes 的审批提示中批准；magos.approval 为 terminal 时，由用户本人在自己的终端里运行；"
+                "在装有 MAGOS Hermes 插件的 Hermes 中由用户在 Hermes 的审批提示中批准；没有这条途径时（Codex 中没有 MCP 服务器 magos，Hermes 中没有该插件）"
+                "或 magos.approval 为 terminal 时，由用户本人在自己的终端里运行；"
                 "覆盖只通过 plan 生效，之后必须重新 plan（re-plan）。",
                 "Options: (1) shrink or split the manifest; (2) wait until they are merged into {target}; (3) if the other lane is merged or abandoned, release its claim with "
                 "{cmd} release --branch <their branch> (unmerged work is never released); (4) only with the user's explicit consent, "
                 "run {cmd} override --fingerprint {fp} --reason \"<user's words>\" as a command of its own: in Claude Code the user approves it in Claude Code's dialog; "
                 "in Codex call the MCP tool magos_approve (subcommand override, the fingerprint, the reason and the repository) and the user approves it in "
-                "Codex's dialog; in Hermes with the MAGOS Hermes plugin the user approves it in Hermes's approval prompt; with magos.approval terminal the "
-                "USER runs it in their own terminal; the override takes effect only through plan, so a re-plan is required."),
+                "Codex's dialog; in Hermes with the MAGOS Hermes plugin the user approves it in Hermes's approval prompt; where no such route exists "
+                "(Codex without the MCP server magos, Hermes without the plugin) or with magos.approval terminal, the USER runs it in their own "
+                "terminal; the override takes effect only through plan, so a re-plan is required."),
     "newer_only": ("只有能读取该格式的 MAGOS 才能处理这份登记：请升级本守卫（doctor 显示版本，install 刷新副本），或用写入它的那个 MAGOS 执行这条命令。",
                    "Only a MAGOS that reads that format can act on this claim: upgrade this guard (doctor shows its version, install refreshes the copy), "
                    "or run this command with the MAGOS that wrote it."),
@@ -228,9 +230,17 @@ M = {
     "protected_mcp": ("MAGOS 拒绝：此命令会启动守卫的 MCP 批准服务器（mcp 子命令），它只能由宿主按照自己的配置启动；任何宿主上的工具命令都不能运行它。没有启动任何东西。",
                       "MAGOS DENIES: this command would start the guard's MCP approval server (the mcp subcommand), which only the host starts from its "
                       "own configuration; a tool command never runs it, on any host. Nothing was started."),
+    "protected_slot": ("MAGOS 拒绝：此命令运行守卫脚本，但钩子无法确认它运行的是 agent 可以运行的子命令：子命令必须是写在命令里的一个普通单词，紧跟在脚本和它前面的普通选项之后，"
+                       "守卫的参数也不能来自 xargs、parallel 或 find -exec。请这样写：{cmd} <{subs}> <选项>。hook 和 mcp 只由宿主运行；override、arm、disarm "
+                       "和 install 由用户批准。没有运行任何东西。",
+                       "MAGOS DENIES: this command runs the guard script, but the hook cannot see that it runs a subcommand an agent may run: the "
+                       "subcommand must be one plain word written in the command, right after the script and the plain options before it, and the "
+                       "guard must not take its words from xargs, parallel or find -exec. Write it as: {cmd} <{subs}> <options>. hook and mcp are "
+                       "run only by the host; the user approves override, arm, disarm and install. Nothing ran."),
     "mcp_ask": ("MAGOS：批准用户专属的守卫命令 {sub} 吗？\n{where}\n{what}\n先勾选 Approve，再点击 Accept（接受）：这只批准这一项，只执行一次。其他任何回答都不执行。",
                 "MAGOS: approve the user-only guard command {sub}?\n{where}\n{what}\nTick Approve, then Accept: that approves exactly this, once. "
                 "Anything else runs nothing."),
+    "ready_own": ("<请在这里输入你自己的话>", "<type your own words here>"),  # a value PowerShell 5.1 would change on its way to the guard (ready_command)
     "mcp_approve_field": ("勾选即批准上面所述的这一条守卫命令，只执行一次。", "Tick to approve exactly the guard command described above, once."),
     "mcp_where_repo": ("仓库：{repo}（Git 目录 {common}）", "Repository: {repo} (Git directory {common})"),
     "mcp_where_home": ("守卫目录：{home}", "Guard home: {home}"),
@@ -2555,6 +2565,10 @@ _USER_RUN = "user-only: approved in Claude Code's, Codex's or Hermes's dialog, o
 Approval = namedtuple("Approval", "decision reason updated")  # the Claude Code hook's ask or allow of a user-only command
 HOST_ONLY = ("mcp",)  # the subcommands only the host starts (Codex approval): a tool command that runs one is denied on every host
 _HOST_MSG = "mcp is the guard's approval server, which only the host starts"
+# The subcommands an agent runs (Approval routes, The subcommand of a guard run): a tool command that runs the guard with any other word in the subcommand slot
+# (hook and mcp, which only a host runs, a dynamic or empty slot, an unknown word) is denied on every host; the user-only words keep their path.
+AGENT_SUBS = ("plan", "check", "list", "release", "doctor", "version", "set-plan", "set-show", "set-update", "set-release")
+_SLOT_MSG = "the guard runs with a subcommand that is no plain word an agent may run"
 MCP_ARGS = ("subcommand", "repo", "fingerprint", "reason", "host", "dry_run")  # the arguments of magos_approve, in the order the texts name them
 _MCP_TAKES = {"override": ("repo", "fingerprint", "reason"), "arm": ("repo", "dry_run"), "disarm": ("repo", "dry_run"), "install": ("repo", "host", "dry_run")}
 _HERMES_APPROVAL_TOOLS = {"terminal": "bash"}  # Hermes runs every terminal command with bash (Git Bash on Windows)
@@ -2579,13 +2593,14 @@ def _guard_word(word):
     return None
 
 
-def _guard_sub(rest, launcher):
-    """The subcommand in `rest` (the words after a guard word) that a table names: a name of _USER_ONLY or HOST_ONLY in either reading of the
-    word; None for any other word.  The launcher's leading --strict, the global options in any spelling argparse ever took, and a `--` (from
-    Python 3.13 on argparse takes the word after it as the subcommand) are skipped."""
-    k = 1 if launcher and rest[:1] and _bare(rest[0]) == "--strict" else 0
-    while k < len(rest) and _bare(rest[k]).startswith("--"):
-        t = _bare(rest[k])
+def _guard_slot(words, i, launcher):
+    """The index of the subcommand slot of a guard word whose arguments start at words[i]: the first word after the launcher's leading
+    --strict, the global options in any spelling argparse ever took (--repo and --lang with their value, --json, every --name=value) and a
+    `--` (from Python 3.13 on argparse takes the word after it as the subcommand); len(words) when no word is left.  Any other option is the
+    slot itself (argparse refuses it)."""
+    k = i + 1 if launcher and i < len(words) and _bare(words[i]) == "--strict" else i
+    while k < len(words) and _bare(words[k]).startswith("--"):
+        t = _bare(words[k])
         if t == "--":
             k += 1
             break
@@ -2597,11 +2612,128 @@ def _guard_sub(rest, launcher):
             k += 1
         else:
             break
+    return min(k, len(words))
+
+
+def _guard_sub(rest, launcher):
+    """The subcommand in `rest` (the words after a guard word) that a table names: a name of _USER_ONLY or HOST_ONLY in either reading of the
+    word in the slot (_guard_slot); None for any other word."""
+    k = _guard_slot(rest, 0, launcher)
     if k < len(rest):
         for w in (rest[k], _bare(rest[k])):
             if w in _USER_ONLY or w in HOST_ONLY:
                 return w
     return None
+
+
+def _slot_problem(pieces, pdyn, j, how, fed, start, quoted):
+    """Is the guard piece pieces[j], which the shell runs (`how`: "program", "interp" or "weak", _run_marks), denied with _SLOT_MSG?  Yes when
+    a piece after it up to and including its slot is dynamic (an unquoted value word-splits into the slot, a PowerShell array passes several
+    words), when xargs, parallel or find -exec feeds it (`fed`: with -I any word becomes the replaced one), or when the slot is no exact
+    AGENT_SUBS word in either reading: hook, mcp, an empty slot (a later word lands there), a glob, a splat (@a) and every other word.  An
+    option argparse refuses and -h / --help stay allowed (nothing runs), except as an argument of Start-Process or start (`start`), whose
+    own parameters (-ArgumentList, -RedirectStandardInput) stand there.  The slot is judged only for "program" and "interp": a "weak" guard
+    (an interpreter met among the arguments of another program: `ionice -c3 python3 G`, also `grep -n python3 G`) and, in a quoted word read
+    as a command (`quoted`), a "program" guard (a commit message names the script) are denied for a dynamic or fed slot only."""
+    k = _guard_slot(pieces, j + 1, _guard_word(pieces[j]) == "launcher")
+    if any(pdyn[j + 1:k + 1]) or fed:
+        return True
+    if how == "weak" or (quoted and how != "interp"):
+        return False
+    if k == len(pieces):
+        return True
+    w, b = pieces[k], _bare(pieces[k])
+    if w in AGENT_SUBS or b in AGENT_SUBS:
+        return False
+    return start or not (b.startswith("-") and len(b) > 1)  # -h, --help and an option argparse refuses (also a negative number)
+
+
+_ARG_FEEDERS = ("xargs", "parallel")  # wrappers that add words read from their input to the command they run (xargs -I replaces any word)
+_FIND_RUN = ("-exec", "-execdir", "-ok", "-okdir")  # find runs the command after these with the paths it found
+_STARTERS = ("start", "start-process", "saps")  # cmd's start and PowerShell's Start-Process: their arguments name a program and its words
+_PY_EXE = re.compile(r"py|pyw|pythonw?|python3(?:\.\d+)?w?")  # the base name of a Python interpreter, as _exe returns it
+# Tools that run a program of an environment, with the word that does it: their words up to the program are those of a wrapper.
+_RUN_TOOLS = {"uv": "run", "uvx": None, "poetry": "run", "pdm": "run", "hatch": "run", "pipenv": "run", "rye": "run", "pixi": "run", "conda": "run",
+              "mamba": "run", "micromamba": "run", "pyenv": "exec"}
+_WRAP_VALUE = re.compile(r"[0-9]+(?:\.[0-9]+)?[smhd]?")  # a number or a duration after a wrapper (timeout 30s, nice -n 5)
+_RUN_HINT = re.compile(r"magos_guard|run-guard|xargs|parallel|-exec|-ok")  # in the lower-case bare words: a command _run_marks must walk
+
+
+def _run_marks(words, pieces, owners, pdyn, fed=False, start=False):
+    """One forward pass over the pieces of one command: -> (marks, feeds, starts).  marks[j] for a guard piece the shell runs: "program" when
+    it is the program of the command (after assignments, redirections, keywords and wrappers with their options and values), "interp" when
+    an interpreter or shell and its options run it (python -m: the module), a dynamic program word runs it (`"$PY" G`), or it stands after
+    Start-Process or start; "weak" when an interpreter met among the arguments of another program runs it (`ionice -c3 python3 G`, `flock
+    /tmp/l python3 G`; also `grep -n python3 G`, which runs nothing); None for every other piece (an argument of another program: `git add
+    G`, `grep x G`, `python -m pytest G`).  feeds[j]: xargs, parallel or a find -exec before piece j feeds what runs (`fed`: the text itself
+    is fed).  starts[j]: piece j is an argument of Start-Process or start (`start`: the text is one)."""
+    n = len(pieces)
+    marks, feeds, starts = [None] * n, [fed] * n, [start] * n
+    state, opt, skip, j, strong, then = ("sp" if start else "start"), False, -1, 0, True, None  # then: the word a run tool needs (uv run)
+    while j < n:
+        feeds[j], starts[j] = fed, state == "sp"
+        p, w = pieces[j], words[owners[j]]
+        b = _bare(p)
+        x = _exe(b)
+        if isinstance(w, _Redir) or owners[j] == skip:  # a redirection of the shell and its target: no word of the command
+            skip = owners[j] + 1 if isinstance(w, _Redir) and w.take == 2 else skip
+        elif b.lower() in _FIND_RUN:
+            state, fed, opt = "start", True, False
+        elif state == "sp":
+            marks[j] = "interp" if _guard_word(p) else None
+        elif state in ("start", "wrap"):
+            a = _ASSIGN.match(p)
+            if a and (_PY_EXE.fullmatch(_exe(_bare(p[a.end():]))) or _exe(_bare(p[a.end():])) in _SHELLS):
+                state, strong = "interp", True  # c=python3 <guard>, a quoted value read as a command: $c then runs the guard
+            elif a or (state == "start" and b in _KEYWORDS):
+                pass
+            elif state == "wrap" and then is not None and b == then:
+                then = None
+            elif x in _RUN_TOOLS:
+                state, opt, then = "wrap", False, _RUN_TOOLS[x]
+            elif x in _WRAP or x in _ARG_FEEDERS or x == "eval":
+                state, fed, opt = "wrap", fed or x in _ARG_FEEDERS, False
+            elif x in _STARTERS:
+                state = "sp"
+            elif _guard_word(p):
+                marks[j], state = "program", "args"
+            elif _PY_EXE.fullmatch(x) or x in _SHELLS or pdyn[j]:
+                state, strong = "interp", True
+            elif state == "wrap" and b.startswith("-"):
+                opt = True
+            elif state == "wrap" and (opt or _WRAP_VALUE.fullmatch(b)):  # the value of a wrapper's option, or a number or duration
+                opt = False
+            else:
+                state = "args"
+        elif state == "args":
+            if _PY_EXE.fullmatch(x) or x in _SHELLS:  # an interpreter among the arguments of another program (ionice, flock, chrt, ...)
+                state, strong = "interp", False
+            elif x in _ARG_FEEDERS:  # xargs behind another program (ionice -c3 xargs python3 G) feeds the interpreter after it
+                fed = True
+        elif state == "interp":
+            m = re.search(r"[cmXW]", b[1:]) if b.startswith("-") and not b.startswith("--") and len(b) > 1 else None
+            if m and m.group() == "c":  # -c: the code is no script
+                state = "args"
+            elif m and m.group() == "m":  # -m <module>: a module named like the guard runs it
+                val = b[1:][m.end():]
+                if not val and j + 1 < n:
+                    j += 1
+                    feeds[j], starts[j] = fed, False
+                if _guard_word(pieces[j]):
+                    marks[j] = "interp" if strong else "weak"
+                state = "args"
+            elif m and not b[1:][m.end():] and j + 1 < n:  # -X and -W take the next word as their value
+                j += 1
+                feeds[j], starts[j] = fed, False
+            elif b == "--check-hash-based-pycs" and j + 1 < n:  # the one long option with a value
+                j += 1
+                feeds[j], starts[j] = fed, False
+            elif (b.startswith("-") and len(b) > 1) or _PY_EXE.fullmatch(x):  # an option; an interpreter named by $(command -v python3)
+                pass
+            else:
+                marks[j], state = (("interp" if strong else "weak") if _guard_word(p) else None), "args"
+        j += 1
+    return marks, feeds, starts
 
 
 def _user_only(rest, launcher):
@@ -2612,19 +2744,21 @@ def _user_only(rest, launcher):
 _METHOD_TAIL = re.compile(r"\.[A-Za-z_]\w*\([^\\/]*$")  # a .Name(...) call at the end of a piece ("a,b".Split(',')); a path segment is none
 
 
-def _pieces(words):
-    """-> (owners, pieces): the words cut at PowerShell's comma, which separates the elements of an array that a native command and
+def _pieces(words, dyn=None):
+    """-> (owners, pieces, dynamic): the words cut at PowerShell's comma, which separates the elements of an array that a native command and
     Start-Process receive as separate arguments (`a,b`, `'a','b'`, `a, b`, `a ,b`, `@('a','b')`, `"a,b".Split(',')`, also `('a') b`).
     Each piece loses a .Name(...) call at its end and every @, ( and ) at its ends; an empty piece (a lone comma, a comma that starts or
-    ends a word) is no word.  owners[j] is the index in `words` of the word that holds pieces[j]."""
-    owners, pieces = [], []
+    ends a word) is no word.  owners[j] is the index in `words` of the word that holds pieces[j]; dynamic[j] tells that the lexer read
+    that word as dynamic (`dyn`, one flag per word) and the piece as written holds $, a backtick, %, ( or ) (`G,$a`: only `$a`)."""
+    owners, pieces, dynamic = [], [], []
     for i, w in enumerate(words):
-        for p in w.split(","):
-            p = re.sub(r"^[@(]+|[()]+$", "", _METHOD_TAIL.sub("", p))
+        for raw in w.split(","):
+            p = re.sub(r"^[@(]+|[()]+$", "", _METHOD_TAIL.sub("", raw))
             if p:
                 owners.append(i)
                 pieces.append(p)
-    return owners, pieces
+                dynamic.append(bool(dyn and dyn[i] and re.search(r"[$`%()]", raw)))
+    return owners, pieces, dynamic
 
 
 def user_only_row(args):
@@ -2639,13 +2773,14 @@ def _in_approvals(word):
 
 
 def _child_text(words):
-    """The text the first child shell among `words` runs: bash / sh / zsh / dash / ksh -c, cmd /c and /k, powershell and pwsh -Command,
-    -CommandWithArgs or -EncodedCommand in every spelling the shell reads (_shell_flag)."""
+    """-> (index, text): the first child shell among `words` and the text it runs (None when it runs none), or (None, None): bash / sh / zsh /
+    dash / ksh -c, cmd /c and /k, powershell and pwsh -Command, -CommandWithArgs or -EncodedCommand in every spelling the shell reads
+    (_shell_flag)."""
     for i, w in enumerate(words):
         exe = _exe(_bare(w))
         if exe in _SHELLS + ("powershell", "pwsh", "cmd"):
-            return _child_script(exe, words[i + 1:])
-    return None
+            return i, _child_script(exe, words[i + 1:])
+    return None, None
 
 
 def _aliased_git(bares):
@@ -2717,48 +2852,65 @@ def _state_word(word, roots, lazy=None):
     return False
 
 
-def protected(text, depth=0, roots=(), lazy=None):
-    """-> (scope, reason) or None.  scope 'always': user-only subcommands and magos.* config; 'guarded': edits of the guard's own state that
-    matter once claims or the hook exist.  Words are inspected, never the whole text, so a commit message or a grep for these names passes;
-    every keyword and path test reads each word as written and with its escape characters removed.  The text of a child shell (bash -c,
-    cmd /c, powershell -Command ...) and a quoted word that names the guard script or its launcher are read with every check, to depth 3.
-    `roots`: the absolute guard-home and Hermes-plugin directories (pkey form) whose absolute spellings count as the guard's state; `lazy`
-    gives the store's root (see _state_word)."""
+def protected(text, depth=0, roots=(), lazy=None, fed=False, start=False, quoted=False):
+    """-> (scope, reason) or None.  scope 'always': user-only subcommands, the subcommands only a host runs, a guard run whose subcommand is
+    no plain word an agent may run (_slot_problem), and magos.* config; 'guarded': edits of the guard's own state that matter once claims or
+    the hook exist.  Words are inspected, never the whole text, so a commit message or a grep for these names passes; every keyword and path
+    test reads each word as written and with its escape characters removed.  The text of a child shell (bash -c, cmd /c, powershell
+    -Command ...) and a quoted word that names the guard script or its launcher are read with every check, to depth 3; `fed`, `start` and
+    `quoted` carry what the outer command tells about that text (_run_marks, _slot_problem).  `roots`: the absolute guard-home and
+    Hermes-plugin directories (pkey form) whose absolute spellings count as the guard's state; `lazy` gives the store's root (see
+    _state_word)."""
     if len(text) > MAX_TEXT:
         return "guarded", "the command is too long to inspect"
     for seg in split_command(_heredocs(text)[0]):
-        found = _protected_words([w for w, _ in seg], depth, roots, lazy)
+        found = _protected_words([w for w, _ in seg], depth, roots, lazy, [d for _, d in seg], fed, start, quoted)
         if found:
             return found
     return None
 
 
-def _protected_words(words, depth, roots, lazy):
+def _protected_words(words, depth, roots, lazy, dyn=None, fed=False, start=False, quoted=False):
     lows = [w.lower() for w in words]
     bares = [_bare(w).lower() for w in words]
     seen = set(lows) | set(bares)
 
     def any_word(pred):
         return any(pred(x) for x in lows) or any(pred(x) for x in bares)
-    owners, pieces = _pieces(words)  # a guard piece and the pieces after it, its arguments: `Start-Process py <guard>,disarm` runs disarm
-    j = 0
+    # a guard piece and the pieces after it, its arguments: `Start-Process py <guard>,disarm` runs disarm
+    owners, pieces, pdyn = _pieces(words, dyn)
+    at = [(fed, start)] * len(words)  # (fed, start) where each word stands: those of its first piece, else those of the text
+    if _RUN_HINT.search("\n".join(bares)):  # a guard word, or a feeder whose child text may hold one: the walk of _run_marks
+        marks, feeds, starts = _run_marks(words, pieces, owners, pdyn, fed, start)
+        for k in range(len(pieces) - 1, -1, -1):
+            at[owners[k]] = (feeds[k], starts[k])
+    else:
+        marks, feeds, starts = [None] * len(pieces), [fed] * len(pieces), [start] * len(pieces)
+    slot, j = None, 0  # slot: a guard run denied with _SLOT_MSG, returned once no user-only or host-only subcommand is found
     for i, w in enumerate(words):
         while j < len(pieces) and owners[j] == i:
             kind = _guard_word(pieces[j])
-            sub = _guard_sub(pieces[j + 1:], kind == "launcher") if kind else None
+            k = _guard_slot(pieces, j + 1, kind == "launcher") if kind else len(pieces)
+            sub = next((x for x in (pieces[k], _bare(pieces[k])) if x in _USER_ONLY or x in HOST_ONLY), None) if k < len(pieces) else None
             if sub in _USER_ONLY:  # also behind start, cmd /c start or Start-Process: found anywhere
                 return "always", _USER_MSG
             if sub in HOST_ONLY:  # the approval server: only the host starts it (Codex approval)
                 return "always", _HOST_MSG
+            if kind and marks[j] and _slot_problem(pieces, pdyn, j, marks[j], feeds[j], starts[j], quoted):
+                slot = slot or ("always", _SLOT_MSG)
             j += 1
         if depth < 3 and re.search(r"\s", w) and re.search(r"magos_guard|run-guard", w, re.I):  # Start-Process ... -ArgumentList '<guard> disarm'
-            found = protected(w, depth + 1, roots, lazy)
-            if found:
+            found = protected(w, depth + 1, roots, lazy, at[i][0], at[i][1], True)
+            if found and found[1] != _SLOT_MSG:
                 return found
-    child = _child_text(words) if depth < 3 else None
-    found = protected(child, depth + 1, roots, lazy) if child else None
-    if found:
+            slot = slot or found
+    ci, child = _child_text(words) if depth < 3 else (None, None)
+    found = protected(child, depth + 1, roots, lazy, at[ci][0]) if child else None
+    if found and found[1] != _SLOT_MSG:
         return found
+    slot = slot or found
+    if slot:  # a user-only or host-only subcommand anywhere in the command keeps its own reason
+        return slot
     reads = any(f in seen for f in _READ_FLAGS)
     magos = any_word(lambda x: x.startswith("magos."))
     if magos and not reads and ("config" in seen or _aliased_git(bares)):
@@ -6565,12 +6717,20 @@ def mcp_validate(arguments, lang):
     return {"row": row, "args": args, "argv": argv, "repo": path, "g": g, "ns": ns}, None
 
 
-def ready_command(argv):
+def ready_command(argv, lang="en"):
     """The guard command the user runs in a real terminal for the command line `argv` (Codex approval, The tool call 7): guard_cmd() and each
-    word bare when the user's shell reads it as itself, else single-quoted for PowerShell on Windows and for sh elsewhere."""
+    word bare when the user's shell reads it as itself, else single-quoted for PowerShell on Windows and for sh elsewhere.  On Windows a word
+    that holds '"', or a blank and a trailing backslash, would not reach the guard unchanged through Windows PowerShell 5.1, which wraps a
+    word with a blank in double quotes without escaping it: such a word keeps its option name and shows the ready_own text in place of its
+    value, which the user replaces with their own words."""
     win = sys.platform == "win32"
     bare, quote = (_BARE_PS, ps_quote) if win else (_BARE_SH, sh_quote)
-    return guard_cmd() + "".join(" " + (w if bare.fullmatch(w) else quote(w)) for w in argv)
+    out = []
+    for w in argv:
+        if win and ('"' in w or (re.search(r"\s", w) and w.endswith("\\"))):
+            w = (w.split("=", 1)[0] + "=" if w.startswith("--") and "=" in w else "") + T(lang, "ready_own")
+        out.append(w if bare.fullmatch(w) else quote(w))
+    return guard_cmd() + "".join(" " + w for w in out)
 
 
 def _named_invocation(text, sh):
@@ -6636,11 +6796,11 @@ def codex_denial(payload, cwd, lang):
     except Exception:  # the text falls back to the form the tool takes; the call is denied either way
         v = None
     if payload.get("permission_mode") == "bypassPermissions":
-        ready = ready_command(v["argv"]) if v is not None else guard_cmd() + (" <子命令> <选项>" if lang == "zh" else " <subcommand> <options>")
+        ready = ready_command(v["argv"], lang) if v is not None else guard_cmd() + (" <子命令> <选项>" if lang == "zh" else " <subcommand> <options>")
         return T(lang, "protected_codex_never", why=_USER_MSG, ready=ready)
     if v is None:
         return T(lang, "protected_codex_form", why=_USER_MSG, cmd=guard_cmd())
-    return T(lang, "protected_codex", why=_USER_MSG, call=json.dumps(v["args"], ensure_ascii=True), ready=ready_command(v["argv"]))
+    return T(lang, "protected_codex", why=_USER_MSG, call=json.dumps(v["args"], ensure_ascii=True), ready=ready_command(v["argv"], lang))
 
 
 def mcp_plan(arguments, lang, session=None, client=None):
@@ -6664,7 +6824,7 @@ def mcp_plan(arguments, lang, session=None, client=None):
         line = T(lang, "mcp_where_home", home=_dialog(guard_home(), 200))
     text = T(lang, "mcp_ask", sub=row.name, where=line, what=approval_what(lang, row, v["ns"], {"g": g, "dest": guard_home()}))
     return {"row": row, "argv": v["argv"], "level": "terminal" if level == "terminal" else "prompt", "root": root, "where": where,
-            "denials": denials, "text": text, "ready": ready_command(v["argv"]), "session": session, "client": client}, None
+            "denials": denials, "text": text, "ready": ready_command(v["argv"], lang), "session": session, "client": client}, None
 
 
 def mcp_command(argv):
@@ -6948,9 +7108,14 @@ def _yaml_scalar(raw):
     return (s[:m.start()].rstrip() if m else s), False
 
 
+_YAML_TOP_BAD = re.compile(r"[{\[?&*!|>%@`<]|-(?:[ \t]|$)")  # a top-level flow collection, explicit key, node property, merge key or item
+
+
 def _yaml_block(lines, key):
     """-> (the lines of the top-level `key:` block, error): ([], None) when the key is absent; an error for a key that occurs twice, a value on
-    the key's own line (a flow mapping or a scalar) and a tab in the indentation of the block."""
+    the key's own line (a flow mapping or a scalar), a tab in the indentation of the block, and a top-level line that is no `key:` line or
+    bare document marker (a JSON-style file, an explicit `?` key, a top-level sequence or merge key, a document marker with content): the
+    file is then read for certain or not at all."""
     block, found, inside = [], 0, False
     for line in lines:
         body = line.strip()
@@ -6958,6 +7123,10 @@ def _yaml_block(lines, key):
             continue
         if line[0] not in " \t":  # a top-level line ends the block
             inside = False
+            if re.match(r"(?:---|\.\.\.)[ \t]*(?:#.*)?$", line):
+                continue
+            if _YAML_TOP_BAD.match(line) or line.startswith(("---", "...")) or not re.search(r":(?:[ \t]|$)", line):
+                return [], "a top-level line that is no key: line: %s" % _shown(body, 40)
             if re.match(r"""(['"])%s\1[ \t]*:""" % re.escape(key), line):  # a quoted spelling of the key: read for certain or not at all
                 return [], "a quoted %s: key" % key
             m = re.match(r"%s[ \t]*:(.*)$" % re.escape(key), line)
@@ -7034,20 +7203,82 @@ def hermes_settings(home=None):
         return s
     if got.get("mode") and got["mode"][0]:
         s["mode"], s["mode_quoted"] = got["mode"]
-    if got.get("timeout") and re.fullmatch(r"[+-]?[0-9]+", got["timeout"][0]):
-        s["timeout"] = int(got["timeout"][0])
+    if "timeout" in got:
+        s["timeout"] = hermes_timeout(*got["timeout"])
     return s
 
 
+_YAML_NULL = ("", "~", "null", "Null", "NULL")
+_YAML_BOOL = {w: v for v, words in ((True, "yes Yes YES true True TRUE on On ON"), (False, "no No NO false False FALSE off Off OFF"))
+              for w in words.split()}
+_YAML_INT = re.compile(r"[-+]?(?:0b[0-1_]+|0[0-7_]+|0|[1-9][0-9_]*|0x[0-9a-fA-F_]+|[1-9][0-9_]*(?::[0-5]?[0-9])+)")
+_YAML_FLOAT = re.compile(r"[-+]?[0-9][0-9_]*\.[0-9_]*(?:[eE][-+][0-9]+)?|\.[0-9_]+(?:[eE][-+][0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*"
+                         r"|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN)")
+
+
+def _yaml_number(text):
+    """The YAML 1.1 value PyYAML constructs for an unquoted integer or float scalar (the resolver and constructor Hermes's config loader uses):
+    underscores dropped, 0b binary, 0x hex, a leading 0 octal, base-60 parts with ':'; a float as float()."""
+    v = text.replace("_", "")
+    sign = -1 if v[:1] == "-" else 1
+    v = v[1:] if v[:1] in "+-" else v
+    if _YAML_INT.fullmatch(text):
+        if ":" in v:
+            n = 0
+            for part in v.split(":"):
+                n = n * 60 + int(part)
+            return sign * n
+        if v.startswith(("0b", "0x")):
+            return sign * int(v[2:], 2 if v[1] == "b" else 16)
+        return sign * (int(v, 8) if v != "0" and v.startswith("0") else int(v))
+    v = v.lower()
+    if v in (".inf", ".nan"):
+        return sign * float(v[1:])
+    if ":" in v:
+        n = 0.0
+        for part in v.split(":"):
+            n = n * 60 + float(part)
+        return sign * n
+    return sign * float(v)
+
+
+def hermes_timeout(text, quoted):
+    """approvals.timeout as Hermes reads it (its _get_approval_timeout): int() of the value PyYAML gives the scalar, 300 where int() raises
+    ValueError or TypeError.  Unquoted, YAML 1.1 resolves null (300), the booleans (1 and 0), integers in every base and floats (int()
+    truncates; nan is 300); a quoted value and any other text is a string, which int() reads in decimal (blanks and single underscores
+    allowed).  A value Hermes cannot take at all (an infinite float, a number YAML cannot construct) counts as the cap HERMES_LIFE_MAX_S."""
+    try:
+        if quoted:
+            value = text
+        elif text in _YAML_NULL:
+            return HERMES_TIMEOUT_S
+        elif text in _YAML_BOOL:
+            value = _YAML_BOOL[text]
+        elif _YAML_INT.fullmatch(text) or _YAML_FLOAT.fullmatch(text):
+            value = _yaml_number(text)
+        else:
+            value = text
+    except (ValueError, OverflowError):
+        return HERMES_LIFE_MAX_S
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return HERMES_TIMEOUT_S
+    except OverflowError:
+        return HERMES_LIFE_MAX_S
+
+
 def hermes_mode_off(s):
-    """Does approvals.mode read as off: `off` in any case and quoting, or unquoted false, no or n (YAML 1.1, which Hermes reads, makes them
-    false, and Hermes treats false as off)?"""
+    """Does approvals.mode read as off: `off` in any case and quoting, or unquoted false, no or n in any case?  Hermes reads the YAML 1.1
+    booleans of PyYAML (false, False, FALSE, no, No, NO) as false, which it treats as off, and every other of these spellings (n, nO, fAlse)
+    as a string, which it reads as manual: there the guard is stricter and refuses the click where Hermes would ask."""
     v = (s.get("mode") or "").strip().lower()
     return v == "off" or (not s.get("mode_quoted") and v in ("false", "no", "n"))
 
 
 def hermes_lifetime(s):
-    """The lifetime of a Hermes record that asks: min(max(T, 120), 900) + 30 s, T being approvals.timeout (300 when unset or no integer)."""
+    """The lifetime of a Hermes record that asks: min(max(T, 120), 900) + 30 s, T being approvals.timeout as Hermes reads it (300 when
+    unset; hermes_timeout)."""
     t = s.get("timeout") if isinstance(s.get("timeout"), int) else HERMES_TIMEOUT_S
     return min(max(t, HERMES_LIFE_MIN_S), HERMES_LIFE_MAX_S) + HERMES_LIFE_MARGIN_S
 
@@ -7166,6 +7397,8 @@ def decide(payload, lang, host=None, gate=None):
     if prot:
         if prot[1] == _HOST_MSG:  # mcp: only the host starts the approval server, on every host (Codex approval)
             return "PROTECTED", T(lang, "protected_mcp")
+        if prot[1] == _SLOT_MSG:  # a guard run whose subcommand is no plain word an agent may run, on every host (The subcommand of a guard run)
+            return "PROTECTED", T(lang, "protected_slot", cmd=guard_cmd(), subs="|".join(AGENT_SUBS))
         if host == "hermes" and gate is not None and prot[1] == _USER_MSG:  # the MAGOS Hermes plugin: modify and approve (Hermes approval)
             return hermes_answer(payload, crs, lang, gate)
         if host == "claude" and prot[1] == _USER_MSG:  # Claude Code asks the user in its own dialog (Approval)
@@ -7989,9 +8222,12 @@ def hermes_route_report():
     problem = False
     if on:
         out_text("hermes route: the plugin %s (guard %s) runs the guard and asks for a user-only command in Hermes's approval prompt" % (r["dir"], r["version"]))
-    elif r["plugin"] and (r["version"] != GUARD_VERSION or not r["callbacks"]):
+    elif r["plugin"] and r["version"] != GUARD_VERSION:
         out_text("hermes route: the plugin %s holds guard %s, not %s; update it (hermes plugins update magos) and restart Hermes"
                  % (r["dir"], r["version"] or "unversioned", GUARD_VERSION))
+    elif r["plugin"] and not r["callbacks"]:  # this guard's version, but an __init__.py that registers no guard callbacks
+        out_text("hermes route: the plugin %s holds guard %s, but its __init__.py registers no guard callbacks; update it (hermes plugins update "
+                 "magos) and restart Hermes" % (r["dir"], r["version"]))
     elif r["plugin"]:
         out_text("hermes route: magos is not in plugins.enabled of %s; Hermes loads no MAGOS callbacks" % r["config"])
     else:

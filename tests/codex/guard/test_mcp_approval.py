@@ -1,6 +1,6 @@
 """1.0.8 approval in Codex: the MCP approval server (`mcp`, its tool magos_approve, the elicitation form, the snapshot, the in-process run), the
-Codex hook's denial that names the tool and its exact arguments, the deny of `mcp` on every host, the generated [mcp_servers.magos] entry and
-the Codex lines of doctor (TC-600 to TC-649)."""
+Codex hook's denial that names the tool and its exact arguments, the deny of `mcp` on every host, the subcommand slot of a guard run, the
+generated [mcp_servers.magos] entry and the Codex lines of doctor (TC-600 to TC-649, TC-683 to TC-697)."""
 from __future__ import annotations
 
 import io
@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from conftest import SH, G, ROOT, SCRIPT, Result, crashed, retried, run, time_budget
-from test_approval import LAUNCHER, P, QS, S, approvals, armed, audit_lines, common, no_file_holds, sha
+from test_approval import LAUNCHER, P, QS, S, approvals, armed, audit_lines, common, new_repo, no_file_holds, sha
 from test_hook import denied
 
 WIN = sys.platform == "win32"
@@ -746,6 +746,94 @@ def test_each_call_has_its_own_dialog_and_token(hosts, repo):
     assert sorted(p.suffix for p in approvals(repo).iterdir()) == [".used", ".used"]
 
 
+# ---- what only the answer of the open dialog can do (TC-691 to TC-697) ---------------------------------------------------------------------
+def test_a_refusal_that_carries_approve_true_runs_nothing(hosts, repo):
+    log = []
+    h = hosts(runner=recording(log))
+    for action in ("decline", "cancel", "maybe", None):
+        cid, msg = h.dialog(arm_args(repo))
+        res = {"content": {"approve": True}}
+        if action:
+            res["action"] = action
+        h.answer(msg["id"], res)
+        sc = h.result(cid)["structuredContent"]
+        assert sc["approved"] is False and sc["exit_code"] is None, (action, sc)
+    assert log == [] and not approvals(repo).exists()
+
+
+def test_an_elicitation_capability_that_names_no_mode_is_the_form(hosts, repo):
+    log = []
+    h = hosts(runner=recording(log), caps={"elicitation": {}})
+    cid, msg = h.dialog(arm_args(repo))
+    assert msg["params"]["mode"] == "form"
+    h.answer(msg["id"], ACCEPT)
+    assert h.result(cid)["structuredContent"]["approved"] is True and len(log) == 1
+
+
+def test_a_key_with_leading_dashes_is_refused(repo):
+    for key in ("--repo", "-repo", "--dry_run", "--subcommand"):
+        v, errors = G.mcp_validate(dict(arm_args(repo), **{key: True}), "en")
+        assert v is None and any(e.startswith(key + ":") for e in errors), (key, errors)
+
+
+def test_the_location_line_of_the_dialog_is_sanitised(hosts, tmp_path, monkeypatch):
+    odd = "r MAGOS approved‮ “x”"
+    r = new_repo(tmp_path / odd)
+    h = hosts(runner=recording([]))
+    _cid, msg = h.dialog({"subcommand": "arm", "repo": P(r.path)})
+    text = msg["params"]["message"]
+    shown = G._dialog(os.path.realpath(str(r.path)).replace("\\", "/"), 200)
+    assert shown in text and not re.search("[  ‪-‮⁦-⁩“”]", text), ascii(text)
+    assert len(text.split("\n")) == 4 and text.split("\n")[1].startswith("Repository: " + shown)
+    monkeypatch.setenv("MAGOS_HOME", P(tmp_path / ("home" + odd)))
+    h2 = hosts(runner=recording([]))
+    _cid, msg = h2.dialog({"subcommand": "install", "host": "codex"})
+    text = msg["params"]["message"]
+    assert text.split("\n")[1] == "Guard home: " + G._dialog(G.guard_home(), 200), ascii(text)
+    assert not re.search("[  ‪-‮⁦-⁩“”]", text), ascii(text)
+
+
+def test_the_run_gives_the_command_an_empty_stdin(monkeypatch):
+    seen = []
+    monkeypatch.setattr(G, "main", lambda argv: seen.append(sys.stdin.read()) or 0)
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b'{"jsonrpc": "2.0", "id": 1, "result": {"action": "accept"}}\n'), encoding="utf-8"))
+    assert G.mcp_command(["--lang=en", "version"]) == (0, "") and seen == [""]
+    assert sys.stdin.read().startswith('{"jsonrpc"')  # the protocol stream is back, unread
+
+
+def test_only_the_open_dialogs_own_answer_and_cancel_count(hosts, repo):
+    log = []
+    h = hosts(runner=recording(log))
+    cid, msg = h.dialog(arm_args(repo))
+    assert msg["id"] == 1
+    for other in (2, "1", True, None):  # another request id, a string, a boolean equal to 1, no id
+        h.send({"jsonrpc": "2.0", "id": other, "result": ACCEPT})
+        h.pinged()
+    h.notify("notifications/cancelled", {"requestId": cid + 50, "reason": "another call"})
+    h.notify("notifications/cancelled", {"requestId": True})
+    h.pinged()
+    assert log == []
+    h.answer(msg["id"], ACCEPT)
+    h.request("ping")
+    assert h.next().get("id") == cid and len(log) == 1  # the dialog was still open: its Accept ran
+
+
+def test_the_wait_for_the_click_is_120_seconds(hosts, repo, monkeypatch):
+    real, skew = time.monotonic, [0.0]
+    monkeypatch.setattr(G.time, "monotonic", lambda: real() + skew[0])
+    log = []
+    h = hosts(runner=recording(log))
+    cid, msg = h.dialog(arm_args(repo))
+    skew[0] = 118.0
+    h.pinged()  # within 120 s: the dialog stays open
+    skew[0] = 121.0
+    h.request("ping")
+    got = [h.next(10), h.next(10), h.next(10)]
+    assert {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": msg["id"], "reason": "no answer within 120 s"}} in got
+    late = next(m for m in got if m.get("id") == cid)
+    assert "within 120 s" in late["result"]["structuredContent"]["text"] and G.MCP_CLICK_S == 120 and log == []
+
+
 # ---- the mcp deny and the Codex hook (TC-632 to TC-637) ----------------------------------------------------------------------------------
 def test_the_tamper_filter_reads_mcp_in_every_spelling():
     launcher = P(LAUNCHER)
@@ -831,7 +919,131 @@ def test_no_magos_hook_stands_before_the_tool(repo, tmp_path, monkeypatch):
     assert opened == [] and G.MCP_TOOL == "magos_approve"
 
 
-# ---- install and doctor (TC-638 to TC-641) -------------------------------------------------------------------------------------------------
+# ---- the subcommand slot of a guard run (TC-683 to TC-689) -----------------------------------------------------------------------------------
+DYNAMIC_SLOTS = [  # (tool, command template): a plain command that runs the guard with a subcommand the hook cannot read as a plain word
+    ("Bash", "x={sub}; python3 {s} $x"), ("Bash", "python3 {s} $(echo {sub})"), ("Bash", "python3 {s} ${{X:-{sub}}}"), ("Bash", "python3 {s} `echo {sub}`"),
+    ("Bash", "a=({sub}); python3 {s} ${{a[0]}}"), ("Bash", "python3 {s} $'{sub}'"), ("Bash", "printf '%s\\n' {sub} | xargs python3 {s}"),
+    ("Bash", "echo {sub} | xargs -I XX python3 {s} XX"), ("Bash", "echo {sub} | xargs -I plan python3 {s} plan"),
+    ("Bash", "printf x | xargs -I{{}} sh -c \"python3 '{s}' {{}} < /tmp/in.$$\""), ("Bash", "eval python3 {s} '$x'"), ("Bash", '"$PY" {s} $x'),
+    ("Bash", 'c="python3 {s}"; $c {sub}'), ("Bash", "g() {{ python3 {s} \"$@\"; }}; g {sub}"), ("Bash", "find . -name x -exec python3 {s} {{}} +"),
+    ("Bash", "python3 {s} --repo $R plan"), ("Bash", "python3 {s} mc?"), ("Bash", "python3 -X utf8 {s} -- $x"), ("Bash", "nohup {s} $x"),
+    ("PowerShell", "$a='{sub}'; py -3 {s} $a"), ("PowerShell", "& py -3 {s} @a"), ("PowerShell", "py -3 {s} $($a)"),
+    ("PowerShell", "Start-Process py -ArgumentList {s},$a"), ("PowerShell", "Invoke-Expression \"py {s} $a\""), ("PowerShell", "iex ('py {s} ' + $a)"),
+    ("PowerShell", "function g {{ py {s} @args }}; g {sub}"), ("PowerShell", "cmd /c py {s} %X%"),
+    ("Bash", "timeout 30s python3 {s} $x"), ("Bash", "uv run python {s} $x"), ("Bash", "poetry run python {s} $x"), ("Bash", "uv run {s} $x"),
+    ("Bash", "conda run -n env python {s} $x"), ("Bash", "ionice -c3 python3 {s} $x"), ("Bash", "flock /tmp/l python3 {s} $x"),
+    ("Bash", "echo mcp | ionice -c3 xargs python3 {s}"),
+]
+ALLOWED_GUARD_RUNS = [  # ordinary agent use and texts that merely name the guard or mcp (no deny on any host)
+    "py -3 {qs} plan --branch agent/x --paths a b", "py -3 {qs} check --branch agent/x --paths a", "py -3 {qs} list --json", "py -3 {qs} doctor",
+    "py -3 {qs} --json version", "py -3 {qs} --repo . set-show --set demo", "py -3 {qs} -- list", "py -3 {qs} --help", "py -3 {qs} --repo=. --unknown install",
+    "py -3 {qs} plan --branch agent/x --paths mcp", "py -3 {qs} plan --branch \"$B\" --paths $P", "py -3 \"$HOME/x/magos_guard.py\" plan --branch x --paths a",
+    "cat {qs}", "git add {qs} tests/x.py", "grep -n mcp {qs}", "wc -l {qs}", "py -3 -m pytest -k magos_guard", "py -3 -m py_compile {qs}",
+    "git ls-files | xargs grep -l magos_guard.py", "codex mcp list", "echo mcp", 'git commit -m "the mcp server of magos_guard.py"',
+    'git commit -m "magos_guard.py and __init__.py: deny dynamic words"', "Start-Process py '{s}','list'", "grep -n python3 {qs}", "rg python {qs}",
+    "timeout 30s python3 {qs} list", "uv run python {qs} plan --branch x --paths a", "ionice -c3 python3 {qs} doctor", "flock /tmp/l python3 {qs} --help",
+    "grep -rn xargs {qs}",
+]
+
+
+def slot_text(lang="en"):
+    return G.T(lang, "protected_slot", cmd=G.guard_cmd(), subs="|".join(G.AGENT_SUBS))
+
+
+def decided(repo, cmd, host, gate=None, tool="Bash"):
+    res = G.decide({"tool_name": tool, "tool_input": {"command": cmd}, "cwd": str(repo.path), "tool_use_id": "t-1", "session_id": "s-1"}, "en", host, gate)
+    return res[1] if isinstance(res, tuple) and not isinstance(res, (G.Approval, G.HermesApproval)) else res
+
+
+def test_the_tamper_filter_denies_a_dynamic_or_fed_subcommand():
+    for tool, form in DYNAMIC_SLOTS:
+        for sub in ("mcp", "hook", "disarm", "plan"):
+            text = form.format(s=S, sub=sub)
+            assert G.protected(text) == ("always", G._SLOT_MSG), (tool, text)
+    assert G.protected("py -3 %s ('mcp')" % S) == ("always", G._HOST_MSG)  # a static piece in a PowerShell expression is read as written
+    assert G.protected("x=disarm; python3 %s $x arm" % S) == ("always", G._SLOT_MSG)
+    assert G.protected("python3 %s --repo $R arm" % S) == ("always", G._USER_MSG)  # a user-only word keeps its own path (Approval)
+
+
+def test_every_host_denies_a_dynamic_subcommand_with_one_text(repo, isolated_env):
+    want = slot_text()
+    for tool, form in DYNAMIC_SLOTS[:3] + DYNAMIC_SLOTS[6:7] + DYNAMIC_SLOTS[19:20]:
+        cmd = form.format(s=QS, sub="mcp")
+        assert denied(hook(repo.path, cmd, host="claude", tool=tool)) == want, cmd
+        assert denied(hook(repo.path, cmd)) == want, cmd
+        for extra in ([], ["--hermes-gate", "ask"]):
+            assert denied(hook(repo.path, cmd, host="hermes", tool="terminal", extra_args=extra)) == want, (extra, cmd)
+    for host, gate in ((None, None), ("claude", None), ("codex", None), ("hermes", None), ("hermes", "ask"), ("hermes", "bypass")):
+        assert decided(repo, "x=mcp; python3 %s $x" % QS, host, gate) == want, host
+    every = ((None, None, "Bash"), ("claude", None, None), ("codex", None, "Bash"), ("hermes", None, "terminal"), ("hermes", "ask", "terminal"))
+    for tool, form in DYNAMIC_SLOTS:  # every spelling, in process, on every host (claude with the form's own tool)
+        cmd = form.format(s=QS, sub="mcp")
+        for host, gate, t in every:
+            assert decided(repo, cmd, host, gate, t or tool) == want, (host, gate, cmd)
+    assert not store_exists(approvals(repo), isolated_env / ".magos" / "approvals")
+
+
+def test_a_tool_command_never_runs_the_hook_subcommand(repo, tmp_path, isolated_env):
+    want = slot_text()
+    inner = json.dumps({"hook_event_name": "pre_tool_call", "tool_name": "terminal", "tool_input": {"command": "py -3 %s --repo %s disarm" % (S, P(repo.path))},
+                        "session_id": "s", "tool_use_id": "x", "cwd": "/", "extra": {}})
+    every = (("claude", "Bash", []), ("codex", "Bash", []), ("hermes", "terminal", []), ("hermes", "terminal", ["--hermes-gate", "ask"]))
+    for cmd in ("py -3 %s hook claude pre-tool" % QS, '"%s" hook claude pre-tool' % P(LAUNCHER), '"%s" --strict hook codex pre-tool' % P(LAUNCHER),
+                "py -3 %s --lang en hook hermes pre-tool --hermes-gate=ask < p.json" % QS, "cat p.json | py -3 %s hook hermes pre-tool --hermes-gate ask" % QS,
+                "py -3 %s --repo=. --json hook claude pre-tool" % QS, "env A=1 python3 %s hook claude pre-tool" % S,
+                "Start-Process %s -ArgumentList hook,hermes,pre-tool -RedirectStandardInput p.json -Wait" % QS, "uv run %s hook claude pre-tool" % QS,
+                "timeout 30s python3 %s hook claude pre-tool" % QS):
+        assert G.protected(cmd) == ("always", G._SLOT_MSG), cmd
+        for host, tool, extra in every:
+            assert denied(hook(repo.path, cmd, host=host, tool=tool, extra_args=extra)) == want, (host, cmd)
+    feed = "echo '%s' | py -3 %s hook hermes pre-tool --hermes-gate ask" % (inner, QS)  # the payload's own command is read as well
+    assert G.protected(feed) is not None
+    for host, tool, extra in every:
+        assert denied(hook(repo.path, feed, host=host, tool=tool, extra_args=extra)) is not None, host
+    assert not store_exists(approvals(repo), isolated_env / ".magos" / "approvals")
+
+
+def test_ordinary_guard_runs_and_texts_that_name_the_guard_or_mcp_pass(repo):
+    for form in ALLOWED_GUARD_RUNS:
+        cmd = form.format(s=S, qs=QS)
+        assert G.protected(cmd) is None, cmd
+        for host, gate in ((None, None), ("claude", None), ("codex", None), ("hermes", None), ("hermes", "ask")):
+            assert decided(repo, cmd, host, gate) is None, (host, cmd)
+    for cmd in ("py -3 %s list --json" % QS, "codex mcp list", "py -3 %s plan --branch agent/x --paths mcp" % QS):
+        for host, tool in (("claude", "Bash"), ("claude", "PowerShell"), ("codex", "Bash"), ("hermes", "terminal")):
+            assert hook(repo.path, cmd, host=host, tool=tool).out.strip() == "{}", (host, cmd)
+
+
+def test_the_mcp_and_slot_denials_are_the_same_on_every_host(repo):
+    for cmd, want in (("py -3 %s mcp" % QS, G.T("en", "protected_mcp")), ("python3 %s hook claude pre-tool" % QS, slot_text())):
+        for host, gate in ((None, None), ("claude", None), ("codex", None), ("hermes", None), ("hermes", "ask"), ("hermes", "absent")):
+            for tool in (("Bash", "PowerShell") if host != "hermes" else ("terminal",)):
+                assert decided(repo, cmd, host, gate, tool) == want, (host, gate, tool, cmd)
+
+
+def test_every_subcommand_of_the_parser_is_classified():
+    choices = set(next(a for a in G.build_parser()._actions if a.dest == "cmd").choices)
+    tables = [set(G.AGENT_SUBS), set(G._USER_ONLY), set(G.HOST_ONLY), {"hook"}]
+    assert set().union(*tables) == choices and sum(len(t) for t in tables) == len(choices)
+    for lang in ("zh", "en"):
+        text = slot_text(lang)
+        assert "{" not in text and "xargs" in text and "|".join(G.AGENT_SUBS) in text and G.guard_cmd() in text
+
+
+def test_the_reviewers_self_click_is_denied_before_it_runs(repo, isolated_env):
+    msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {"elicitation": {}}}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "magos_approve", "arguments": {"subcommand": "arm", "repo": P(repo.path)}}},
+            {"jsonrpc": "2.0", "id": 1, "result": {"action": "accept", "content": {"approve": True}}}]
+    lines = " ".join("'%s'" % json.dumps(m) for m in msgs)
+    py = P(sys.executable)
+    for cmd in ("x=mcp; printf '%%s\\n' %s | '%s' '%s' $x" % (lines, py, S),
+                "printf '%%s\\n' %s > /tmp/in.$$; echo mcp | xargs -I{} sh -c \"'%s' '%s' {} < /tmp/in.$$\"" % (lines, py, S)):
+        for host, tool, extra in (("claude", "Bash", []), ("codex", "Bash", []), ("hermes", "terminal", []), ("hermes", "terminal", ["--hermes-gate", "ask"])):
+            assert denied(hook(repo.path, cmd, host=host, tool=tool, extra_args=extra)) == slot_text(), (host, cmd[:60])
+    assert not armed(repo) and not store_exists(approvals(repo), isolated_env / ".magos" / "approvals")
+
+
+# ---- install and doctor (TC-638 to TC-641)-------------------------------------------------------------------------------------------------
 def test_install_for_codex_prints_and_writes_the_mcp_entry(repo, guard, tmp_path):
     tomllib = pytest.importorskip("tomllib") if sys.version_info >= (3, 11) else None
     name = "home 家" + ("" if WIN else " \"q\" \\b 'a'")
@@ -937,7 +1149,7 @@ def test_audit_fields_name_the_route():
 
 CODEX_KEYS = ("protected_codex", "protected_codex_form", "protected_codex_never", "protected_mcp", "mcp_ask", "mcp_approve_field", "mcp_where_repo",
               "mcp_where_home", "mcp_ran", "mcp_refused", "mcp_unticked", "mcp_late", "mcp_busy", "mcp_no_form", "mcp_terminal", "mcp_invalid",
-              "mcp_failed")
+              "mcp_failed", "protected_slot", "ready_own")
 
 
 def test_messages_of_the_codex_route(repo, guard, tmp_path):
@@ -953,6 +1165,11 @@ def test_messages_of_the_codex_route(repo, guard, tmp_path):
         need = G.T(lang, "need_tty")
         assert terminal in need and "Claude Code" in need and "Codex" in need and "Hermes" in need, need
     assert all(w in G._USER_RUN for w in ("Claude Code", "Codex", "Hermes", "your own terminal"))
+    options = G.T("en", "options", target="main", cmd="G", fp="0123456789ab")  # the texts of every host name every route (1.0.8 Change Notes)
+    assert all(w in options for w in ("Claude Code's dialog", "magos_approve", "Hermes's approval prompt", "own terminal")), options
+    assert "the host's dialog" in G.T("en", "approval_unknown") and "120" not in G.T("en", "approval_expired")
+    footer = guard(repo, "install", "--host", "claude", "--dry-run").out  # the footer every host's install prints
+    assert "Codex: trust the entry in /hooks. Hermes: with the MAGOS Hermes plugin no entry is needed" in footer, footer
     for value in ("prompt", "auto-safe"):
         repo.git("config", "magos.approval", value)
         line = next(x for x in guard(repo, "doctor").out.splitlines() if x.startswith("approval: "))
@@ -985,6 +1202,44 @@ def test_the_ready_command_quotes_for_the_users_shell(monkeypatch, tmp_path, pla
     line = "'%s' '%s'%s" % (P(sys.executable), P(probe), text[len(lead):])
     p = subprocess.run([SH, "-c", line], capture_output=True, timeout=120, env=dict(os.environ, MSYS_NO_PATHCONV="1", MSYS2_ARG_CONV_EXCL="*"))
     assert p.stdout.decode("utf-8").splitlines() == argv, p
+
+
+BS = "\\"
+READY_REASONS = ['plain words', "it's ok", 'say "hi"', 'cost $HOME and $(whoami)', 'tick `n back', 'a" --fingerprint=000000000000 "--lang=en',
+                 'semi; Write-Host pwned', "a' ; Write-Host pwned; '", '%PATH% & echo x', 'unicode \u201cquoted\u201d \u2018x\u2019', 'end' + BS,
+                 'back' + BS + '" x', 'fix "a b" now', 'y' + BS + '" --fingerprint=000000000000', 'trail space' + BS, 'two' + BS + BS, 'tab\there',
+                 'mid' + BS + 'dle x']
+
+
+def test_the_windows_ready_command_reaches_the_guard_unchanged(monkeypatch, tmp_path):
+    """TC-690: a word Windows PowerShell 5.1 would split or rejoin (a '"', or a blank and a trailing backslash) shows the ready_own text; every
+    other word reaches the guard exactly as the ready command names it (powershell.exe, when present, runs each line against a probe)."""
+    real = sys.platform
+    monkeypatch.setattr(sys, "platform", "win32")
+    rows = []
+    for reason in READY_REASONS:
+        argv = ["--repo=C:/Users/x/repo", "--lang=en", "override", "--fingerprint=abcdefabcdef", "--reason=" + reason]
+        text = G.ready_command(argv)
+        own = '"' in reason or (re.search(r"\s", reason) is not None and reason.endswith(BS))
+        want = argv[:-1] + ["--reason=" + G.T("en", "ready_own")] if own else argv
+        assert (G.T("en", "ready_own") in text) == own and '"' not in text[len(G.guard_cmd()):], (reason, text)
+        rows.append((text, want))
+    assert G.T("zh", "ready_own") in G.ready_command(["--lang=zh", "--reason=x\"y"], "zh")
+    assert G.ready_command(["--reason=x\"y"]) == G.guard_cmd() + " '--reason=%s'" % G.T("en", "ready_own")
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert G.ready_command(["--reason=fix \"a b\" now"]) == G.guard_cmd() + " '--reason=fix \"a b\" now'"  # sh reads the words as written
+    monkeypatch.setattr(sys, "platform", real)
+    ps = shutil.which("powershell.exe") if WIN else None
+    if ps is None:
+        return
+    probe = tmp_path / "probe_argv.py"
+    probe.write_text("import sys, json\nprint(json.dumps(sys.argv[1:]))\n", encoding="utf-8")
+    lead = G.guard_cmd()
+    for text, want in rows:
+        script = tmp_path / "ready.ps1"
+        script.write_text("& '%s' -I '%s'%s\n" % (sys.executable.replace("'", "''"), P(probe), text[len(lead):]), encoding="utf-8-sig")
+        p = subprocess.run([ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)], capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
+        assert json.loads(p.stdout.decode("utf-8").strip().splitlines()[-1]) == want, (text, p)
 
 
 def test_client_and_thread_ids_are_capped(hosts, repo):

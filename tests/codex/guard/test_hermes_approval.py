@@ -1,7 +1,7 @@
 """1.0.8 approval in Hermes, the guard side: `hook hermes pre-tool --hermes-gate <gate>` (the hook the MAGOS Hermes plugin runs) answers one
 direct invocation of this guard with the modify and approve of Hermes approval, reads the Hermes config, keeps the directory of the call,
 records route hermes, and the Hermes entry under hooks: keeps the 1.0.7 denial; install --host hermes and doctor name the route
-(TC-650 to TC-667, TC-672 to TC-676, TC-678, TC-681).  The plugin's own callbacks are tested in test_hermes_plugin.py."""
+(TC-650 to TC-667, TC-672 to TC-676, TC-678, TC-681, TC-698, TC-699).  The plugin's own callbacks are tested in test_hermes_plugin.py."""
 from __future__ import annotations
 
 import hashlib
@@ -192,12 +192,16 @@ def test_hermes_yolo_mode_in_the_environment_is_seen(repo, elsewhere, monkeypatc
         asked(H(arm_cmd(repo), elsewhere))
 
 
-OFF = ["approvals:\n  mode: off\n", 'approvals:\n  mode: "off"\n', "approvals:\n  mode: OFF\n", "approvals:\n  mode: n\n", "approvals:\n  mode: false\n",
+OFF = ["approvals:\n  mode: off\n", 'approvals:\n  mode: "off"\n', "approvals:\n  mode: OFF\n", "approvals:\n  mode: oFf\n", "approvals:\n  mode: false\n",
+       "approvals:\n  mode: FALSE\n", "approvals:\n  mode: NO\n", "---\napprovals:\n  mode: off\n", "approvals:\n  mode: n\n",
+       "approvals:\n  mode: nO\n", "approvals:\n  mode: fAlse\n",  # strings to PyYAML (Hermes: manual): the guard is stricter
        "approvals:\n  mode: No\n", "approvals:\n  mode: off  # x\n", "﻿approvals:\r\n  mode: off\r\n"]
 ASK = ["approvals:\n  mode: manual\n", "approvals:\n  mode: smart\n", "approvals:\n  mode: 'manual' # off\n", 'approvals:\n  mode: "on"\n',
        "approvals:\n  other:\n    mode: off\n", None]
 UNREADABLE = ["approvals: {mode: off}\n", "approvals:\n  mode: manual\nx: 1\napprovals:\n  mode: off\n", "approvals:\n  mode: *a\n",
-              'approvals:\n  mode: "a\\"b"\n', "approvals:\n\tmode: off\n", "directory"]
+              'approvals:\n  mode: "a\\"b"\n', "approvals:\n\tmode: off\n", "directory",
+              json.dumps({"approvals": {"mode": "off", "timeout": 60}}), json.dumps({"approvals": {"mode": "off"}}, indent=1),
+              "? approvals\n: mode: off\n", "base: &b\n  approvals:\n    mode: off\n<<: *b\n", "- approvals\n", "--- {approvals: {mode: off}}\n"]
 
 
 def put_config(hh, text):
@@ -241,6 +245,13 @@ def test_the_lifetime_follows_hermes_approvals_timeout(repo, elsewhere, hermes_e
         command, message, _k = asked(H(arm_cmd(repo), elsewhere))
         rec = rec_of(approvals(repo), command)
         assert rec["expires"] - rec["created"] == pytest.approx(life) and "within %d s" % life in message, (text, rec, message)
+    # approvals.timeout as Hermes reads it: PyYAML's YAML 1.1 value, then int() (TC-659): what Hermes waits, the record outlives
+    hermes_reads = {"0x3e8": 1000, "1_000": 1000, "1000.5": 1000, "'1000'": 1000, "0300": 192, "09": 9, "yes": 1, "off": 0, "~": 300, "": 300,
+                    ".nan": 300, "10:00": 600, "0b1010": 10, "'0x10'": 300, "' 42 '": 42, "1.5e+3": 1500, "'1_0'": 10, "1e3": 300, ".inf": 900}
+    for raw, t in hermes_reads.items():
+        put_config(hermes_env, "approvals:\n  timeout: %s\n" % raw)
+        s = G.hermes_settings()
+        assert s["error"] is None and s["timeout"] == t and G.hermes_lifetime(s) == min(max(t, 120), 900) + 30, (raw, s)
 
 
 # ---- recognition (TC-660 to TC-665) --------------------------------------------------------------------------------------------------------
@@ -431,6 +442,10 @@ def test_doctor_reports_the_hermes_route_and_approvals(repo, hermes_env, monkeyp
     r, lines = doctor(repo)
     assert lines[0] == "hermes route: the plugin %s holds guard %s, not %s; update it (hermes plugins update magos) and restart Hermes" % (
         d, OLD, G.GUARD_VERSION), r.out
+    make_plugin(hermes_env, hook_line=False)  # this guard's version, an __init__.py without the callbacks: a text of its own
+    r, lines = doctor(repo)
+    assert lines[0] == ("hermes route: the plugin %s holds guard %s, but its __init__.py registers no guard callbacks; update it (hermes plugins "
+                        "update magos) and restart Hermes" % (d, G.GUARD_VERSION)), r.out
     make_plugin(hermes_env)
     put_config(hermes_env, enabled + "approvals:\n  mode: off\n  timeout: 60\n")
     r, lines = doctor(repo)
@@ -556,3 +571,36 @@ def test_the_command_verifies_a_hermes_record_unchanged(repo, monkeypatch):
     assert "route" not in line and line["tool_use_id"] == "call_1"
     r = mint("arm", 340, "hermes")
     assert r.rc == 26 and not armed(repo), r
+
+
+# ---- what the hook itself checks before it asks (TC-698, TC-699) -----------------------------------------------------------------------------
+def test_a_command_that_also_creates_a_lane_gets_no_question(repo, elsewhere):
+    payload = hpayload(arm_cmd(repo), elsewhere)
+    creation = [{"names": ["agent/x"], "dynamic": False, "kind": "switch", "cwd": str(repo.path)}]
+    for crs, want in ((creation, "SHAPE"), ([], None)):
+        res = G.hermes_answer(payload, crs, "en", "ask")
+        if want:
+            assert res == ("PROTECTED", G.T("en", "protected_shape_hermes", why=G._USER_MSG, cmd=G.guard_cmd()) + "\n[APPROVAL_SHAPE]"), res
+        else:
+            assert isinstance(res, G.HermesApproval) and res.message, res
+    assert len(list(approvals(repo).iterdir())) == 1  # only the plain invocation minted
+
+
+def test_the_parsers_reading_of_the_appended_token_and_the_gate_value_are_checked(repo, elsewhere, monkeypatch):
+    payload = hpayload(arm_cmd(repo), elsewhere)
+    real = G.parse_quiet
+
+    def elsewhere_read(words):  # a parser that reads the appended approval word otherwise than the command will
+        ns = real(words)
+        if ns is not None and getattr(ns, "approval", None):
+            ns.approval = "not-the-probe"
+        return ns
+    monkeypatch.setattr(G, "parse_quiet", elsewhere_read)
+    head = G.T("en", "protected_shape_hermes", why=G._USER_MSG, cmd=G.guard_cmd())
+    assert G.hermes_answer(payload, [], "en", "ask") == ("PROTECTED", head + "\n[APPROVAL_ARGS]")
+    monkeypatch.setattr(G, "parse_quiet", real)
+    settings = G.hermes_settings()
+    for gate in ("absent", "maybe", "", None, "ASK"):  # every value but ask fails closed
+        assert G.hermes_noask(gate, settings) == ("hermes_how_gate", {}), gate
+    assert G.hermes_noask("bypass", settings) == ("hermes_how_session", {}) and G.hermes_noask("ask", settings) is None
+    assert not approvals(repo).exists()

@@ -1575,8 +1575,10 @@ def test_launcher_words_start_wrappers_and_double_dash_hide_no_user_only_command
         for tool, cmd in denied_lines:
             reason = verdict(hook(cwd, cmd, tool=tool))
             assert reason and "user-only" in reason, (cwd, tool, cmd, reason)
-        for cmd in ("%s%s%s hook claude pre-tool" % (q, P(launcher), q), "py -3 scripts/magos_guard.py -- list", "py -3 scripts/magos_guard.py -- version"):
+        for cmd in ("py -3 scripts/magos_guard.py -- list", "py -3 scripts/magos_guard.py -- version"):
             assert verdict(hook(cwd, cmd)) is None, (cwd, cmd)
+        slot = G.T("en", "protected_slot", cmd=G.guard_cmd(), subs="|".join(G.AGENT_SUBS))  # only the host runs the hook subcommand (TC-685)
+        assert verdict(hook(cwd, "%s%s%s hook claude pre-tool" % (q, P(launcher), q))) == slot, cwd
 
 
 LAUNCH_STUB = '''import os, sys
