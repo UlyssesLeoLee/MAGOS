@@ -595,13 +595,68 @@ def test_token_errors_name_their_cause_and_exit_distinctly(repo, tmp_path, monke
     assert asked == [] and t not in r.out + r.err
 
 
+def arms(repo):
+    return [x["op"] for x in audit_lines(common(repo) / "magos")].count("arm")
+
+
 @needs_sh
 def test_two_uses_at_once_have_one_winner(repo):
+    """Of two uses of one token at once exactly one runs arm and the other answers 27 (used); two zeros never.  An exit 11 is the guard failing
+    closed when Windows keeps the record busy past its retries (the claim is released and nothing ran): the scenario then runs once more with
+    a new token."""
+    for attempt in range(2):
+        before = arms(repo)
+        x = answer(hook(repo.path, "%s %s --lang en arm" % (PY, QS)))["updatedInput"]["command"]
+        procs = [subprocess.Popen([SH, "-c", x], cwd=str(repo.path), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                 for _ in range(2)]
+        outs = [p.communicate(timeout=120) for p in procs]
+        codes = sorted(p.returncode for p in procs)
+        assert codes.count(0) <= 1 and set(codes) <= {0, 11, 27} and arms(repo) - before == codes.count(0), (codes, outs)
+        if codes == [0, 27] or 11 not in codes:
+            break
+    assert codes == [0, 27], outs
+    assert not list(approvals(repo).glob("*.tmp"))  # every claim was released
+
+
+CLAIM_RACE = """import sys, time
+sys.path.insert(0, %r)
+import magos_guard as G
+argv = %r
+args = G.build_parser(%r).parse_args(argv)
+args.argv = argv
+start = %r
+while time.time() < start:
+    pass
+code, rec = G.consume_approval(args, %r, %r)
+sys.exit(code or (0 if rec else 99))
+"""
+
+
+def test_two_uses_at_one_instant_have_one_winner(repo):
+    """Two processes consume one token at the same instant (both spin until one start time, then call consume_approval): on NTFS both renames
+    of the record succeed (each opens the file by name, then renames its handle), so only the exclusive claim keeps the second use out."""
+    where = G.open_repo(str(repo.path)).common
+    for _round in range(3):
+        token = token_of(answer(hook(repo.path, "%s %s --lang en arm" % (PY, QS)))["updatedInput"]["command"])
+        argv = ["--lang", "en", "arm", "--approval=" + token]
+        code = CLAIM_RACE % (str(SCRIPT.parent), argv, str(repo.path), time.time() + 3, str(approvals(repo)), where)
+        procs = [subprocess.Popen([sys.executable, "-B", "-c", code], cwd=str(repo.path), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE) for _ in range(2)]
+        outs = [p.communicate(timeout=120) for p in procs]
+        assert sorted(p.returncode for p in procs) == [0, 27], outs
+        assert not list(approvals(repo).glob("*.tmp")) and (approvals(repo) / (sha(token) + ".used")).is_file()
+
+
+def test_a_held_claim_answers_used_and_runs_nothing(repo):
     x = answer(hook(repo.path, "%s %s --lang en arm" % (PY, QS)))["updatedInput"]["command"]
-    procs = [subprocess.Popen([SH, "-c", x], cwd=str(repo.path), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2)]
-    outs = [p.communicate(timeout=120) for p in procs]
-    assert sorted(p.returncode for p in procs) == [0, 27], outs
-    assert [x["op"] for x in audit_lines(common(repo) / "magos")].count("arm") == 1
+    h = sha(token_of(x))
+    claim = approvals(repo) / (h + ".lock.tmp")
+    claim.write_bytes(b"")  # another use of this token holds the claim
+    r = run(["--lang", "en", "arm", "--approval=" + token_of(x)], cwd=str(repo.path))
+    assert r.rc == 27 and not armed(repo) and (approvals(repo) / (h + ".json")).is_file(), r
+    claim.unlink()
+    r = run(["--lang", "en", "arm", "--approval=" + token_of(x)], cwd=str(repo.path))
+    assert r.rc == 0 and armed(repo) and (approvals(repo) / (h + ".used")).is_file() and not claim.exists(), r
 
 
 @needs_sh

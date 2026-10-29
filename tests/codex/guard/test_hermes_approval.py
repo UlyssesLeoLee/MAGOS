@@ -359,7 +359,9 @@ def test_end_to_end_arm_through_bash(repo, elsewhere):
 def test_end_to_end_through_hermes_eval_wrapper(repo, elsewhere, guard):
     assert guard(repo, "arm").rc == 0
     command, _m, _k = asked(hook_proc(hpayload(arm_cmd(repo, "disarm"), elsewhere)))
-    wrapped = "builtin cd -- %s || exit 126\neval %s" % (q(repo.path), G.sh_quote(command))
+    # Hermes runs `builtin cd -- <workdir> || exit 126` and `eval '<command>'` in bash; `builtin` is no POSIX word (dash, Ubuntu's sh, has
+    # none), so the POSIX form of the same cd and eval runs here
+    wrapped = "cd -- %s || exit 126\neval %s" % (q(repo.path), G.sh_quote(command))
     r = run_sh(wrapped, repo.path)
     assert r.rc == 0 and not armed(repo), r
     line = [x for x in audit_lines(common(repo) / "magos") if x["op"] == "disarm"][-1]

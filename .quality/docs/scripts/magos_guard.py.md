@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `11e9c6a6027636a3a78ccdcf18299757fee98240a680b9ef32cadec44a5985f1`
+Source-SHA256: `83f07146a3f4c8ba82e497b42e867fe08b4738dd6d76a5aa57136653f0b71430`
 
 ## Responsibility
 
@@ -678,7 +678,9 @@ that holds a comma).
   expansion when it starts the launcher and runs the interpreter through `call` (`&`, `(`, `)`, `^`, `%`, `;`, `,`,
   `=`); the message names the character and the path and asks for a guard home without it (`--home` or `MAGOS_HOME`).
   It compares `scripts/magos_guard.py` and `hooks/run-guard.cmd` with the copies in
-  `<home or ~/.magos>/guard/{scripts,hooks}/`. When both copies are byte-identical to the sources it prints
+  `<home or ~/.magos>/guard/{scripts,hooks}/`. The guard home is the absolute path of `--home`, else `MAGOS_HOME`, else
+  `~/.magos`, written with `/` on Windows, where a backslash is a separator; on POSIX a backslash is a character of a
+  file name and stays (the generated entries quote such a path for sh and TOML). When both copies are byte-identical to the sources it prints
   `guard copy unchanged (<version>)` and copies nothing. A missing source file is an internal error (exit 11). When the
   copy's `GUARD_VERSION` (read from the copy's bytes and compared as a tuple of integers) is newer than the source's, it
   refuses with exit 18 unless `--allow-downgrade` is given. Otherwise it first writes every changed file to a temporary
@@ -2086,8 +2088,15 @@ nothing runs, and the record stays for the command or a prune. At level `termina
 - Then, with `--approval`, the command verifies and consumes the token, and asks neither the console nor the
   challenge. A `--dry-run` with `--approval` consumes its token as well. Without `--approval`, the console gate and
   `override`'s challenge run as Public Contract states, and `--dry-run` skips them.
-- Consumption renames `<sha256>.json` to `<sha256>.used`. A rename succeeds only once on NTFS and on POSIX file systems,
-  so of two uses at the same moment one wins and the other finds no record.
+- Consumption first creates the claim `<sha256>.lock.tmp` exclusively (`O_CREAT | O_EXCL`, on Windows `CreateFile` with
+  `CREATE_NEW`): of any number of uses at the same moment exactly one creates it, on NTFS as on POSIX file systems. A use
+  that finds the claim held is the second use (exit 27) and runs nothing. Holding the claim, the use renames
+  `<sha256>.json` to `<sha256>.used` and then releases the claim; a later use finds no record and the `.used` file
+  (exit 27). The rename alone does not decide: on NTFS two processes that rename the same file at the same moment can
+  both succeed (each opens the file by name, then renames its handle).
+- A claim or a rename that Windows keeps busy past its retries counts as used when the record is consumed already (no
+  `.json`, a `.used`), and otherwise fails closed: exit 11, nothing ran, the claim is released. A claim left behind by a
+  process that died answers 27 for its token until a mint prunes it as a temporary file, 600 s after it was made.
 - The renamed record is then read and checked:
   - format 1: `v` 1, `used` false, `via` `prompt` or `auto-safe` and a finite `expires` (else the token is unknown; an
     integer too large for a float is no finite `expires`);
@@ -2835,6 +2844,11 @@ Version 1.0.8 of the guard (`GUARD_VERSION` 1.0.8). Relative to the 1.0.7 produc
   host's dialog), `approval_expired` (the time the request stated, which is no longer 120 s on every route), doctor's
   approval line and the user-only hint of its re-arm and refresh lines (`_USER_RUN`), and the footer of `install` for
   every host (no Hermes entry is needed with the plugin; without it the entry is approved once).
+
+It also consumes an approval token behind an exclusive claim (Approval (version 1.0.7), Verification in the command):
+on NTFS two uses of one token at the same moment could both rename its record and both run the command; and on POSIX it
+keeps a backslash in the guard home as a character of the name (`--home`, `MAGOS_HOME`), where it wrote under another
+directory before.
 
 Its claims, set records, the answers of the Claude Code hook to a user-only command (ask, allow, the denials with a
 cause code), its dialog text, its approval records and audit lines, the Hermes entry under `hooks:` and every other

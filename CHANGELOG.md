@@ -20,6 +20,11 @@ Tag `v1.0.8`. A feature release: the click that 1.0.7 gave Claude Code now exist
 - **The ready terminal command** printed with a denial is quoted for Windows PowerShell 5.1; a value it cannot carry (a double quote, or a blank before a trailing backslash) is replaced by a placeholder for the user's own words.
 - **Texts and documents.** The denial (`options`), `need_tty`, the token errors, the install footer and `doctor` name the click in each host and the terminal fallback; `SKILL.md`, `references/lane-split.md`, `references/installation.md`, `references/pressure-tests.md` and the three READMEs describe the three routes, what the plugin runs and writes, and the limits.
 
+### Fixed
+
+- **A single-use approval token can no longer be used twice at one instant on Windows.** The command renamed the token's record to mark it used, but two processes that rename the same record at the same moment both succeed on NTFS (measured: 300 of 300 rounds), so one token could run two commands. This was true of 1.0.7 too and was found by the CI of 1.0.8. The command now claims the token with an exclusively created file first; the second use answers 27 (used) and runs nothing, and a record that stays busy fails closed. The token never reaches the agent, so the exposure was a second process holding the same token, not an agent forging one.
+- **A POSIX `--home` path keeps its backslashes.** The guard turned every backslash of the guard home into a slash on every platform, so a home such as `/t/home \b` was written to `/t/home /b`; only Windows now does that.
+
 ### Known limits
 
 - The Codex server cannot authenticate its client: an agent that starts its own copy of the server by a route the text detector cannot read (a renamed copy, `python -c`) and plays the MCP client can answer its own form. It is the same class as forging state files, which 1.0.6 and 1.0.7 already state; the barrier remains the hook that denies every plain shell command reaching the server.

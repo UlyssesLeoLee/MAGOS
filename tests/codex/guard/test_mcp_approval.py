@@ -1118,6 +1118,7 @@ def test_install_for_codex_prints_and_writes_the_mcp_entry(repo, guard, tmp_path
     home = tmp_path / name
     r = guard(repo, "install", "--host", "codex", "--home", str(home), "--dry-run")
     hh = G.guard_home(str(home))
+    assert hh == (str(home).replace("\\", "/") if WIN else str(home))  # a POSIX backslash is a character of the name and stays
     assert r.rc == 0 and G.host_snippet("codex", hh) in r.out and G.codex_mcp_toml(hh) in r.out, r
     assert "Or add the server with: %s (this sets neither env_vars nor the timeouts)" % G.codex_mcp_add(hh) in r.out
     assert not home.exists()
@@ -1134,6 +1135,16 @@ def test_install_for_codex_prints_and_writes_the_mcp_entry(repo, guard, tmp_path
     home2 = tmp_path / "h2"
     assert guard(repo, "install", "--host", "claude", "--home", str(home2)).rc == 0
     assert not (home2 / "guard" / "generated" / "codex-mcp.toml").exists()
+    if SH is not None and not WIN:  # the printed `codex mcp add` line gives sh the script path exactly, backslash and quotes included
+        line = G.codex_mcp_add(hh)
+        p = subprocess.run([SH, "-c", "printf '%s\\n' " + line.split(" -- ", 1)[1]], capture_output=True, timeout=60)
+        assert p.stdout.decode("utf-8").splitlines() == [sys.executable, "-I", "-B", "%s/guard/scripts/magos_guard.py" % hh, "mcp"], p
+
+
+def test_a_path_keeps_its_backslashes_where_they_are_no_separator(monkeypatch):
+    for sep, want in (("\\", "C:/a b/x"), ("/", "C:\\a b/x")):
+        monkeypatch.setattr(G.os, "sep", sep)
+        assert G._slashed("C:\\a b/x") == want, sep
 
 
 def test_toml_strings():

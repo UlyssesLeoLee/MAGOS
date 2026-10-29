@@ -13,6 +13,7 @@ A feature release: Codex and Hermes get the click that Claude Code has had since
 - **No click-free path in these routes, no unattended override.**
 - **The subcommand of a guard run must be a plain word** (closes a route that would have let an agent answer the Codex form itself).
 - **`doctor` and `install`** know both routes.
+- **A fix for a Windows race:** two processes using one approval token at the same instant could both succeed (1.0.7 had it); the token is now claimed exclusively and the second use answers 27.
 
 ## Changed
 

@@ -3989,10 +3989,28 @@ def challenge(expected, lang):
 
 
 def _rename(src, dst, tries=40):
-    """os.rename, retried while Windows reports a file busy (a reader holds it open).  It succeeds once: a second rename of `src` finds no file."""
+    """os.rename, retried while Windows reports a file busy (a reader holds it open).  A rename alone is no single winner: on NTFS two
+    processes that rename the same `src` at the same moment can both succeed (each opens the file by name, then renames its handle), so
+    consume_approval renames only while it holds the exclusive claim of _claim."""
     for attempt in range(tries):
         try:
             return os.rename(src, dst)
+        except PermissionError:
+            if attempt == tries - 1:
+                raise
+            time.sleep(0.05)
+
+
+def _claim(path, tries=40):
+    """Create `path` exclusively (O_CREAT | O_EXCL, CreateFile CREATE_NEW on Windows) -> True for the one caller that creates it, False when it
+    exists already; retried while Windows reports the name busy (a file being removed).  Of any number of callers at the same moment exactly
+    one gets True, on NTFS as on POSIX file systems."""
+    for attempt in range(tries):
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+            return True
+        except FileExistsError:
+            return False
         except PermissionError:
             if attempt == tries - 1:
                 raise
@@ -4023,9 +4041,10 @@ def strip_approval(argv):
 
 def consume_approval(args, root, where):
     """Verify and consume the --approval token of a user-only command (Approval, Verification in the command) -> (None, record), or (exit code,
-    None) after its message on stderr.  <sha256>.json is renamed <sha256>.used first, so of two uses one wins and a failed check burns the
-    token; the renamed record must then be of format 1 and unused, unexpired, and issued for this subcommand, this repository or default guard
-    home (`where`) and exactly this argument list.  No message names the token."""
+    None) after its message on stderr.  The use first creates the claim <sha256>.lock.tmp exclusively (_claim): a use that finds it held is
+    the second use (27).  Holding it, it renames <sha256>.json to <sha256>.used and releases the claim, so of two uses exactly one consumes
+    the record and a failed check burns the token; the renamed record must then be of format 1 and unused, unexpired, and issued for this
+    subcommand, this repository or default guard home (`where`) and exactly this argument list.  No message names the token."""
     def refuse(code, key, **kw):
         sys.stderr.write(T(args.lang, key, **kw) + "\n")
         return EXIT[code], None
@@ -4033,13 +4052,32 @@ def consume_approval(args, root, where):
     if not _APPROVAL_TOKEN.fullmatch(token):
         return refuse("APPROVAL_UNKNOWN", "approval_unknown")
     h = hashlib.sha256(token.encode("ascii")).hexdigest()
-    live, used = os.path.join(root, h + ".json"), os.path.join(root, h + ".used")
+    live, used, lock = os.path.join(root, h + ".json"), os.path.join(root, h + ".used"), os.path.join(root, h + ".lock.tmp")
+    try:
+        mine = _claim(lock)
+    except FileNotFoundError:  # no store: no record of this token
+        return refuse("APPROVAL_UNKNOWN", "approval_unknown")
+    except PermissionError:  # the name stayed busy: decided when the record is consumed already, else fail closed (exit 11, nothing ran)
+        if os.path.isfile(used) and not os.path.exists(live):
+            return refuse("APPROVAL_USED", "approval_used")
+        raise
+    if not mine:  # another use of this token holds the claim: it consumes the record, this one is the second use
+        return refuse("APPROVAL_USED", "approval_used")
     try:
         _rename(live, used)
     except FileNotFoundError:
         return refuse("APPROVAL_USED", "approval_used") if os.path.isfile(used) else refuse("APPROVAL_UNKNOWN", "approval_unknown")
     except FileExistsError:  # Windows: a .used file of the same token beside a live record
         return refuse("APPROVAL_USED", "approval_used")
+    except PermissionError:  # the record stayed busy: decided when it is consumed already, else fail closed (exit 11, nothing ran)
+        if os.path.isfile(used) and not os.path.exists(live):
+            return refuse("APPROVAL_USED", "approval_used")
+        raise
+    finally:
+        try:
+            _remove(lock)
+        except OSError:  # a claim left behind keeps answering 27 for this token; a mint prunes it as a temporary file after 600 s
+            pass
     try:
         rec = json.loads(_read_retry(used))
         if not (isinstance(rec, dict) and rec.get("v") == 1 and rec.get("used") is False and rec.get("via") in ("prompt", "auto-safe")):
@@ -6382,7 +6420,7 @@ def approval_target(ns, row, cwd):
         if cwd is None:
             dest = guard_home(ns.home)
         else:
-            dest = os.path.normpath(os.path.join(cwd, os.path.expanduser(ns.home or os.environ.get("MAGOS_HOME") or "~/.magos"))).replace("\\", "/")
+            dest = _slashed(os.path.normpath(os.path.join(cwd, os.path.expanduser(ns.home or os.environ.get("MAGOS_HOME") or "~/.magos"))))
     return {"g": g, "level": approval_level(g)[0], "root": root, "where": where, "dest": dest}
 
 
@@ -7189,7 +7227,7 @@ def _yaml_children(block):
 
 def _hermes_config(home=None):
     """-> (path, the lines of <hermes home>/config.yaml or None when it is missing, error): UTF-8, a byte order mark and CR LF allowed."""
-    path = os.path.join(home or hermes_home(), "config.yaml").replace("\\", "/")
+    path = _slashed(os.path.join(home or hermes_home(), "config.yaml"))
     try:
         data = read_bytes(path)
         return path, (None if data is None else data.decode("utf-8-sig").splitlines()), None
@@ -7677,8 +7715,14 @@ HOSTS = ("claude", "codex", "hermes")
 _VERSION_LINE = re.compile(rb"^GUARD_VERSION\s*=\s*[\"']([0-9]+(?:\.[0-9]+)*)[\"']", re.M)
 
 
+def _slashed(path):
+    """A local path with the platform's separator written as /: on Windows every backslash is a separator; on POSIX a backslash is a character
+    of a file name and stays."""
+    return path.replace("\\", "/") if os.sep == "\\" else path
+
+
 def guard_home(arg=None):
-    return os.path.abspath(os.path.expanduser(arg or os.environ.get("MAGOS_HOME") or "~/.magos")).replace("\\", "/")
+    return _slashed(os.path.abspath(os.path.expanduser(arg or os.environ.get("MAGOS_HOME") or "~/.magos")))
 
 
 def version_of(data):
@@ -7747,7 +7791,7 @@ def hermes_plugin():
     """-> (launcher, note).  launcher: the Hermes plugin's own launcher when the Hermes entry may run it, i.e. the guard script beside it
     declares this guard's GUARD_VERSION and, on Windows, its path holds no character cmd_unsafe names; else None.  note: why an existing
     plugin launcher is not used, else None."""
-    plugin = os.path.abspath(os.path.join(hermes_home(), "plugins", "magos")).replace("\\", "/")
+    plugin = _slashed(os.path.abspath(os.path.join(hermes_home(), "plugins", "magos")))
     own = plugin + "/hooks/run-guard.cmd"
     if not os.path.isfile(own):
         return None, None
