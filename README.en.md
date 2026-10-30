@@ -1388,3 +1388,19 @@ Rollback System
 ## License
 
 Apache-2.0
+
+---
+
+## Lane, worktree and branch
+
+Each is one thing; a lane ties them together:
+
+```text
+branch    = a name in Git that points at a chain of commits (agent/<topic>)
+worktree  = a directory on disk with one branch checked out (a branch can be checked out in only one worktree at a time)
+lane      = MAGOS's unit of parallel work = 1 branch + 1 worktree + 1 registered file manifest
+```
+
+- The branch and the worktree are plain Git; **the manifest is what MAGOS adds**: register the files the lane plans to change first (`plan`), then create the branch and the worktree. The guard stops only the creation; a lane that already exists is left alone.
+- The manifests of parallel lanes must not overlap, so two agents never edit the same file and nobody has to own a merge conflict afterwards.
+- Lifecycle: `plan` registers, then branch + worktree are created, the agent works and commits in the worktree, `/GitIntegrate` merges it into the target, `release` drops the registration, and the worktree and branch are cleaned up (`/GitCleanup`, `/GitSweep`).

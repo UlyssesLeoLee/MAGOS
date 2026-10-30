@@ -1449,3 +1449,19 @@ Rollback System
 ## License
 
 Apache-2.0
+
+---
+
+## Lane、Worktree、Branch
+
+それぞれ役割は一つで、lane がそれらを結びつけます：
+
+```text
+branch    = コミットの連なりを指す Git 上の名前（agent/<トピック>）
+worktree  = branch を 1 つチェックアウトしたディスク上のディレクトリ（同じ branch は同時に 1 つの worktree でしかチェックアウトできない）
+lane      = MAGOS の並行作業の単位 = 1 つの branch + 1 つの worktree + 登録された 1 つのファイル一覧（manifest）
+```
+
+- branch と worktree は Git 本来のものです。**manifest が MAGOS の足すもの**で、lane が変更するファイルを先に登録（`plan`）してから branch と worktree を作ります。ガードが止めるのは作成だけで、既にある lane には触れません。
+- 並行する lane の manifest は重ならないので、2 つのエージェントが同じファイルを編集することはなく、マージ時のコンフリクトの担当も要りません。
+- ライフサイクル：`plan` で登録 → branch + worktree を作成 → エージェントが worktree で作業・コミット → `/GitIntegrate` で対象ブランチへ統合 → `release` で登録を解除し、worktree と branch を片付け（`/GitCleanup`、`/GitSweep`）。

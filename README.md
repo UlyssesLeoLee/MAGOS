@@ -1440,3 +1440,19 @@ Rollback System
 ## License
 
 Apache-2.0
+
+---
+
+## Lane、Worktree 与 Branch
+
+三者各管一件事，一条 lane 把它们绑在一起：
+
+```text
+branch    = Git 里的一个名字，指向一串提交（agent/<主题>）
+worktree  = 磁盘上的一个目录，里面检出了一个 branch（同一个 branch 同时只能在一个 worktree 里检出）
+lane      = MAGOS 的并行工作单元 = 1 个 branch + 1 个 worktree + 1 份登记的文件清单（manifest）
+```
+
+- branch 和 worktree 是 Git 自己的东西；**manifest 是 MAGOS 加的**：先登记这条 lane 计划修改哪些文件（`plan`），再创建 branch 和 worktree。守卫只拦“创建”，已经存在的 lane 不受影响。
+- 并行的 lane 的 manifest 必须互不重叠，所以两个 Agent 不会改同一个文件，合并时也就没有冲突要谁来认领。
+- 生命周期：`plan` 登记 → 创建 branch + worktree → Agent 在 worktree 里工作、提交 → `/GitIntegrate` 合并进目标分支 → `release` 释放登记，worktree 和 branch 再清理（`/GitCleanup`、`/GitSweep`）。
