@@ -415,7 +415,7 @@ The file holds ten cooperating parts.
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
-7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.8) and equals
+7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.9) and equals
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the
@@ -2895,6 +2895,29 @@ directory before.
 Its claims, set records, the answers of the Claude Code hook to a user-only command (ask, allow, the denials with a
 cause code), its dialog text, its approval records and audit lines, the Hermes entry under `hooks:` and every other
 command are those of 1.0.7; in Claude Code only the texts named above differ.
+
+Version 1.0.9 of the guard (`GUARD_VERSION` 1.0.9). Relative to the 1.0.8 product it:
+
+- reads every part of a command before it decides and keeps the most severe finding: a finding of scope `always` in a
+  later piece, a later command, a quoted word, a child shell, an alias value or among several targets of one writer or
+  redirect wins over a `guarded` one wherever that stands, and the hook reads the command a second time with the
+  absolute guard home and store whenever the first reading found nothing of scope `always`;
+- starts a here-document only at a `<<` outside quotes and comments, and reads a body as commands when a shell named as
+  written, by a path or in quotes stands on its line or, after a line that ends with `|`, on the line after the body;
+- denies a guard run whose words up to the subcommand slot hold a brace expansion or a glob, reads the guard word also
+  with `$''` and `$""` removed, without trailing dots and blanks and in its Windows 8.3 short names, takes every
+  Python build (`python3.14t`, `python3.12-dbg`, `pypy3`) as an interpreter, and reads the value of every `git -c
+  alias.<name>=<value>` like the text of a child shell;
+- denies a command whose text nested deeper than three levels names MAGOS with the `protected_deep` text, on every host;
+- reads the subcommand slots of a command in one pass, so a command of many guard-like words is read in linear time;
+- maps a Codex command onto `magos_approve` only when it is exactly one direct invocation of this guard;
+- keeps a POSIX backslash in the directories of `magos_approve`, the Hermes plugin and the rewritten command, refuses a
+  Hermes `workdir` that is no existing absolute directory, and refuses a `~` interpreter or script word where the call
+  names no directory;
+- reads a Hermes flow list up to its first `]`.
+
+Its claims, set records, approval records, audit lines and texts are those of 1.0.8, with the `protected_deep` text
+added; commands that 1.0.8 allowed and that none of the readings above concerns are allowed alike.
 
 Compatibility: claim files of format 1 written by 1.0.0 to 1.0.3 are read unchanged, and line 1 of every claim stays
 `state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule

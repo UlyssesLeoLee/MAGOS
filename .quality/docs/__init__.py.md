@@ -172,3 +172,8 @@ of 1.0.4. Compatibility: the guard runs on every terminal call once the updated 
 update magos` and a restart); `MAGOS_GUARD=off`, `hermes plugins disable magos` and `git config --local magos.guard off`
 turn it off, and a MAGOS entry under `hooks:` should be removed, because it denies every user-only command before Hermes
 can ask.
+
+Version 1.0.9 keeps no mark in a Hermes plugin-host process (`plugins.isolation: host`), where each callback gets its
+own copy of the arguments: there the approval callback returns nothing, so a guard command that names `magos_guard` (`plan`,
+`version`, `git add scripts/magos_guard.py`) is no longer blocked as unprepared; in Hermes's own process the callbacks are
+those of 1.0.8.
