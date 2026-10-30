@@ -14,9 +14,9 @@ function registers every `skills/<name>/SKILL.md` under the plugin namespace, so
 `/magos:git-recon` and so on, which Codex spells `$magos:git-recon` and Claude Code hides. Without this file Hermes loads the
 package through its portable `plugin.json` and names the commands `/agent-plugin-magos-<digest>:git-recon`.
 
-Nine skills are registered: the entry skill `git-orchestrator` and the eight command adapters `git-recon`,
-`git-analyze`, `git-recommend` (read-only) and `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`
-(commands that write to a repository).
+Ten skills are registered: the entry skill `git-orchestrator` and the nine command adapters `git-recon`,
+`git-analyze`, `git-recommend` (read-only) and `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`,
+`git-protect` (commands that write to a repository or to the guard's state).
 
 Hermes lists every registered plugin skill in the `<available_skills>` index of the system prompt with the description
 passed at registration; it does not read a plugin skill's `SKILL.md` description for that index, so a skill registered
@@ -109,9 +109,10 @@ no approve. `gate()` returns `ask`, `bypass` or `absent` as that section states.
 `INDEX_DESCRIPTIONS`: a top-level literal `dict` from skill name to one single-line string, with no computed value, so
 a check can read it with `ast.literal_eval` without running the module. It holds exactly one non-empty entry for each
 directory of `skills/` that carries a `SKILL.md`, no entry for anything else, in this order: `git-orchestrator`,
-`git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`.
-`git-plan` comes last, after the read-only commands and the earlier write commands, in the section order of
-`references/commands.md`, so the neighbouring text of the earlier lines stays as it is. The `""` default of the lookup
+`git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`,
+`git-protect`. `git-plan` and `git-protect` come last, after the read-only commands and the earlier write commands, in
+the section order of `references/commands.md` (sections 8 and 9), so the neighbouring text of the earlier lines stays as
+it is. The `""` default of the lookup
 exists only so that a skill added without a line still registers; the contract check fails that tree.
 
 Line rules, final state:
@@ -122,10 +123,12 @@ Line rules, final state:
 - Read-only commands (`git-recon`, `git-analyze`, `git-recommend`): start with `Read-only` and say
   `Use /magos:<name> when the user asks`; they do not tell the model to stay away from them.
 - Write commands, which are exactly the skills whose `SKILL.md` has the section `## Explicit invocation only`
-  (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`): the line names what the command writes,
+  (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`, `git-protect`): the line names what the command writes,
   then `run only when the user types /magos:<name>.`, and ends with `Never load it yourself.`
 - `git-plan` reads: `Registers lane claims and, with --converge --apply, merges the lanes: run only when the user types
   /magos:git-plan. Never load it yourself.` (one line, without a line break).
+- `git-protect` reads: `Sets or lifts the protection of a branch against agents' commits and merges: run only when the user types /magos:git-protect. Never load it yourself.` (one line, without a line break, 149 characters). The command writes the guard's protection
+  record through the user-only guard subcommand `protect`, which the user approves; `--status` only reads.
 - A line names no command other than its own: every text of the form `/<plugin>:<command>` in a line equals
   `/magos:<its own name>`.
 - Every line other than the orchestrator's has at most 160 characters.

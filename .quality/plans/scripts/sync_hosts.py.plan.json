@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "source": "scripts/sync_hosts.py",
-  "baseline_source_sha256": "f5b65edb9e55248dfa2601c6bee3b201f0f12d6443b52f8e8e4c47f4f5906701",
-  "prepared_branch": "agent/gitplan-1.0.4",
+  "baseline_source_sha256": "77ee18e17694d491d0192dc540a4fbc4612b491e5554387370af41f2553fb51e",
+  "prepared_branch": "agent/git-protect",
   "technical_design": ".quality/docs/scripts/sync_hosts.py.md",
   "test_design": ".quality/test-design/scripts/sync_hosts.py.test.md",
-  "prepared_technical_design_sha256": "038379eb0fcb73a20536aa540ebd7ad46254bfffd3b11911c222d28e5a489110",
-  "prepared_test_design_sha256": "b7aa7558246ad38754272db2a00e223e32cfcd1a48fee5bfbf5467babee53a5d",
+  "prepared_technical_design_sha256": "2f98668ae67a930083a722ebd4c3e70d7595333dacabae38f5186a3ec93b4587",
+  "prepared_test_design_sha256": "363606b8c8030c028885aecacada4fc9373c4f57bacc7fbf63c61756f896181d",
   "prepared_related_design_sha256": {}
 }

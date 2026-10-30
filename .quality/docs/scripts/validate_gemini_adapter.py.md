@@ -8,7 +8,7 @@ Source-SHA256: `c3f646f8cee71cdebc0a15ea64425163befdcc81d6ff91f5f43475fb318e720a
 
 An offline consistency check of the Gemini CLI adapter of MAGOS against the repository that carries it. It reads files only (standard library, no network, no process) and answers PASS or FAIL.
 
-The adapter consists of the extension manifest `gemini-extension.json`, the context file `GEMINI.md`, the policy `policies/magos-git-confirm.toml` and one TOML custom command for each of the eight MAGOS commands, `commands/<Name>.toml` for GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge, GitSweep and GitPlan.
+The adapter consists of the extension manifest `gemini-extension.json`, the context file `GEMINI.md`, the policy `policies/magos-git-confirm.toml` and one TOML custom command for each of the nine MAGOS commands, `commands/<Name>.toml` for GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge, GitSweep, GitPlan and GitProtect (the tuple `COMMANDS`, in the section order of `references/commands.md`).
 
 ## Dependencies
 
@@ -23,7 +23,7 @@ The adapter consists of the extension manifest `gemini-extension.json`, the cont
 - The checks, in order:
   1. `gemini-extension.json` has the name `magos` and the `contextFileName` `GEMINI.md`, and `GEMINI.md` exists.
   2. The policy file has at least one `rule`, and every rule has the decision `ask_user` (TOML content: Python 3.11 and later).
-  3. For each of the eight names, `commands/<Name>.toml` exists and, on Python 3.11 and later, has a non-empty `description` and a `prompt` that holds the Gemini arguments marker, `--help`, `activate_skill`, `--lang`, `SKILL.md`, `references/commands.md` and the command name.
+  3. For each of the nine names, `commands/<Name>.toml` exists and, on Python 3.11 and later, has a non-empty `description` and a `prompt` that holds the Gemini arguments marker, `--help`, `activate_skill`, `--lang`, `SKILL.md`, `references/commands.md` and the command name.
   4. Unless `overlay_only`: the original `commands/<Name>.md` exists for each name; `SKILL.md`, `references/commands.md` and `skills/git-orchestrator/SKILL.md` exist; `plugin.json` has the name `magos` and a `version` equal to the `version` of `gemini-extension.json`.
 - `main()` takes `--repo PATH` (default: the parent of the `scripts` directory) and `--overlay-only`. It exits with status 0 after PASS. On AssertionError, KeyError, ValueError or OSError it writes `FAIL: <message>` to stderr and exits with status 1.
 - Invariant: nothing is written, no process is started, no network is used.
