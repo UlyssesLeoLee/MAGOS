@@ -4,7 +4,7 @@ name: security
 # supply-chain contracts (pinned workflows, hash-pinned installs, no credential in a tracked file, no network module and
 # no remote git subcommand in the hook code) run on Windows and on Linux with Python 3.14, the python3 the hooks run
 # under; zizmor audits the workflows and the Dependabot configuration, with its online audits of the pinned actions
-# (impostor commits, tag mismatches, known vulnerabilities). It runs on pushes and pull requests to main, develop
+# (impostor commits, tag mismatches, known vulnerabilities). It runs on pushes and pull requests to main, dev, develop
 # and develop_codex, on v* tags, and weekly, so a new runner image (Git, Python, the shells) meets the suites when nothing
 # was pushed. The workflow token has no permissions; each job may read the repository and nothing else, and reads no
 # repository secret. Actions are pinned by full commit SHA (the tag is in the comment), and every install takes wheels
@@ -12,10 +12,10 @@ name: security
 
 on:
   push:
-    branches: [main, develop, develop_codex]
+    branches: [main, dev, develop, develop_codex]
     tags: ["v*"]
   pull_request:
-    branches: [main, develop, develop_codex]
+    branches: [main, dev, develop, develop_codex]
   schedule:
     - cron: "37 3 * * 1"
   workflow_dispatch:

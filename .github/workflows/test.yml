@@ -8,10 +8,10 @@ name: tests
 
 on:
   push:
-    branches: [main, develop, develop_codex]
+    branches: [main, dev, develop, develop_codex]
     tags: ["v*"]
   pull_request:
-    branches: [main, develop, develop_codex]
+    branches: [main, dev, develop, develop_codex]
   workflow_dispatch:
 
 permissions:
