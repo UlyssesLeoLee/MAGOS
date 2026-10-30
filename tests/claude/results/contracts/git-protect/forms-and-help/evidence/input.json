@@ -1,0 +1,14 @@
+{
+  "arguments": [
+    "[<branch>]"
+  ],
+  "also": [
+    "--release",
+    "--status [<branch>]",
+    "--help",
+    "--lang <language>",
+    "--release together with --status",
+    "more than one branch",
+    "a detached HEAD without a branch"
+  ]
+}

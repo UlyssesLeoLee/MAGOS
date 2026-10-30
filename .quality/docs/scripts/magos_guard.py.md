@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `7c8a55b6cf76a939d1a4d06593110a7f01703e8aae068f427868dbb343961a2c`
+Source-SHA256: `0db8468df4736e80170cf2404cb6d7a0bf031ec966e14e73501cf7f9cf9662cd`
 
 ## Responsibility
 
@@ -2917,9 +2917,10 @@ resolved.
 - A write record whose repository cannot be opened or resolved (a dynamic `cd`, `-C`, `env -C` or `sudo -D` target, a
   dynamic or unresolvable redirect): it is judged in the session directory's repository, and refused when that
   repository holds protection (`branch_protected_unknown`).
-- A line the overflow rule or the walking budget leaves incompletely read, and a command longer than 200,000
-  characters, when its text names `git` and the session directory's repository holds protection
-  (`branch_protected_unknown`). The overflow rule keeps its `_anywhere` record for such a line when the walk yields a
+- A line the overflow rule or the walking budget leaves incompletely read, when its text names `git` and the session
+  directory's repository holds protection (`branch_protected_unknown`). A command longer than 200,000 characters in
+  such a repository is denied first by the tamper filter with the `protected` text (the command is too long to
+  inspect), which stands before the protection check. The overflow rule keeps its `_anywhere` record for such a line when the walk yields a
   write record, marked so that the creation check ignores it: a line that yields only write records is never denied by
   the creation check, so a `git commit` behind nine directory states stays allowed in a repository without protection.
 - A Git failure or an exhausted budget while the protection of a repository is judged, in a repository that holds
@@ -3041,7 +3042,7 @@ Entries of the table `M` (`T(lang, key, **fields)`), zh first and en second:
 The lines of `protect_show_line` are indented by two spaces; `{reason}` there is empty or the text of
 `protect_show_reason` with the reason as `_shown` gives it, `{state}` is `protect_exists` or `protect_absent`, and
 `{at}`, `{by}` and `{via}` are the stored values. In every text `{b}` is the branch as the command or the record names
-it and `{repo}` is `repo_dir` of the repository, both as `_shown` gives them; in `branch_protected_unknown` `{list}` is
+it and `{repo}` is `repo_dir` of the working tree the write runs in (a linked worktree names its own path), both as `_shown` gives them; in `branch_protected_unknown` `{list}` is
 at most six stored names joined with `, `, followed by `show_more` when there are more; in `protect_limit` `{n}` is
 `PROTECT_MAX`. `T` formats with `str.format`, so no entry holds a literal brace. A usage error is argparse's own text
 and exit 2; the Git-failure and internal-error lines of Errors apply to both subcommands.
@@ -3083,8 +3084,8 @@ PROTECT_NEWER_FORMAT; 30 PROTECT_LIMIT. `protect-show`: 0; 2; 11; 29.
   which the hook reads as written. A `git-<name>` program other than those of the last table row is not read.
 - At most `PROTECT_MAX` (64) protected branches per repository, a branch name of 255 characters, a reason of 200
   characters, a record of 1 MiB.
-- Cost: one memoised repository opening and one stat of the store per repository a write record names; in a
-  repository that holds protection one memoised `worktree list` (and `rev-parse` for a git directory without a work
+- Cost: one memoised repository opening (two `rev-parse` calls) and one stat of the store per repository a write
+  record names; in a repository that holds protection also `config magos.guard` and one memoised `worktree list` (and `rev-parse` for a git directory without a work
   tree, `config` for `rebase.updateRefs` when a rebase is judged), one read of the record and of a head-name file, all
   on the hook's 18 s budget.
 

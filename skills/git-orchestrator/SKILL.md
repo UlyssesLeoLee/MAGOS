@@ -17,4 +17,4 @@ Before giving any Git coordination advice, read the package-root `SKILL.md`, two
 
 If `../../SKILL.md` cannot be read, say that the MAGOS installation is incomplete and give no state-dependent Git advice.
 
-The eight explicit commands are separate skills of the same plugin (for example `magos:git-recon`, or `/magos:GitRecon` in Claude Code). This skill never merges, deletes, pushes, or changes a repository on its own; writes go only through those commands and their gates.
+The nine explicit commands are separate skills of the same plugin (for example `magos:git-recon`, or `/magos:GitRecon` in Claude Code). This skill never merges, deletes, pushes, or changes a repository on its own; writes go only through those commands and their gates.

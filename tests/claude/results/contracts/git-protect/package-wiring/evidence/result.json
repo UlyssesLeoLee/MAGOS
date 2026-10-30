@@ -1,0 +1,64 @@
+{
+  "case": "git-protect/package-wiring",
+  "skill": "git-protect",
+  "feature": "The ninth command is wired into the sync script, the Hermes index, the adapters, the Gemini command, the install guide and the three READMEs",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "scripts/sync_hosts.py",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "scripts/validate_gemini_adapter.py",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "__init__.py",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "commands/GitProtect.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "commands/GitProtect.toml",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-protect/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-protect/agents/openai.yaml",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/installation.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.en.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "README.ja.md",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}

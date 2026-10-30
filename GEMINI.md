@@ -10,13 +10,14 @@ package-root `SKILL.md` and `references/commands.md`, which are the authoritativ
 contracts. Activate `git-orchestrator` with Gemini CLI's `activate_skill` tool
 before executing an actual MAGOS operation; then follow the root skill and its
 referenced material, including verification gates, read-only defaults, version
-requirements, and tabular output. The eight `skills/git-*/SKILL.md` files are
+requirements, and tabular output. The nine `skills/git-*/SKILL.md` files are
 additional adapters; do not confuse them with the orchestrator entry skill.
 
 Each `/Git*` TOML custom command is intended for **explicit user invocation**.
 Never infer that discussing a Git cleanup, integration, sweep, or lane plan is
 permission to invoke `/GitIntegrate`, `/GitCleanup --apply`, `/GitConverge
---apply`, `/GitSweep --apply`, `/GitPlan --apply`, or `/GitPlan --release`.
+--apply`, `/GitSweep --apply`, `/GitPlan --apply`, `/GitPlan --release`, or
+`/GitProtect`.
 For normal related questions, activate `git-orchestrator` and advise/read only.
 
 - `/GitRecon`, `/GitAnalyze` and `/GitRecommend` are read-only except an
@@ -27,6 +28,10 @@ For normal related questions, activate `git-orchestrator` and advise/read only.
   dependency, review, freshness, protected-branch and repository-policy gates.
 - `/GitSweep --push` is distinct from `--apply` and may publish a branch.
 - `/GitPlan --release` writes state; it is not a preview.
+- `/GitProtect` (with or without `--release`) writes the guard's protection
+  state only through the user-only `protect` subcommand and only with the
+  user's approval; `/GitProtect --status` is read-only. It never commits,
+  merges or deletes a branch.
 - `--help` must be handled from inline usage before repository inspections,
   skill activation, file reads, or Git commands.
 - Output language defaults to 简体中文; `--lang` controls response language only.

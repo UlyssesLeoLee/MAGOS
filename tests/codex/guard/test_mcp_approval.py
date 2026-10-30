@@ -26,7 +26,7 @@ FORM = {"elicitation": {"form": {}, "url": {}}}
 CLIENT = {"name": "fake-host", "version": "1"}
 ACCEPT = {"action": "accept", "content": {"approve": True}}
 SUBS = ["plan", "check", "list", "release", "override", "hook", "arm", "disarm", "install", "doctor", "version", "set-plan", "set-show", "set-update",
-        "set-release"]
+        "set-release", "protect", "protect-show"]
 
 
 class Host:
@@ -213,8 +213,8 @@ def test_tools_list_names_one_tool_with_its_schema(hosts):
     assert schema["required"] == ["subcommand"] and schema["additionalProperties"] is False and schema["type"] == "object"
     props = schema["properties"]
     assert {k: v["type"] for k, v in props.items()} == {"subcommand": "string", "repo": "string", "fingerprint": "string", "reason": "string",
-                                                         "host": "string", "dry_run": "boolean"}
-    assert props["subcommand"]["enum"] == ["override", "arm", "disarm", "install"] and props["host"]["enum"] == ["claude", "codex", "hermes"]
+                                                         "host": "string", "dry_run": "boolean", "branch": "string", "release": "boolean"}
+    assert props["subcommand"]["enum"] == ["override", "arm", "disarm", "install", "protect"] and props["host"]["enum"] == ["claude", "codex", "hermes"]
     assert props["fingerprint"]["pattern"] == "^[0-9a-f]{12}$"
     assert tool["annotations"] == {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}
 
@@ -1293,7 +1293,8 @@ def test_audit_fields_name_the_route():
 
 CODEX_KEYS = ("protected_codex", "protected_codex_form", "protected_codex_never", "protected_mcp", "mcp_ask", "mcp_approve_field", "mcp_where_repo",
               "mcp_where_home", "mcp_ran", "mcp_refused", "mcp_unticked", "mcp_late", "mcp_busy", "mcp_no_form", "mcp_terminal", "mcp_invalid",
-              "mcp_failed", "protected_slot", "ready_own", "protected_long", "protected_deep")
+              "mcp_failed", "protected_slot", "ready_own", "protected_long", "protected_deep", "approval_what_protect", "approval_what_unprotect",
+              "approval_protect_reason")
 
 
 def test_messages_of_the_codex_route(repo, guard, tmp_path):

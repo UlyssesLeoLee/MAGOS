@@ -1,0 +1,20 @@
+description = "保护分支免受代理提交与合并；设置与解除经用户批准，--status 只读"
+prompt = '''
+MAGOS /GitProtect — Gemini CLI adapter for the existing MAGOS repository.
+
+Raw command arguments (preserve spelling and whitespace semantics): {{args}}
+
+USAGE: /GitProtect [<branch>] [--release | --status] [--lang <language>] [--help]
+Examples: /GitProtect main; /GitProtect develop --release; /GitProtect --status
+
+MANDATORY EXECUTION ORDER:
+1. Parse these arguments FIRST, without tools. If --help is present, reply with usage, options, defaults and examples in the chosen language, then STOP: do not load skills, read files, inspect Git, or invoke any tool. Unknown flags or invalid/missing required arguments: show usage and stop. `--lang <language>` affects reply language only; default Simplified Chinese.
+2. Otherwise activate the existing Gemini Agent Skill named `git-orchestrator` using `activate_skill`; it is provided in this MAGOS extension at `skills/git-orchestrator/SKILL.md`. It links to package-root `SKILL.md` and `references/commands.md`; read and follow those canonical contracts. If skill activation or its contract cannot be read, STOP ALL WRITES and explain; for a read-only command, use only observed non-mutating status information. Do NOT treat Claude Code-only `Skill` tool names or `$ARGUMENTS` from `commands/GitProtect.md` as executable commands in Gemini.
+3. Execute the source-defined Git command GitProtect with exactly the arguments above, under Gemini CLI tool approvals, checking the real target repository and safety preconditions. Neither this TOML nor an automatic tool invocation is permission to bypass MAGOS gates.
+4. Return contract-defined tables, evidence, blockers, risks, and safe next actions. Recheck the requested reply language before answering. Never claim operations ran when they were not performed.
+
+SOURCE-SPECIFIC CONSTRAINTS:
+Without a branch use `git branch --show-current`; a detached HEAD stops and asks for a branch. `--status` is read only and runs `magos_guard.py protect-show`. Setting or lifting (`--release`) runs the user-only guard subcommand `magos_guard.py protect --branch <branch> [--release]` as one direct command that the user approves; never pass `--approval`, never write `.git/magos` or `magos.*` config, never retry a refused or declined protect in another form; when no approval prompt exists, print the command for the user's own terminal. The command never commits, merges, creates, switches, deletes or pushes a branch.
+
+Safety classification: Explicit command only; guard state changes only with the user's approval.
+'''

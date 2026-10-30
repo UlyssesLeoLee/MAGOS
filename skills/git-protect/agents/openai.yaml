@@ -1,0 +1,5 @@
+interface:
+  display_name: "git-protect"
+  short_description: "保护分支；$git-protect [BRANCH] [--release] [--status] [--help]"
+policy:
+  allow_implicit_invocation: false

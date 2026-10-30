@@ -15,7 +15,7 @@ import pytest
 from conftest import ROOT
 
 SCRIPT = ROOT / "scripts" / "validate_gemini_adapter.py"
-NAMES = ("GitRecon", "GitAnalyze", "GitRecommend", "GitIntegrate", "GitCleanup", "GitConverge", "GitSweep", "GitPlan")
+NAMES = ("GitRecon", "GitAnalyze", "GitRecommend", "GitIntegrate", "GitCleanup", "GitConverge", "GitSweep", "GitPlan", "GitProtect")
 FILES = ("gemini-extension.json", "GEMINI.md", "SKILL.md", "plugin.json", "references/commands.md", "skills/git-orchestrator/SKILL.md",
          "policies/magos-git-confirm.toml")
 needs_toml = pytest.mark.skipif(sys.version_info < (3, 11), reason="the TOML content is read on Python 3.11 and later")
@@ -56,6 +56,10 @@ def test_the_repository_passes(adapter, capsys):
     assert adapter.validate(ROOT) is None
     assert adapter.validate(ROOT, overlay_only=True) is None
     assert capsys.readouterr().out.count("PASS:") == 2
+    spec = importlib.util.spec_from_file_location("sync_hosts_names", ROOT / "scripts" / "sync_hosts.py")
+    sync_hosts = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sync_hosts)
+    assert adapter.COMMANDS == NAMES == sync_hosts.COMMAND_NAMES  # nine commands, in the section order of references/commands.md
 
 
 def test_manifest_and_context_failures(adapter, tree):

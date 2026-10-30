@@ -296,9 +296,9 @@ def test_the_listing_icon_meets_the_directory_rules():
 
 
 def test_the_command_adapters_are_hidden_from_claude_code():
-    """Claude Code gets its eight commands from commands/: each skills/ adapter (for Codex and Hermes) is out of its / menu and not offered to the model."""
+    """Claude Code gets its nine commands from commands/: each skills/ adapter (for Codex and Hermes) is out of its / menu and not offered to the model."""
     frontmatter, plugin = contract_module("skill_frontmatter"), contract_module("agent_plugin")
-    writes = {"git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan"}
+    writes = {"git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan", "git-protect"}
     adapters = writes | {"git-recon", "git-analyze", "git-recommend"}
     assert plugin.ENTRY_SKILL == "git-orchestrator"
     assert plugin.ALLOWED_FIELDS - {"name", "description", "license", "allowed-tools", "metadata", "compatibility"} == {"disable-model-invocation", "user-invocable"}
@@ -315,10 +315,10 @@ def test_the_command_adapters_are_hidden_from_claude_code():
     assert "disable-model-invocation" not in root_fields and "user-invocable" not in root_fields
     assert plugin.check_model_invocation(ROOT) == []
     commands = sorted((ROOT / "commands").glob("*.md"))
-    assert len(commands) == 8
+    assert len(commands) == 9
     for command in commands:  # the commands are THE set of Claude Code: none is hidden
         assert "\nuser-invocable:" not in command.read_text(encoding="utf-8"), command.name
-    for command in ("GitIntegrate", "GitCleanup", "GitConverge", "GitSweep", "GitPlan"):  # the Claude commands of the write adapters say the same
+    for command in ("GitIntegrate", "GitCleanup", "GitConverge", "GitSweep", "GitPlan", "GitProtect"):  # the Claude commands of the write adapters say the same
         assert "\ndisable-model-invocation: true\n" in (ROOT / "commands" / (command + ".md")).read_text(encoding="utf-8")
 
 

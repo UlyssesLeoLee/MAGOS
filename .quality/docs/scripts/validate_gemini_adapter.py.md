@@ -2,7 +2,7 @@
 
 Source: `scripts/validate_gemini_adapter.py`
 
-Source-SHA256: `c3f646f8cee71cdebc0a15ea64425163befdcc81d6ff91f5f43475fb318e720a`
+Source-SHA256: `60208c2ee0cbf8596d921d2cf739320f9c8ca08a0aeb6ec494a456c417f0f668`
 
 ## Responsibility
 

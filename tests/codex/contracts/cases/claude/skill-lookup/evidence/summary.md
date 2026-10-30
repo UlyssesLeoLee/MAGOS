@@ -7,7 +7,7 @@
 ## Expected behavior
 
 - Each command accepts magos, MAGOS, multi-agent-git-orchestrator, or MAGO-Skill as the orchestrator skill.
-- GitIntegrate does not integrate, and GitCleanup, GitConverge, GitSweep and GitPlan only preview when the skill cannot be loaded.
+- GitIntegrate does not integrate, GitCleanup, GitConverge, GitSweep and GitPlan only preview, and GitProtect sets or lifts nothing when the skill cannot be loaded.
 
 ## Contract checks
 
@@ -19,10 +19,12 @@
 - PASS `commands/GitConverge.md`
 - PASS `commands/GitSweep.md`
 - PASS `commands/GitPlan.md`
+- PASS `commands/GitProtect.md`
 - PASS `commands/GitIntegrate.md`
 - PASS `commands/GitCleanup.md`
 - PASS `commands/GitConverge.md`
 - PASS `commands/GitSweep.md`
 - PASS `commands/GitPlan.md`
+- PASS `commands/GitProtect.md`
 
 Evidence scope: source-contract check; no AI host CLI is invoked.

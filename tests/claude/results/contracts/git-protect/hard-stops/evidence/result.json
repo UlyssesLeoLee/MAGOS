@@ -1,0 +1,44 @@
+{
+  "case": "git-protect/hard-stops",
+  "skill": "git-protect",
+  "feature": "/GitProtect writes no branch, and only the user sets or lifts a protection",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "commands/GitProtect.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-protect/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-protect/agents/openai.yaml",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/lane-split.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}

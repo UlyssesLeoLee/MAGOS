@@ -13,7 +13,7 @@ not fork or replace them. No existing Claude/Codex/Hermes file is modified.
 
 - `gemini-extension.json`: official Gemini extension manifest.
 - `GEMINI.md`: short always-on Gemini host guidance and safety defaults.
-- `commands/GitRecon.toml` ... `commands/GitPlan.toml`: eight custom slash
+- `commands/GitRecon.toml` ... `commands/GitProtect.toml`: nine custom slash
   command adapters. The existing `commands/Git*.md` remain untouched and
   continue serving Claude Code.
 - `policies/magos-git-confirm.toml`: additive confirmation rules for selected
@@ -60,6 +60,7 @@ indexes public extension repositories periodically.
 | `/GitConverge` | `commands/GitConverge.md` | Preview; `--apply` writes |
 | `/GitSweep` | `commands/GitSweep.md` | Preview; `--apply` changes local and safe remote branches; `--push` separately required for publishing |
 | `/GitPlan` | `commands/GitPlan.md` | Preview for planning/convergence; `--apply` / `--release` write |
+| `/GitProtect` | `commands/GitProtect.md` | Sets or lifts a branch protection in the guard's state only with the user's approval; `--status` read only |
 
 ## Safety notes / known limitations
 
@@ -100,7 +101,7 @@ indexes public extension repositories periodically.
 
 - [ ] `python scripts/validate_gemini_adapter.py --repo .` passes.
 - [ ] `gemini extensions validate .` passes on the merged repo.
-- [ ] `/commands list` includes all eight `/Git*` entries.
+- [ ] `/commands list` includes all nine `/Git*` entries.
 - [ ] `/skills list` exposes `git-orchestrator`.
 - [ ] `/GitPlan --help` performs no Git/tool operations.
 - [ ] `/GitRecon` is read only, and `/GitRecon --remote` obeys consent.

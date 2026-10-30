@@ -226,8 +226,8 @@ def guard():
     """guard(repo, *args) -> Result for `magos_guard --repo <repo> --lang en ...`."""
     def call(repo, *args, stdin=b""):
         old = G.user_console
-        if args and args[0] in ("arm", "disarm", "install") and "--dry-run" not in args:
-            G.user_console = lambda: True  # arm / disarm / install are user-only and need a console
+        if args and args[0] in ("arm", "disarm", "install", "protect") and "--dry-run" not in args:
+            G.user_console = lambda: True  # arm / disarm / install / protect are user-only and need a console
         try:
             return run(["--repo", str(getattr(repo, "path", repo)), "--lang", "en", *args], stdin=stdin)
         finally:

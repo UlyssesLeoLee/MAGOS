@@ -8,6 +8,7 @@
     "git-cleanup",
     "git-converge",
     "git-sweep",
-    "git-plan"
+    "git-plan",
+    "git-protect"
   ]
 }

@@ -20,10 +20,10 @@
 
 ## 何を実行し、何を送り、何を取得するか
 
-- **実行するもの。** Claude Code では、プラグインが PreToolUse フック（`hooks/hooks.json`）を有効にします。シェルコマンド、サブエージェントの起動、worktree の作成、およびセッション・シェル・プロセスを起動する MCP ツールの呼び出しのたびに、`hooks/run-guard.cmd` が Python で `scripts/magos_guard.py` を実行します。スクリプトは渡されたツール呼び出しを読み、許可か拒否かを答え（Bash か PowerShell のツールで直接呼び出された `override`、`arm`、`disarm`、`install` のガードコマンド 1 つには、確認を求める答えを返します。そのとき Claude Code が権限ダイアログを表示し、実行されるコマンドにはフックが付けた 1 回限りの `--approval` トークンが含まれます。`auto-safe` では、`arm` と、デフォルトのガードホームへの `install`（`--allow-downgrade` なし）に対して、確認ではなく許可を答えます）、次に挙げるローカルの Git コマンド以外のプログラムは実行しません。Codex では、プラグインの `mcp.json` がローカルの MCP サーバー `magos` を 1 つ宣言します。Codex 自身がプラグインのディレクトリで git を通じて起動し（`git -c alias.magos-mcp=!<sh script> magos-mcp`：スクリプトは `python3`、`py -3`、`python` の順に選び、`scripts/magos_guard.py mcp` を実行します）、標準入出力で通信します。ネットワークには接続しません。唯一のツール `magos_approve` は、ユーザー専用のガードコマンド 1 つについて Codex 自身のダイアログ（チェックボックスは Approve だけです。チェックを入れてから Accept を押します）を表示し、あなたが承諾したときだけ、指定のリポジトリでそのコマンドを `scripts/magos_guard.py` として実行します。`terminal` のとき、または Codex が自分で断るとき（承認ポリシー `never`）は何も実行しません。Hermes では、プラグインの `__init__.py` が `pre_tool_call` コールバックを 2 つ登録します。`terminal` の呼び出しのたびに、これらはプラグイン自身の `scripts/magos_guard.py hook hermes pre-tool` をローカルのプロセスとして起動し（Python、シェルなし、最長 25 秒）、そのプロセスが、許可、拒否、または直接呼び出されたユーザー専用のガードコマンド 1 つについて、1 回限りのトークンで書き換えたコマンドと質問を答えます。質問は Hermes 自身の承認プロンプトであなたに表示されます。プラグインを更新して（`hermes plugins update magos`、続いて再起動）以降は、このプラグインを使うすべての Hermes ユーザーでこれが行われます。Hermes の環境で `MAGOS_GUARD=off` を設定するか、`hermes plugins disable magos` を実行すると止まります。`magos_guard.py mcp` または `hook` を起動するツールのコマンドは、どのホストでも拒否されます。ガードを実行するときに、サブコマンドがコマンドに書かれた、エージェントが実行できる 1 つの普通の単語でないツールのコマンド（たとえば変数、コマンド置換、xargs が渡す単語）も同じく拒否され、シェルに渡す here-document の中に書いた場合も同じです。フックが読む長さ（200,000 文字）を超え、MAGOS に触れるコマンドは、どのホストでも拒否されます。プラグインの `mcp.json` とそれが起動するガードのファイルはプラグインとともに入り、Codex のフックのエントリは `install` から入ります。どちらもあなたが信頼するコードです。Codex はフックが変わると `/hooks` で改めて尋ねますが、MCP サーバーが変わっても尋ねません。
+- **実行するもの。** Claude Code では、プラグインが PreToolUse フック（`hooks/hooks.json`）を有効にします。シェルコマンド、サブエージェントの起動、worktree の作成、およびセッション・シェル・プロセスを起動する MCP ツールの呼び出しのたびに、`hooks/run-guard.cmd` が Python で `scripts/magos_guard.py` を実行します。スクリプトは渡されたツール呼び出しを読み、許可か拒否かを答え（Bash か PowerShell のツールで直接呼び出された `override`、`arm`、`disarm`、`install`、`protect` のガードコマンド 1 つには、確認を求める答えを返します。そのとき Claude Code が権限ダイアログを表示し、実行されるコマンドにはフックが付けた 1 回限りの `--approval` トークンが含まれます。`auto-safe` では、`arm` と、デフォルトのガードホームへの `install`（`--allow-downgrade` なし）に対して、確認ではなく許可を答えます）、次に挙げるローカルの Git コマンド以外のプログラムは実行しません。Codex では、プラグインの `mcp.json` がローカルの MCP サーバー `magos` を 1 つ宣言します。Codex 自身がプラグインのディレクトリで git を通じて起動し（`git -c alias.magos-mcp=!<sh script> magos-mcp`：スクリプトは `python3`、`py -3`、`python` の順に選び、`scripts/magos_guard.py mcp` を実行します）、標準入出力で通信します。ネットワークには接続しません。唯一のツール `magos_approve` は、ユーザー専用のガードコマンド 1 つについて Codex 自身のダイアログ（チェックボックスは Approve だけです。チェックを入れてから Accept を押します）を表示し、あなたが承諾したときだけ、指定のリポジトリでそのコマンドを `scripts/magos_guard.py` として実行します。`terminal` のとき、または Codex が自分で断るとき（承認ポリシー `never`）は何も実行しません。Hermes では、プラグインの `__init__.py` が `pre_tool_call` コールバックを 2 つ登録します。`terminal` の呼び出しのたびに、これらはプラグイン自身の `scripts/magos_guard.py hook hermes pre-tool` をローカルのプロセスとして起動し（Python、シェルなし、最長 25 秒）、そのプロセスが、許可、拒否、または直接呼び出されたユーザー専用のガードコマンド 1 つについて、1 回限りのトークンで書き換えたコマンドと質問を答えます。質問は Hermes 自身の承認プロンプトであなたに表示されます。プラグインを更新して（`hermes plugins update magos`、続いて再起動）以降は、このプラグインを使うすべての Hermes ユーザーでこれが行われます。Hermes の環境で `MAGOS_GUARD=off` を設定するか、`hermes plugins disable magos` を実行すると止まります。`magos_guard.py mcp` または `hook` を起動するツールのコマンドは、どのホストでも拒否されます。ガードを実行するときに、サブコマンドがコマンドに書かれた、エージェントが実行できる 1 つの普通の単語でないツールのコマンド（たとえば変数、コマンド置換、xargs が渡す単語）も同じく拒否され、シェルに渡す here-document の中に書いた場合も同じです。フックが読む長さ（200,000 文字）を超え、MAGOS に触れるコマンドは、どのホストでも拒否されます。プラグインの `mcp.json` とそれが起動するガードのファイルはプラグインとともに入り、Codex のフックのエントリは `install` から入ります。どちらもあなたが信頼するコードです。Codex はフックが変わると `/hooks` で改めて尋ねますが、MCP サーバーが変わっても尋ねません。
 - **読むもの。** そのツール呼び出しと、作業中のリポジトリの Git の状態です。読むのはローカルの Git コマンド（`branch`、`check-ref-format`、`config`、`diff`、`for-each-ref`、`log`、`merge-base`、`rev-list`、`rev-parse`、`status`、`worktree`）だけで、リモートと通信するコマンドは実行しません。Hermes ではフックが Hermes の `config.yaml` の `approvals` 設定も読みます（読み取りのみ。Hermes が人に尋ねるかどうかを知るためです）。
-- **書くもの。** そのリポジトリの `<git-common-dir>/magos/` の中だけです。レーンの登録、計画の記録、上書き（override）の記録、拒否の記録（`<git-common-dir>/magos/denials/<fp>.json`：拒否された作成が衝突したブランチで、上書きのダイアログだけが表示に使い、1 時間有効）、監査ログ（時刻、そのリポジトリの Git のユーザー名とメールアドレスとアカウントのログイン名、ブランチとそのファイル、上書きの理由、各実行を承認した経路。上書きの理由は、端末であなたが入力したか、エージェントが書いてあなたのクリックで承認されたもので、その区別も記録します）が入ります。Claude Code と Hermes では、フックがユーザー専用のガードコマンドの承認を求めるとき、あなたがクリックする前に承認記録も `<git-common-dir>/magos/approvals/` に書きます。ファイル名は 1 回限りのトークンの SHA-256 で（トークン自体は記録に含まれません）、2 分間有効（Hermes では、Hermes があなたの回答を待つ時間（`approvals.timeout`、120〜900 秒の範囲で扱います）に 30 秒を加えた時間で、デフォルトは 330 秒）で、期限から 10 分過ぎた記録は次の承認が削除します。`install` はどのリポジトリにも属さないため、その記録は代わりに `<guard home>/approvals/` に置かれます（ガードホームは `MAGOS_HOME`、未設定なら `~/.magos`）。これはクリックの前にこのディレクトリの外へ書かれる唯一のものです。Codex では、MCP サーバーがあなたの承諾のあとで同じ場所に承認記録を書きます。これとは別に、外で行うのは、あなたが承認したとき（端末で実行する、またはホスト自身の承認プロンプトで承認する）の 2 つだけです。`install` はガードを `~/.magos/guard` にコピーして設定のエントリを表示し（統合はあなたが行います）、`arm` はそのリポジトリに Git の `reference-transaction` フックを 1 つ追加します。プラグインは Claude Code、Codex、Hermes の設定も権限ルールも変更しません。
-- **送信と取得。** ガードは何も送らず、何も取得しません。ネットワークアクセスも、テレメトリも、認証情報の取り扱いもありません（パッケージのテストが、フックのコードがネットワーク接続を開かないこと、その Git ランナーがリモートと通信するサブコマンドをすべて拒否することを確認します）。スラッシュコマンドはエージェントへの指示です。`/GitRecon`、`/GitAnalyze`、`/GitRecommend` は読むだけです。書き込む 5 つのコマンドは、あなたが自分で入力したときだけ動きます（Claude Code と Codex はモデルが自分で起動するのを止めます。Hermes にはそのスイッチがないため、アダプターが、あなたが明示的に呼び出したときだけ実行するよう指示しています）。`--apply` を持つコマンドは、それを付けなければ何も変更しません。通信が起きるのはあなたが求めたときだけです。`--remote` はあなたのリモートに対して `git fetch --prune` を実行し、`/GitSweep --apply` はマージ済みのリモートブランチを削除し、`/GitSweep --apply --push` は 1 つのブランチをプッシュします。
+- **書くもの。** そのリポジトリの `<git-common-dir>/magos/` の中だけです。レーンの登録、計画の記録、ブランチ保護の記録、上書き（override）の記録、拒否の記録（`<git-common-dir>/magos/denials/<fp>.json`：拒否された作成が衝突したブランチで、上書きのダイアログだけが表示に使い、1 時間有効）、監査ログ（時刻、そのリポジトリの Git のユーザー名とメールアドレスとアカウントのログイン名、ブランチとそのファイル、上書きの理由、各実行を承認した経路。上書きの理由は、端末であなたが入力したか、エージェントが書いてあなたのクリックで承認されたもので、その区別も記録します）が入ります。Claude Code と Hermes では、フックがユーザー専用のガードコマンドの承認を求めるとき、あなたがクリックする前に承認記録も `<git-common-dir>/magos/approvals/` に書きます。ファイル名は 1 回限りのトークンの SHA-256 で（トークン自体は記録に含まれません）、2 分間有効（Hermes では、Hermes があなたの回答を待つ時間（`approvals.timeout`、120〜900 秒の範囲で扱います）に 30 秒を加えた時間で、デフォルトは 330 秒）で、期限から 10 分過ぎた記録は次の承認が削除します。`install` はどのリポジトリにも属さないため、その記録は代わりに `<guard home>/approvals/` に置かれます（ガードホームは `MAGOS_HOME`、未設定なら `~/.magos`）。これはクリックの前にこのディレクトリの外へ書かれる唯一のものです。Codex では、MCP サーバーがあなたの承諾のあとで同じ場所に承認記録を書きます。これとは別に、外で行うのは、あなたが承認したとき（端末で実行する、またはホスト自身の承認プロンプトで承認する）の 2 つだけです。`install` はガードを `~/.magos/guard` にコピーして設定のエントリを表示し（統合はあなたが行います）、`arm` はそのリポジトリに Git の `reference-transaction` フックを 1 つ追加します。プラグインは Claude Code、Codex、Hermes の設定も権限ルールも変更しません。
+- **送信と取得。** ガードは何も送らず、何も取得しません。ネットワークアクセスも、テレメトリも、認証情報の取り扱いもありません（パッケージのテストが、フックのコードがネットワーク接続を開かないこと、その Git ランナーがリモートと通信するサブコマンドをすべて拒否することを確認します）。スラッシュコマンドはエージェントへの指示です。`/GitRecon`、`/GitAnalyze`、`/GitRecommend` は読むだけです。書き込む 6 つのコマンドは、あなたが自分で入力したときだけ動きます（Claude Code と Codex はモデルが自分で起動するのを止めます。Hermes にはそのスイッチがないため、アダプターが、あなたが明示的に呼び出したときだけ実行するよう指示しています）。`--apply` を持つコマンドは、それを付けなければ何も変更しません。通信が起きるのはあなたが求めたときだけです。`--remote` はあなたのリモートに対して `git fetch --prune` を実行し、`/GitSweep --apply` はマージ済みのリモートブランチを削除し、`/GitSweep --apply --push` は 1 つのブランチをプッシュします。
 - **無効にする方法。** `git config --local magos.guard off`（1 つのリポジトリ）、`claude plugin disable magos` または `hermes plugins disable magos`（プラグイン全体）、`MAGOS_GUARD=off`。下の「レーンガード」の節も参照してください。
 
 ---
@@ -43,7 +43,7 @@
 | リモート（remote） | ネット上（たとえば GitHub）に置かれているリポジトリ | 会社の共有ドライブにあるバックアップ |
 | プレビュー / 実行 | まず「どうするつもりか」だけを見て、納得してから実際に行う | まず改装プランを確認し、了承してから工事を始める |
 
-**このコマンド群には共通のルールがあります：まず見て、あなたが指示したときだけ動く。** リポジトリを実際に変更する 5 つのコマンド（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`、`/GitSweep`、`/GitPlan`）は、あなたが明確に指示したときにだけ動きます。`/GitCleanup`、`/GitConverge`、`/GitSweep`、`/GitPlan` はデフォルトではプレビューのみで、`--apply` を付けたときに初めて実行します（`/GitPlan` の締めくくりに使う `--release` も書き込みます）。`/GitIntegrate` にはプレビューモードがなく、入力すること自体が統合の指示になります。このコマンドは、まず項目ごとにチェックを行い、すべて通過した場合にだけ書き込みます。確信が持てないときは、いずれのコマンドも、無理に進めずに停止して理由を伝えます。
+**このコマンド群には共通のルールがあります：まず見て、あなたが指示したときだけ動く。** リポジトリを実際に変更する 5 つのコマンド（`/GitIntegrate`、`/GitCleanup`、`/GitConverge`、`/GitSweep`、`/GitPlan`）は、あなたが明確に指示したときにだけ動きます。`/GitCleanup`、`/GitConverge`、`/GitSweep`、`/GitPlan` はデフォルトではプレビューのみで、`--apply` を付けたときに初めて実行します（`/GitPlan` の締めくくりに使う `--release` も書き込みます）。`/GitIntegrate` にはプレビューモードがなく、入力すること自体が統合の指示になります。このコマンドは、まず項目ごとにチェックを行い、すべて通過した場合にだけ書き込みます。確信が持てないときは、いずれのコマンドも、無理に進めずに停止して理由を伝えます。`/GitProtect` はリポジトリの内容を変更せず、あなたの承認があるときだけブランチの保護を設定または解除します。
 
 ### コマンドの書き方は？
 
@@ -82,7 +82,7 @@ Claude Code にコマンドを直接入力します。後ろに「引数」を�
 | 何をするか | 次の内容を表示します：このコマンドの書き方、各引数の意味、引数を書かなかったときのデフォルトの動作、いくつかの例。表示したあと、すぐに停止します |
 | 何をしないか | リポジトリを読み取らず、Git コマンドを一切実行せず、何も変更しません |
 | どんなときに使うか | 書き方を忘れたとき、ある引数の意味に自信がないとき、あるコマンドを初めて使うとき |
-| 対応するコマンド | 8 つのコマンドすべてが対応しています |
+| 対応するコマンド | 9 つのコマンドすべてが対応しています |
 
 > 覚えておいてください：**迷ったときは、まずコマンドの後ろに `--help` を付けましょう。完全に安全です。**
 
@@ -148,7 +148,7 @@ Claude Code にコマンドを直接入力します。後ろに「引数」を�
 | 置く場所 | コマンドの後ろならどこでもかまいません。`/GitRecommend どのブランチを先にマージすべきか --lang English` では、先に `--lang English` が取り除かれるので、質問は「どのブランチを先にマージすべきか」になります |
 | 書き間違えた場合 | `--lang` の後ろに何も書かなかった場合や、言語ではないものを書いた場合（たとえば `--lang xyz123`）は、どこが間違っているかを中国語で伝えて使い方を表示し、**コマンドの実行には進みません** |
 | チェック結果に影響しますか？ | いいえ。変わるのは返信の言語だけで、チェックと判断の方法はまったく同じです |
-| 対応するコマンド | 8 つのコマンドすべてが対応しています |
+| 対応するコマンド | 9 つのコマンドすべてが対応しています |
 
 ---
 
@@ -199,10 +199,11 @@ flowchart LR
 | Safe Rollback | 自分専用の履歴にはリセットを使い、共有されている履歴ではリバートを優先します |
 | Branch Strategy | リポジトリが実際に従っているブランチモデル（分支策略 / ブランチ戦略）を見分け、「マルチエージェントの並行作業は安全か」のチェックリストに沿って監査し、最小限の変更だけを提案します。あなたに代わってブランチを変更することは決してありません |
 | Lane Planning | 作業を始める前にタスクをファイルが重ならない lane に分けて楽観ロックで登録し、完了後に依存関係の順で 1 つの全体にまとめます |
+| Branch Protection | 指定したブランチを保護し、フックがエージェントによるそのブランチへのコミット、マージ、書き換えを拒否します。設定と解除はユーザーだけが行います |
 
 ---
 
-## 8 つのコアコマンド
+## 9 つのコアコマンド
 
 | コマンド | ひとことで言うと | リポジトリを変更しますか？ |
 |---|---|---|
@@ -214,6 +215,7 @@ flowchart LR
 | `/GitConverge` | すべてのブランチの成果を 1 つのブランチにまとめ、`main` とそのブランチだけを残します | デフォルトでは変更しません。`--apply` を付けたときだけ変更します |
 | `/GitSweep` | まず `/GitConverge` を行い、そのあと、リモートでマージ済みのブランチもまとめて削除します | デフォルトでは変更しません。`--apply` を付けたときだけ変更します（リモートブランチの削除を含みます）。さらに `--push` を付けたときだけ、`<branch>` を一度プッシュします |
 | `/GitPlan` | 作業を始める前に Git とコードを調べ、要件を書き出してタスクをファイルが重ならないレーンに分け、要件の表とレーンの表でチェックリストを出し、そのあと依存関係の順に 1 つの全体へまとめ、チェックリストに各レーンの変更内容の概要を補います | デフォルトでは変更しません。`--apply`（または締めくくりの `--release`）を付けたときだけ変更します：計画を登録し、さらに `--create` でレーンのブランチとワークツリーを作成し、`--converge --apply` でマージし、`--land` で一度だけ早送りします。プッシュも、ブランチやワークツリーの削除もしません |
+| `/GitProtect` | ブランチを保護し、エージェントによるそのブランチへのコミットとマージを拒否します。`--status` で保護されたブランチを表示します | リポジトリの内容は変更しません。あなたの承認があるときだけ、ガードの保護の記録を書き込みます（`--release` で解除）。`--status` は見るだけです |
 
 どのコマンドにも `--lang <言語>`（返信の言語。省略すると中国語になります）と `--help`（説明だけを表示）を付けられます。見るだけの 3 つのコマンドには `--remote` もあります（`/GitSweep` の `--remote <名前>` は別の引数です。そのコマンド自身の説明をご覧ください）。これらの詳しい使い方は上の「3 つの共通引数」にあります。以下の各コマンドの節には、**そのコマンド固有の**引数だけを載せます。
 
@@ -1001,6 +1003,50 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 
 ---
 
+### `/GitProtect`
+
+**ブランチを保護します：以後、そのブランチへのエージェントのコミット、マージ、その他の書き込みはすべて拒否されます。設定も解除も、あなたの承認があるときだけ行われます。**
+
+こんなときに向いています：どの AI にも `main`、`develop` やリリースブランチへ直接コミットやマージをさせず、各自のブランチでだけ作業させて、マージは自分で行いたいとき。
+
+```text
+/GitProtect main
+/GitProtect develop --release
+/GitProtect
+/GitProtect --status
+```
+
+- ブランチ名を省略すると、現在のワークツリーでチェックアウトしているブランチ（`git branch --show-current`）を保護します。ワークツリーがデタッチ状態（detached HEAD）のときは、コマンドは止まってブランチ名を尋ねます。
+- 設定と `--release` による解除は、どちらもガードのユーザー専用サブコマンド `protect` で行われ、`arm`、`disarm` と同じ扱いです：ホストが自身の承認プロンプトを表示し、あなたがクリックしたときだけ実行されます（承認レベルが `terminal` のときは、エージェントがコマンドを表示し、あなたが自分のターミナルで実行します）。どの承認レベルでも、あなたのクリックなしには実行されません。解除も同じです。
+- まだ存在しないブランチも先に保護できます：保存されるのは名前です。名前は大文字と小文字を区別せずに比較されます（`Main` と `main` は同じです）。
+- 保護はリポジトリ全体に属し、そのすべてのワークツリーで有効です。記録は `<git-common-dir>/magos/protected.json` にあり、エージェントは書き込めません。
+
+#### 引数の詳細
+
+| 引数 | 書き方 | 動作 |
+|---|---|---|
+| `<ブランチ>` | `/GitProtect main` | 保護するローカルブランチ名（`refs/heads/main` ではなく `main` と書きます）。省略すると、現在のワークツリーでチェックアウトしているブランチです |
+| `--release` | `/GitProtect main --release` | 保護を解除します。これもあなたの承認が必要です |
+| `--status` | `/GitProtect --status` | 見るだけです：このリポジトリで保護されているブランチをすべて表示し、ブランチ名を付けるとそれが保護されているかも示します（`protect-show` を実行します。何も書き込まず、承認も要りません） |
+| `--lang <言語>` | `/GitProtect --status --lang English` | 指定した言語で返信します。省略すると中国語です |
+| `--help` | `/GitProtect --help` | 説明だけを表示します |
+
+#### 保護すると何が拒否されるか
+
+- フック対象のツールを通したエージェントによる、保護されたブランチへのすべての書き込み：`git commit`（`--amend` を含む）、`git merge`（`git pull` が行うマージを含む）、`cherry-pick`、`revert`、`rebase`、`reset`、`am`、`update-ref`、`git branch -f/-m/-M/-d/-D`、`checkout -B` / `switch -C`、それを新しいワークツリーにチェックアウトする `worktree add`、それへの `fetch` やローカルの `push`。保護されたブランチへ切り替えてから書き込む 1 行のコマンド（`git switch main && git merge x`）も同じく拒否されます。
+- 書き込み先を読み取れない書き込み（ブランチ名が変数や `xargs` などから来るもの）：リポジトリに保護が 1 つでもあれば拒否されます。
+- 引き続き許可されるもの：読み取り（`status`、`diff`、`log`、`show`、`blame`）、既存のワークツリーでのチェックアウト、そこから別のブランチを作ること（`git switch -c topic main`）、それを別のブランチへマージすること、リモートへのプッシュ。
+
+拒否されたとき、エージェントは理由を説明して別のブランチで作業を続けます。保護されたブランチへのマージは、あなたが自分のターミナルで行うか、先に `/GitProtect <ブランチ> --release` で保護を解除します。
+
+#### 必ず守るルール
+
+- このコマンドはブランチのコミット、マージ、作成、切り替え、削除、プッシュを一切行わず、ガードの保護の記録だけを変更します。
+- エージェントが自分で保護を設定したり解除したりすることはありません。`--approval` を渡すことも、`.git/magos` や `magos.*` の設定を自分で書くこともなく、拒否されたときやあなたが承認しなかったときに別の書き方で再試行することもありません。
+- 保護を実行するのはホストのフックだけです：あなた自身のターミナル、フックから見えないプログラム、Git 自体は影響を受けません。`git config --local magos.guard off` はそのリポジトリのガードを無効にし、保護も効かなくなります。
+
+---
+
 ## マルチエージェントのライフサイクル
 
 ```mermaid
@@ -1102,7 +1148,8 @@ MAGOS にはレーンガード（`scripts/magos_guard.py`）が付属してい�
 - **無効化**。`git config --local magos.guard off`（単一のリポジトリ）、`claude plugin disable magos`（Claude Code プラグイン全体）、またはホストプロセスの環境に `MAGOS_GUARD=off` を設定します（Hermes プラグインのコールバックもこれで止まります。`hermes plugins disable magos` でも止まります）。この 3 つはいずれもホストのフックを無効にするだけで、Git のバックストップには手を付けません：`arm` 済みのリポジトリでは、`disarm` を実行して取り除いてください（エージェントが先に尋ね、ホスト自身の承認プロンプト（Claude Code、Codex、Hermes）であなたが承認します。それ以外は自分のターミナルで実行します）。
 - **要件**。Python 3.9+（フックのランチャーは、POSIX と Git Bash では `python3`、`py -3`、`python` の順に、Windows の cmd では `py -3`、`python`、`python.bat`、`python.cmd` の順に探します）と Git 2.36+（その他の MAGOS コマンドには Git 2.30+ が必要です）。`magos_guard.py doctor` が両方をチェックし、`magos_guard.py version` が実行中のガードのバージョンを出力します。
 - **Set サブコマンド**。`/GitPlan` は、ガードの 4 つのサブコマンドで計画を登録し、維持します：`set-plan`（各レーンのファイル一覧が互いに重ならないことを証明して登録）、`set-show`（読み取り専用）、`set-update`（レーンの担当者が進み具合を記録）、`set-release`（締めくくり）。いずれもあなただけが実行できるコマンドではなく、`plan`、`release` と同じようにホストのフックを通ります。登録では、各レーンの登録（`set=` と `lane=` 付き）、統合ブランチ `agent/<set>/integration` の登録（ファイルを一切占有しません）、計画の記録（`<git-common-dir>/magos/sets/<set>.json`）が書き込まれます。終了コード 19 から 24 はこれらのサブコマンドのものです（古い、すでにある、存在しない、範囲外、より新しいバージョンが書いた記録、無効な計画）。計画の記録には、タスクの要件、各レーンが担当する要件と成果、そしてレーンが `integrated` と記録されたときにガードが計算した変更内容が入ります。ガードは名前と対応関係も確認します：レーンの id はトピックの slug でなければならず（連番や汎用的な id は拒否されます）、ブランチはちょうど `agent/<set>/<id>`、ワークツリーのディレクトリ名は `-<set>-<id>` で終わり、どの要件も少なくとも 1 つのレーンが担当します。計画が存在する間は、通常の `plan` はそのレーンまたは統合ブランチの登録の書き込みを拒否し（`--amend` と `override` の後の再登録も含みます）、通常の `release` もその登録を拒否します：計画は `/GitPlan` からしか変更できません。
-- **承認するのはあなたです**。`override`、`arm`、`disarm`、`install` は、あなたが承認したときだけ実行され、`magos.*` の git 設定（例：`magos.guard`、`magos.approval`）を書き込めるのもあなただけです。承認のレベルは `git config --local magos.approval <レベル>` で設定します（自分のターミナルで設定できます。エージェントは設定しません。値は大文字と小文字を区別せず、前後の空白も無視して比較し、それ以外の値は `terminal` として扱います）。`terminal`：あなたが実際のターミナルでコマンドを実行します。`prompt`（デフォルト）：エージェントが先にあなたに尋ね、同意すればガードのコマンドを実行します（Codex ではツール `magos_approve` を呼び出します）。ホストが自身の承認プロンプト（Claude Code の権限ダイアログ、Codex の Approve チェックボックス付きダイアログ、Hermes の承認プロンプト）を表示して、何を承認するのかとエージェントが書いた理由を示し、あなたのクリックが承認になります（Codex では Approve にチェックを入れてから Accept を押します）。`auto-safe`：`prompt` と同じですが、保護を足すだけの `arm` と、デフォルトのガードホームへガードをコピーするだけで `--allow-downgrade` を付けない `install` は、クリックなしで実行されます（あなたの設定そのものが承認です）。`override`、`disarm`、および `install` のそれ以外の形は引き続き確認します。エージェントが無人で上書きするレベルはありません。ガードを止めたいときは、あなた自身が `git config --local magos.guard off` を実行します。Codex では `auto-safe` も `prompt` と同じく確認します（Codex の経路にはクリックなしで実行される場合がありません）。承認ポリシーが `never` のときは Codex が自分で断ります。Hermes は `/yolo`、`--yolo`、`approvals.mode: off` のもとではあなたを経ずに承認するため、ガードはそれが見える場合にクリックの経路を拒否します。ターミナルの経路は常に使えます。Claude Code で権限ダイアログが出るのは Bash と PowerShell のツールだけで、Hermes では `terminal` ツールだけです。それ以外の方法でこれらを実行しようとするエージェントは、フックに拒否されます。フックのランチャーもフックしか実行しません。新しいコンソールウィンドウで起動したコマンドもコンソールチェックを通過できるため、コンソールチェックも上書きも承認トークンも、アクセス制御ではありません。`override` と `disarm` の前に立つのはホスト自身の承認プロンプトであり（Codex の経路が人の操作を証明できるのは Codex 自身が証明できる範囲まで、Hermes の経路は Hermes の承認ゲートの強さまでです）、監査ログの `via` と `reason_by` は、できる限り記録した出所の情報で、証明ではありません。
+- **ブランチ保護**。`/GitProtect` はガードのユーザー専用サブコマンド `protect` でブランチを保護します（`protect-show` は読むだけです）。記録は `<git-common-dir>/magos/protected.json` にあります。以後、フックはそのブランチへのエージェントのすべての書き込み（コミット、マージ、書き換え、リセット、削除、名前の変更、強制的な移動、新しいワークツリーへのチェックアウト）を拒否し、拒否コードは `BRANCH_PROTECTED` です。記録が読めないときや、より新しいバージョンが書いたときは、リポジトリのすべてのブランチが保護されているものとして扱われます。保護を実行するのはホストのフックだけで、あなた自身のターミナルと Git のバックストップは影響を受けません。詳しくは `references/lane-split.md` の第 15 節を参照してください。
+- **承認するのはあなたです**。`override`、`arm`、`disarm`、`install`、`protect` は、あなたが承認したときだけ実行され、`magos.*` の git 設定（例：`magos.guard`、`magos.approval`）を書き込めるのもあなただけです。承認のレベルは `git config --local magos.approval <レベル>` で設定します（自分のターミナルで設定できます。エージェントは設定しません。値は大文字と小文字を区別せず、前後の空白も無視して比較し、それ以外の値は `terminal` として扱います）。`terminal`：あなたが実際のターミナルでコマンドを実行します。`prompt`（デフォルト）：エージェントが先にあなたに尋ね、同意すればガードのコマンドを実行します（Codex ではツール `magos_approve` を呼び出します）。ホストが自身の承認プロンプト（Claude Code の権限ダイアログ、Codex の Approve チェックボックス付きダイアログ、Hermes の承認プロンプト）を表示して、何を承認するのかとエージェントが書いた理由を示し、あなたのクリックが承認になります（Codex では Approve にチェックを入れてから Accept を押します）。`auto-safe`：`prompt` と同じですが、保護を足すだけの `arm` と、デフォルトのガードホームへガードをコピーするだけで `--allow-downgrade` を付けない `install` は、クリックなしで実行されます（あなたの設定そのものが承認です）。`override`、`disarm`、`protect`、および `install` のそれ以外の形は引き続き確認します。エージェントが無人で上書きするレベルはありません。ガードを止めたいときは、あなた自身が `git config --local magos.guard off` を実行します。Codex では `auto-safe` も `prompt` と同じく確認します（Codex の経路にはクリックなしで実行される場合がありません）。承認ポリシーが `never` のときは Codex が自分で断ります。Hermes は `/yolo`、`--yolo`、`approvals.mode: off` のもとではあなたを経ずに承認するため、ガードはそれが見える場合にクリックの経路を拒否します。ターミナルの経路は常に使えます。Claude Code で権限ダイアログが出るのは Bash と PowerShell のツールだけで、Hermes では `terminal` ツールだけです。それ以外の方法でこれらを実行しようとするエージェントは、フックに拒否されます。フックのランチャーもフックしか実行しません。新しいコンソールウィンドウで起動したコマンドもコンソールチェックを通過できるため、コンソールチェックも上書きも承認トークンも、アクセス制御ではありません。`override` と `disarm` の前に立つのはホスト自身の承認プロンプトであり（Codex の経路が人の操作を証明できるのは Codex 自身が証明できる範囲まで、Hermes の経路は Hermes の承認ゲートの強さまでです）、監査ログの `via` と `reason_by` は、できる限り記録した出所の情報で、証明ではありません。
 - **アップグレード後は毎回**。実行中の Claude Code、Codex、Hermes のセッションを再起動します（Hermes は `hermes plugins update magos` のあと）。`doctor` が列挙するホストごとに `install` を再実行し（`doctor` が正確なコマンドを表示します。`install --home <ディレクトリ>` でインストールしたコピーは、`doctor --home <ディレクトリ>` を実行します）、表示されたエントリがホストの設定にマージ済みのエントリと異なる場合は、マージ済みのエントリを表示されたものに置き換えます（Codex では `/hooks` で信頼し直し、Hermes では承認し直します。Hermes プラグインを入れている場合、Hermes のエントリは不要です。`config.yaml` の `hooks:` にある MAGOS のエントリは、Hermes が尋ねる前にユーザー専用のコマンドをすべて拒否するので、削除してください）。`arm` 済みのリポジトリでは `doctor` を実行し、`arm` コマンドが表示されたら、そのコマンドを再実行します（ホストの承認プロンプトで承認するか、自分のターミナルで実行します）。1.0.4 から、`/GitPlan` はガードの `set-*` サブコマンドを必要とし、古いガードのコピーにはそれがありません：`doctor` を実行し、それが表示する `install --host <host>` コマンドを実行してコピーを更新してください。そうしないと、`/GitPlan` は最初にバージョンを確認して停止します。
 - **制限**。フックが読み取るのはコマンドのテキストです。Python やガードのスクリプトが見つからない場合は呼び出しを通します（Claude Code の `EnterWorktree` フックと Hermes プラグインのコールバックは例外で、呼び出しを拒否します）。Git のバックストップはブランチの名前変更とコピー（`git branch -m/-c`）を検知できませんが、フックはどのオプションの書き方でもそれらを拒否します。`override` と `disarm` の前にある障壁はホスト自身の承認プロンプトだけで、承認トークンはアクセス制御ではなく、監査ログの `via` と `reason_by` は、できる限り記録した出所の情報で、証明ではありません（「承認するのはあなたです」を参照）。すべての制限は `references/lane-split.md` の第 12 節を参照してください。
 
@@ -1110,7 +1157,7 @@ MAGOS にはレーンガード（`scripts/magos_guard.py`）が付属してい�
 
 ## インストール
 
-リポジトリのディレクトリ構成は次のとおりです（主なファイルのみを掲載しています。ほかに `tests/`、`.github/`、`.quality/` と、ルートにあるドキュメント、ライセンス、設定ファイルがあります）。Claude Code のクローンインストールではディレクトリ全体を使い、同期スクリプトは Codex と Hermes に `SKILL.md`、`references/`、`skills/` 配下の 8 つのコマンドスキルだけをコピーします。各プラットフォームのインストール方法は、以下の各節にあります：
+リポジトリのディレクトリ構成は次のとおりです（主なファイルのみを掲載しています。ほかに `tests/`、`.github/`、`.quality/` と、ルートにあるドキュメント、ライセンス、設定ファイルがあります）。Claude Code のクローンインストールではディレクトリ全体を使い、同期スクリプトは Codex と Hermes に `SKILL.md`、`references/`、`skills/` 配下の 9 つのコマンドスキルだけをコピーします。各プラットフォームのインストール方法は、以下の各節にあります：
 
 ```text
 multi-agent-git-orchestrator/
@@ -1160,10 +1207,10 @@ Claude Code ではターミナルからも実行できます：`claude plugin ma
 
 | 用途 | Claude Code | Codex | Hermes |
 |---|---|---|---|
-| 八つのコマンド | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |
+| 九つのコマンド | `/magos:GitRecon` … `/magos:GitProtect` | `$magos:git-recon` … `$magos:git-protect` | `/magos:git-recon` … `/magos:git-protect` |
 | 全体ルール（問題を説明すると自動的にトリガー） | `magos:git-orchestrator` | `magos:git-orchestrator` | `magos:git-orchestrator`（Hermes はこれをシステムプロンプトの `<available_skills>` に載せ、モデルが説明文を見て自分で読み込みます） |
 
-- Claude Code に表示されるのは八つの `/magos:GitXxx` コマンドだけです。小文字の `/magos:git-recon` などは Codex と Hermes 用のアダプター層で、プラグインが Claude Code ではそれらを隠します。全体ルールの `magos:git-orchestrator` も `/` メニューには出ず、問題を説明すると Claude が自分で読み込みます。
+- Claude Code に表示されるのは九つの `/magos:GitXxx` コマンドだけです。小文字の `/magos:git-recon` などは Codex と Hermes 用のアダプター層で、プラグインが Claude Code ではそれらを隠します。全体ルールの `magos:git-orchestrator` も `/` メニューには出ず、問題を説明すると Claude が自分で読み込みます。
 - プラグインのホストは `skills/` 配下のスキルだけを読み込み、ルートの `SKILL.md` は読み込みません。そのため、プラグインにはエントリースキル `git-orchestrator` が一つ追加されていて、これがルートの `SKILL.md` を読みに行きます。`~/.claude/skills/magos` に clone した場合にも、このエントリースキルは読み込まれます。同期スクリプトでインストールした Codex と Hermes のパッケージだけはこれを必要とせず、同期スクリプトもコピーしません。
 - バージョン番号はマニフェストに書かれていて、Claude Code はバージョン番号が変わったときにだけ、インストール済みのプラグインを更新します。実行中のセッションは、起動した時点のバージョンのフックを使い続けるので、更新後はすべてのセッションを再起動してください。
 - Claude Code にプラグインをインストールすると、レーンガードのフックも同時に有効になります。Claude Code にプラグインをインストールすると、レーンガードのフックも同時に有効になります。Codex にプラグインをインストールすると承認サーバー `magos` が入り、Codex のフックは `install --host codex` で入れます。Hermes のプラグインは自分のコールバックでガードを実行します（「レーンガード」を参照）。各プラットフォームのアップグレードの詳細（ガードのコピーとロールバックを含む）は `references/installation.md`、各バージョンの変更点は `CHANGELOG.md` を参照してください。
@@ -1197,13 +1244,13 @@ git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
 
 リポジトリのルートに `.claude-plugin/plugin.json` があるので、Claude Code はこのフォルダーをプラグイン `magos@skills-dir` として読み込み、セッションのたびに自動で有効になります。`/plugin install` は不要です。セッションを開き直すと、次のものが使えます：
 
-- 八つのコマンド：`/magos:GitRecon`、`/magos:GitAnalyze`、`/magos:GitRecommend`、`/magos:GitIntegrate`、`/magos:GitCleanup`、`/magos:GitConverge`、`/magos:GitSweep`、`/magos:GitPlan`（`/magos:` と入力すると補完されます）。
+- 九つのコマンド：`/magos:GitRecon`、`/magos:GitAnalyze`、`/magos:GitRecommend`、`/magos:GitIntegrate`、`/magos:GitCleanup`、`/magos:GitConverge`、`/magos:GitSweep`、`/magos:GitPlan`、`/magos:GitProtect`（`/magos:` と入力すると補完されます）。
 - 全体ルールの入口 `magos:git-orchestrator`。問題を説明すると自動的にトリガーされます。
-- `skills/` 配下にあるツール共通のアダプター層（八つ。Hermes では `/magos:git-recon` など、Codex では `$magos:git-recon` など）。上のコマンドと同等で、Claude Code では隠され、そこには `/magos:GitXxx` だけが表示されます。
+- `skills/` 配下にあるツール共通のアダプター層（九つ。Hermes では `/magos:git-recon` など、Codex では `$magos:git-recon` など）。上のコマンドと同等で、Claude Code では隠され、そこには `/magos:GitXxx` だけが表示されます。
 
 以後の更新は、そのディレクトリで `git pull` を実行するだけです（「バージョンの固定」に従ってタグ上に clone したものは、代わりに `git fetch --tags` と `git checkout v<新しいバージョン>` を実行します）。そのうえで実行中のすべての Claude Code セッションを再起動すると、コマンド、ルール、レーンガードがまとめて更新されます。`claude plugin list` を実行すると、`magos@skills-dir` がステータス loaded で表示されていることを確認できます。
 
-以前、下の古い方法で `~/.claude/commands/Git*.md` をコピーしていた場合は、この八つのファイルを削除してください。削除しないと、古い `/GitXxx` コマンドが別にもう一式表示されます。
+以前、下の古い方法で `~/.claude/commands/Git*.md` をコピーしていた場合は、この九つのファイルを削除してください。削除しないと、古い `/GitXxx` コマンドが別にもう一式表示されます。
 
 ### Claude Code：古い方法（コマンドファイルのコピー）
 
@@ -1218,7 +1265,8 @@ commands/
 ├── GitCleanup.md
 ├── GitConverge.md
 ├── GitSweep.md
-└── GitPlan.md
+├── GitPlan.md
+└── GitProtect.md
 ```
 
 同期スクリプトを使うのがおすすめです：
@@ -1238,7 +1286,7 @@ mkdir -p ~/.claude/commands && cp commands/Git*.md ~/.claude/commands/
 New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands\Git*.md "$HOME\.claude\commands\"
 ```
 
-コピーしたコマンドファイルは**リポジトリの更新に追従しません**。`git pull` やバージョンのアップグレードのたびに、同期し直す（またはコピーし直す）必要があります。`--verify` は、不足しているコマンドファイルや古くなったコマンドファイルを一覧表示します。`--host claude` が管理するのは `~/.claude/commands` だけなので、コマンドの実行時に読み込まれるスキル本体（例えば `~/.claude/skills/MAGOS`）は別に更新してください。すでにプラグインでインストール済みの場合、同期スクリプトは `NOTE` を表示するので、コピーし直す必要はありません。インストール後は**セッションを開き直し**、`/Git` と入力すると八つのコマンドが表示されます。
+コピーしたコマンドファイルは**リポジトリの更新に追従しません**。`git pull` やバージョンのアップグレードのたびに、同期し直す（またはコピーし直す）必要があります。`--verify` は、不足しているコマンドファイルや古くなったコマンドファイルを一覧表示します。`--host claude` が管理するのは `~/.claude/commands` だけなので、コマンドの実行時に読み込まれるスキル本体（例えば `~/.claude/skills/MAGOS`）は別に更新してください。すでにプラグインでインストール済みの場合、同期スクリプトは `NOTE` を表示するので、コピーし直す必要はありません。インストール後は**セッションを開き直し**、`/Git` と入力すると九つのコマンドが表示されます。
 
 明示的に呼び出すこともできます：
 
@@ -1251,9 +1299,10 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 /GitConverge <branch>
 /GitSweep <branch>
 /GitPlan <set> --into <branch>
+/GitProtect [<branch>]
 ```
 
-八つのコマンドの、ホストごとの名前と説明：
+九つのコマンドの、ホストごとの名前と説明：
 
 | コマンド | Claude Code | Hermes | Codex | 説明 |
 |---|---|---|---|---|
@@ -1265,13 +1314,14 @@ New-Item -ItemType Directory -Force "$HOME\.claude\commands"; Copy-Item commands
 | GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` | すべてのローカルブランチを指定したブランチにマージし、`main` とそのブランチだけを残す。デフォルトはプレビューで、`--apply` を付けたときだけ実行 |
 | GitSweep | `/GitSweep` | `/git-sweep` | `$git-sweep` | `/GitConverge` の後で、リモートのマージ済みブランチを削除する。デフォルトはプレビューのみでネットワークには接続せず、`--apply` を付けたときだけ実行し、`--push`（`--apply` と一緒に）を付けたときだけ `<branch>` を一度プッシュする |
 | GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` | 先に調査してタスクをファイルが重ならないレーンに分け、要件の表とレーンの表でチェックリストを出して計画を登録し、そのあと依存関係の順にマージして変更内容の概要を補う。デフォルトはプレビューで、`--apply`（または `--release`）を付けたときだけ書き込む |
+| GitProtect | `/GitProtect` | `/git-protect` | `$git-protect` | ブランチを保護し、エージェントによるそのブランチへのコミットとマージを拒否する。設定と `--release` による解除はユーザーの承認があるときだけ、`--status` は読むだけ |
 
 スラッシュ入口の説明：
 
 | ホスト | `/` からの入り方 | 前提条件 |
 |---|---|---|
-| Claude Code | `/GitRecon` など八つのコマンドを直接入力 | `~/.claude/commands/Git*.md` がインストール済み（`sync_hosts.py --host claude`）で、新しいセッションを開始している |
-| Hermes | `/git-recon` など八つのコマンドを直接入力 | パッケージが `<Hermes home>/skills/` にインストール済みで、新しいセッションを開始している、または `/reload-skills` を実行した |
+| Claude Code | `/GitRecon` など九つのコマンドを直接入力 | `~/.claude/commands/Git*.md` がインストール済み（`sync_hosts.py --host claude`）で、新しいセッションを開始している |
+| Hermes | `/git-recon` など九つのコマンドを直接入力 | パッケージが `<Hermes home>/skills/` にインストール済みで、新しいセッションを開始している、または `/reload-skills` を実行した |
 | Codex | `/skills` と入力してスキルの一覧を開き、`git-*` を選択する。`$git-recon` を直接入力してもよい | パッケージが `~/.agents/skills/MAGOS` にインストール済み（`sync_hosts.py --host codex`）で、Codex を再起動している |
 
 Codex の `/` メニューには組み込みコマンドしかなく（ソースコード `codex-rs/tui/src/bottom_pane/command_popup.rs` には `Builtin` と `ServiceTier` の二種類のエントリしかありません）、カスタムの `/git-*` は登録できません。そのため、Codex でのスラッシュ入口は組み込みの `/skills` です。
@@ -1300,7 +1350,7 @@ Codex と Hermes には、どちらも同じホスト中立のパッケージを
 MAGOS/                       # Codex のパッケージルート。Hermes は multi-agent-git-orchestrator/ を使用
 ├── SKILL.md                 # ルートスキル：multi-agent-git-orchestrator（意味に基づく自動トリガー）
 ├── references/*.md          # すべての参考ドキュメント
-└── skills/git-*/            # 八つのコマンドアダプター層
+└── skills/git-*/            # 九つのコマンドアダプター層
     ├── SKILL.md
     └── agents/openai.yaml   # Codex：表示用の説明 + allow_implicit_invocation: false
 ```
@@ -1314,7 +1364,7 @@ python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
 
 ### Codex：コマンドスキルを有効にする
 
-Codex でカスタムの入口になるのは、スキルセレクター（`$`）です。任意の名前の `/Git...` スラッシュコマンドではありません。Codex はスキルのルートディレクトリを再帰的にスキャンするため、ルートスキルと `skills/` 配下の八つのコマンドスキルを同時に読み込みます。`agents/openai.yaml` にある短い説明は、スキル一覧に表示されます。八つのコマンドスキルにはすべて `policy.allow_implicit_invocation: false` が設定されており、明示的に選択したときだけ実行されます。意味に基づく自動トリガーはルートスキルが担当します。
+Codex でカスタムの入口になるのは、スキルセレクター（`$`）です。任意の名前の `/Git...` スラッシュコマンドではありません。Codex はスキルのルートディレクトリを再帰的にスキャンするため、ルートスキルと `skills/` 配下の九つのコマンドスキルを同時に読み込みます。`agents/openai.yaml` にある短い説明は、スキル一覧に表示されます。九つのコマンドスキルにはすべて `policy.allow_implicit_invocation: false` が設定されており、明示的に選択したときだけ実行されます。意味に基づく自動トリガーはルートスキルが担当します。
 
 ユーザーレベルのインストール先は `~/.agents/skills/MAGOS` です。すでに以前の場所 `$CODEX_HOME/skills/MAGOS`（デフォルトは `~/.codex/skills/MAGOS`）にインストールしている場合、同期スクリプトはその場所を引き続き更新します。ただし、二つの場所を同時に残さないでください。残すと、Codex には同じスキルが重複して見えます。手動でコピーしたパッケージからは、エントリースキル `git-orchestrator` を削除してください。これはプラグインのインストール専用で、同期スクリプトもコピーしません。残しておくと、Codex にはルートスキルと同じ説明のスキルがもう一つ余分に見えてしまいます。以下の各コードブロックの最後の行が、この削除を行うコマンドです。手動インストール（Windows PowerShell）：
 
@@ -1333,11 +1383,11 @@ cp -R SKILL.md references skills "$HOME/.agents/skills/MAGOS/"
 cd "$HOME/.agents/skills/MAGOS" && rm -r skills/git-orchestrator
 ```
 
-Codex を再起動したら、`$` を入力してコマンドスキルを選ぶか、`$git-recon`、`$git-analyze`、`$git-recommend`、`$git-integrate`、`$git-cleanup`、`$git-converge`、`$git-sweep`、`$git-plan` を直接呼び出します。`/skills` でスキルブラウザーを開けます。引数はスキル名の後ろに書きます。例えば `$git-analyze agent/auth --remote` のようにします。`--help` を付けると、引数の詳しい説明を確認できます。
+Codex を再起動したら、`$` を入力してコマンドスキルを選ぶか、`$git-recon`、`$git-analyze`、`$git-recommend`、`$git-integrate`、`$git-cleanup`、`$git-converge`、`$git-sweep`、`$git-plan`、`$git-protect` を直接呼び出します。`/skills` でスキルブラウザーを開けます。引数はスキル名の後ろに書きます。例えば `$git-analyze agent/auth --remote` のようにします。`--help` を付けると、引数の詳しい説明を確認できます。
 
 ### Hermes：スラッシュスキルを有効にする
 
-Hermes は、インストール済みの各スキルをスラッシュコマンドとして自動的に登録します（名前はフロントマターの `name` から取ります）。また、`description` はコマンドの説明として使われます。インストールすると、`/multi-agent-git-orchestrator` と八つの `/git-*` コマンドが現れます。
+Hermes は、インストール済みの各スキルをスラッシュコマンドとして自動的に登録します（名前はフロントマターの `name` から取ります）。また、`description` はコマンドの説明として使われます。インストールすると、`/multi-agent-git-orchestrator` と九つの `/git-*` コマンドが現れます。
 
 Hermes の home ディレクトリは、`HERMES_HOME` が設定されていればそれを使い、なければ Windows では `%LOCALAPPDATA%\hermes`、それ以外の OS では `~/.hermes` を使います。home が `HERMES_HOME` から決まったものでない場合、その中の `active_profile` が `default` 以外で、かつディレクトリが存在するプロファイルを指定していると、代わりに `profiles/<name>` が使われます。スキルは home 配下の `skills/` に置きます。同期スクリプトも同じルールで場所を決めます。以下の手動インストールは `active_profile` を処理しないので、デフォルト以外の `active_profile` があるときは同期スクリプトを使ってください。すでに `<Hermes home>/skills/MAGOS` がある場合（例えば直接 `git clone` したインストール）、スクリプトはそれを引き続き使います。それが git のチェックアウトである場合、スクリプトはファイルのコピーを拒否するので、git での更新に切り替えてください。手動でコピーしたパッケージからは、エントリースキル `git-orchestrator` を削除してください。これはプラグインのインストール専用で、同期スクリプトもコピーしません。残しておくと、ルートスキルと同じ説明のスキルがもう一つ増え、Hermes では `/git-orchestrator` も増えてしまいます。以下の各コードブロックの最後の行が、この削除を行うコマンドです。手動インストール（Windows PowerShell）：
 
@@ -1357,7 +1407,7 @@ cp -R SKILL.md references skills "${HERMES_HOME:-$HOME/.hermes}/skills/multi-age
 cd "${HERMES_HOME:-$HOME/.hermes}/skills/multi-agent-git-orchestrator" && rm -r skills/git-orchestrator
 ```
 
-Hermes を再起動したら、`hermes skills list` を実行して各コマンドの説明を確認し、`/git-recon`、`/git-analyze`、`/git-recommend`、`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep`、`/git-plan` のいずれかを呼び出せます。引数はコマンドの後ろにそのまま続けます。例えば `/git-analyze main --remote` のようにします。`/git-analyze --help` でも詳しい説明を確認できます。Hermes のスキル表示ツールは `..` を含むパスを受け付けないため、アダプター層は代わりに `[Skill directory: ...]` で示される絶対パスから共有ファイルを読み込みます。Hermes にはスキルごとに自動呼び出しを無効にするスイッチがないため、`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep`、`/git-plan` については、ユーザーが明示的に呼び出さない限りリポジトリに書き込まないことを、アダプター層で規定しています。
+Hermes を再起動したら、`hermes skills list` を実行して各コマンドの説明を確認し、`/git-recon`、`/git-analyze`、`/git-recommend`、`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep`、`/git-plan`、`/git-protect` のいずれかを呼び出せます。引数はコマンドの後ろにそのまま続けます。例えば `/git-analyze main --remote` のようにします。`/git-analyze --help` でも詳しい説明を確認できます。Hermes のスキル表示ツールは `..` を含むパスを受け付けないため、アダプター層は代わりに `[Skill directory: ...]` で示される絶対パスから共有ファイルを読み込みます。Hermes にはスキルごとに自動呼び出しを無効にするスイッチがないため、`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep`、`/git-plan`、`/git-protect` については、ユーザーが明示的に呼び出さない限りリポジトリに書き込まないことを、アダプター層で規定しています。
 
 ホストがカスタムのスラッシュコマンドに対応していない場合は、直接次のように入力することもできます：
 
@@ -1375,12 +1425,12 @@ GitRecommend
 
 | 気になること | 答え |
 |---|---|
-| 使えるコマンドは？ | `skills/` 配下の八つのコマンドスキル：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`、`git-plan`。これに加えて、エントリースキル `git-orchestrator` があります。ツールによってはプラグイン名がプレフィックスとして付き、例えば Codex では `magos:git-recon` と表示されます。 |
-| ルートの `SKILL.md`（全体ルール）は？ | これはプラグインのスキルには数えられません。仕様が認識するのは `skills/` 配下のフォルダーだけだからです。そのため、プラグインにはエントリースキル `git-orchestrator` が含まれています。これは同じ説明を持ち（自動でトリガーされます）、ルートの `SKILL.md` を読みに行く内容になっています。八つのコマンドも、ルートの `SKILL.md` と `references/` にあるルールを読みに行きます。Claude Code、Codex、Hermes で実際に動作を確認済みです：プラグインのインストールと有効化ができ、スキル名は上の表のとおりです。各コマンドを最初から最後まで実行する確認は、まだ一つずつ行っていません。 |
+| 使えるコマンドは？ | `skills/` 配下の九つのコマンドスキル：`git-recon`、`git-analyze`、`git-recommend`、`git-integrate`、`git-cleanup`、`git-converge`、`git-sweep`、`git-plan`、`git-protect`。これに加えて、エントリースキル `git-orchestrator` があります。ツールによってはプラグイン名がプレフィックスとして付き、例えば Codex では `magos:git-recon` と表示されます。 |
+| ルートの `SKILL.md`（全体ルール）は？ | これはプラグインのスキルには数えられません。仕様が認識するのは `skills/` 配下のフォルダーだけだからです。そのため、プラグインにはエントリースキル `git-orchestrator` が含まれています。これは同じ説明を持ち（自動でトリガーされます）、ルートの `SKILL.md` を読みに行く内容になっています。九つのコマンドも、ルートの `SKILL.md` と `references/` にあるルールを読みに行きます。Claude Code、Codex、Hermes で実際に動作を確認済みです：プラグインのインストールと有効化ができ、スキル名は上の表のとおりです。各コマンドを最初から最後まで実行する確認は、まだ一つずつ行っていません。 |
 | Claude Code でも使えますか？ | Claude Code はこのファイルを読みません。読むのは `.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` です。上の「プラグインマーケットプレースからインストール」の方法でインストールしてください。 |
-| Hermes ではどちらの方法を使いますか？ | どちらでも使えます。`hermes plugins install UlyssesLeoLee/MAGOS --enable` が読むのは、Hermes ネイティブのマニフェスト `plugin.yaml` です（この `plugin.json` ではありません）。コマンドは `/magos:git-recon` のような名前になり、`[Skill directory: …]` のパスのヒントが付きます。プラグイン内の各スキルはシステムプロンプトの `<available_skills>` に一覧表示され、説明は `__init__.py` の `INDEX_DESCRIPTIONS` から取られます（Hermes はプラグインスキルの SKILL.md の説明を読まないので、この行を渡さないと、モデルには名前しか見えません）：全体ルールの行にはトリガーとなる場面が、リポジトリを変更するコマンドの行には「ユーザーが明示的に入力したときだけ実行し、自分で読み込まないこと」が書かれています。リポジトリを変更する五つのコマンドは、ユーザーが明示的に入力した `/magos:git-*`、`/git-*`、`$magos:git-*`、`$git-*` のいずれかの呼び出しにしか応じません（Claude Code の同名の `/magos:Git*` コマンドも明示的な呼び出しです）。 |
+| Hermes ではどちらの方法を使いますか？ | どちらでも使えます。`hermes plugins install UlyssesLeoLee/MAGOS --enable` が読むのは、Hermes ネイティブのマニフェスト `plugin.yaml` です（この `plugin.json` ではありません）。コマンドは `/magos:git-recon` のような名前になり、`[Skill directory: …]` のパスのヒントが付きます。プラグイン内の各スキルはシステムプロンプトの `<available_skills>` に一覧表示され、説明は `__init__.py` の `INDEX_DESCRIPTIONS` から取られます（Hermes はプラグインスキルの SKILL.md の説明を読まないので、この行を渡さないと、モデルには名前しか見えません）：全体ルールの行にはトリガーとなる場面が、リポジトリを変更するコマンドの行には「ユーザーが明示的に入力したときだけ実行し、自分で読み込まないこと」が書かれています。書き込みを行う六つのコマンドは、ユーザーが明示的に入力した `/magos:git-*`、`/git-*`、`$magos:git-*`、`$git-*` のいずれかの呼び出しにしか応じません（Claude Code の同名の `/magos:Git*` コマンドも明示的な呼び出しです）。 |
 
-リポジトリのルートには、`.claude-plugin/`（Claude Code 用の `plugin.json` と、Claude Code と Codex が共用する `marketplace.json`）と、Hermes 用の `plugin.yaml`、`__init__.py` があります。`.codex-plugin/` と `.cursor-plugin/` は、意図的に置いていません。Codex は `.claude-plugin/`、`.codex-plugin/`、`.cursor-plugin/` のいずれかを見つけると、スキルにプラグイン名のプレフィックスを付けます。このリポジトリには `.claude-plugin/` があるため、**リポジトリを Codex のスキルディレクトリに直接 `git clone` すると、コマンドが `$magos:git-recon` のような名前になります**。Codex と Hermes は、同期スクリプトでインストールしてください。同期スクリプトは `SKILL.md`、`references/*.md`、八つのコマンドスキル（それぞれの `SKILL.md` と `agents/openai.yaml`）をコピーし、`.claude-plugin/` とエントリースキル `git-orchestrator` は含めないので、コマンド名は引き続き `$git-recon`、`/git-recon` です。ルートの `plugin.json` だけなら、名前は変わりません。
+リポジトリのルートには、`.claude-plugin/`（Claude Code 用の `plugin.json` と、Claude Code と Codex が共用する `marketplace.json`）と、Hermes 用の `plugin.yaml`、`__init__.py` があります。`.codex-plugin/` と `.cursor-plugin/` は、意図的に置いていません。Codex は `.claude-plugin/`、`.codex-plugin/`、`.cursor-plugin/` のいずれかを見つけると、スキルにプラグイン名のプレフィックスを付けます。このリポジトリには `.claude-plugin/` があるため、**リポジトリを Codex のスキルディレクトリに直接 `git clone` すると、コマンドが `$magos:git-recon` のような名前になります**。Codex と Hermes は、同期スクリプトでインストールしてください。同期スクリプトは `SKILL.md`、`references/*.md`、九つのコマンドスキル（それぞれの `SKILL.md` と `agents/openai.yaml`）をコピーし、`.claude-plugin/` とエントリースキル `git-orchestrator` は含めないので、コマンド名は引き続き `$git-recon`、`/git-recon` です。ルートの `plugin.json` だけなら、名前は変わりません。
 
 既知の逸脱が一つあります：仕様の第 8 節は、「特定の一つのツールだけが使うファイル」を、逆ドメイン形式の名前を付けたフォルダー（例えば `com.example.client/`）に入れるよう求めています。`commands/` は Claude Code だけが使い、`plugin.yaml` と `__init__.py` は Hermes だけが使うのに、すべて最上位に置かれています。プラグインを扱うツールは、それらを無視するだけなので、インポートには影響しません。インストールスクリプトとテストは、最上位のパスでそれらを使っています。
 

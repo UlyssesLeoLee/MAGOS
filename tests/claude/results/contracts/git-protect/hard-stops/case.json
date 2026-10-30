@@ -1,0 +1,83 @@
+{
+  "id": "git-protect/hard-stops",
+  "skill": "git-protect",
+  "feature": "/GitProtect writes no branch, and only the user sets or lifts a protection",
+  "invocations": {
+    "claude": "/GitProtect main",
+    "codex": "$git-protect main",
+    "hermes": "/git-protect main"
+  },
+  "test_object": {
+    "guard_subcommands": [
+      "protect",
+      "protect-show"
+    ],
+    "approval": "user-only, every approval level, --release included"
+  },
+  "expected": [
+    "The command never commits, merges, creates, switches, deletes or pushes a branch.",
+    "protect is a user-only guard subcommand: the agent runs it as one direct invocation so the host asks the user, in Codex through magos_approve with subcommand protect, never passes --approval, and prints the command for the user's terminal when there is no prompt.",
+    "The agent never lifts a protection on its own to make a refused write pass, never writes .git/magos or magos.* config, and never retries a refused or declined protect in another form.",
+    "The user-only lists of SKILL.md and references/lane-split.md name protect, and lane-split.md section 15 states what a protection refuses and allows."
+  ],
+  "checks": [
+    {
+      "file": "commands/GitProtect.md",
+      "contains": [
+        "disable-model-invocation: true",
+        "as one direct invocation of the guard script with the `Bash` or `PowerShell` tool, with nothing else on the line, so that the host asks the user; never pass `--approval`",
+        "print the command for the user's own terminal and run nothing",
+        "This command never commits, merges, creates, switches, deletes or pushes a branch.",
+        "never lift the protection to make a write pass"
+      ]
+    },
+    {
+      "file": "skills/git-protect/SKILL.md",
+      "contains": [
+        "disable-model-invocation: true",
+        "user-invocable: false",
+        "## Explicit invocation only",
+        "call the MCP tool `magos_approve` of the server `magos` with `subcommand` `protect`, `repo`, `branch` and `release`",
+        "Never pass `--approval`.",
+        "This command never commits, merges, creates, switches, deletes or pushes a branch.",
+        "never lift the protection to make a write pass"
+      ]
+    },
+    {
+      "file": "skills/git-protect/agents/openai.yaml",
+      "contains": [
+        "allow_implicit_invocation: false"
+      ]
+    },
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "Never: set or lift a protection without the user's explicit `/GitProtect` invocation, or on your own to make a refused write pass;",
+        "No approval level runs `protect` without the user's click or terminal, `--release` included."
+      ]
+    },
+    {
+      "file": "SKILL.md",
+      "contains": [
+        "`override`, `arm`, `disarm`, `install` and `protect` run only with the user's approval:",
+        "- `/GitProtect` writes no branch and no repository content:"
+      ]
+    },
+    {
+      "file": "references/lane-split.md",
+      "contains": [
+        "## 15. Branch Protection",
+        "4. **Only the user overrides.** `override`, `arm`, `disarm`, `install` and `protect` run only with the user's approval, never on your own.",
+        "A protection denial carries no fingerprint and offers no override"
+      ]
+    },
+    {
+      "file": "references/pressure-tests.md",
+      "contains": [
+        "## GitProtect pressure tests",
+        "### A commit into a protected branch",
+        "### The agent tries to lift the protection itself"
+      ]
+    }
+  ]
+}

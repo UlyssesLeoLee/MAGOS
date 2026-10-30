@@ -45,6 +45,7 @@ INDEX_DESCRIPTIONS = {
     "git-converge": "Merges and deletes branches: run only when the user types /magos:git-converge. Never load it yourself.",
     "git-sweep": "Merges, deletes and pushes remote deletions: run only when the user types /magos:git-sweep. Never load it yourself.",
     "git-plan": "Registers lane claims and, with --converge --apply, merges the lanes: run only when the user types /magos:git-plan. Never load it yourself.",
+    "git-protect": "Sets or lifts the protection of a branch against agents' commits and merges: run only when the user types /magos:git-protect. Never load it yourself.",
 }
 
 GUARD = Path(__file__).parent / "scripts" / "magos_guard.py"  # the guard this plugin ships, never a copy elsewhere

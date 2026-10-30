@@ -41,7 +41,7 @@
         "file": "references/commands.md",
         "contains": [
           "/GitConverge --help",
-          "All eight commands accept `--help`."
+          "All nine commands accept `--help`."
         ]
       }
     ]
@@ -800,13 +800,14 @@
         "GitCleanup",
         "GitConverge",
         "GitSweep",
-        "GitPlan"
+        "GitPlan",
+        "GitProtect"
       ],
       "default": "Chinese"
     },
     "expected": [
-      "All eight Claude wrappers list --lang in the argument hint, the usage line, the options, and the execution step.",
-      "All eight adapters list --lang in both host usage lines and in the execution section.",
+      "All nine Claude wrappers list --lang in the argument hint, the usage line, the options, and the execution step.",
+      "All nine adapters list --lang in both host usage lines and in the execution section.",
       "The canonical contract defines the option once and every command's argument table repeats it."
     ],
     "checks": [
@@ -905,6 +906,17 @@
         ]
       },
       {
+        "file": "commands/GitProtect.md",
+        "contains": [
+          "[--lang <language>] [--help]",
+          "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
+          "- `--lang <language>`: Language of the reply",
+          "Write every reply in the language selected by `--lang` (Chinese when absent).",
+          "Reply language: Chinese unless `--lang` selects another one; this includes the final report.",
+          "4. Before you write the final report, check the reply language again"
+        ]
+      },
+      {
         "file": "skills/git-recon/SKILL.md",
         "contains": [
           "[--lang <language>] [--help]`",
@@ -977,9 +989,18 @@
         ]
       },
       {
+        "file": "skills/git-protect/SKILL.md",
+        "contains": [
+          "[--lang <language>] [--help]`",
+          "- `--lang <language>`: Language of the reply",
+          "Reply in the language selected by `--lang` (Chinese when absent)",
+          "Remove `--lang` and its value from the arguments before parsing the rest."
+        ]
+      },
+      {
         "file": "references/commands.md",
         "contains": [
-          "**Reply language.** All eight commands accept `--lang <language>`.",
+          "**Reply language.** All nine commands accept `--lang <language>`.",
           "Chinese (简体中文)",
           "including the final report of a write command after a long run",
           "write it in the reply language, Chinese unless `--lang` selects another one, headings and tables included",
@@ -997,7 +1018,7 @@
       {
         "file": "SKILL.md",
         "contains": [
-          "All eight commands accept `--lang <language>`",
+          "All nine commands accept `--lang <language>`",
           "(Chinese when absent)"
         ]
       },
@@ -1038,13 +1059,13 @@
       {
         "file": "scripts/sync_hosts.py",
         "contains": [
-          "\"GitCleanup\", \"GitConverge\", \"GitSweep\", \"GitPlan\")"
+          "\"GitSweep\", \"GitPlan\", \"GitProtect\")"
         ]
       },
       {
         "file": "README.md",
         "contains": [
-          "## 八个核心命令",
+          "## 九个核心命令",
           "### `/GitConverge`",
           "| GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` |",
           "├── GitConverge.md",
@@ -1054,8 +1075,8 @@
       {
         "file": "references/installation.md",
         "contains": [
-          "共 8 个",
-          "八个 `agents/openai.yaml`"
+          "共 9 个",
+          "九个 `agents/openai.yaml`"
         ]
       },
       {
@@ -1071,7 +1092,7 @@
         "contains": [
           "version: \"{plugin.yaml version}\"",
           "| `/GitConverge` | `/GitConverge` | `/git-converge` | `$git-converge` |",
-          "discover the eight Agent Skills"
+          "discover the nine Agent Skills"
         ]
       },
       {
@@ -2031,7 +2052,7 @@
           "| `--land` | No | With `--converge --apply`: after the merges and the checks, fast-forward `<branch>` to the integration branch. |",
           "| `--release` | No | Retire the set once its lanes are integrated: remove its claims and its record. |",
           "| `--expect-revision <n>` | With `--amend` |",
-          "Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other seven).",
+          "Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other eight).",
           "Examples: `/GitPlan sweep-readiness --into develop`, `/GitPlan sweep-readiness --into develop --apply --create`, `/GitPlan sweep-readiness --status`, `/GitPlan sweep-readiness --converge --apply --land`, `/GitPlan --help`."
         ]
       },
@@ -2780,10 +2801,10 @@
       ]
     },
     "expected": [
-      "sync_hosts.py installs commands/GitPlan.md for Claude (the tail of COMMAND_NAMES is GitSweep, GitPlan) and the Codex and Hermes packages carry skills/git-plan with its openai.yaml.",
+      "sync_hosts.py installs commands/GitPlan.md for Claude (COMMAND_NAMES ends with GitSweep, GitPlan, GitProtect) and the Codex and Hermes packages carry skills/git-plan with its openai.yaml.",
       "The Hermes plugin index describes git-plan as a command that registers lane claims and merges the lanes and must never be loaded by the model.",
       "The Claude Code adapter and the Hermes skill set disable-model-invocation: true, the Codex adapter sets allow_implicit_invocation: false, and the adapters read ../../references/commands.md sections 8 and 6 and never commands/*.md.",
-      "Docs list /GitPlan, /git-plan and $git-plan, say eight commands and eight Agent Skills (five of them write adapters), and pin examples name the version that plugin.yaml states.",
+      "Docs list /GitPlan, /git-plan and $git-plan, say nine commands and nine Agent Skills (six of them write adapters), and pin examples name the version that plugin.yaml states.",
       "The three READMEs describe /GitPlan, the changelog has a 1.0.4 section and the release notes of 1.0.4 exist; the pressure tests describe the GitPlan scenarios.",
       "An older guard copy lacks the set-* subcommands: the install and upgrade notes say to refresh the guard copy with doctor and install."
     ],
@@ -2791,7 +2812,7 @@
       {
         "file": "scripts/sync_hosts.py",
         "contains": [
-          "\"GitCleanup\", \"GitConverge\", \"GitSweep\", \"GitPlan\")"
+          "\"GitSweep\", \"GitPlan\", \"GitProtect\")"
         ]
       },
       {
@@ -2838,38 +2859,38 @@
         "contains": [
           "version: \"{plugin.yaml version}\"",
           "| `/GitPlan` | `/GitPlan` | `/git-plan` | `$git-plan` |",
-          "discover the eight Agent Skills",
-          "the write adapters (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`) enforce explicit invocation by instruction",
-          "Agent Plugins clients (the root `plugin.json`, specification 1.0.0) discover only these eight adapters and the entry skill `git-orchestrator` in `skills/`"
+          "discover the nine Agent Skills",
+          "the write adapters (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`, `git-protect`) enforce explicit invocation by instruction",
+          "Agent Plugins clients (the root `plugin.json`, specification 1.0.0) discover only these nine adapters and the entry skill `git-orchestrator` in `skills/`"
         ]
       },
       {
         "file": "plugin.yaml",
         "contains": [
           "version: {plugin.yaml version}",
-          "plus eight explicit Git commands, as /magos:git-* slash commands."
+          "plus nine explicit Git commands, as /magos:git-* slash commands."
         ]
       },
       {
         "file": "plugin.json",
         "contains": [
           "\"version\": \"{plugin.yaml version}\"",
-          "eight explicit Git command skills (git-recon, git-analyze, git-recommend, git-integrate, git-cleanup, git-converge, git-sweep, git-plan)"
+          "nine explicit Git command skills (git-recon, git-analyze, git-recommend, git-integrate, git-cleanup, git-converge, git-sweep, git-plan, git-protect)"
         ]
       },
       {
         "file": ".claude-plugin/plugin.json",
         "contains": [
           "\"version\": \"{plugin.yaml version}\"",
-          "eight explicit Git commands (GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge, GitSweep, GitPlan)"
+          "nine explicit Git commands (GitRecon, GitAnalyze, GitRecommend, GitIntegrate, GitCleanup, GitConverge, GitSweep, GitPlan, GitProtect)"
         ]
       },
       {
         "file": "references/commands.md",
         "contains": [
           "This reference defines the command-layer behavior for `multi-agent-git-orchestrator` v{plugin.yaml version}.",
-          "`GitSweep` must not merge, delete, or push, and `GitPlan` must not register a plan, create a branch or worktree, merge, or release a set (preview only).",
-          "`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, and `git-plan` refuse to write unless invoked explicitly.",
+          "`GitSweep` must not merge, delete, or push, `GitPlan` must not register a plan, create a branch or worktree, merge, or release a set (preview only), and `GitProtect` must not set or lift a protection (`--status` only).",
+          "`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`, and `git-protect` refuse to write unless invoked explicitly.",
           "## 8. GitPlan",
           "/GitPlan <set> --into <branch> [--apply] [--create]\n   ↓ lanes planned up front (lane claims and set record), later merged as one whole by --converge [--apply] [--land]"
         ]
@@ -2877,12 +2898,12 @@
       {
         "file": "references/installation.md",
         "contains": [
-          "`/magos:GitRecon` … `/magos:GitPlan`",
-          "`$magos:git-recon` … `$magos:git-plan`",
-          "`/magos:git-recon` … `/magos:git-plan`",
-          "共 8 个",
-          "八个 `agents/openai.yaml`",
-          "Claude Code 里每个命令只有一套：`commands/` 里的 `/magos:GitRecon` … `/magos:GitPlan`",
+          "`/magos:GitRecon` … `/magos:GitProtect`",
+          "`$magos:git-recon` … `$magos:git-protect`",
+          "`/magos:git-recon` … `/magos:git-protect`",
+          "共 9 个",
+          "九个 `agents/openai.yaml`",
+          "Claude Code 里每个命令只有一套：`commands/` 里的 `/magos:GitRecon` … `/magos:GitProtect`",
           "头信息设置了 `user-invocable: false` 与 `disable-model-invocation: true`",
           "**同一个命令出现两套时**",
           "每个版本的发布提交带有标签 `v<版本号>`（例如 `v{plugin.yaml version}`）",
@@ -2892,28 +2913,29 @@
       {
         "file": "README.md",
         "contains": [
-          "## 八个核心命令",
+          "## 九个核心命令",
           "### `/GitPlan`",
           "├── GitSweep.md",
-          "└── GitPlan.md",
+          "├── GitPlan.md",
+          "└── GitProtect.md",
           "| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` |",
-          "| 八个命令 | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |",
-          "| 哪些命令有 | 八个命令都有 |",
+          "| 九个命令 | `/magos:GitRecon` … `/magos:GitProtect` | `$magos:git-recon` … `$magos:git-protect` | `/magos:git-recon` … `/magos:git-protect` |",
+          "| 哪些命令有 | 九个命令都有 |",
           "| Lane Planning |",
           "claude plugin marketplace add UlyssesLeoLee/MAGOS@v{plugin.yaml version}",
           "git clone --branch v{plugin.yaml version} https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos",
           "- **Set 子命令。**",
           "1.0.4 起，`/GitPlan` 需要守卫的 `set-*` 子命令，较老的守卫副本没有它们：运行 `doctor`，再运行它打印的 `install --host <host>` 命令刷新副本，否则 `/GitPlan` 会在开头检查版本并停下。",
-          "`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep` 与 `/git-plan` 在适配层中规定：未经用户显式调用时不写入仓库。"
+          "`/git-integrate`、`/git-cleanup`、`/git-converge`、`/git-sweep`、`/git-plan` 与 `/git-protect` 在适配层中规定：未经用户显式调用时不写入仓库。"
         ]
       },
       {
         "file": "README.en.md",
         "contains": [
-          "## The eight commands",
+          "## The nine commands",
           "### `/GitPlan <set>` — plan the lanes, then converge them",
           "| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` |",
-          "| The eight commands | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |",
+          "| The nine commands | `/magos:GitRecon` … `/magos:GitProtect` | `$magos:git-recon` … `$magos:git-protect` | `/magos:git-recon` … `/magos:git-protect` |",
           "| Lane Planning |",
           "claude plugin marketplace add UlyssesLeoLee/MAGOS@v{plugin.yaml version}",
           "git clone --branch v{plugin.yaml version} https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos",
@@ -2924,12 +2946,13 @@
       {
         "file": "README.ja.md",
         "contains": [
-          "## 8 つのコアコマンド",
+          "## 9 つのコアコマンド",
           "### `/GitPlan`",
           "├── GitSweep.md",
-          "└── GitPlan.md",
+          "├── GitPlan.md",
+          "└── GitProtect.md",
           "| GitPlan | `/GitPlan` | `/git-plan` | `$git-plan` |",
-          "| 八つのコマンド | `/magos:GitRecon` … `/magos:GitPlan` | `$magos:git-recon` … `$magos:git-plan` | `/magos:git-recon` … `/magos:git-plan` |",
+          "| 九つのコマンド | `/magos:GitRecon` … `/magos:GitProtect` | `$magos:git-recon` … `$magos:git-protect` | `/magos:git-recon` … `/magos:git-protect` |",
           "| Lane Planning |",
           "claude plugin marketplace add UlyssesLeoLee/MAGOS@v{plugin.yaml version}",
           "git clone --branch v{plugin.yaml version} https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos",
@@ -2988,6 +3011,285 @@
           "### GitPlan with a branch or a worktree that does not carry the topic",
           "### GitPlan with the list supplemented after the merge",
           "### GitPlan --land with files written by the checks"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "git-protect/forms-and-help",
+    "skill": "git-protect",
+    "feature": "The forms of /GitProtect set, lift or show the protection of a branch; help stops before any inspection and a wrong combination executes nothing",
+    "invocations": {
+      "claude": "/GitProtect main",
+      "codex": "$git-protect main",
+      "hermes": "/git-protect main"
+    },
+    "test_object": {
+      "arguments": [
+        "[<branch>]"
+      ],
+      "also": [
+        "--release",
+        "--status [<branch>]",
+        "--help",
+        "--lang <language>",
+        "--release together with --status",
+        "more than one branch",
+        "a detached HEAD without a branch"
+      ]
+    },
+    "expected": [
+      "The usage line and the argument hint list every option: /GitProtect [<branch>] [--release | --status] [--lang <language>] [--help].",
+      "Without a branch the command takes git branch --show-current, and a detached HEAD stops it and asks for a branch name; a branch that does not exist yet can be protected.",
+      "--help (and --lang) is handled first: the command shows its inline help and stops before any tool call; an unknown option, more than one branch or --release with --status is a usage error that executes nothing.",
+      "--status runs only the read-only guard subcommand protect-show; setting and lifting run the user-only subcommand protect."
+    ],
+    "checks": [
+      {
+        "file": "commands/GitProtect.md",
+        "contains": [
+          "argument-hint: \"[<branch>] [--release | --status] [--lang <language>] [--help]\"",
+          "Handle `--help` first, even if other arguments are present.",
+          "Usage: `/GitProtect [<branch>] [--release | --status] [--lang <language>] [--help]`",
+          "For an unknown option, more than one branch, or `--release` together with `--status`, explain the error, show this help, and stop.",
+          "a detached HEAD stops the command and asks for a branch name",
+          "A branch that does not exist yet can be protected: the name is what is stored.",
+          "- `--status`: Read-only: print the protections of the repository (`magos_guard.py protect-show`); nothing is written and nothing is approved.",
+          "Examples: `/GitProtect main`, `/GitProtect develop --release`, `/GitProtect`, `/GitProtect --status`"
+        ]
+      },
+      {
+        "file": "skills/git-protect/SKILL.md",
+        "contains": [
+          "- Hermes: `/git-protect [<branch>] [--release | --status] [--lang <language>] [--help]`",
+          "- Codex: `$git-protect [<branch>] [--release | --status] [--lang <language>] [--help]`",
+          "If `--help` is present, even with other arguments, answer from the inline Usage section above and stop before any tool call, file read, or repository inspection.",
+          "a detached HEAD stops the command and asks for a branch name"
+        ]
+      },
+      {
+        "file": "references/commands.md",
+        "contains": [
+          "## 9. GitProtect",
+          "`--release` together with `--status`, more than one branch, or an unknown option is a usage error: explain it, show the usage, and execute nothing.",
+          "### Status (`--status`, read-only)",
+          "### Set and release (default, `--release`)",
+          "Run `<guard> protect-show --json`"
+        ]
+      },
+      {
+        "file": "SKILL.md",
+        "contains": [
+          "| `/GitProtect` | `/GitProtect` | `/git-protect` | `$git-protect` |",
+          "| `/GitProtect [<branch>] [--release]`; `--status [<branch>]` |"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "git-protect/hard-stops",
+    "skill": "git-protect",
+    "feature": "/GitProtect writes no branch, and only the user sets or lifts a protection",
+    "invocations": {
+      "claude": "/GitProtect main",
+      "codex": "$git-protect main",
+      "hermes": "/git-protect main"
+    },
+    "test_object": {
+      "guard_subcommands": [
+        "protect",
+        "protect-show"
+      ],
+      "approval": "user-only, every approval level, --release included"
+    },
+    "expected": [
+      "The command never commits, merges, creates, switches, deletes or pushes a branch.",
+      "protect is a user-only guard subcommand: the agent runs it as one direct invocation so the host asks the user, in Codex through magos_approve with subcommand protect, never passes --approval, and prints the command for the user's terminal when there is no prompt.",
+      "The agent never lifts a protection on its own to make a refused write pass, never writes .git/magos or magos.* config, and never retries a refused or declined protect in another form.",
+      "The user-only lists of SKILL.md and references/lane-split.md name protect, and lane-split.md section 15 states what a protection refuses and allows."
+    ],
+    "checks": [
+      {
+        "file": "commands/GitProtect.md",
+        "contains": [
+          "disable-model-invocation: true",
+          "as one direct invocation of the guard script with the `Bash` or `PowerShell` tool, with nothing else on the line, so that the host asks the user; never pass `--approval`",
+          "print the command for the user's own terminal and run nothing",
+          "This command never commits, merges, creates, switches, deletes or pushes a branch.",
+          "never lift the protection to make a write pass"
+        ]
+      },
+      {
+        "file": "skills/git-protect/SKILL.md",
+        "contains": [
+          "disable-model-invocation: true",
+          "user-invocable: false",
+          "## Explicit invocation only",
+          "call the MCP tool `magos_approve` of the server `magos` with `subcommand` `protect`, `repo`, `branch` and `release`",
+          "Never pass `--approval`.",
+          "This command never commits, merges, creates, switches, deletes or pushes a branch.",
+          "never lift the protection to make a write pass"
+        ]
+      },
+      {
+        "file": "skills/git-protect/agents/openai.yaml",
+        "contains": [
+          "allow_implicit_invocation: false"
+        ]
+      },
+      {
+        "file": "references/commands.md",
+        "contains": [
+          "Never: set or lift a protection without the user's explicit `/GitProtect` invocation, or on your own to make a refused write pass;",
+          "No approval level runs `protect` without the user's click or terminal, `--release` included."
+        ]
+      },
+      {
+        "file": "SKILL.md",
+        "contains": [
+          "`override`, `arm`, `disarm`, `install` and `protect` run only with the user's approval:",
+          "- `/GitProtect` writes no branch and no repository content:"
+        ]
+      },
+      {
+        "file": "references/lane-split.md",
+        "contains": [
+          "## 15. Branch Protection",
+          "4. **Only the user overrides.** `override`, `arm`, `disarm`, `install` and `protect` run only with the user's approval, never on your own.",
+          "A protection denial carries no fingerprint and offers no override"
+        ]
+      },
+      {
+        "file": "references/pressure-tests.md",
+        "contains": [
+          "## GitProtect pressure tests",
+          "### A commit into a protected branch",
+          "### The agent tries to lift the protection itself"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "git-protect/package-wiring",
+    "skill": "git-protect",
+    "feature": "The ninth command is wired into the sync script, the Hermes index, the adapters, the Gemini command, the install guide and the three READMEs",
+    "invocations": {
+      "installer": "python -X utf8 scripts/sync_hosts.py",
+      "claude": "/magos:GitProtect",
+      "codex": "$magos:git-protect",
+      "hermes": "/magos:git-protect",
+      "gemini": "/GitProtect"
+    },
+    "test_object": {
+      "files": [
+        "scripts/sync_hosts.py",
+        "scripts/validate_gemini_adapter.py",
+        "__init__.py",
+        "commands/GitProtect.md",
+        "commands/GitProtect.toml",
+        "skills/git-protect/SKILL.md",
+        "skills/git-protect/agents/openai.yaml",
+        "SKILL.md",
+        "references/commands.md",
+        "references/installation.md",
+        "README.md",
+        "README.en.md",
+        "README.ja.md"
+      ]
+    },
+    "expected": [
+      "COMMAND_NAMES ends with GitSweep, GitPlan, GitProtect, so sync_hosts.py installs commands/GitProtect.md for Claude, and the Codex and Hermes packages carry skills/git-protect with its openai.yaml.",
+      "The Hermes plugin index describes git-protect as a command that sets or lifts a branch protection and must never be loaded by the model.",
+      "The Gemini adapter lists GitProtect and its TOML command activates git-orchestrator.",
+      "Docs list /GitProtect, /git-protect and $git-protect and say nine commands."
+    ],
+    "checks": [
+      {
+        "file": "scripts/sync_hosts.py",
+        "contains": [
+          "\"GitSweep\", \"GitPlan\", \"GitProtect\")"
+        ]
+      },
+      {
+        "file": "scripts/validate_gemini_adapter.py",
+        "contains": [
+          "\"GitSweep\", \"GitPlan\", \"GitProtect\")"
+        ]
+      },
+      {
+        "file": "__init__.py",
+        "contains": [
+          "\"git-protect\": \"Sets or lifts the protection of a branch against agents' commits and merges: run only when the user types /magos:git-protect. Never load it yourself.\","
+        ]
+      },
+      {
+        "file": "commands/GitProtect.md",
+        "contains": [
+          "For a normal invocation, run the Multi-Agent Git Orchestrator command `/GitProtect $ARGUMENTS`.",
+          "`references/commands.md` section **9. GitProtect**",
+          "`magos` (plugin clone directory)",
+          "`multi-agent-git-orchestrator` (frontmatter name)"
+        ]
+      },
+      {
+        "file": "commands/GitProtect.toml",
+        "contains": [
+          "{{args}}",
+          "activate_skill",
+          "references/commands.md",
+          "GitProtect"
+        ]
+      },
+      {
+        "file": "skills/git-protect/SKILL.md",
+        "contains": [
+          "name: git-protect",
+          "Use it only when the user explicitly invokes `/git-protect` in Hermes or `$git-protect` in Codex.",
+          "2. `../../references/commands.md` section **9. GitProtect**",
+          "Do not use `commands/*.md` for this adapter."
+        ]
+      },
+      {
+        "file": "skills/git-protect/agents/openai.yaml",
+        "contains": [
+          "display_name: \"git-protect\""
+        ]
+      },
+      {
+        "file": "references/installation.md",
+        "contains": [
+          "`/magos:GitRecon` … `/magos:GitProtect`",
+          "共 9 个",
+          "九个 `agents/openai.yaml`"
+        ]
+      },
+      {
+        "file": "README.md",
+        "contains": [
+          "## 九个核心命令",
+          "### `/GitProtect`",
+          "└── GitProtect.md",
+          "| GitProtect | `/GitProtect` | `/git-protect` | `$git-protect` |",
+          "| Branch Protection |"
+        ]
+      },
+      {
+        "file": "README.en.md",
+        "contains": [
+          "## The nine commands",
+          "### `/GitProtect` — keep agents off a branch",
+          "| GitProtect | `/GitProtect` | `/git-protect` | `$git-protect` |",
+          "| Branch Protection |"
+        ]
+      },
+      {
+        "file": "README.ja.md",
+        "contains": [
+          "## 9 つのコアコマンド",
+          "### `/GitProtect`",
+          "└── GitProtect.md",
+          "| GitProtect | `/GitProtect` | `/git-protect` | `$git-protect` |",
+          "| Branch Protection |"
         ]
       }
     ]

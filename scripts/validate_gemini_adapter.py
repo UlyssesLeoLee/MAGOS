@@ -10,7 +10,7 @@ else:  # Python 3.9 and 3.10 have no TOML reader: the TOML files are read, but t
     tomllib = None
 
 COMMANDS = ("GitRecon", "GitAnalyze", "GitRecommend", "GitIntegrate",
-            "GitCleanup", "GitConverge", "GitSweep", "GitPlan")
+            "GitCleanup", "GitConverge", "GitSweep", "GitPlan", "GitProtect")
 
 def read_toml(path: Path):
     """The parsed TOML file, or None when this Python has no TOML reader (a missing file is an error either way)."""
@@ -41,7 +41,7 @@ def validate(base: Path, overlay_only: bool = False) -> None:
         names.add(name)
         if not overlay_only:
             assert (base / "commands" / (name + ".md")).is_file(), "missing original Claude command " + name
-    assert len(names) == 8
+    assert len(names) == len(COMMANDS)
     if not overlay_only:
         assert (base / "SKILL.md").is_file(), "must be merged with MAGOS repo"
         assert (base / "references/commands.md").is_file(), "must be merged with MAGOS repo"
@@ -49,7 +49,7 @@ def validate(base: Path, overlay_only: bool = False) -> None:
         source = json.loads((base / "plugin.json").read_text(encoding="utf-8"))
         assert source.get("name") == "magos"
         assert source.get("version") == manifest["version"], "Gemini version must match plugin.json"
-    print("PASS: Gemini manifest, policy, 8 TOML custom commands and source dependencies"
+    print("PASS: Gemini manifest, policy, %d TOML custom commands and source dependencies" % len(COMMANDS)
           + ("" if tomllib else " (TOML content not checked: it is read on Python 3.11 and later)"))
 
 def main():

@@ -2,9 +2,10 @@
 """MAGOS lane guard: a lane's files are planned before the lane exists; creating a lane that overlaps another lane is denied.
 
 One stdlib-only file (Python >= 3.9): CLI, PreToolUse hook entry for Claude Code / Codex / Hermes, the MCP approval server the host starts
-(mcp), and the sh body of the git reference-transaction backstop. check / list / set-show never write, hook writes only approval and denial
-records and mcp only approval records; plan / release / override / arm / disarm / install and the set
-commands set-plan / set-update / set-release write only the claim store and the set records under <git-common-dir>/magos and the files they print.
+(mcp), and the sh body of the git reference-transaction backstop. check / list / set-show / protect-show never write, hook writes only approval
+and denial records and mcp only approval records; plan / release / override / arm / disarm / install / protect and the set
+commands set-plan / set-update / set-release write only the claim store, the set records and the protection record under <git-common-dir>/magos
+and the files they print.
 """
 from __future__ import annotations
 
@@ -43,6 +44,8 @@ if sys.platform == "win32":  # CreateProcess searches the working directory befo
 GUARD_VERSION = "1.0.9"  # the one version constant of the guard; equals the package version (plugin.json, .claude-plugin/plugin.json, plugin.yaml, SKILL.md)
 CLAIM_FORMAT = 1  # the claim file format this guard reads and writes (line `v=`); a claim of a newer format is never misread
 SET_FORMAT = 1  # the set record format this guard reads and writes (field `v`); a record of a newer format is never misread
+PROTECT_FORMAT = 1  # the protection record format this guard reads and writes (field `v`); a record of a newer format is never misread
+PROTECT_MAX, PROTECT_NAME_MAX, PROTECT_REASON_MAX, PROTECT_BYTES = 64, 255, 200, 1048576  # branches per repository, name and reason characters, record bytes
 GS = "**"
 BUDGET_S, MAX_CLAIMANTS, MAX_REMOTES, MAX_ENTRIES, LOCK_S, MAX_TEXT = 18.0, 120, 300, 200, 30.0, 200000
 MAX_DIR = 4096  # the longest directory spelling the detector resolves: a longer one is an unknown directory
@@ -61,7 +64,8 @@ SHELL_TOOLS = HOOKED_TOOLS["shell"] + HOOKED_TOOLS["host_shell"]
 EXIT = {"OK": 0, "OVERRIDDEN": 0, "CONFLICT": 10, "NO_MANIFEST": 10, "UNPLANNABLE": 10, "UNPARSEABLE": 10, "PROTECTED": 10, "UNKNOWN": 11,
         "INVALID_MANIFEST": 12, "LOCK_TIMEOUT": 13, "LANE_EXISTS": 14, "BRANCH_EXISTS": 15, "BLOCKED": 16, "CONSOLE_REQUIRED": 17, "ARM_REFUSED": 3,
         "DOWNGRADE_REFUSED": 18, "STALE": 19, "SET_EXISTS": 20, "SET_UNKNOWN": 21, "OUT_OF_LANE": 22, "SET_NEWER_FORMAT": 23, "INVALID_SPEC": 24,
-        "APPROVAL_UNKNOWN": 25, "APPROVAL_EXPIRED": 26, "APPROVAL_USED": 27, "APPROVAL_MISMATCH": 28}
+        "APPROVAL_UNKNOWN": 25, "APPROVAL_EXPIRED": 26, "APPROVAL_USED": 27, "APPROVAL_MISMATCH": 28, "BRANCH_PROTECTED": 10,
+        "PROTECT_NEWER_FORMAT": 29, "PROTECT_LIMIT": 30}
 APPROVAL_LEVELS = ("terminal", "prompt", "auto-safe")  # magos.approval; unset is prompt, any other value terminal
 APPROVAL_S, APPROVAL_GRACE_S, DENIAL_S = 120, 600, 3600  # token lifetime; how long an expired or used record names its cause; a denial record's lifetime
 # Codex approval (MCP approval server): the protocol version answered to a client that names no date; the longest message line; the longest
@@ -213,14 +217,14 @@ M = {
                         "command yourself. Where that tool is not available, or Codex's approval policy is never (Codex then declines every dialog by "
                         "itself), the user runs this in a real terminal: {ready}"),
     "protected_codex_form": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。在 Codex 中，用户专属命令由用户通过 MCP 服务器 magos 的工具 magos_approve "
-                             "在 Codex 自己的对话框里点击批准：它只接受 subcommand（override、arm、disarm 或 install）、repo（仓库的绝对路径；install 可省略）、"
-                             "fingerprint 和 reason（override）、host（install）以及 dry_run（arm、disarm、install），而这条命令不是它能接受的单独一次直接守卫"
-                             "调用。请按用户的要求用相应参数调用 magos_approve，或者由用户在真实终端里执行：{cmd} <子命令> <选项>",
+                             "在 Codex 自己的对话框里点击批准：它只接受 subcommand（override、arm、disarm、install 或 protect）、repo（仓库的绝对路径；install 可省略）、"
+                             "fingerprint 和 reason（override；protect 的 reason 可选）、host（install）、branch 和 release（protect）以及 dry_run（arm、disarm、"
+                             "install、protect），而这条命令不是它能接受的单独一次直接守卫调用。请按用户的要求用相应参数调用 magos_approve，或者由用户在真实终端里执行：{cmd} <子命令> <选项>",
                              "MAGOS DENIES: this command would change the guard's own claims/switches/hooks ({why}). In Codex the user approves a user-only "
                              "command with a click in Codex's own dialog, through the MCP tool magos_approve of the server magos: it takes only subcommand "
-                             "(override, arm, disarm or install), repo (the absolute path of the repository; optional for install), fingerprint and reason "
-                             "(override), host (install) and dry_run (arm, disarm, install), and this command is no single direct invocation of the guard "
-                             "that it can take. Call magos_approve with the arguments of what the user asked for, or the user runs the command in a real "
+                             "(override, arm, disarm, install or protect), repo (the absolute path of the repository; optional for install), fingerprint and "
+                             "reason (override; reason is optional for protect), host (install), branch and release (protect) and dry_run (arm, disarm, "
+                             "install, protect), and this command is no single direct invocation of the guard that it can take. Call magos_approve with the arguments of what the user asked for, or the user runs the command in a real "
                              "terminal: {cmd} <subcommand> <options>"),
     "protected_codex_never": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。Codex 的审批策略是 never，它会自行拒绝 magos_approve 的批准对话框，所以这里"
                               "没有点击批准的途径：只能由用户在真实终端里执行：{ready}",
@@ -231,12 +235,12 @@ M = {
                       "MAGOS DENIES: this command would start the guard's MCP approval server (the mcp subcommand), which only the host starts from its "
                       "own configuration; a tool command never runs it, on any host. Nothing was started."),
     "protected_slot": ("MAGOS 拒绝：此命令运行守卫脚本，但钩子无法确认它运行的是 agent 可以运行的子命令：子命令必须是写在命令里的一个普通单词，紧跟在脚本和它前面的普通选项之后，"
-                       "守卫的参数也不能来自 xargs、parallel 或 find -exec。请这样写：{cmd} <{subs}> <选项>。hook 和 mcp 只由宿主运行；override、arm、disarm "
-                       "和 install 由用户批准。没有运行任何东西。",
+                       "守卫的参数也不能来自 xargs、parallel 或 find -exec。请这样写：{cmd} <{subs}> <选项>。hook 和 mcp 只由宿主运行；override、arm、disarm、"
+                       "install 和 protect 由用户批准。没有运行任何东西。",
                        "MAGOS DENIES: this command runs the guard script, but the hook cannot see that it runs a subcommand an agent may run: the "
                        "subcommand must be one plain word written in the command, right after the script and the plain options before it, and the "
                        "guard must not take its words from xargs, parallel or find -exec. Write it as: {cmd} <{subs}> <options>. hook and mcp are "
-                       "run only by the host; the user approves override, arm, disarm and install. Nothing ran."),
+                       "run only by the host; the user approves override, arm, disarm, install and protect. Nothing ran."),
     "protected_long": ("MAGOS 拒绝：此命令超过钩子读取的长度（{n} 个字符），并且提到了 MAGOS，钩子无法判断它会运行什么。请把守卫命令单独作为一条短于 {n} 个字符的命令执行。"
                        "没有运行任何东西。",
                        "MAGOS DENIES: this command is longer than the hook reads ({n} characters) and names MAGOS, so the hook cannot tell what it "
@@ -275,11 +279,12 @@ M = {
     "mcp_terminal": ("MAGOS：该仓库的 magos.approval 是 terminal（或是守卫不认识的值，按 terminal 处理）：什么都没有执行；{sub} 只能由用户在真实终端里执行：{ready}",
                      "MAGOS: the repository's magos.approval is terminal (or a value the guard does not know, which counts as terminal): nothing ran; "
                      "only the user runs {sub}, in a real terminal: {ready}"),
-    "mcp_invalid": ("MAGOS：参数无效，什么都没有执行：\n{errors}\nmagos_approve 只接受 subcommand（override、arm、disarm 或 install）、repo（仓库的绝对路径；install "
-                    "可省略）、fingerprint 和 reason（override）、host（install）以及 dry_run（arm、disarm、install）。",
-                    "MAGOS: invalid arguments, nothing ran:\n{errors}\nmagos_approve takes only subcommand (override, arm, disarm or install), repo (the "
-                    "absolute path of the repository; optional for install), fingerprint and reason (override), host (install) and dry_run (arm, "
-                    "disarm, install)."),
+    "mcp_invalid": ("MAGOS：参数无效，什么都没有执行：\n{errors}\nmagos_approve 只接受 subcommand（override、arm、disarm、install 或 protect）、repo（仓库的"
+                    "绝对路径；install 可省略）、fingerprint 和 reason（override；protect 的 reason 可选）、host（install）、branch 和 release（protect）"
+                    "以及 dry_run（arm、disarm、install、protect）。",
+                    "MAGOS: invalid arguments, nothing ran:\n{errors}\nmagos_approve takes only subcommand (override, arm, disarm, install or protect), repo "
+                    "(the absolute path of the repository; optional for install), fingerprint and reason (override; reason is optional for protect), "
+                    "host (install), branch and release (protect) and dry_run (arm, disarm, install, protect)."),
     "mcp_failed": ("MAGOS：{sub} 没有执行：{err}。由用户在真实终端里执行：{ready}", "MAGOS: {sub} did not run: {err}. The user runs this in a real terminal: {ready}"),
     # ---- Hermes approval (1.0.8): the Hermes hook's answer when the MAGOS Hermes plugin runs it, its question and its denials
     "protected_shape_hermes": ("MAGOS 拒绝：此命令会修改守卫自己的清单/开关/钩子（{why}）。只有用户能批准它：在 Hermes 中，请把这条守卫命令单独作为一次 terminal 调用"
@@ -412,6 +417,56 @@ M = {
     "show_changes": ("    改动 {l}：{commits} 个提交，{files} 个文件，+{ins}/-{del}；路径 {paths}；{subjects}",
                      "    changes {l}: {commits} commits, {files} files, +{ins}/-{del}; paths {paths}; {subjects}"),
     "show_more": ("另有 {n} 项", "+{n} more"),
+    # ---- branch protection: the hook's refusal of a write to a protected branch, and the texts of protect, protect-show and their approval
+    "branch_protected": ("MAGOS 拒绝 {op}：分支「{b}」在 {repo} 中受保护，agent 不能向它提交、合并进它或改写它。没有执行任何操作。请在另一个分支上工作（例如 "
+                         "git switch -c <主题分支>），把合入「{b}」交给用户：由用户在自己的终端里执行，或由用户用 /GitProtect {b} --release 解除保护。",
+                         "MAGOS DENIES {op}: the branch '{b}' is protected in {repo}; an agent may not commit to it, merge into it or rewrite it. Nothing ran. "
+                         "Work on another branch (for example git switch -c <topic>) and leave the merge into '{b}' to the user, who runs it in their own "
+                         "terminal or lifts the protection with /GitProtect {b} --release."),
+    "branch_protected_unknown": ("MAGOS 拒绝 {op}：无法确定它写入哪个分支（{why}），而 {repo} 中有受保护的分支（{list}）。没有执行任何操作。请用字面的分支名和目录，"
+                                 "一次只写一条 git 命令。",
+                                 "MAGOS DENIES {op}: the branch it writes cannot be read ({why}), and {repo} holds protected branches ({list}). Nothing ran. "
+                                 "Write the command with literal branch names and directories, one git command at a time."),
+    "branch_protected_record": ("MAGOS 拒绝 {op}：{why}。在它能被读取之前，{repo} 中对任何分支的写入都被拒绝。没有执行任何操作。请用户升级本守卫，或在自己的终端里检查该文件。",
+                                "MAGOS DENIES {op}: {why}. Until it can be read, every write to a branch of {repo} is refused. Nothing ran. The user upgrades "
+                                "this guard or inspects the file in their own terminal."),
+    "protect_why_unreadable": ("分支保护记录 {f} 无法读取（{err}）", "the branch protection record {f} cannot be read ({err})"),
+    "protect_why_newer": ("分支保护记录 {f} 由更新版本的 MAGOS 写入（v={v}）", "the branch protection record {f} was written by a newer MAGOS (v={v})"),
+    "protect_unreadable": ("MAGOS：分支保护记录 {f} 无法读取（{err}），未做任何修改；请用户检查该文件。",
+                           "MAGOS: the branch protection record {f} cannot be read ({err}); nothing was changed. The user must inspect the file."),
+    "protect_newer": ("MAGOS：分支保护记录 {f} 由更新版本的 MAGOS 写入（v={v}）：请升级本守卫（doctor 显示版本，install 刷新副本），或用写入它的那个 MAGOS 执行这条命令。",
+                      "MAGOS: the branch protection record {f} was written by a newer MAGOS (v={v}): upgrade this guard (doctor shows its version, install "
+                      "refreshes the copy), or run this command with the MAGOS that wrote it."),
+    "protect_bad_name": ("MAGOS：不能保护「{b}」：{why}。未写入任何东西。请给出 git branch 显示的分支名（例如 main）。",
+                         "MAGOS: '{b}' cannot be protected: {why}. Nothing was written. Give the branch name as git branch shows it (for example main)."),
+    "protect_limit": ("MAGOS：{repo} 已经保护了 {n} 个分支，这是一个仓库的上限；未写入任何东西。请先解除一个（/GitProtect <分支> --release）。",
+                      "MAGOS: {repo} already protects {n} branches, the most one repository holds; nothing was written. Lift one first (/GitProtect <branch> "
+                      "--release)."),
+    "protect_ok": ("MAGOS：分支「{b}」现在在 {repo} 中受保护：agent 对它的提交、合并和改写都会被拒绝。由用户用 /GitProtect {b} --release 解除。",
+                   "MAGOS: branch '{b}' is now protected in {repo}: agents' commits, merges and rewrites of it are refused. The user lifts it with "
+                   "/GitProtect {b} --release."),
+    "protect_ok_release": ("MAGOS：已解除分支「{b}」在 {repo} 中的保护。", "MAGOS: the protection of branch '{b}' in {repo} is lifted."),
+    "protect_same": ("MAGOS：分支「{b}」在 {repo} 中已经受保护（记录为「{stored}」），未写入任何东西。",
+                     "MAGOS: branch '{b}' is already protected in {repo} (stored as '{stored}'); nothing was written."),
+    "protect_same_release": ("MAGOS：分支「{b}」在 {repo} 中没有受保护，未写入任何东西。", "MAGOS: branch '{b}' is not protected in {repo}; nothing was written."),
+    "protect_dry": ("MAGOS：--dry-run：这会在 {repo} 中保护分支「{b}」；未写入任何东西。", "MAGOS: --dry-run: this would protect branch '{b}' in {repo}; nothing was written."),
+    "protect_dry_release": ("MAGOS：--dry-run：这会解除分支「{b}」在 {repo} 中的保护；未写入任何东西。",
+                            "MAGOS: --dry-run: this would lift the protection of branch '{b}' in {repo}; nothing was written."),
+    "protect_show_none": ("MAGOS：{repo} 中没有受保护的分支。", "MAGOS: no branch is protected in {repo}."),
+    "protect_show_head": ("MAGOS：{repo} 中有 {n} 个受保护的分支：", "MAGOS: {n} protected branches in {repo}:"),
+    "protect_show_line": ("{b}　{state}　自 {at}　由 {by}　途径 {via}{reason}", "{b}  {state}  since {at}  by {by}  via {via}{reason}"),
+    "protect_show_reason": ("　理由：{reason}", ";  reason: {reason}"),
+    "protect_exists": ("已存在", "exists"),
+    "protect_absent": ("尚不存在", "does not exist yet"),
+    "protect_show_one": ("MAGOS：分支「{b}」在 {repo} 中受保护（记录为「{stored}」）。", "MAGOS: branch '{b}' is protected in {repo} (stored as '{stored}')."),
+    "protect_show_not": ("MAGOS：分支「{b}」在 {repo} 中没有受保护。", "MAGOS: branch '{b}' is not protected in {repo}."),
+    "protect_show_off": ("这里不执行分支保护：本仓库的 magos.guard 为 off。", "Protection is not enforced here: magos.guard is off in this repository."),
+    "approval_what_protect": ("它在 {repo} 中保护分支 {b}：此后 agent 对它的提交、合并和改写都会被拒绝，直到用户解除保护{reason}{dry}。",
+                              "It protects the branch {b} in {repo}: from then on the agents' commits, merges and rewrites of it are refused until the user "
+                              "lifts the protection{reason}{dry}."),
+    "approval_what_unprotect": ("它解除分支 {b} 在 {repo} 中的保护：此后 agent 可以再次向它提交、合并{reason}{dry}。",
+                                "It lifts the protection of the branch {b} in {repo}: agents may then commit to it and merge into it again{reason}{dry}."),
+    "approval_protect_reason": ("；agent 写的理由：{reason}", "; reason written by the agent: {reason}"),
 }
 
 
@@ -1232,6 +1287,7 @@ def _maybe_heads(word):
 _STDIN_START = r"(?:(?<!\w)|(?<=\\[ntr0]))"  # a word starts here, or right after a separator printf writes (`\n` ends in a letter)
 _STDIN_WORD = re.compile(_STDIN_START + r"(?:create|update|delete|verify|option|start|prepare|commit|abort)(?![\w-])")
 _STDIN_VERB = re.compile(_STDIN_START + r"(?:create|update)(?![\w-])")  # also the end of symref-create and symref-update
+_STDIN_WRITE = re.compile(_STDIN_START + r"(?:create|update|delete)(?![\w-])")  # the instructions that write a ref (the write records)
 _STDIN_OPERAND = re.compile(r"[ \t]+([^\x00-\x20\x7f\"'\\$`%(){}]*)")
 _STDIN_END = re.compile(r"$|[ \t\r\n]|\\(?:[ntr]|0(?![0-7]))")  # what may follow a plain operand: the end, a blank, a separator printf writes
 _STDIN_ESC = re.compile(r"\\(?![ntr]|0(?![0-7]))")  # a backslash that is no separator: printf and echo -e turn it into another text
@@ -1239,15 +1295,16 @@ _STDIN_PSEUDO = re.compile(r"[A-Z][A-Z_]*")  # HEAD, ORIG_HEAD: no branch
 _STDIN_OUTSIDE = re.compile(_REFS_CI + "(?![Hh][Ee][Aa][Dd][Ss]/).")  # refs/tags/v1: a ref outside refs/heads/
 
 
-def _stdin_refs(text):
-    """-> (names, dynamic) for the instructions of an `update-ref --stdin` written in `text`, the text the hook can read.  The record is dynamic
+def _stdin_refs(text, writes=False):
+    """-> (names, dynamic) for the instructions of an `update-ref --stdin` written in `text`, the text the hook can read; with `writes`
+    (names, dynamic, current) for the write records: `delete` instructions count as well, and a `HEAD` operand writes the current branch.  The record is dynamic
     unless the instructions are accounted for by plainly read names: an instruction word must stand in the text; every backslash must begin
     a separator printf writes (`\\n`, `\\t`, `\\r`, `\\0` not followed by an octal digit; printf turns `\\x62` into a letter); every `create` and
     `update` must be followed by blanks and a plain operand that ends at the end of the text, a blank or such a separator: `refs/heads/<name>`
     (the name is read; an empty name and a name git refuses are dynamic) or a literal ref outside refs/heads/ or a pseudo-ref.  A quote, `$`,
     `%`, a brace, a parenthesis or an escape in an operand, and a word that is no ref, are not plainly read."""
-    names, dynamic = [], _STDIN_ESC.search(text) is not None or _STDIN_WORD.search(text) is None
-    for m in _STDIN_VERB.finditer(text):
+    names, dynamic, head = [], _STDIN_ESC.search(text) is not None or _STDIN_WORD.search(text) is None, False
+    for m in (_STDIN_WRITE if writes else _STDIN_VERB).finditer(text):
         op = _STDIN_OPERAND.match(text, m.end())
         if op is None:
             dynamic = True
@@ -1260,9 +1317,11 @@ def _stdin_refs(text):
             dynamic = dynamic or not name or _BAD_NAME.search(name) is not None
             if name:
                 names.append(name)
+        elif writes and ref == "HEAD":
+            head = True
         elif _STDIN_PSEUDO.fullmatch(ref) is None and _STDIN_OUTSIDE.match(ref) is None:
             dynamic = True
-    return names, dynamic
+    return (names, dynamic, head) if writes else (names, dynamic)
 
 
 # Where the instructions of an update-ref --stdin come from: the input redirections of its words, and the command before the pipe that feeds it.
@@ -1297,9 +1356,9 @@ def _input_of(src, word, dynamic, nxt):
 
 def _update_ref_args(a, ad):
     """`git update-ref`'s words (after the subcommand), read as git reads them.  -> (stdin, delete, positional words as (word, dynamic), input
-    sources).  -m takes the rest of its word or else the next word, a short-option word deletes when it holds a d before any m, --stdin is also
+    sources, no_deref).  -m takes the rest of its word or else the next word, a short-option word deletes when it holds a d before any m, --stdin is also
     written as a unique prefix (and may have a redirection glued to it: --stdin<file), `--` ends the options."""
-    stdin = delete = ended = False
+    stdin = delete = ended = no_deref = False
     pos, src, k = [], _no_input(), 0
     while k < len(a):
         t, d = a[k], ad[k]
@@ -1317,6 +1376,7 @@ def _update_ref_args(a, ad):
                 t = t[:cut.start()]
             key = t[2:].split("=", 1)[0]
             stdin = stdin or (key != "" and "stdin".startswith(key))  # --s, --std ...
+            no_deref = no_deref or (len(key) >= 3 and "no-deref".startswith(key))
         elif t.startswith("-") and len(t) > 1:
             for j in range(1, len(t)):
                 if t[j] == "m":
@@ -1326,7 +1386,7 @@ def _update_ref_args(a, ad):
         else:
             pos.append((t, d))
         k += 1
-    return stdin, delete, pos, src
+    return stdin, delete, pos, src, no_deref
 
 
 def _symbolic_ref_args(a, ad):
@@ -1367,7 +1427,7 @@ def _unseen_update_ref(ev):
             i += 2 if words[i] in _VALUE_OPTS else 1
         if words[i:i + 1] != ["update-ref"]:
             return None
-    stdin, _delete, _pos, src = _update_ref_args(words[i + 1:] + [w for w, _ in ins], dyn[i + 1:] + [d for _, d in ins])  # the options follow the word at i
+    stdin, _delete, _pos, src, _nd = _update_ref_args(words[i + 1:] + [w for w, _ in ins], dyn[i + 1:] + [d for _, d in ins])  # the options follow the word at i
     return src if stdin else None
 
 
@@ -1540,17 +1600,292 @@ def _rebase_exec(args):
     return out
 
 
+def _wr(verb, names, cwd, current=False, dynamic=False, why=None, **extra):
+    """A write record (Branch protection, The hook rule): `names` the branches the invocation names explicitly (a `refs/heads/` prefix in any
+    case is cut; a name git certainly refuses is dropped), `current` True when it writes the branch checked out where it runs, `dynamic` True
+    when a branch it writes cannot be read (a name with $, `, %, ( or ) makes it so).  Extra keys: co (a branch the line may check out: never
+    judged itself, it widens the current branch of every current record of the line), wt_path (the worktree a `worktree add` makes), stdin
+    (an update-ref --stdin whose instructions interpret() reads), rebase_cfg (a rebase that moves other branches when rebase.updateRefs is
+    true).  A write record is no creation: enforce never sees it."""
+    kept = []
+    for n in names:
+        if re.search(r"[$`%()]", n):
+            dynamic = True
+            continue
+        n = n[11:] if _HEADS.match(n) else n
+        if n and _BAD_NAME.search(n) is None and not n.startswith("-"):
+            kept.append(n)
+    rec = {"verb": verb, "names": kept, "current": current, "dynamic": dynamic, "why": why, "cwd": cwd, "redirect": False, "gitdir": None,
+           "write": True, "kind": "write", "path": None, "tool": False, "commit": None}
+    rec.update(extra)
+    return rec
+
+
+# The readings of the subcommands that write a branch (Branch protection, Refused operations).
+_HELP = (["-h"], ["--help"])
+_COMMIT_VALUED = ("-m", "-F", "-C", "-c", "-t", "--author", "--date", "--message", "--file", "--template", "--reuse-message", "--reedit-message", "--fixup",
+                  "--squash", "--trailer", "--cleanup", "--pathspec-from-file")
+_REBASE_VALUED = ("onto", "strategy", "strategy-option", "exec")  # the long options of git rebase that take a separate value
+_REBASE_EQ = ("empty", "whitespace", "trailer")  # their value may also be the next word: written without = the <branch> word is unknown
+_REBASE_FLAGS = ("interactive", "quiet", "verbose", "stat", "no-stat", "no-verify", "verify", "continue", "skip", "abort", "quit", "root", "autosquash",
+                 "no-autosquash", "autostash", "no-autostash", "force-rebase", "no-ff", "fork-point", "no-fork-point", "keep-base",
+                 "committer-date-is-author-date", "ignore-date", "reset-author-date", "ignore-whitespace", "signoff", "merge", "rebase-merges",
+                 "no-rebase-merges", "reschedule-failed-exec", "no-reschedule-failed-exec", "update-refs", "no-update-refs", "keep-empty", "no-keep-empty",
+                 "reapply-cherry-picks", "no-reapply-cherry-picks", "allow-empty-message", "apply", "gpg-sign", "no-gpg-sign", "show-current-patch",
+                 "edit-todo", "preserve-merges") + _REBASE_EQ
+_REBASE_STOP = frozenset(("abort", "quit", "edit-todo", "show-current-patch"))  # a rebase in progress is ended or read: no branch is written
+_TRUE = ("", "true", "yes", "on")  # git's spellings of a true boolean (an empty value and a non-zero number are true as well)
+_MASS_WHY = "a push into a local repository with --all, --branches, --mirror, --prune or without a refspec writes branches the hook cannot list"
+_UR_WHY = "a rebase with update-refs moves every branch that points into the rebased commits"
+_REWRITE_WHY = "git %s rewrites branches the hook cannot list"
+
+
+def _git_true(value):
+    """git's reading of a boolean config value: true, yes, on, an empty value or a non-zero number."""
+    v = (value or "").strip().lower() if value is not None else None
+    return v is not None and (v in _TRUE or (re.fullmatch(r"-?[0-9]+", v) is not None and int(v) != 0))
+
+
+def _rebase_reading(a):
+    """git rebase's words -> (positional words as their indices, long options named, unknown): the options that take a separate value
+    (--onto, -s / --strategy, -X / --strategy-option, -x / --exec and their prefixes of at least three letters) take it; `unknown` is True when
+    an option the reading does not know, or one whose value git could read from the next word, stands before the <branch> word."""
+    pos, flags, unknown, k = [], set(), False, 0
+    while k < len(a):
+        t = a[k]
+        if t == "--":
+            pos += list(range(k + 1, len(a)))
+            break
+        if not t.startswith("-") or t == "-":
+            pos.append(k)
+            k += 1
+            continue
+        if t.startswith("--"):
+            key, eq = t[2:].split("=", 1)[0], "=" in t
+            hits = [n for n in _REBASE_FLAGS if n == key] or [n for n in _REBASE_FLAGS if len(key) >= 3 and n.startswith(key)]
+            valued = key in _REBASE_VALUED or (len(key) >= 3 and any(n.startswith(key) for n in _REBASE_VALUED) and not hits)
+            if valued:
+                flags.add(next(n for n in _REBASE_VALUED if n.startswith(key)))
+                k += 1 if eq else 2
+                continue
+            if len(hits) != 1 or (hits[0] in _REBASE_EQ and not eq):
+                unknown = True
+            flags.update(hits[:1])
+            k += 1
+            continue
+        nxt = False
+        for j in range(1, len(t)):
+            ch = t[j]
+            if ch in "sXx":
+                nxt = j + 1 == len(t)
+                break
+            if ch in "CS":
+                unknown = unknown or (ch == "C" and j + 1 == len(t))  # -C <n>: a separate value this reading does not take
+                break
+            if ch not in "ivqnfmrkp":
+                unknown = True
+        k += 2 if nxt else 1
+    return pos, flags, unknown
+
+
+def _branch_flag(args, letters, long_name):
+    """Does `git branch` carry the option: a short-option word holding one of `letters` before a letter that takes a value, or a long option
+    of at least two letters that is a prefix of exactly one of git branch's long options, `long_name`."""
+    for t in args:
+        if t.startswith("--"):
+            key = t[2:].split("=", 1)[0]
+            hits = [full for full in _BRANCH_LONGS if full.startswith(key)]
+            if len(key) >= 2 and (key == long_name or (len(hits) == 1 and hits[0] == long_name)):
+                return True
+        elif any(ch in letters for ch in _branch_short(t)):
+            return True
+    return False
+
+
+def _git_writes(sub, a, ad, here, W, cfgs, ins=()):
+    """The write records of one git invocation (Branch protection, Refused operations): the branches it writes that its creation records do not
+    already name, the branches it may check out (co records) and the worktrees it adds (wt_path).  `W` builds a record in the invocation's
+    directory and redirect state; `cfgs` holds the -c values of its global options as (value, dynamic), `ins` its input redirections (the
+    instructions of an update-ref --stdin)."""
+    if a in _HELP:
+        return []
+    if sub == "commit":
+        if any(t == "--dry-run" and (k == 0 or a[k - 1] not in _COMMIT_VALUED) for k, t in enumerate(a)):
+            return []
+        return [W("git commit", current=True)]
+    if sub == "merge":
+        return [] if any(t in ("--abort", "--quit") for t in a) else [W("git merge --continue" if "--continue" in a else "git merge", current=True)]
+    if sub in ("cherry-pick", "revert"):
+        return [] if "--quit" in a else [W("git " + sub, current=True)]
+    if sub == "am":
+        return [] if any(t == "--quit" or t.startswith("--show-current-patch") for t in a) else [W("git am", current=True)]
+    if sub == "reset":
+        cut = a.index("--") if "--" in a else len(a)
+        if cut < len(a) - 1 or any(t in ("-p", "--patch") or t.startswith("--pathspec-from-file") for t in a):
+            return []  # an index-only form
+        pos = [t for t in a[:cut] if not t.startswith("-")]
+        return [] if not pos or pos[0] in ("HEAD", "@") else [W("git reset", current=True)]
+    ur = [d or _git_true(v.split("=", 1)[1] if "=" in v else "") for v, d in cfgs if v.split("=", 1)[0].lower() == "rebase.updaterefs"]
+    if sub in ("rebase", "pull"):
+        pos, flags, odd = _rebase_reading(a) if sub == "rebase" else ([], set(), False)
+        if sub == "pull":
+            rebasing = any(t in ("-r", "--rebase") or (t.startswith("--rebase=") and t[9:].lower() not in ("false", "no", "off", "0")) for t in a)
+            flags = {"update-refs"} if "--update-refs" in a else {"no-update-refs"} if "--no-update-refs" in a else set()
+            if not rebasing:
+                return [W("git pull", current=True)]
+        if flags & _REBASE_STOP:
+            return []
+        no_ur = "no-update-refs" in flags
+        if not no_ur and ("update-refs" in flags or (ur and ur[-1])):
+            return [W("git %s --update-refs" % sub, dynamic=True, why=_UR_WHY)]
+        if sub == "pull" or flags & {"continue", "skip"}:
+            return [W("git %s --continue" % sub if "continue" in flags else "git %s --skip" % sub if "skip" in flags else "git pull --rebase",
+                      current=True, rebase_cfg=not no_ur)]
+        if odd:
+            why = "the options of git rebase leave its <branch> word unknown"
+            return [W("git rebase", dynamic=True, why=why), W("git rebase", dynamic=True, why=why, co=True)]
+        k = pos[0] if "root" in flags and pos else pos[1] if len(pos) > 1 else None
+        if k is None:
+            return [W("git rebase", current=True, rebase_cfg=not no_ur)]
+        return [W("git rebase", [a[k]], dynamic=ad[k], rebase_cfg=not no_ur), W("git rebase", [a[k]], dynamic=ad[k], co=True)]
+    if sub == "update-ref":
+        stdin, delete, pos, src, no_deref = _update_ref_args(a + [w for w, _ in ins], ad + [d for _, d in ins])
+        verb = "git update-ref -d" if delete else "git update-ref"
+        if stdin:
+            return [W("git update-ref --stdin", stdin=True, src=src)]
+        if not pos:
+            return []
+        word, dynamic = pos[0]
+        if _HEADS.match(word):
+            return [W(verb, [word])]
+        if word == "HEAD":
+            return [] if no_deref else [W(verb, current=True)]
+        if (dynamic and _maybe_heads(word)) or any(w == "$stdin" and d for w, d in pos):
+            return [W(verb, dynamic=True)]
+        return []
+    if sub == "symbolic-ref":
+        pos = _symbolic_ref_args(a, ad)
+        delete = any(t == "--delete" or (t.startswith("-") and not t.startswith("--") and "d" in t.split("m", 1)[0]) for t in a[:a.index("--") if "--" in a else len(a)])
+        if not pos:
+            return []
+        if pos[0][0] == "HEAD":
+            if len(pos) > 1 and (_HEADS.match(pos[1][0]) or (pos[1][1] and _maybe_heads(pos[1][0]))):
+                return [W("git symbolic-ref HEAD", [pos[1][0]] if not pos[1][1] else [], dynamic=pos[1][1], co=True)]
+            return []
+        if (len(pos) > 1 or delete) and (_HEADS.match(pos[0][0]) or (pos[0][1] and _maybe_heads(pos[0][0]))):
+            return [W("git symbolic-ref -d" if delete else "git symbolic-ref", [pos[0][0]] if not pos[0][1] else [], dynamic=pos[0][1])]
+        return []
+    if sub == "branch":
+        valued = {k + 1 for k, t in enumerate(a) if t in ("--so", "--sor", "--sort", "--form", "--forma", "--format")}
+        pos = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and k not in valued]
+        if _branch_flag(a, "dD", "delete"):
+            if not pos or _branch_flag(a, "r", "remotes"):
+                return []
+            return [W("git branch -D", [w for w, d in pos if not d], dynamic=any(d for _, d in pos))]
+        if _branch_flag(a, "mM", "move"):
+            if not pos:
+                return []
+            new = W("git branch -m", [pos[-1][0]], dynamic=pos[-1][1], co=True)
+            if len(pos) == 1:
+                return [W("git branch -m", current=True), new]
+            return [W("git branch -m", [pos[0][0]], dynamic=pos[0][1]), new]
+        return []
+    if sub in ("switch", "checkout"):
+        for k, t in enumerate(a):
+            v = _create_opt(t, sub)
+            if v is not None:
+                name, d = (v, ad[k]) if v else (a[k + 1], ad[k + 1]) if k + 1 < len(a) else ("", True)
+                return [W("git " + sub, [name] if not d else [], dynamic=d or not name, co=True)]
+        if "--detach" in a or (sub == "switch" and "-d" in a):
+            return []
+        if "-" in a:
+            return [W("git " + sub, dynamic=True, why="git %s - checks out the previous branch" % sub, co=True)]
+        cut = a.index("--") if "--" in a else len(a)
+        if sub == "checkout" and cut < len(a) - 1:
+            return []  # paths: no branch is checked out
+        pos = [(t, ad[k]) for k, t in enumerate(a[:cut]) if not t.startswith("-")]
+        if not pos:
+            return []
+        name, d = pos[0]
+        if any(t.startswith(("--track", "-t")) for t in a):
+            name = name.split("/", 1)[-1]
+        if d or "@{" in name:
+            return [W("git " + sub, dynamic=True, why="git %s %s names a branch the hook cannot read" % (sub, _shown(name, 40)), co=True)]
+        return [W("git " + sub, [name], co=True)]
+    if sub == "stash" and a[:1] == ["branch"]:
+        return [W("git stash branch", a[1:2], dynamic=len(a) < 2 or ad[1], co=True)]
+    if sub == "bisect" and a[:1] == ["reset"]:
+        return [W("git bisect reset", dynamic=True, why="git bisect reset checks out the branch the bisection started on", co=True)]
+    if sub == "worktree" and a[:1] == ["add"]:
+        pos, k, branch = [], 1, None
+        while k < len(a):
+            v = _short_value(a[k], "bB")
+            if v is not None:
+                if branch is None:
+                    branch = (v, ad[k]) if v else (a[k + 1], ad[k + 1]) if k + 1 < len(a) else ("", True)
+                k += 1 if v else 2
+                continue
+            if a[k] == "--reason":
+                k += 2
+                continue
+            if a[k] != "--" and not a[k].startswith("-"):
+                pos.append((a[k], ad[k]))
+            k += 1
+        path = _join(here, pos[0][0]) if pos and not pos[0][1] else None
+        if branch is not None:
+            return [W("git worktree add", [branch[0]] if branch[0] and not branch[1] else [], dynamic=not branch[0] or branch[1], wt_path=path)]
+        if "--detach" in a or "-d" in a or not pos:
+            return [W("git worktree add --detach", wt_path=path)]
+        w, d = pos[1] if len(pos) > 1 else (re.split(r"[\\/]", pos[0][0].rstrip("/\\"))[-1], pos[0][1])
+        return [W("git worktree add", [] if w in ("HEAD", "@") else [w], dynamic=d, wt_path=path)]
+    if sub == "push":
+        valued = {k + 1 for k, t in enumerate(a) if t == "-o" or (t.startswith("--") and "=" not in t and len(t) >= 5 and any(f.startswith(t[2:]) for f in _PUSH_VALUED))}
+        pk = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and k not in valued]
+        if not pk:
+            return []  # the configured remote
+        if pk[0][1]:
+            target = ""
+        else:
+            target = here if pk[0][0] == "." else _push_target(pk[0][0], here)
+        if target is None:
+            return []  # a remote: its repository is a limit of the hook
+        delete = any(t in ("--delete", "-d") for t in a)
+        names, dyn = [], False
+        for t, d in pk[1:]:
+            if d:
+                dyn = True
+                continue
+            src, colon, dst = t.lstrip("+").partition(":")
+            dst = src if not colon or delete else dst
+            if (not colon and src in ("HEAD", "@")) or "*" in dst:
+                dyn = True
+            elif not _STDIN_OUTSIDE.match(dst):
+                names.append(dst)
+        mass = any(t in ("--all", "--branches", "--mirror", "--prune") for t in a) or len(pk) == 1
+        rec = dict(names=names, dynamic=dyn or mass, why=_MASS_WHY if mass else _GLOB_WHY if dyn else None)
+        if not target:
+            return [dict(_wr("git push", [], here, dynamic=True, why=_PUSH_WHY), redirect=True)]
+        if pk[0][0] == ".":
+            return [W("git push", rec["names"], dynamic=rec["dynamic"], why=rec["why"])]
+        return [_wr("git push", rec["names"], target, dynamic=rec["dynamic"], why=rec["why"])]
+    if sub in ("filter-branch", "filter-repo", "fast-import", "subtree", "flow"):
+        return [W("git " + sub, dynamic=True, why=_REWRITE_WHY % sub)]
+    return []
+
+
 def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=None):
-    """One `git ...` invocation -> list of creation records.  `gitdir` holds the GIT_DIR and GIT_COMMON_DIR values the environment may give
+    """One `git ...` invocation -> list of creation records and write records (_git_writes).  `gitdir` holds the GIT_DIR and GIT_COMMON_DIR values the environment may give
     this invocation (_GitDirs.cands()); a --git-dir option replaces the GIT_DIR values.  Each is resolved against the directory the
     invocation runs in after every -C (git applies -C first, whatever the option order).  --work-tree / GIT_WORK_TREE alone do not move the
     ref.  `work` is the walking budget interpret() shares with the text git runs itself (a `!` alias, rebase --exec, bisect run).  `sh`
     names the shell that wrote the words: where it is not known (None) a subcommand or a branch name that holds a backslash is dynamic,
     because that shell may remove the backslash."""
     words, dyn, ins = _split_redirs(words, dyn)  # git is never handed a redirection of the shell; an update-ref --stdin reads the input ones
-    i, here, defs, rd = 1, cwd, dict(aliases or {}), tuple(gitdir or ())
+    i, here, defs, rd, cfgs = 1, cwd, dict(aliases or {}), tuple(gitdir or ()), []
     while i < len(words) and words[i].startswith("-"):
         w = words[i]
+        if w == "-c" and i + 1 < len(words):
+            cfgs.append((words[i + 1], dyn[i + 1]))
         if w == "-C" and i + 1 < len(words):
             here = None if dyn[i + 1] else _join(here, words[i + 1])
         elif w == "--git-dir" and i + 1 < len(words):
@@ -1568,6 +1903,11 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
             dynamic = True
         return _with_rds(_cr(verb, names, at, dynamic, **kw), here, rd)
     sub, a, ad = words[i], words[i + 1:], dyn[i + 1:]
+
+    def W(verb, names=(), **kw):
+        if sh is None and any("\\" in n for n in names):
+            kw["dynamic"] = True
+        return _with_rds(_wr(verb, list(names), here, **kw), here, rd)
     if dyn[i] or (sh is None and "\\" in sub):  # git $CMD ...: the subcommand itself is dynamic, so nothing can be matched
         return [C("dynamic subcommand", [], here, True)]
     if sub in defs and depth < 3:  # an alias: expand it (a leading ! is a shell command, run with git's environment)
@@ -1577,7 +1917,12 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
         vw = [w for seg in split_command(val) for w in seg]
         return parse_git(["git"] + [w for w, _ in vw] + a + [w for w, _ in ins], [False] * (len(vw) + 1) + list(ad) + [d for _, d in ins], here, defs,
                          depth + 1, rd, work, sh)
+    return _git_creations(sub, a, ad, here, rd, ins, defs, depth, work, sh, C) + _git_writes(sub, a, ad, here, W, cfgs, ins)
 
+
+def _git_creations(sub, a, ad, here, rd, ins, defs, depth, work, sh, C):
+    """The creation records of one git invocation after its global options and aliases (parse_git): `C` builds a record in its directory and
+    redirect state."""
     def take(**kw):
         for k, t in enumerate(a):
             v = _create_opt(t, sub)
@@ -1627,8 +1972,8 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
             return [cr]
         tracked = [t for t in a if t.startswith(("--track", "-t"))]
         pos = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and t != "--"]
-        if tracked and pos:  # --track origin/x creates a local branch x
-            return [C(sub, [pos[0][0].split("/", 1)[-1]], here, pos[0][1])]
+        if tracked and pos:  # --track origin/x creates a local branch x (as a checkout of it: the protection judges no write here)
+            return [dict(C(sub, [pos[0][0].split("/", 1)[-1]], here, pos[0][1]), track=True)]
         if sub == "switch" and len(pos) == 1 or sub == "checkout" and len(pos) == 1 and "--" not in a[:1]:
             return [C("dwim", [pos[0][0]], here, pos[0][1])]  # a remote-only name creates a tracking branch; enforce checks that
         return []
@@ -1645,7 +1990,7 @@ def parse_git(words, dyn, cwd, aliases=None, depth=0, gitdir=(), work=None, sh=N
             return [C(sub, [], here, True)]  # a dynamic ref word that may name a branch, as for every other creating verb
         return []
     if sub == "update-ref":
-        stdin, delete, pos, src = _update_ref_args(a + [w for w, _ in ins], ad + [d for _, d in ins])
+        stdin, delete, pos, src, _nd = _update_ref_args(a + [w for w, _ in ins], ad + [d for _, d in ins])
         if stdin:  # the instructions arrive on stdin: interpret() reads them from the sources that feed it
             return [dict(C(sub, [], here, False), stdin=True, src=src)]
         if delete or not pos:
@@ -2226,7 +2571,7 @@ def _git_new_repo(words, dyn, run):
     return _join(run, name) if name else None
 
 
-def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), final=None, work=None):
+def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), final=None, work=None, writes=None):
     """Every lane-creating invocation inside a command line: recurses into bash -c / powershell -Command / cmd /c / -EncodedCommand / eval / $(..) /
     here-documents fed to a shell / quoted text fed to a shell, follows literal variables and aliases, and reads small script files.
     `gitdir` holds the GIT_DIR and GIT_COMMON_DIR values the line inherits (_GitDirs.cands()), `sh` names the shell that runs it (bash, ps,
@@ -2243,7 +2588,10 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
     directory and GIT_DIR state the line passes through.  `final` receives the end states (directory, cands, pushd stack); `work` is the
     walking budget the whole line shares ([characters left of WORK_LIMIT, whether a script or source file was named by a relative path]).
     At the top of a walk the state caps deny only a line that yields a creation or names such a relative script: a line that creates
-    nothing places nothing in a repository, whatever the number of states."""
+    nothing places nothing in a repository, whatever the number of states.  The walk also yields write records (_git_writes): a nested walk
+    returns them with the creations, and the top of a walk returns the creations only and adds the write records to the list `writes` when
+    it is given; for such a caller a line that yields write records and no creation keeps its cap records, marked write_only (the creation
+    check ignores them, the protection reads them as an unknown target)."""
     top = depth == 0 and final is None and work is None
     work = [WORK_LIMIT, False] if work is None else work
     if len(cmd) > MAX_TEXT:  # too long to inspect: whatever follows the padding must not pass unseen
@@ -2588,23 +2936,34 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
         final.extend((h, g.cands(), tuple(d)) for h, g, d in states)
     feeds = {}
 
-    def feed(src, up):  # -> (names, dynamic) of the instructions of an update-ref --stdin whose input sources are `src` and `up`
+    def feed(src, up, write=False):  # -> (names, dynamic[, current]) of the instructions of an update-ref --stdin whose input is `src` and `up`
         key = (tuple(src["here"]), src["doc"], src["file"], tuple(up) if up else up)
         if key not in feeds:
             text, unseen = _stdin_feed(src, up, docs)
             work[0] -= len(text) + STEP_COST
-            names, odd = _stdin_refs(text)
-            feeds[key] = (names, odd or unseen)
-        return feeds[key]
+            feeds[key] = (text, unseen, {})
+        text, unseen, read = feeds[key]
+        if write not in read:
+            got = _stdin_refs(text, write)
+            read[write] = (got[0], got[1] or unseen) + tuple(got[2:])
+        return read[write]
     for cr in out:  # update-ref --stdin: the instructions are in the sources that feed it, or nowhere the hook can see
         if cr.get("stdin"):
-            names, odd = feed(cr.pop("src", None) or _no_input(), cr.pop("up", False))
+            src, up = cr.pop("src", None) or _no_input(), cr.pop("up", False)
             cr.pop("stdin")
+            if cr.get("write"):  # the write record: delete instructions and HEAD operands as well
+                names, odd, head = feed(src, up, True)
+                named = _wr(cr["verb"], names, None, dynamic=odd)
+                cr.update(names=named["names"], dynamic=named["dynamic"] or cr["dynamic"], current=head)
+                continue
+            names, odd = feed(src, up)
             named = _cr("update-ref", names, None, odd)
             cr.update(names=named["names"], dynamic=named["dynamic"] or cr["dynamic"])
     for src, up in unseen_git:  # fed to a git the walk did not see
         names, odd = feed(src, up)
         early += [_with_rds(_cr("update-ref", names, h, odd), h, c) for h, c in contexts[:MAX_CONTEXTS]]
+        names, odd, head = feed(src, up, True)
+        early += [_with_rds(_wr("git update-ref --stdin", names, h, current=head, dynamic=odd), h, c) for h, c in contexts[:MAX_CONTEXTS]]
     if work[0] < 0 and not over:
         over = [_anywhere("nested text", _OVER_WORK)]
     places = contexts
@@ -2619,12 +2978,19 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
     for cr in over + early + out:  # a creation seen twice (a quoted body and the command that runs it) counts once; a flag without a usable name is no creation
         for c in _expand(cr):
             key = repr(sorted(c.items(), key=str))
-            if key not in seen and (c["names"] or c["dynamic"] or c["kind"] == "auto"):
+            if key not in seen and (c["names"] or c["dynamic"] or c["kind"] == "auto" or c.get("write")):
                 seen.add(key)
                 result.append(c)
-    if top and not work[1] and not any(not c.get("anywhere") for c in result):  # nothing is created and no relative script is read:
-        result = [c for c in result if not c.get("cap")]  # the states beyond the cap lose nothing
-    return result
+    if not top:
+        return result
+    if not work[1] and not any(not c.get("anywhere") and not c.get("write") for c in result):  # nothing is created and no relative script is read:
+        if writes is not None and any(c.get("write") and not c.get("co") for c in result):  # the protection reads what the caps leave unread
+            result = [dict(c, write_only=True) if c.get("cap") else c for c in result]
+        else:
+            result = [c for c in result if not c.get("cap")]  # the states beyond the cap lose nothing
+    if writes is not None:
+        writes.extend(c for c in result if c.get("write"))
+    return [c for c in result if not c.get("write")]
 
 
 _STATE_PATH = re.compile(r"(^|[\\/])\.git[\\/](hooks|refs|HEAD|magos|config)([\\/]|$)|(^|[\\/])packed-refs$|(^|[\\/])\.magos([\\/]|$)", re.I)
@@ -2636,11 +3002,12 @@ UserOnly = namedtuple("UserOnly", "name auto_safe scope")
 # The user-only subcommands, one row each (Approval).  auto_safe: magos.approval auto-safe lets the Claude Code hook allow it without a click (it
 # adds protection or copies the guard and weakens nothing); scope: where its approvals live ("repo": <git-common-dir>/magos/approvals, "home":
 # <default guard home>/approvals).
-USER_ONLY = (UserOnly("override", False, "repo"), UserOnly("arm", True, "repo"), UserOnly("disarm", False, "repo"), UserOnly("install", True, "home"))
+USER_ONLY = (UserOnly("override", False, "repo"), UserOnly("arm", True, "repo"), UserOnly("disarm", False, "repo"), UserOnly("install", True, "home"),
+             UserOnly("protect", False, "repo"))
 _USER_ONLY = tuple(u.name for u in USER_ONLY)
 _READ_FLAGS = ("--get", "--get-all", "--get-regexp", "--list", "-l", "--show-origin", "--show-scope")
 _ENV_WRITE = re.compile(r"^(?:GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)=|\$env:GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)$)", re.I)
-_USER_MSG = "override / arm / disarm / install are user-only"
+_USER_MSG = "override / arm / disarm / install / protect are user-only"
 _STATE_MSG = "the hooks, refs and claim store under .git and the guard home are the guard's state"
 _APPROVAL_MSG = "the approval records under <git-common-dir>/magos/approvals and <guard home>/approvals are written by the host hook only"
 _APPROVALS = re.compile(r"(?:^|[\\/])approvals(?:[\\/]|$)", re.I)  # a path segment named approvals, in a word that names the guard's state
@@ -2659,13 +3026,14 @@ HOST_ONLY = ("mcp",)  # the subcommands only the host starts (Codex approval): a
 _HOST_MSG = "mcp is the guard's approval server, which only the host starts"
 # The subcommands an agent runs (Approval routes, The subcommand of a guard run): a tool command that runs the guard with any other word in the subcommand slot
 # (hook and mcp, which only a host runs, a dynamic or empty slot, an unknown word) is denied on every host; the user-only words keep their path.
-AGENT_SUBS = ("plan", "check", "list", "release", "doctor", "version", "set-plan", "set-show", "set-update", "set-release")
+AGENT_SUBS = ("plan", "check", "list", "release", "doctor", "version", "set-plan", "set-show", "set-update", "set-release", "protect-show")
 _SLOT_MSG = "the guard runs with a subcommand that is no plain word an agent may run"
 _LONG_MSG = "the command is too long to inspect and names MAGOS"
 _LONG_HINT = re.compile(r"magos|run-guard", re.I)  # a text too long to read that may run the guard: denied on every host (protected)
 _DEEP_MSG = "the command names MAGOS in text nested deeper than the hook reads"  # a text past depth 3 that names MAGOS (_LONG_HINT)
-MCP_ARGS = ("subcommand", "repo", "fingerprint", "reason", "host", "dry_run")  # the arguments of magos_approve, in the order the texts name them
-_MCP_TAKES = {"override": ("repo", "fingerprint", "reason"), "arm": ("repo", "dry_run"), "disarm": ("repo", "dry_run"), "install": ("repo", "host", "dry_run")}
+MCP_ARGS = ("subcommand", "repo", "fingerprint", "reason", "host", "dry_run", "branch", "release")  # the arguments of magos_approve, in the order the texts name them
+_MCP_TAKES = {"override": ("repo", "fingerprint", "reason"), "arm": ("repo", "dry_run"), "disarm": ("repo", "dry_run"), "install": ("repo", "host", "dry_run"),
+              "protect": ("repo", "branch", "release", "reason", "dry_run")}
 _HERMES_APPROVAL_TOOLS = {"terminal": "bash"}  # Hermes runs every terminal command with bash (Git Bash on Windows)
 _HERMES_WORKDIR_CHARS = frozenset("/\\:_-.~ +@=,")  # with the letters and digits: the characters Hermes accepts in a workdir
 _TRUTHY = ("1", "true", "yes", "on")
@@ -3172,8 +3540,9 @@ def session_dir(payload):
     return base or os.getcwd()
 
 
-def extract(payload, aliases=None, tamper=True):
-    """-> (creations, protected, default_cwd) for the tool names of all three hosts.  The command line of every hooked tool and every MCP tool
+def extract(payload, aliases=None, tamper=True, writes=None):
+    """-> (creations, protected, default_cwd) for the tool names of all three hosts; the write records of the command line are added to the
+    list `writes` when it is given.  The command line of every hooked tool and every MCP tool
     whose tool_input.command is a string is judged, in addition to (never instead of) the judgement the tool's own name calls for.  With
     `tamper` false the tamper filter does not run and protected is None (decide's second walk with the repository's aliases)."""
     tool = str(payload.get("tool_name") or "")
@@ -3182,7 +3551,7 @@ def extract(payload, aliases=None, tamper=True):
     (c, sh), crs, why = shell_command(payload), [], None
     if c is not None:
         why = protected(c) if tamper else None
-        crs = interpret(c, cwd, 0, aliases, sh=sh) if _gated(c) else []
+        crs = interpret(c, cwd, 0, aliases, sh=sh, writes=writes) if _gated(c) else []
     if tool in HOOKED_TOOLS["strict"] and not ti.get("path"):
         crs.append(_cr("EnterWorktree", ["worktree-%s" % ti["name"]] if ti.get("name") else [], cwd, not ti.get("name"), "worktree" if ti.get("name") else "auto", tool=True))
     elif tool in HOOKED_TOOLS["isolation"] and re.search(r"isolation\W+worktree", json.dumps(ti)):
@@ -6265,6 +6634,309 @@ def cmd_set_release(args):
 
 
 # ---------------------------------------------------------------- host hooks (L1)
+# ---------------------------------------------------------------- branch protection: the record <git-common-dir>/magos/protected.json, protect, protect-show
+PROTECT_KEYS = ("branch", "at", "by", "via", "reason")  # the keys of an entry, in the order protect writes them
+
+
+def protect_path(g):
+    return os.path.join(store(g), "protected.json")
+
+
+class Protection:
+    """The protection record of a repository as read: `state` none (no file), entries (a record of this format), unreadable (`err` the cause)
+    or newer (`v` its format: an int, or the digit text of one too long for int()).  `rec` is the whole record of this format, kept for the
+    keys this guard does not know; `entries` its entries in record order."""
+
+    def __init__(self, state, rec=None, err=None, v=None):
+        self.state, self.rec, self.err, self.v = state, rec, err, v
+        self.entries = list(rec["branches"]) if rec is not None else []
+
+    @property
+    def names(self):
+        return [e["branch"] for e in self.entries]
+
+    def stored(self, name):
+        """The spelling of the first entry whose name folds equal to `name`, or None."""
+        f = fold(name)
+        return next((e["branch"] for e in self.entries if fold(e["branch"]) == f), None)
+
+    def why(self, lang, path):
+        """The cause of a record this guard cannot use, as the texts name it (protect_why_unreadable, protect_why_newer)."""
+        f = path.replace(os.sep, "/")
+        if self.state == "newer":
+            return T(lang, "protect_why_newer", f=f, v=self.v)
+        return T(lang, "protect_why_unreadable", f=f, err=_shown(str(self.err), 200))
+
+
+def parse_protection(text):
+    """The protection record from its text (Branch protection, The record).  The format gate comes first: a `v` that is an integer greater
+    than PROTECT_FORMAT is a newer format whatever the other fields hold; a record that is no object of this format, a repeated key, a number
+    of more than 4,000 digits, a lone surrogate (neither can be written back unchanged) or an entry whose `branch` is no non-empty string
+    without a control character is unreadable."""
+    try:
+        rec, dups = _loads(text)
+    except (ValueError, RecursionError, MemoryError) as err:
+        return Protection("unreadable", err="not valid JSON: %s" % str(err)[:120])
+    if not isinstance(rec, dict):
+        return Protection("unreadable", err="the record is not a JSON object")
+    v = rec.get("v")
+    if isinstance(v, _Digits):
+        return Protection("unreadable", err="the format v is below 1") if v.startswith("-") else Protection("newer", v=v)
+    if isinstance(v, bool) or not isinstance(v, int):
+        return Protection("unreadable", err="the record has no integer format v")
+    if v > PROTECT_FORMAT:
+        return Protection("newer", v=v)
+    if v < 1:
+        return Protection("unreadable", err="the format v is below 1")
+    if dups:
+        return Protection("unreadable", err="a key appears more than once")
+    if not isinstance(rec.get("branches"), list):
+        return Protection("unreadable", err="the record has no list branches")
+    for k, e in enumerate(rec["branches"]):
+        b = e.get("branch") if isinstance(e, dict) else None
+        if not isinstance(e, dict):
+            return Protection("unreadable", err="entry %d is not an object" % (k + 1))
+        if not _is_text(b) or not b or _CTL.search(b) or _SURROGATE.search(b):
+            return Protection("unreadable", err="entry %d has no branch name" % (k + 1))
+    todo = [rec]
+    while todo:
+        x = todo.pop()
+        if isinstance(x, _Digits):
+            return Protection("unreadable", err="a number of more than 4,000 digits")
+        if isinstance(x, str) and _SURROGATE.search(x):
+            return Protection("unreadable", err="holds a lone surrogate")
+        todo.extend(list(x) + list(x.values()) if isinstance(x, dict) else x if isinstance(x, list) else ())
+    return Protection("entries", rec=rec)
+
+
+def _read_protection_file(path):
+    """The text of the record, at most PROTECT_BYTES bytes, read like _read_retry (a writer's os.replace on Windows is waited for); ValueError
+    for a longer file and one that is no UTF-8."""
+    for attempt in range(5):
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read(PROTECT_BYTES + 1)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.02)
+    if len(data) > PROTECT_BYTES:
+        raise ValueError("the file is longer than %d bytes" % PROTECT_BYTES)
+    return data.decode("utf-8-sig")
+
+
+def read_protection(g):
+    """-> Protection of the repository (no lock: protect replaces the record whole).  Once per repository within a hook call."""
+    return _memo(("protection", g.common), lambda: _read_protection(g))
+
+
+def _read_protection(g):
+    path = protect_path(g)
+    if not os.path.lexists(path):
+        return Protection("none")
+    try:
+        text = _read_protection_file(path)
+    except (OSError, ValueError) as err:
+        return Protection("unreadable", err=str(err)[:200])
+    return parse_protection(text)
+
+
+def holds_protection(g):
+    """Does the repository hold protection: does protected.json exist in its store, whatever it holds?  One stat, no Git call."""
+    return os.path.lexists(protect_path(g))
+
+
+def protect_name_problem(g, name):
+    """Why `protect` refuses the branch name `name` (Branch protection, Subcommands 3), or None.  A name git accepts is accepted whether the
+    branch exists or not."""
+    if not name:
+        return "the name is empty"
+    if name.startswith("-"):
+        return "it starts with -"
+    if _CTL.search(name):
+        return "it holds a control character"
+    if _SURROGATE.search(name):
+        return "it holds a lone surrogate"
+    if name == "@" or "@{" in name:
+        return "it is @ or holds @{, which git reads as a reference to another commit"
+    if name[:5].lower() == "refs/":
+        return "give the short name of the branch (main, not refs/heads/main)"
+    if len(name) > PROTECT_NAME_MAX:
+        return "it has more than %d characters" % PROTECT_NAME_MAX
+    if g.run("check-ref-format", "--branch", name, ok=None)[0] != 0:
+        return "git check-ref-format --branch refuses it"
+    return None
+
+
+def protect_bytes(rec, entries):
+    """The bytes of the record `rec` (None: a new one) with the entry list `entries`: v and branches first, every key this guard does not know
+    kept, each entry's own keys in PROTECT_KEYS order before the others (record_bytes writes it)."""
+    out = {"v": PROTECT_FORMAT}
+    out.update(rec or {})
+    out["branches"] = [_ordered(e, PROTECT_KEYS) for e in entries]
+    return record_bytes(_ordered(out, ("v", "branches")))
+
+
+def _gate(args, g):
+    """user_gate for protect -> (exit code or None, via, record, the message the gate wrote): protect prints every refusal on stdout, so the
+    gate's text is taken from stderr into the result."""
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        code, via, rec = user_gate(args, os.path.join(store(g), "approvals"), g.common, dry=args.dry_run)
+    return code, via, rec, buf.getvalue().strip()
+
+
+def _code_name(code):
+    return next(k for k, v in EXIT.items() if v == code and k not in ("OVERRIDDEN", "CONFLICT", "NO_MANIFEST", "UNPLANNABLE", "UNPARSEABLE", "PROTECTED"))
+
+
+def protect_change(g, args, p, reason, via, rec):
+    """The decision of protect on the record `p` -> (result, the record bytes to write, True to remove the record, None to leave it): the
+    exit 30, an unchanged record, or the new entry list."""
+    lang, b, repo = args.lang, args.branch, _shown(repo_dir(g))
+    stored, entries = p.stored(b), list(p.entries)
+    action = "release" if args.release else "set"
+    if action == "set":
+        if stored is None and len(entries) >= PROTECT_MAX:
+            return set_deny(lang, "PROTECT_LIMIT", T(lang, "protect_limit", repo=repo, n=PROTECT_MAX)), None
+        if stored is None:
+            entries.append({"branch": b, "at": now_iso(), "by": who(g), "via": via, "reason": reason})
+            entries.sort(key=lambda e: (fold(e["branch"]), e["branch"]))
+        key = "protect_same" if stored is not None else "protect_dry" if args.dry_run else "protect_ok"
+    else:
+        entries = [e for e in entries if fold(e["branch"]) != fold(b)]
+        key = "protect_same_release" if stored is None else "protect_dry_release" if args.dry_run else "protect_ok_release"
+    changed = len(entries) != len(p.entries)
+    v = {"decision": "allow", "code": "OK", "action": action, "branch": b, "stored": b if action == "set" and stored is None else stored,
+         "changed": changed and not args.dry_run, "dry_run": args.dry_run, "protected": [e["branch"] for e in (entries if changed and not args.dry_run else p.entries)],
+         "warnings": [], "message": T(lang, key, b=_shown(b), repo=repo, stored=_shown(stored or ""))}
+    if not changed or args.dry_run:
+        return v, None
+    return v, (None if not entries else protect_bytes(p.rec, entries))
+
+
+def cmd_protect(args):
+    """protect --branch B [--release] [--reason R] [--dry-run] (Branch protection, Subcommands): user-only; every outcome is printed on stdout
+    (one object with --json) and a refusal writes nothing."""
+    g = open_repo(args.repo)
+    if g is None:
+        sys.stderr.write("not a git repository: %s\n" % args.repo)
+        return 2
+    lang, b, reason = args.lang, args.branch, args.reason
+    why = protect_name_problem(g, b)
+    if why:
+        return set_emit(args, set_deny(lang, "INVALID_MANIFEST", T(lang, "protect_bad_name", b=_shown(b), why=why),
+                                       errors=[{"field": "--branch", "code": "BRANCH_NAME", "text": why}]))
+    if len(reason) > PROTECT_REASON_MAX:
+        bad = ("RANGE", "at most %d characters, not %d" % (PROTECT_REASON_MAX, len(reason)))
+    elif _SURROGATE.search(reason):
+        bad = ("ENCODING", "holds a lone surrogate")
+    elif _CTL.search(reason):
+        bad = ("FORMAT", "holds a control character")
+    else:
+        bad = None
+    if bad:
+        return set_emit(args, invalid_args(lang, [("--reason",) + bad]))
+    code, via, rec, said = _gate(args, g)
+    if code:
+        return set_emit(args, set_deny(lang, _code_name(code), said))
+    path = protect_path(g)
+
+    def unusable(p):
+        if p.state == "newer":
+            return set_deny(lang, "PROTECT_NEWER_FORMAT", T(lang, "protect_newer", f=path.replace(os.sep, "/"), v=p.v))
+        text = _shown(str(p.err), 200)
+        return set_deny(lang, "UNKNOWN", T(lang, "protect_unreadable", f=path.replace(os.sep, "/"), err=text),
+                        unknowns=[{"code": "PROTECT_UNREADABLE", "text": "%s: %s" % (path.replace(os.sep, "/"), text)}])
+    if args.dry_run:  # no lock: the lock would create the store
+        p = _read_protection(g)
+        return set_emit(args, unusable(p) if p.state in ("unreadable", "newer") else protect_change(g, args, p, reason, via, rec)[0])
+    try:
+        with Lock(g):
+            p = _read_protection(g)
+            if p.state in ("unreadable", "newer"):  # never overwritten or removed
+                return set_emit(args, unusable(p))
+            v, data = protect_change(g, args, p, reason, via, rec)
+            if v["decision"] == "deny":
+                return set_emit(args, v)
+            line = audit_line(g, op="protect", action=v["action"], branch=b, stored=v["stored"], changed=v["changed"], reason=reason, via=via,
+                              **approval_fields(rec))
+            if v["changed"]:
+                if data is None:
+                    _remove(path)  # the last entry is released: a repository without protection holds no record
+                else:
+                    write_atomic(path, data)
+            audit_after(g, line, v["warnings"])
+    except LockTimeout:
+        return set_emit(args, set_deny(lang, "LOCK_TIMEOUT", T(lang, "lock", s=os.environ.get("MAGOS_LOCK_TIMEOUT", int(LOCK_S)))))
+    v["message"] = "\n".join([v["message"]] + ["(%s) %s" % (w["code"], w["text"]) for w in v["warnings"]])
+    return set_emit(args, v)
+
+
+def cmd_protect_show(args):
+    """protect-show [--branch B] (Branch protection, Subcommands): reads the record without a lock and prints it; writes nothing."""
+    g = open_repo(args.repo)
+    if g is None:
+        sys.stderr.write("not a git repository: %s\n" % args.repo)
+        return 2
+    lang, repo, path = args.lang, _shown(repo_dir(g)), protect_path(g)
+    p = _read_protection(g)
+    if p.state == "newer":
+        return set_emit(args, set_deny(lang, "PROTECT_NEWER_FORMAT", T(lang, "protect_newer", f=path.replace(os.sep, "/"), v=p.v)))
+    if p.state == "unreadable":
+        text = _shown(str(p.err), 200)
+        return set_emit(args, set_deny(lang, "UNKNOWN", T(lang, "protect_unreadable", f=path.replace(os.sep, "/"), err=text),
+                                       unknowns=[{"code": "PROTECT_UNREADABLE", "text": "%s: %s" % (path.replace(os.sep, "/"), text)}]))
+    heads = {fold(h) for h in list_refs(g)[0]} if p.entries else set()
+    enforced = (cfg(g, "magos.guard") or "").lower() != "off"
+    rows = [{"branch": e["branch"], "at": e.get("at"), "by": e.get("by"), "via": e.get("via"), "reason": e.get("reason"), "exists": fold(e["branch"]) in heads}
+            for e in p.entries]
+    lines = []
+    v = {"decision": "allow", "code": "OK", "repo": repo_dir(g), "branches": rows, "enforced": enforced}
+    if args.branch is not None:
+        stored = p.stored(args.branch)
+        v.update(branch=args.branch, protected=stored is not None, stored=stored)
+        lines.append(T(lang, "protect_show_one", b=_shown(args.branch), repo=repo, stored=_shown(stored)) if stored is not None else
+                     T(lang, "protect_show_not", b=_shown(args.branch), repo=repo))
+    if not rows:
+        lines.append(T(lang, "protect_show_none", repo=repo))
+    else:
+        lines.append(T(lang, "protect_show_head", repo=repo, n=len(rows)))
+
+        def shown(x):
+            return _shown(x if _is_text(x) else json.dumps(x, ensure_ascii=False))
+        for r in rows:
+            why = r["reason"]
+            lines.append("  " + T(lang, "protect_show_line", b=_shown(r["branch"]), state=T(lang, "protect_exists" if r["exists"] else "protect_absent"),
+                                  at=shown(r["at"]), by=shown(r["by"]), via=shown(r["via"]),
+                                  reason=T(lang, "protect_show_reason", reason=shown(why)) if why else ""))
+    if not enforced:
+        lines.append(T(lang, "protect_show_off"))
+    v["message"] = "\n".join(lines)
+    return set_emit(args, v)
+
+
+def protect_report(g):
+    """doctor's protection lines (Branch protection, doctor) -> True on a problem: a record that cannot be read or is of a newer format."""
+    p = read_protection(g)
+    if p.state == "none":
+        out_text("protected branches: none")
+        return False
+    if p.state == "unreadable":
+        out_text("protection record protected.json cannot be read: %s" % _shown(str(p.err), 200))
+    elif p.state == "newer":
+        out_text("protection record protected.json was written by a newer MAGOS (v=%s): upgrade this guard (doctor shows its version, install "
+                 "refreshes the copy)" % p.v)
+    else:
+        names = p.names
+        more = " " + T("en", "show_more", n=len(names) - 20) if len(names) > 20 else ""
+        out_text("protected branches: %s" % ("%d: %s%s" % (len(names), ", ".join(_shown(n) for n in names[:20]), more) if names else "none"))
+    if (cfg(g, "magos.guard") or "").lower() == "off":
+        out_text("protected branches are not enforced: magos.guard is off in this repository")
+    return p.state != "entries"
+
+
 def host_off():
     """MAGOS_GUARD=off in the HOST hook process environment (an agent's tool environment cannot reach it) silences the host hooks."""
     return os.environ.get("MAGOS_GUARD", "").lower() in ("off", "0", "false")
@@ -6363,7 +7035,10 @@ def _existing(path):
 def judge_creation(cr, default_cwd, lang, seen=None):
     """One creation, judged in its own repository: the --git-dir / GIT_DIR / GIT_COMMON_DIR target when it has one, else the directory the
     shell is in at that point (the prior directory after a cd to a missing directory, then marked unresolved, unless an earlier element of
-    the same && chain created that directory), else the session directory.  `seen` holds the (repository, creation) keys already judged."""
+    the same && chain created that directory), else the session directory.  `seen` holds the (repository, creation) keys already judged.  A cap record of a
+    line that yields only write records (write_only) is the protection's alone."""
+    if cr.get("write_only"):
+        return None
     cwd = cr["cwd"]
     follow = getattr(cwd, "follow", None)
     if follow and follow[0] == "new" and (not cr.get("redirect") or (cr.get("gitdir") and (pkey(cr["gitdir"]) + os.sep).startswith(pkey(str(cwd)) + os.sep))):
@@ -6442,6 +7117,185 @@ def judge_creation(cr, default_cwd, lang, seen=None):
     if cr["kind"] == "auto" and not cr["names"]:
         return "UNPLANNABLE", T(lang, "unplannable", why=cr["verb"])
     return None
+
+
+def _op(r):
+    """The operation a protection text names: a write record's own verb (git branch -D), a creation's git subcommand, a tool's name."""
+    verb = r["verb"]
+    if r.get("write") or r.get("tool") or verb.startswith("mcp__"):
+        return verb
+    if verb == "dwim":
+        return "git worktree add"
+    return "git " + verb if verb in ("branch", "switch", "checkout", "worktree add", "stash branch", "update-ref", "fetch", "pull", "push") else verb
+
+
+def _few_names(names):
+    """At most six protected names as a protection text lists them, then +<n> more."""
+    shown = ", ".join(_shown(n) for n in names[:6])
+    return shown + (" " + T("en", "show_more", n=len(names) - 6) if len(names) > 6 else "")
+
+
+def _protection_judged(r):
+    """Is the record judged against the protections?  Every write record but a co or worktree-only one; every creation record except those
+    that write no branch (the switch and checkout of an existing or remote-only name, --track, symbolic-ref, whose writes the write records
+    carry, a detached worktree) and the auto-named creations of a tool."""
+    if r.get("write"):
+        return not r.get("co") and bool(r["names"] or r.get("current") or r["dynamic"])
+    if r.get("anywhere"):
+        return True
+    if r.get("track") or r["verb"] in ("symbolic-ref", "wt-detached") or (r["verb"] == "dwim" and r["kind"] == "branch") or r["kind"] == "auto":
+        return False
+    return bool(r["names"] or r["dynamic"])
+
+
+def _head_name(wt):
+    """-> (branch or None, None) or (None, cause): the branch a rebase in progress in the worktree `wt` writes, read from rebase-merge/head-name
+    or rebase-apply/head-name of its git directory; (None, None) when none is in progress or it runs on a detached HEAD."""
+    gd = os.path.join(wt, ".git")
+    if not os.path.isdir(gd):
+        try:
+            with open(gd, encoding="utf-8") as fh:
+                txt = fh.read().strip()
+        except OSError as err:
+            return None, "the git directory of %s cannot be read: %s" % (_shown(wt), err)
+        gd = txt[7:].strip() if txt.startswith("gitdir:") else ""
+        gd = gd if os.path.isabs(gd) else os.path.normpath(os.path.join(wt, gd))
+    for d in ("rebase-merge", "rebase-apply"):
+        f = os.path.join(gd, d, "head-name")
+        if not os.path.lexists(f):
+            continue
+        try:
+            text = _read_retry(f).strip()
+        except (OSError, ValueError) as err:
+            return None, "%s/head-name cannot be read: %s" % (d, _shown(str(err), 120))
+        return (text[11:] if text.startswith("refs/heads/") else None), None
+    return None, None
+
+
+def current_branches(g, r, ctx):
+    """-> (branches, None) or (branches, cause): the branches a `current` write record writes (Branch protection, Current branch): the branch
+    checked out where it runs, and every branch the line may check out (ctx["co"]).  A cause makes the target unknown."""
+    names, cwd = list(ctx["co"]), r["cwd"]
+    if ctx["co_unknown"]:
+        return names, ctx["co_unknown"]
+    follow = getattr(cwd, "follow", None)
+    if isinstance(cwd, _Missing) and not follow:
+        return names, "the directory %s does not exist" % _shown(str(cwd))
+    if follow:
+        b = ctx["wt"].get(pkey(str(cwd)), False)
+        if follow[0] != "wt" or b is False:
+            return names, "the directory %s is no worktree the line creates" % _shown(str(cwd))
+        return names + ([b] if b else []), None
+    if r.get("redirect") or g.top is None:  # a git directory without a work tree: the branch its HEAD names
+        gd = r.get("gitdir") if r.get("redirect") else None
+        rc, out = (Git(gd if os.path.isdir(gd) else os.path.dirname(gd)).run("--git-dir=" + gd, "rev-parse", "--symbolic-full-name", "HEAD", ok=(0, 128))
+                   if gd else g.run("rev-parse", "--symbolic-full-name", "HEAD", cwd=cwd, ok=(0, 128)))
+        head = out.decode("utf-8", "replace").strip()
+        if rc != 0:
+            return names, "the HEAD of %s cannot be read" % _shown(repo_dir(g))
+        return names + ([head[11:]] if head.startswith("refs/heads/") else []), None
+    wt = next((w for w in worktrees(g) if pkey(w["path"]) == pkey(g.top)), None)
+    if wt is None:
+        return names, "the worktree %s is not listed by git worktree list" % _shown(g.top)
+    if wt["branch"]:
+        return names + [wt["branch"]], None
+    b, why = _head_name(wt["path"])
+    return names + ([b] if b else []), why
+
+
+def _judge_protection(r, ctx, lang):
+    """One record against the protections of the repository it acts on -> None or ("BRANCH_PROTECTED", text)."""
+    cwd, op, session = r["cwd"], _op(r), ctx["session"]
+    follow = getattr(cwd, "follow", None)
+    if follow and follow[0] == "new" and (not r.get("redirect") or (r.get("gitdir") and (pkey(r["gitdir"]) + os.sep).startswith(pkey(str(cwd)) + os.sep))):
+        return None  # a repository the same && chain created holds no protection
+    cause = None
+    if r.get("anywhere"):
+        g, cause = open_repo(session), r.get("why") or "the line is not read completely"
+    elif r.get("redirect"):
+        g = open_gitdir(r["gitdir"]) if r["gitdir"] else None
+        if g is None:
+            g, cause = open_repo(session), r.get("why") or "the --git-dir or GIT_DIR repository cannot be resolved"
+    elif cwd is None:
+        g, cause = open_repo(session), "the directory it runs in is dynamic"
+    elif follow:
+        g = open_repo(follow[1] if follow[0] == "wt" else _existing(follow[1]))
+    else:
+        g = open_repo(cwd.prior if isinstance(cwd, _Missing) else cwd)
+    if g is None or not holds_protection(g):  # a repository without the record: one stat
+        return None
+    key = (pkey(g.common), r.get("redirect"), r.get("gitdir"), r["verb"], tuple(r["names"]), r.get("current"), r["dynamic"], cause, pkey(str(cwd)) if cwd else None,
+           r.get("rebase_cfg"))
+    if key in ctx["seen"]:
+        return None
+    ctx["seen"].add(key)
+    p = read_protection(g)
+    repo = _shown(repo_dir(g))
+
+    def unknown(why):
+        return "BRANCH_PROTECTED", T(lang, "branch_protected_unknown", op=op, why=why, repo=repo, list=_few_names(p.names))
+    try:
+        if guard_mode(g) == "off":
+            return None
+        if p.state in ("unreadable", "newer"):
+            return "BRANCH_PROTECTED", T(lang, "branch_protected_record", op=op, why=p.why(lang, protect_path(g)), repo=repo)
+        if not p.entries:
+            return None
+        if cause:
+            return unknown(cause)
+        for n in r["names"]:
+            if p.stored(n) is not None:
+                return "BRANCH_PROTECTED", T(lang, "branch_protected", op=op, b=_shown(p.stored(n)), repo=repo)
+        if r["dynamic"]:
+            return unknown(r.get("why") or "a branch name, a directory or the subcommand is dynamic")
+        if r.get("current"):
+            cur, why = current_branches(g, r, ctx)
+            hit = next((p.stored(n) for n in cur if p.stored(n) is not None), None)
+            if hit is not None:
+                return "BRANCH_PROTECTED", T(lang, "branch_protected", op=op, b=_shown(hit), repo=repo)
+            if why:
+                return unknown(why)
+        if r.get("rebase_cfg") and _git_true(cfg(g, "rebase.updateRefs")):
+            return unknown("rebase.updateRefs is true in this repository: " + _UR_WHY)
+    except (GitFail, Uncertain) as err:
+        return unknown("%s: %s" % (getattr(err, "code", "UNCERTAIN"), _shown(str(err), 200)))
+    return None
+
+
+def protection_verdict(crs, writes, default_cwd, lang):
+    """-> None or ("BRANCH_PROTECTED", text) for the first creation or write record of the call that writes a protected branch, or whose target
+    is unknown where its repository holds protection (Branch protection, The hook rule).  Silenced by MAGOS_GUARD=off and by magos.guard off of
+    the repository a record acts on; writes no denial record and offers no override."""
+    if host_off():
+        return None
+    recs = [r for r in list(crs) + list(writes) if _protection_judged(r)]
+    if not recs:
+        return None
+    co = [w for w in writes if w.get("co")]
+    unknown = next((w.get("why") or "the line checks out a branch the hook cannot read" for w in co if w["dynamic"]), None) or \
+        next(("%s checks out a branch the hook cannot read" % c["verb"] for c in crs if c["kind"] == "auto" and c["verb"].startswith("gh pr checkout")), None)
+    ctx = {"co": [n for w in co for n in w["names"]], "co_unknown": unknown, "session": default_cwd, "seen": set(),
+           "wt": {pkey(str(w["wt_path"])): (w["names"][0] if w["names"] else None) for w in writes if isinstance(w.get("wt_path"), str)}}
+    for r in recs:
+        v = _judge_protection(r, ctx, lang)
+        if v:
+            return v
+    return None
+
+
+def protection_named(writes, cwd):
+    """Does a repository the call names hold protection (the session directory's, and each one a write record names that the hook can open)?
+    True as well when that test raises (Invariant 8): an exception while judging such a call denies it."""
+    try:
+        places = [open_repo(cwd)]
+        for w in writes:
+            if w.get("redirect") and w.get("gitdir"):
+                places.append(open_gitdir(w["gitdir"]))
+            elif isinstance(w.get("cwd"), str) and not isinstance(w["cwd"], _Missing):
+                places.append(open_repo(w["cwd"]))
+        return any(g is not None and holds_protection(g) for g in places)
+    except BaseException:
+        return True
 
 
 def repo_dir(g):
@@ -6630,7 +7484,7 @@ def approval_what(lang, row, ns, t):
     """What a click approves, the {what} of every route's question (Approval routes): every subcommand its dry run; arm, disarm and override
     the repository; install the host, the directory it copies from (that of this guard), the destination and an --allow-downgrade; override
     also the fingerprint, the lane and target and the conflicting branches of its denial record (at most six, then +<n> more) and the reason,
-    marked as written by the agent.  `t`: {"g": the repository or None, "dest": the guard home install copies to}."""
+    marked as written by the agent; protect the branch, whether it sets or lifts the protection, and a reason, marked as written by the agent.  `t`: {"g": the repository or None, "dest": the guard home install copies to}."""
     dry = T(lang, "approval_dry") if getattr(ns, "dry_run", False) else ""
     repo = _dialog(repo_dir(t["g"]), 200) if t["g"] is not None else ""
     if row.name == "override":
@@ -6643,6 +7497,11 @@ def approval_what(lang, row, ns, t):
             denied = T(lang, "approval_denied", lane=_dialog(rec["lane"], 80), target="-" if rec["target"] is None else _dialog(rec["target"], 80),
                        branches=names)
         what = T(lang, "approval_what_override", fp=_dialog(ns.fingerprint, 16), repo=repo, denied=denied, reason=_dialog(ns.reason, 160))
+    elif row.name == "protect":  # the branch and the reason come from the agent: both are shown as JSON strings
+        why = getattr(ns, "reason", "") or ""
+        reason = T(lang, "approval_protect_reason", reason=_dialog(why, 160)) if why else ""
+        what = T(lang, "approval_what_unprotect" if getattr(ns, "release", False) else "approval_what_protect", b=_dialog(ns.branch, 80), repo=repo,
+                 reason=reason, dry=dry)
     elif row.name == "install":
         src = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).replace("\\", "/")  # guard_files copies the script and the launcher from here
         what = T(lang, "approval_what_install", src=_dialog(src, 200), home=_dialog(t["dest"] + "/guard", 200), host=ns.host, dry=dry,
@@ -6817,19 +7676,22 @@ def denial_record(g, fp):
 MCP_TOOL_SPEC = {
     "name": MCP_TOOL,
     "title": "MAGOS approval",
-    "description": "Ask the user, in the host's own approval dialog, to approve one MAGOS user-only guard command (override, arm, disarm or "
-                   "install), and run it after the user ticks Approve and accepts. Call it with the arguments a MAGOS denial names. Nothing runs "
+    "description": "Ask the user, in the host's own approval dialog, to approve one MAGOS user-only guard command (override, arm, disarm, "
+                   "install or protect), and run it after the user ticks Approve and accepts. Call it with the arguments a MAGOS denial names. Nothing runs "
                    "without that: a decline, a cancel, an Accept without Approve or a dialog the host cannot show runs nothing.",
     "inputSchema": {
         "type": "object",
         "properties": {
-            "subcommand": {"type": "string", "enum": ["override", "arm", "disarm", "install"], "description": "The user-only guard subcommand."},
-            "repo": {"type": "string", "description": "The absolute path of the repository. Required for override, arm and disarm; for install the "
-                                                      "repository whose magos.approval applies (optional)."},
+            "subcommand": {"type": "string", "enum": ["override", "arm", "disarm", "install", "protect"], "description": "The user-only guard subcommand."},
+            "repo": {"type": "string", "description": "The absolute path of the repository. Required for override, arm, disarm and protect; for "
+                                                      "install the repository whose magos.approval applies (optional)."},
             "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{12}$", "description": "override: the 12 hex digits the denial printed."},
-            "reason": {"type": "string", "description": "override: the user's words; the dialog shows them as written by the agent."},
+            "reason": {"type": "string", "description": "override: the user's words; protect: the user's words, optional and may be empty. The dialog "
+                                                        "shows them as written by the agent."},
             "host": {"type": "string", "enum": ["claude", "codex", "hermes"], "description": "install: the host whose hook entry install prints."},
-            "dry_run": {"type": "boolean", "description": "arm, disarm, install: only print what would be written; the user still approves it."},
+            "dry_run": {"type": "boolean", "description": "arm, disarm, install, protect: only print what would be written; the user still approves it."},
+            "branch": {"type": "string", "description": "protect: the branch name as git branch shows it (main); the guard checks it."},
+            "release": {"type": "boolean", "description": "protect: true lifts the protection of the branch, false or absent sets it."},
         },
         "required": ["subcommand"],
         "additionalProperties": False,
@@ -6877,11 +7739,11 @@ def mcp_validate(arguments, lang):
     sub = arguments.get("subcommand")
     row = next((u for u in USER_ONLY if u.name == sub), None) if isinstance(sub, str) else None
     if row is None:
-        return None, errors + ["subcommand: override, arm, disarm or install"]
+        return None, errors + ["subcommand: override, arm, disarm, install or protect"]
     takes = _MCP_TAKES[sub]
     errors += ["%s: %s takes no %s" % (k, sub, k) for k in MCP_ARGS[1:]
-               if k in arguments and k not in takes and not (k == "dry_run" and arguments[k] is False)]
-    for k in ("repo", "fingerprint", "reason", "host"):
+               if k in arguments and k not in takes and not (k in ("dry_run", "release") and arguments[k] is False)]
+    for k in ("repo", "fingerprint", "reason", "host", "branch"):
         v = arguments.get(k)
         if k not in arguments or k not in takes:
             continue
@@ -6891,8 +7753,9 @@ def mcp_validate(arguments, lang):
             errors.append("%s: longer than %d characters" % (k, MCP_FIELD))
         elif _CTL.search(v.replace("\t", " ")) or _SURROGATE.search(v):
             errors.append("%s: holds a control character or a lone surrogate" % k)
-    if "dry_run" in arguments and not isinstance(arguments["dry_run"], bool):
-        errors.append("dry_run: true or false")
+    for k in ("dry_run", "release"):
+        if k in arguments and not isinstance(arguments[k], bool):
+            errors.append("%s: true or false" % k)
     path, g = None, None
     if "repo" in arguments:
         if isinstance(arguments["repo"], str) and not [e for e in errors if e.startswith("repo:")]:
@@ -6908,7 +7771,9 @@ def mcp_validate(arguments, lang):
                     errors.append("repo: not a git repository")
     elif row.scope == "repo":
         errors.append("repo: required for %s" % sub)
-    fp, reason, host = arguments.get("fingerprint"), arguments.get("reason"), arguments.get("host")
+    fp, reason, host, branch = arguments.get("fingerprint"), arguments.get("reason"), arguments.get("host"), arguments.get("branch")
+    if sub == "protect" and "branch" not in arguments:  # the name itself is checked by the command (exit 12 in the tool result)
+        errors.append("branch: required for protect")
     if sub == "override":
         if "fingerprint" not in arguments:
             errors.append("fingerprint: required for override")
@@ -6925,24 +7790,31 @@ def mcp_validate(arguments, lang):
             errors.append("host: claude, codex or hermes")
     if errors:
         return None, errors
-    dry = arguments.get("dry_run") is True
+    dry, release = arguments.get("dry_run") is True, arguments.get("release") is True
+    reason = (reason or "") if sub == "protect" else reason  # an absent reason of protect is the parser's default ""
     argv = ([] if sub == "install" else ["--repo=" + path]) + ["--lang=" + lang, sub]  # install's repo names only the level
     if sub == "override":
         argv += ["--fingerprint=" + fp, "--reason=" + reason]
     elif sub == "install":
         argv += ["--host=" + host]
+    elif sub == "protect":
+        argv += ["--branch=" + branch] + (["--release"] if release else []) + (["--reason=" + reason] if reason else [])
     argv += ["--dry-run"] if dry else []
     probe = "A" * 43
     ns = parse_quiet(argv + ["--approval=" + probe])
     back = ns is not None and user_only_row(ns) == row and getattr(ns, "approval", None) == probe and ns.lang == lang and \
         ns.repo == (None if sub == "install" else path) and \
         getattr(ns, "fingerprint", fp) == fp and getattr(ns, "reason", reason) == reason and getattr(ns, "host", host) == host and \
-        getattr(ns, "dry_run", False) == dry
+        getattr(ns, "dry_run", False) == dry and getattr(ns, "branch", branch) == branch and getattr(ns, "release", False) == release
     if not back:
         return None, ["the guard's parser reads these arguments otherwise"]
-    args = dict((k, v) for k, v in (("subcommand", sub), ("repo", path), ("fingerprint", fp if sub == "override" else None),
-                                    ("reason", reason if sub == "override" else None), ("host", host if sub == "install" else None),
-                                    ("dry_run", True if dry else None)) if v is not None)
+    if sub == "protect":
+        pairs = (("subcommand", sub), ("repo", path), ("branch", branch), ("release", True if release else None), ("reason", reason or None),
+                 ("dry_run", True if dry else None))
+    else:
+        pairs = (("subcommand", sub), ("repo", path), ("fingerprint", fp if sub == "override" else None), ("reason", reason if sub == "override" else None),
+                 ("host", host if sub == "install" else None), ("dry_run", True if dry else None))
+    args = dict((k, v) for k, v in pairs if v is not None)
     return {"row": row, "args": args, "argv": argv, "repo": path, "g": g, "ns": ns}, None
 
 
@@ -6979,6 +7851,10 @@ def mcp_arguments(ns, cwd):
         a.update(fingerprint=ns.fingerprint, reason=ns.reason)
     if ns.cmd == "install":
         a["host"] = ns.host
+    if ns.cmd == "protect":  # release only when true, reason only when not empty
+        a["branch"] = ns.branch
+        a.update({"release": True} if ns.release else {})
+        a.update({"reason": ns.reason} if ns.reason else {})
     if getattr(ns, "dry_run", False):
         a["dry_run"] = True
     return a
@@ -7594,7 +8470,8 @@ def decide(payload, lang, host=None, gate=None):
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     if tool.startswith("mcp__") and not isinstance(ti.get("command"), str) and not _MCP_SESSION.fullmatch(tool):
         return None  # an MCP tool that runs no command and starts no session: answered before any repository is opened or any git runs
-    crs, prot, cwd = extract(payload)
+    writes = []
+    crs, prot, cwd = extract(payload, writes=writes)
     text, opened = shell_text(payload), []
 
     def repo():  # the session directory's repository, opened at most once
@@ -7603,7 +8480,9 @@ def decide(payload, lang, host=None, gate=None):
         return opened[0]
     if text and any(s not in _BUILTINS for s in _git_subcommands(_bare(text))):  # a git alias may hide a creation anywhere (g''it, g\it)
         aliases = load_aliases(repo()) if repo() else {}
-        crs = extract(payload, aliases, tamper=False)[0] if aliases else crs  # the walk again; the tamper filter has read the text
+        if aliases:  # the walk again; the tamper filter has read the text
+            writes = []
+            crs = extract(payload, aliases, tamper=False, writes=writes)[0]
     if (not prot or prot[0] != "always") and text and len(text) <= MAX_TEXT and _WRITE_HINT.search(re.sub(r"[\\`^'\"]", "", text)):
         prot = _worse(prot, protected(text, roots=tuple(tamper_roots()), lazy=lambda: [pkey(store(repo()))] if repo() else []))  # the rooted reading
     if prot:
@@ -7622,8 +8501,11 @@ def decide(payload, lang, host=None, gate=None):
         if host == "codex" and prot[1] == _USER_MSG:  # Codex: the MCP tool magos_approve and Codex's own dialog (Codex approval)
             return "PROTECTED", codex_denial(payload, cwd, lang)
         g = repo()
-        if prot[0] == "always" or (g and (guard_mode(g) == "armed" or holds_claims(g))):
+        if prot[0] == "always" or (g and (guard_mode(g) == "armed" or holds_claims(g) or holds_protection(g))):
             return "PROTECTED", T(lang, "protected", why=prot[1])
+    v = protection_verdict(crs, writes, cwd, lang)  # Branch protection: before the creation check, whose verdict it replaces
+    if v:
+        return v
     return enforce(crs, cwd, lang) if crs else None
 
 
@@ -7700,9 +8582,12 @@ def _hook(args):
         return (out_text("{}"), 0)[1]
     try:
         res = decide(payload, args.lang, args.host, getattr(args, "hermes_gate", None))
-    except BaseException as err:  # fail closed only when the call looks lane-creating or protected
+    except BaseException as err:  # fail closed only when the call looks lane-creating or protected, or writes a branch where protection is held
         try:
-            looks = any(extract(payload)[:2])
+            writes = []
+            crs, prot, cwd = extract(payload, writes=writes)
+            writes = [w for w in writes if _protection_judged(w)]
+            looks = bool(crs) or bool(prot) or (bool(writes) and protection_named(writes, cwd))
         except BaseException:
             looks = _lane_text(payload)
         if looks:
@@ -8592,6 +9477,7 @@ def cmd_doctor(args):
         out_text("  %s" % (b.text if b.code == "CLAIM_NEWER_FORMAT" else "unreadable claims/%s" % b.replace(os.sep, "/")))
     approval_problem = approval_report(g)
     set_problems = set_report(g, claims, bad, heads)
+    set_problems = protect_report(g) or set_problems
     orphans = [d["branch"] for d in claims.values() if d["branch"] not in heads and not d["worktree"] and not (is_integration_claim(d) and claim_set_record(g, d))]
     out_text("claims without a branch or planned worktree: %s" % (", ".join(orphans) or "none"))
     refused = [d["branch"] for d in claims.values() if alias_problem(d["branch"])]
@@ -8737,6 +9623,12 @@ def build_parser(repo_default=None):
     p.add_argument("--set", required=True)
     p.add_argument("--reason", default="")
     p.add_argument("--abandon", action="store_true")
+    p = sub.add_parser("protect", parents=[common])  # user-only: sets or lifts the protection of a branch (Branch protection)
+    p.add_argument("--branch", required=True)
+    p.add_argument("--release", action="store_true")
+    p.add_argument("--reason", default="")
+    p.add_argument("--dry-run", action="store_true")
+    sub.add_parser("protect-show", parents=[common]).add_argument("--branch")
     sub.add_parser("mcp", parents=[common])  # the MCP approval server, which only the host starts (Codex approval)
     for u in USER_ONLY:
         sub.choices[u.name].add_argument("--approval", help=argparse.SUPPRESS)
@@ -8779,7 +9671,8 @@ def main(argv=None):
             return cmd_plan(args, args.cmd == "plan")
         return {"list": cmd_list, "release": cmd_release, "override": cmd_override, "hook": cmd_hook, "arm": cmd_arm, "disarm": cmd_disarm,
                 "install": cmd_install, "doctor": cmd_doctor, "version": cmd_version, "set-plan": cmd_set_plan, "set-show": cmd_set_show,
-                "set-update": cmd_set_update, "set-release": cmd_set_release, "mcp": cmd_mcp}[args.cmd](args)
+                "set-update": cmd_set_update, "set-release": cmd_set_release, "protect": cmd_protect, "protect-show": cmd_protect_show,
+                "mcp": cmd_mcp}[args.cmd](args)
     except GitFail as err:
         return fail(args, err.code, str(err), "MAGOS guard: %s: %s" % (err.code, err))
     except BaseException as err:  # never exit 1 silently: every failure is a deny-class exit

@@ -1,0 +1,29 @@
+{
+  "case": "git-protect/forms-and-help",
+  "skill": "git-protect",
+  "feature": "The forms of /GitProtect set, lift or show the protection of a branch; help stops before any inspection and a wrong combination executes nothing",
+  "passed": true,
+  "scope": "source-contract; AI host runtime is not invoked",
+  "checks": [
+    {
+      "file": "commands/GitProtect.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "skills/git-protect/SKILL.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "references/commands.md",
+      "passed": true,
+      "missing": []
+    },
+    {
+      "file": "SKILL.md",
+      "passed": true,
+      "missing": []
+    }
+  ]
+}

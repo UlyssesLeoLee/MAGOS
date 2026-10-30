@@ -44,6 +44,11 @@
       "file": "skills/git-plan/SKILL.md",
       "passed": true,
       "missing": []
+    },
+    {
+      "file": "skills/git-protect/SKILL.md",
+      "passed": true,
+      "missing": []
     }
   ]
 }

@@ -44,6 +44,11 @@
       "file": "commands/GitPlan.md",
       "passed": true,
       "missing": []
+    },
+    {
+      "file": "commands/GitProtect.md",
+      "passed": true,
+      "missing": []
     }
   ]
 }

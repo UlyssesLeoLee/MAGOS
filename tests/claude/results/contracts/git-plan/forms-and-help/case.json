@@ -119,7 +119,7 @@
         "| `--land` | No | With `--converge --apply`: after the merges and the checks, fast-forward `<branch>` to the integration branch. |",
         "| `--release` | No | Retire the set once its lanes are integrated: remove its claims and its record. |",
         "| `--expect-revision <n>` | With `--amend` |",
-        "Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other seven).",
+        "Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other eight).",
         "Examples: `/GitPlan sweep-readiness --into develop`, `/GitPlan sweep-readiness --into develop --apply --create`, `/GitPlan sweep-readiness --status`, `/GitPlan sweep-readiness --converge --apply --land`, `/GitPlan --help`."
       ]
     },
