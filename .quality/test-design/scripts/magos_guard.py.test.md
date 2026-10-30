@@ -842,7 +842,7 @@ In the table, the character ∣ (U+2223) stands for the shell pipe character, wh
 
 ## Regression Scope
 
-The rows that name the option which edits a running rebase's instruction list spell it in two parts in this document; the tests write the option whole.
+The rows that name the option which edits a running rebase's instruction list spell it in two parts in this document; the tests write the option whole, as the guard reads it.
 
 Neighbouring modules and checks that must stay green: `scripts/sync_hosts.py` (its own design is
 `.quality/docs/scripts/sync_hosts.py.md`; its package list ships `references/lane-split.md` through the
