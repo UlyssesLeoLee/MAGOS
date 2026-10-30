@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "magos",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Multi-Agent Git Orchestrator (MAGOS): eight explicit Git command skills (git-recon, git-analyze, git-recommend, git-integrate, git-cleanup, git-converge, git-sweep, git-plan) that inspect, plan, integrate, clean up, and converge branches and worktrees. Each skill reads the shared orchestrator rules in the package-root SKILL.md and references/.",
   "repository": "https://github.com/UlyssesLeoLee/MAGOS",
   "license": "Apache-2.0",

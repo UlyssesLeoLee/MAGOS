@@ -2,6 +2,35 @@
 
 Every version of the `magos` package (the `version` in `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` and the lane guard's `GUARD_VERSION`). A release is tagged `v<version>` on its release commit. The tag `v1.0` marks the skill release 3.4.0 from before the package became a plugin and was renumbered; it is not a plugin version. Install, pin, upgrade and roll back as `references/installation.md` describes.
 
+## 1.0.9
+
+Tag `v1.0.9`. A security and fix release after a full review of 1.0.8: the tamper filter now reads every part of a command before it decides, and the approval routes of Codex and Hermes read their directories and commands exactly. In 1.0.8 the hook was the only barrier between an agent's own shell and the approval server it could start, so each gap the review found let a plain shell command approve a user-only guard command (`override`, `arm`, `disarm`, `install`) without a human.
+
+### Fixed
+
+- **The most severe finding wins, wherever it stands.** A harmless-looking edit of the guard's state in a quoted word, a child shell or an earlier target of the same command no longer hides a later `mcp`, `hook` or user-only subcommand, or a write into an approval store; the hook also reads the command a second time with the guard home and the store whenever the first reading found nothing that is always denied.
+- **Here-documents.** A `<<` inside quotes or after `#` no longer starts a here-document, so the lines after `echo "<<E"` are read as commands; a body is read as commands when a shell named by a path or in quotes (`/bin/bash <<E`, `"bash" <<E`, `cat <<E | /bin/sh`) or on the line after the body reads it.
+- **The subcommand slot.** A brace expansion or a glob before the subcommand (`--json{,} mcp`, `-* mcp`) is denied like a variable.
+- **The guard word.** The guard is recognised also as `ma$''gos_guard.py`, with trailing dots (`magos_guard.py.`) and by its Windows 8.3 short names (`MAGOS_~1.PY`, `RUN-GU~1.CMD`); every Python build (`python3.14t`, `python3.12-dbg`, `pypy3`) counts as an interpreter.
+- **Git alias values.** The value of `git -c alias.<name>=<value>` is read like the text of a child shell, so `git -c "alias.c=!git config magos.guard off" c` is denied in every repository and `!rm .git/magos/ARMED` where the guard is armed.
+- **Deeply nested text.** A command whose text nested deeper than three levels (child shells, here-documents, quoted guard commands, alias values) names MAGOS is denied on every host with a text of its own instead of passing unread.
+- **Long commands.** The subcommand slots of a command are read in one pass, so a command of many guard-like words is read in linear time (8,000 such words took about 30 s in 1.0.8, past the hook's 25 s limit).
+- **Codex denial.** The `magos_approve` arguments a denial names are offered only for exactly one plain invocation of this guard; after a `cd`, an environment assignment such as `MAGOS_HOME=..`, or with another guard file the denial names the form of the tool instead of arguments for another repository or home.
+- **Directories of the approval routes.** On Linux and macOS a backslash in a repository, Hermes home or script path stays part of the name; Hermes refuses a `workdir` that is no existing absolute directory (a drive-less `/x` on Windows) and a `~` interpreter or script word where the call names no directory, before the user is asked.
+- **Hermes plugin under `plugins.isolation: host`.** Guard commands that name `magos_guard` (`plan`, `version`, `git add scripts/magos_guard.py`) are no longer blocked as unprepared.
+- **`doctor`** reads a Hermes flow list with a `]` in its comment (`enabled: [magos] # see [docs]`) correctly.
+- **Documents.** `SKILL.md` and `references/lane-split.md` name the click of every host.
+
+### Known limits
+
+- The Codex approval server still cannot tell Codex from an agent's own pipe. The hook's text filter is the barrier, and it reads the spellings named above; a copy of the guard under another name, or the guard run through an interpreter's own code, is not read (as in 1.0.8).
+- A Hermes terminal call without `workdir` is judged in the directory of the Hermes process, not in the directory an earlier `cd` of the session left (as in 1.0.7 and 1.0.8).
+
+### Upgrade
+
+1. Upgrade the plugin on each host and restart it: Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`; Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`.
+2. Copies under `~/.magos/guard` (Codex and Hermes entries) are refreshed by running `install --host <host>` again; `doctor` names a stale copy. Armed repositories keep working; `doctor` says when `arm` should run again.
+
 ## 1.0.8
 
 Tag `v1.0.8`. A feature release: the click that 1.0.7 gave Claude Code now exists in Codex and in Hermes, each through the approval prompt of that host, so a user-only guard command (`override`, `arm`, `disarm`, `install`) no longer has to be typed in a terminal there either.

@@ -40,7 +40,7 @@ except ImportError:  # POSIX
 if sys.platform == "win32":  # CreateProcess searches the working directory before PATH unless this is set: a git.exe planted there never runs
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
 
-GUARD_VERSION = "1.0.8"  # the one version constant of the guard; equals the package version (plugin.json, .claude-plugin/plugin.json, plugin.yaml, SKILL.md)
+GUARD_VERSION = "1.0.9"  # the one version constant of the guard; equals the package version (plugin.json, .claude-plugin/plugin.json, plugin.yaml, SKILL.md)
 CLAIM_FORMAT = 1  # the claim file format this guard reads and writes (line `v=`); a claim of a newer format is never misread
 SET_FORMAT = 1  # the set record format this guard reads and writes (field `v`); a record of a newer format is never misread
 GS = "**"
