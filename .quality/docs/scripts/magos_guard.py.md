@@ -631,7 +631,8 @@ that holds a comma).
   <gate>`) answers with the modify and approve of Hermes approval (version 1.0.8), or denies, and the Hermes entry under
   `hooks:` denies it. Every hook denies a command that starts `mcp` with the `protected_mcp` text, and a command that
   runs this guard with a subcommand that is no plain word an agent may run (`hook` among them) with the
-  `protected_slot` text (Approval routes (version 1.0.8), The subcommand of a guard run). Deny is exactly one
+  `protected_slot` text, and a command whose text nested deeper than three levels names MAGOS with the `protected_deep`
+  text (Approval routes (version 1.0.8), The subcommand of a guard run). Deny is exactly one
   ASCII-escaped JSON object on
   stdout, exit 0:
   `{"decision":"block","reason":MSG,"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":MSG}}`.
@@ -917,8 +918,10 @@ Invariants:
    built-in git command, because an alias can run `config`. `mcp`, the MCP approval server that only the host starts,
    is denied in the same spellings and places, on every host, with the `protected_mcp` text (Codex approval (version
    1.0.8)). A command that runs the guard with a subcommand the hook cannot read as one plain word of `AGENT_SUBS`
-   (a dynamic word, `hook`, an empty slot, a word xargs feeds) is denied on every host with the `protected_slot` text
-   (Approval routes (version 1.0.8), The subcommand of a guard run). The one exception is the ask or allow of the Claude Code
+   (a dynamic word, a brace expansion or glob, `hook`, an empty slot, a word xargs feeds) is denied on every host with
+   the `protected_slot` text, and a text nested deeper than three child shells, here-documents, quoted guard words or
+   alias values that names MAGOS with the `protected_deep` text (Approval routes (version 1.0.8), The subcommand of a
+   guard run). The value of a `-c alias.<name>=<value>` is read like the text of a child shell. The one exception is the ask or allow of the Claude Code
    hook for exactly one direct invocation of this guard (Approval (version 1.0.7)). A writer or a redirect aimed at an
    approval store (`.git/magos/approvals`, `.magos/approvals`, the absolute `<git-common-dir>/magos/approvals` or
    `<guard home>/approvals`) is denied in every repository and outside any repository. Edits of the guard's state are denied once
@@ -2201,8 +2204,15 @@ The parser's subcommands fall into four tables, which together hold exactly its 
 subcommands (`USER_ONLY`), `HOST_ONLY` (`mcp`) and `hook`, which only a host runs. The tamper filter reads the
 subcommand slot of every guard word: the first word after it that is not the launcher's leading `--strict`, a global
 option (`--repo` and `--lang` with their value, `--json`, any `--name=value`, in every spelling argparse takes) or a
-`--`.
+`--`. One right-to-left pass over the words of a command gives the slot for every position a guard word's arguments
+can start at, so reading a command stays linear in the number of its words however many guard words it holds.
 
+- A guard word is a word whose base name (after the last `/` or `\`) names the guard in one of these readings, in any
+  case: as written; with the escape characters and quotes removed; with `$''` and `$""` (empty ANSI-C and locale
+  strings) removed and the trailing dots and blanks of the base name dropped (Windows drops them when it opens the
+  file). `magos_guard` and `magos_guard.py` name the script, `run-guard` and `run-guard.cmd` the launcher, and so do the
+  Windows 8.3 short names `magos_~<n>` and `magos_~<n>.py` (the script) and `run-gu~<n>` and `run-gu~<n>.cmd` (the
+  launcher).
 - A user-only word or `mcp` in the slot of any guard word keeps its own rule wherever the guard word stands (Approval
   (version 1.0.7), Recognition; Codex approval (version 1.0.8), The approval server and the tamper filter), and its
   reason wins over the one below anywhere in the command.
@@ -2211,8 +2221,8 @@ option (`--repo` and `--lang` with their value, `--json`, any `--name=value`, in
     options, option values, numbers and durations (`nohup <guard>`, `timeout 30s <guard>`, `xargs -I X <guard>`), and
     after a tool that runs a program of an environment with its run word (`uv run`, `uvx`, `poetry run`, `pdm run`,
     `hatch run`, `pipenv run`, `rye run`, `pixi run`, `conda run`, `mamba run`, `micromamba run`, `pyenv exec`);
-  - the script of a Python interpreter (`py`, `pyw`, `python`, `pythonw`, `python3`, `python3.<n>`, also as a path or
-    with `.exe`) or of a shell (`bash`, `sh`, `zsh`, `dash`, `ksh`) after its options, where `-X`, `-W` and
+  - the script of a Python interpreter (`py`, `pyw` and every base name that starts with `python` or `pypy`:
+    `pythonw`, `python3.<n>`, `python3.14t`, `python3.12-dbg`, `pypy3`, also as a path or with `.exe`) or of a shell (`bash`, `sh`, `zsh`, `dash`, `ksh`) after its options, where `-X`, `-W` and
     `--check-hash-based-pycs` take a value, `-c` ends the reading and `-m <module>` runs a module named like the guard;
     also when an assignment holds the interpreter (`c="python3 <guard>"`, read as a command by the quoted-word rule) or
     a dynamic word or an interpreter named by one stands as the program (`"$PY" <guard>`, `$(command -v python3)
@@ -2229,7 +2239,9 @@ option (`--repo` and `--lang` with their value, `--json`, any `--name=value`, in
   1. a word after it, up to and including its slot, is dynamic: the lexer reads the word as dynamic and its piece holds
      `$`, a backtick, `%` or a parenthesis (a variable, a command substitution, `${X:-mcp}`, `$'mcp'`, `${a[0]}`, a
      PowerShell variable or sub-expression, `G,$a` of a PowerShell array; an unquoted option value word-splits into the
-     slot);
+     slot), or its piece holds `{`, `}`, `*`, `?` or `[`, as written or with the escape characters and quotes removed (a
+     brace expansion or a glob, which the shell expands into words of its own: `--json{,} mcp`, `-* mcp` beside a file
+     named `--json`, `--js[o]n mcp`);
   2. `xargs`, `parallel` or `find -exec`, `-execdir`, `-ok` or `-okdir` stands before it in its command, or before the
      child shell whose text holds it (`xargs -I plan python3 <guard> plan` replaces any word);
   3. the slot is not, as written or with the escape characters and quotes removed, exactly one of `AGENT_SUBS`: `hook`,
@@ -2243,17 +2255,37 @@ option (`--repo` and `--lang` with their value, `--json`, any `--name=value`, in
   starts with the script name passes when its next word is neither `mcp` nor a user-only word nor dynamic: those keep
   their rule in every quoted word (`git commit -m "magos_guard.py mcp notes"` is denied, `git commit -m "magos_guard.py
   hook text"` passes). The text of a child shell takes rule 2 from the command that starts it.
-- A here-document that a shell reads (`bash <<E`, `sh -s <<E`, `bash -s <<-E`, `cat <<E | bash`, the line naming a POSIX
-  shell, PowerShell, `source` or `Invoke-Expression`) is read as commands with every check at the next depth, as the
-  walk reads it; a here-document fed to `cat`, to a file, to `git commit -F -` or to an interpreter without a shell is
-  data. A PowerShell here-string (`@'..'@`) is a quoted word and is read by the quoted-word rule.
-- A finding of scope `always` anywhere in the command (a user-only word, `mcp`, this rule) wins over an edit of the
-  guard's state found before it (`rm .git/hooks/x; python3 <guard> mcp`), which counts only once claims or the git
-  layer exist.
+- A here-document starts at a `<<` (not `<<<`) that stands outside quotes (`'..'`, `".."` with its backslash escapes,
+  `$'..'`) and outside a comment (a `#` that starts a word) of its line; a `<<` inside quotes or a comment starts none, so
+  the lines after `echo "<<E"` are read as commands. A here-document that a shell reads is read as commands with every
+  check at the next depth, as the walk reads it: a word of the `<<` line, or of the first line after the body when the
+  `<<` line ends with `|`, names a POSIX shell, PowerShell, `source`, `iex` or `Invoke-Expression`, read like a program
+  word (the base name with the escape characters, quotes and `.exe` removed: `bash <<E`, `sh -s <<E`, `bash -s <<-E`,
+  `/bin/bash <<'E'`, `"bash" <<E`, `cat <<E | bash`, `cat <<E | /bin/sh`, and `cat <<E |` with `bash` on the line after
+  the body). A here-document fed to `cat`, to a file, to `git commit -F -` or to an interpreter without a shell is data.
+  A PowerShell here-string (`@'..'@`) is a quoted word and is read by the quoted-word rule.
+- The value of every `-c alias.<name>=<value>` of a git invocation (the two words `-c` `alias.<name>=<value>` and the one
+  word `-calias.<name>=<value>`) is read with every check at the next depth: a value that starts with `!` as a shell
+  command, any other value as `git <value>`. So `git -c "alias.c=!git config magos.guard off" c` holds the `magos.*`
+  config rule and `git -c "alias.c=!rm .git/magos/ARMED" c` an edit of the guard's state.
+- A finding of scope `always` anywhere in the command (a user-only word, `mcp`, this rule, a write into an approval
+  store, a `magos.*` config switch, an unread nested text that names MAGOS) wins over every finding of scope `guarded`,
+  whatever their order and wherever either stands: in another command of the line, in a quoted word, a child shell, a
+  here-document, an alias value, or among the targets of the writers, redirects and environment writes of the same
+  command (`rm .git/hooks/x; python3 <guard> mcp`, `env "B=1; rm .git/hooks/x <guard>" python3 <guard> mcp`, `printf r
+  >> .git/hooks/x > <store>/approvals/<sha>.json`). An edit of the guard's state counts only once claims or the git
+  layer exist. The hook reads the command a second time with the absolute guard home, the Hermes plugin directory and
+  the repository's store as roots whenever the first reading found nothing of scope `always`, and keeps the more severe
+  of the two findings.
+- Child shells, here-documents that a shell reads, quoted words that name the guard and alias values are read to depth
+  3. A text that would be read at depth 4 is not read: when it names MAGOS (`magos` or `run-guard`, read with every
+  backslash, backtick, caret and quote removed) every host's hook denies the command with the `protected_deep` text
+  (scope `always`), in every repository and before any host route; a text that names no MAGOS adds no finding.
 - A command longer than 200,000 characters (`MAX_TEXT`) is not read. When it names MAGOS (`magos` or `run-guard`, read
   with every backslash, backtick, caret and quote removed) every host's hook denies it with the `protected_long` text,
   which names the limit, in every repository and before any host route; one that names no MAGOS keeps the rule of
-  Responsibility (an unparseable creation, and a protected command once claims or the git layer exist).
+  Responsibility (an unparseable creation, and a protected command once claims or the git layer exist). The
+  `protected_deep` text names the depth limit, 3, and says to run the guard command at a shallower level.
 - Every host's hook denies such a command with the `protected_slot` text before any route of its own: no ask, no
   modify, no tool name. The text says that the subcommand must be one plain word right after the script and its plain
   options, that the guard must not take its words from xargs, parallel or find -exec, the guard command with the
@@ -2339,8 +2371,10 @@ works without that hook.
 1. Arguments. Every key is one of the six; a key the subcommand does not take is refused (`dry_run` false is taken by
    every subcommand). A string holds at most 4096 characters (`MCP_FIELD`), no control character but the tab and no
    lone surrogate. `repo` is the absolute path of an existing directory: a drive or UNC path on Windows (a Git Bash
-   drive spelling is mapped), a `/`-rooted path elsewhere, never relative, drive-relative or starting with `~`; for
-   `override`, `arm` and `disarm` it lies in a Git repository. `fingerprint` is 12 lowercase hex digits, `reason`
+   drive spelling is mapped), a `/`-rooted path elsewhere, never relative, drive-relative or starting with `~`; it is
+   normalised and written with `/` on Windows only (on POSIX a backslash is a character of a file name and stays, as for
+   the guard home), and the directory tested is the one written; for `override`, `arm` and `disarm` it lies in a Git
+   repository. `fingerprint` is 12 lowercase hex digits, `reason`
    holds a character that is not blank, `host` is a host name and `dry_run` a boolean. The text lists every error, and
    nothing runs.
 2. The command line is built from these values only, every option one word: `--repo=<repo>` (not for `install`),
@@ -2386,14 +2420,18 @@ works without that hook.
 - When the payload's `permission_mode` is `bypassPermissions` (Codex's approval policy `never`, under which Codex
   declines the form by itself), the text is `protected_codex_never`: only the command for a real terminal.
 - Otherwise the hook reads the command in the dialect of its tool (for an argv, the script of its shell; on Windows a
-  string command in the PowerShell dialect, because Codex runs it through `powershell.exe -Command`) and takes the first
-  command of the line in which a guard script word is followed by a user-only subcommand; the guard's parser reads the
-  words after the script word. When that invocation maps onto the tool and its arguments pass step 1 of The tool
-  call, the text is `protected_codex`: the tool, its arguments as one JSON object, and the ready command. The mapping
-  drops `--lang`, `--json` and an `--approval` value, joins a relative `--repo` to the session directory, and takes the
-  session directory as `repo` when no `--repo` is named (for `install` only when that directory lies in a repository);
-  `--home` and `--allow-downgrade` do not map. Every other command gets `protected_codex_form`, which says what the
-  tool takes.
+  string command in the PowerShell dialect, because Codex runs it through `powershell.exe -Command`) and maps it onto
+  the tool only when that text is exactly one direct invocation of this guard as the Claude Code hook reads one
+  (Approval (version 1.0.7), Recognition 2 to 5: one command with nothing around it, no redirection, no dynamic word, an
+  interpreter and its options, then a script word that names this guard, and for `install` the very file the hook
+  runs); the guard's parser reads the words after the script word. When that invocation maps onto the tool and its
+  arguments pass step 1 of The tool call, the text is `protected_codex`: the tool, its arguments as one JSON object, and
+  the ready command. The mapping drops `--lang`, `--json` and an `--approval` value, joins a relative `--repo` to the
+  session directory, and takes the session directory as `repo` when no `--repo` is named (for `install` only when that
+  directory lies in a repository); `--home` and `--allow-downgrade` do not map. Every other command gets
+  `protected_codex_form`, which says what the tool takes: among them a `cd`, `Set-Location`, `pushd` or `env -C` before
+  the guard, an environment assignment (`MAGOS_HOME=.. python3 <guard>`, `export`, `$env:`), a script that is not this
+  guard, and an `install` through a copy other than the hook's own file.
 - The Codex hook entry matches `Bash` and the MCP session tools only, so it does not run for the tool
   `mcp__magos__magos_approve`, and the hook answers an MCP tool without a string `command` with `{}` in any case.
 
@@ -2527,8 +2565,10 @@ command that does not meet Recognition 1 to 7 of Approval (version 1.0.7) read w
    or false (`APPROVAL_TOOL` otherwise: the agent drives a background or PTY shell itself). Its dialect is bash, the
    shell Hermes runs every command in (Git Bash on Windows), so the Git Bash word rule (`APPROVAL_PATHCONV`) applies on
    Windows.
-2. The directory comes from the call. With `workdir` (an absolute path, not starting with `~`, whose characters Hermes
-   accepts: letters, digits and `/ \ : _ - . ~ + @ = ,` and the space) a relative path is joined to it; without `workdir`
+2. The directory comes from the call. With `workdir` (an existing directory named by an absolute path: a drive or UNC
+   path on Windows, where a drive-less `/x` would name another directory in Git Bash than in Python, a `/`-rooted path
+   elsewhere; not starting with `~`, at most 4,096 characters, of the characters Hermes accepts: letters, digits and
+   `/ \ : _ - . ~ + @ = ,` and the space) a relative path is joined to it; without `workdir`
    the script word, an interpreter path, `--repo` and `--home` must be absolute (a path starting with `~` is not), and
    `override`, `arm` and `disarm` must name `--repo` (`APPROVAL_DIRECTORY` otherwise). The payload's `cwd` is the
    directory of the Hermes process (its checkout), not the directory the terminal command runs in.
@@ -2595,7 +2635,8 @@ When `<hermes home>` is a directory, after the copy lines:
 - `hermes route: the plugin <dir> (guard <v>) runs the guard and asks for a user-only command in Hermes's approval prompt`
   when `<dir>/scripts/magos_guard.py` declares this guard's version, `<dir>/__init__.py` registers the guard callbacks and
   `plugins.enabled` of the Hermes config names `magos` and `plugins.disabled` does not (or the config holds neither list, or
-  cannot be read); each list is a flow list `[a, b]` or a block sequence of `- name` lines, of plain or quoted names;
+  cannot be read); each list is a flow list `[a, b]` (it ends at its first `]`; a comment may follow) or a block
+  sequence of `- name` lines, of plain or quoted names;
 - `hermes route: the plugin <dir> holds guard <v>, not <this version>; update it (hermes plugins update magos) and restart Hermes`
   when the plugin holds another guard;
 - `hermes route: the plugin <dir> holds guard <v>, but its __init__.py registers no guard callbacks; update it (hermes plugins update magos) and restart Hermes`
@@ -2611,7 +2652,8 @@ When `<hermes home>` is a directory, after the copy lines:
   `hermes approvals: HERMES_YOLO_MODE is set here: Hermes approves without asking, ...` (same ending),
   `hermes approvals: <config> cannot be read (<error>): the guard refuses the click`, or
   `hermes approvals: Hermes asks (approvals.mode <v>|approvals.mode unset), within <T> s; a session /yolo is not visible here`,
-  in this order of precedence: `HERMES_YOLO_MODE`, a config that cannot be read, `approvals.mode` off; `<T>` is
+  in this order of precedence: `HERMES_YOLO_MODE`, a config that cannot be read, `approvals.mode` off, the causes and
+  the order in which the Hermes hook refuses a question (Recognition 5, from the same function); `<T>` is
   `approvals.timeout` as Hermes reads it (300 when unset).
 The double-route line, and the entry line when no plugin route applies, are problems; the others are information. Doctor cannot see what Hermes registered at start, the
 shell-hook consent file's effect on a running Hermes, a session `/yolo` or a hosted-room policy.

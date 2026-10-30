@@ -100,7 +100,11 @@ every call it answers (the approve directive for a question, nothing otherwise) 
 Hermes hands both callbacks of one call (each gets a shallow copy of one keyword dict) and which is new for every call;
 the mark holds that object, so two interleaved calls alike in every keyword argument and command never share a mark.
 `approval` takes the mark of its own `args` object once and returns its directive or nothing, and a block when a
-command that names `magos_guard` has no mark. `gate()` returns `ask`, `bypass` or `absent` as that section states.
+command that names `magos_guard` has no mark. In a Hermes plugin-host process (`HERMES_PLUGIN_HOST_PROCESS` set:
+`plugins.isolation: host`, where each callback is its own call into the host and gets a freshly decoded copy of the
+arguments, so no `args` object is shared) `verdict` keeps no mark and `approval` returns nothing: `gate()` is `absent`
+there, so the guard answers a user-only command with a block and never with a question, and an `auto-safe` modify needs
+no approve. `gate()` returns `ask`, `bypass` or `absent` as that section states.
 
 `INDEX_DESCRIPTIONS`: a top-level literal `dict` from skill name to one single-line string, with no computed value, so
 a check can read it with `ast.literal_eval` without running the module. It holds exactly one non-empty entry for each
@@ -128,7 +132,7 @@ Line rules, final state:
 
 The module's other public names are the two callbacks `verdict` and `approval`, `gate`, and the constants `GUARD`
 (`scripts/magos_guard.py` next to the module), `GUARD_TOOLS` (`terminal`), `GUARD_LIMIT_S` (25) and `KEPT_S` (120).
-Its only state is the marks of `verdict`, kept under a lock and dropped after `KEPT_S` seconds: calling `register`
+Its only state is the marks of `verdict` in Hermes's own process, kept under a lock and dropped after `KEPT_S` seconds: calling `register`
 twice on two contexts registers the same skills and callbacks twice, once per context, and both share the marks.
 
 ## Errors

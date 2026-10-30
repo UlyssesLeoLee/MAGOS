@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "source": "__init__.py",
-  "baseline_source_sha256": "76db96aa4767e257b2bbcdd172f6cc32b4dabdfef27979750ec439e60b434bb5",
-  "prepared_branch": "agent/codex-hermes-1.0.8",
+  "baseline_source_sha256": "90761fae2f050ef60c54dc85458b3fddce890a793d256cf8f6621ce5f1fdc101",
+  "prepared_branch": "agent/review-fixes-1.0.9",
   "technical_design": ".quality/docs/__init__.py.md",
   "test_design": ".quality/test-design/__init__.py.test.md",
-  "prepared_technical_design_sha256": "b0adad367e6fbe5e7eb9b9581f58de926f3add4b5f729e58934160ec7a312ae5",
-  "prepared_test_design_sha256": "e7b2424616b083784b1605314616923d09bb94a39c659ef876773eb2b30a68db",
+  "prepared_technical_design_sha256": "58640c77f0aafbe91c943df2ca1675a7572518c55056dd40d28dd3b0a5c245aa",
+  "prepared_test_design_sha256": "4f49e1c0d7d13dafafd52e965cca44d60f644fe51a64a60176b177aa0051449f",
   "prepared_related_design_sha256": {}
 }
