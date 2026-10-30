@@ -842,6 +842,8 @@ In the table, the character ∣ (U+2223) stands for the shell pipe character, wh
 
 ## Regression Scope
 
+The rows that name the option which edits a running rebase's instruction list spell it in two parts in this document; the tests write the option whole.
+
 Neighbouring modules and checks that must stay green: `scripts/sync_hosts.py` (its own design is
 `.quality/docs/scripts/sync_hosts.py.md`; its package list ships `references/lane-split.md` through the
 `references/*.md` glob and never ships the guard), `__init__.py` (`ctx.register_skill` for the skills and exactly two `ctx.register_hook("pre_tool_call", ...)`; its own
