@@ -2855,7 +2855,7 @@ last column writes no branch and is allowed.
 | `merge` (also `--continue`, `--ff-only`, `--squash`, `--no-commit`) | current | `--abort`, `--quit`; help |
 | `pull` (with or without `--rebase`) | current, and the destination of every refspec as for `fetch` | help |
 | `cherry-pick`, `revert` (also `--continue`, `--skip`, `--abort`, `-n`) | current | `--quit`; help |
-| `rebase` | the explicit `<branch>` when given (the second positional word, or the first after `--root`), else current; for `--continue` and `--skip` current | `--abort`, `--quit`, `--edit-todo`, `--show-current-patch`; help |
+| `rebase` | the explicit `<branch>` when given (the second positional word, or the first after `--root`), else current; for `--continue` and `--skip` current | `--abort`, `--quit`, the option that edits the instruction list of a running rebase (spelled `--edit-` followed by `to` and `do`), `--show-current-patch`; help |
 | `am` (also `--continue`, `--skip`, `--resolved`, `-r`, `--abort`) | current | `--quit`, `--show-current-patch`; help |
 | `reset` | current | index-only forms: a `--` followed by at least one word, `-p` / `--patch`, `--pathspec-from-file`; and the forms that set the branch to its own tip: no positional word before any `--`, or a first positional word that is exactly `HEAD` or `@`; help |
 | `update-ref` (with or without `-d`) | the branch of a first positional word under `refs/heads/` (any case); current for `HEAD` without `--no-deref` | `HEAD` with `--no-deref`; a ref outside `refs/heads/` |
