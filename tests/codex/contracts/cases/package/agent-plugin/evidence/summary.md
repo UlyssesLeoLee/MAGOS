@@ -11,7 +11,7 @@
 - Plugin discovery (skills/<dir>/SKILL.md, one level) finds exactly the eight command adapters and the git-orchestrator entry skill; the root orchestrator SKILL.md is package content they read, not a plugin skill.
 - Every discovered skill, and the root SKILL.md, meets Agent Skills: strict YAML, allowed fields only, name equal to its directory (the root as multi-agent-git-orchestrator), description 1-1024, string-only metadata, no metadata.hermes, and double-quoted description, compatibility, and metadata values.
 - Every ../ reference in an adapter resolves to a file inside the plugin root, and the package holds no symbolic links or junctions.
-- mcp.json is absent (MAGOS ships no MCP servers) or valid.
+- mcp.json is valid when present (the package ships one, which declares the approval server magos that Codex starts): exactly $schema (1.0.0) and an mcpServers object, each server an object with only the keys Codex accepts, and a server that starts a command of type stdio.
 
 ## Contract checks
 
@@ -21,7 +21,7 @@
 - PASS `plugin: skills/ discovery (§7.1) finds exactly the eight command adapters and git-orchestrator`
 - PASS `plugin: every discovered skill meets Agent Skills (strict YAML, allowed fields, name = directory, string-only metadata)`
 - PASS `plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules`
-- PASS `plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true (Claude Code shows only the commands/ set); the entry skill and the root SKILL.md set neither`
+- PASS `plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true, the entry skill sets user-invocable: false only (Claude Code lists the eight commands/ entries alone), and the root SKILL.md sets neither`
 - PASS `plugin: package paths stay inside the plugin root and include no links (§4.1)`
 - PASS `plugin: mcp.json is absent or valid (§7.2)`
 

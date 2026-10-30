@@ -232,7 +232,7 @@ Fallback when no native isolation exists:
 git worktree add <path> -b agent/<task-id>-<short-name> <base-branch>
 ```
 
-Register the lane's manifest first (`magos_guard.py plan --branch agent/<task-id>-<short-name> --paths <files>`) as its own step, then create exactly that branch; release the claim when the lane is integrated or abandoned. When the guard denies the creation, report the denial and ask the user first: an override needs the user's approval, given as a click in Claude Code's own permission dialog or in the user's own terminal (`references/lane-split.md` sections 6 and 10).
+Register the lane's manifest first (`magos_guard.py plan --branch agent/<task-id>-<short-name> --paths <files>`) as its own step, then create exactly that branch; release the claim when the lane is integrated or abandoned. When the guard denies the creation, report the denial and ask the user first: an override needs the user's approval, given as a click in the host's own approval prompt (Claude Code's permission dialog, Codex's `magos_approve` dialog, Hermes' approval prompt) or in the user's own terminal (`references/lane-split.md` sections 6 and 10).
 
 Keep unrelated refactors outside the lane unless approved as separate scope.
 

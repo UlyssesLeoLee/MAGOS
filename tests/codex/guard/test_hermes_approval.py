@@ -1,7 +1,8 @@
 """1.0.8 approval in Hermes, the guard side: `hook hermes pre-tool --hermes-gate <gate>` (the hook the MAGOS Hermes plugin runs) answers one
 direct invocation of this guard with the modify and approve of Hermes approval, reads the Hermes config, keeps the directory of the call,
 records route hermes, and the Hermes entry under hooks: keeps the 1.0.7 denial; install --host hermes and doctor name the route
-(TC-650 to TC-667, TC-672 to TC-676, TC-678, TC-681, TC-698, TC-699).  The plugin's own callbacks are tested in test_hermes_plugin.py."""
+(TC-650 to TC-667, TC-672 to TC-676, TC-678, TC-681, TC-698, TC-699, TC-723 to TC-725).  The plugin's own callbacks are tested in
+test_hermes_plugin.py."""
 from __future__ import annotations
 
 import hashlib
@@ -292,6 +293,41 @@ def test_the_directory_must_come_from_the_call(repo, elsewhere, tmp_path, isolat
             assert os.path.samefile(rec_of(approvals(repo), command)["where"], str(common(repo))), (workdir, cmd)
 
 
+def test_the_workdir_must_be_an_existing_absolute_directory(repo, elsewhere, tmp_path):
+    """TC-723: a workdir is an existing directory named by an absolute path; on Windows a drive-less /x names another directory in Git Bash
+    (its own root) than in Python (the current drive), so it names none."""
+    bad = ["/Users/x/repo", P(tmp_path / "no-such-dir")] + ([P(repo.path)[2:]] if WIN else [])  # the last: the repository without its drive
+    for workdir in bad:
+        shape(H(arm_cmd(repo), elsewhere, workdir=workdir), "DIRECTORY")
+    assert not approvals(repo).exists()
+    for workdir in [P(repo.path)] + ([str(repo.path).replace("/", "\\")] if WIN else []):
+        command, _m, _k = asked(H(arm_cmd(repo), elsewhere, workdir=workdir))
+        assert os.path.samefile(rec_of(approvals(repo), command)["where"], str(common(repo))), workdir
+
+
+def test_an_interpreter_word_with_a_tilde_is_refused(repo, elsewhere, monkeypatch):
+    """TC-724: a first word that starts with ~ is refused before it is expanded, also when it expands to the hook's own interpreter: without a
+    workdir Hermes names no directory (APPROVAL_DIRECTORY), Claude Code takes no ~ interpreter (APPROVAL_INTERPRETER)."""
+    where, name = os.path.split(os.path.abspath(sys.executable))
+    monkeypatch.setenv("HOME", where)
+    monkeypatch.setenv("USERPROFILE", where)
+    word = "~/" + name
+    assert G.same_file(os.path.expanduser(word), sys.executable)  # the word names the interpreter that runs the hook
+    cmd = " ".join([word, QS, "--repo", q(repo.path), "--lang", "en", "arm"])
+    assert G.protected(cmd) == ("always", G._USER_MSG)
+    shape(H(cmd, elsewhere), "DIRECTORY")
+    claude = {"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": str(repo.path), "tool_use_id": "toolu_1", "session_id": "s-1"}
+    head = G.T("en", "protected_shape", why=G._USER_MSG, cmd=G.guard_cmd())
+    assert G.approval_answer(claude, str(repo.path), [], "en") == ("PROTECTED", head + "\n[APPROVAL_INTERPRETER]")
+    assert G.decide(claude, "en", "claude") == ("PROTECTED", head + "\n[APPROVAL_INTERPRETER]")
+    top = os.path.dirname(os.path.dirname(os.path.abspath(S)))  # a ~ script word that names this guard: no directory either
+    monkeypatch.setenv("HOME", top)
+    monkeypatch.setenv("USERPROFILE", top)
+    assert G.this_guard(os.path.expanduser("~/scripts/magos_guard.py"))
+    shape(H(" ".join([PY, "~/scripts/magos_guard.py", "--repo", q(repo.path), "--lang", "en", "arm"]), elsewhere), "DIRECTORY")
+    assert not approvals(repo).exists()
+
+
 def test_a_command_that_carries_approval_is_always_denied_in_hermes(repo, elsewhere):
     given = G.T("en", "approval_given_hermes", why=G._USER_MSG)
     command, _m, _k = asked(H(arm_cmd(repo), elsewhere))
@@ -506,6 +542,17 @@ def test_the_hermes_route_reader(hermes_env):
             allow.write_text(content, encoding="utf-8")
         r = G.hermes_route()
         assert r["entry"] is True and r["consented"] is want, (content, r)
+
+
+def test_a_flow_list_ends_at_its_first_bracket(hermes_env):
+    """TC-725: a flow list ends at its first ]; a ] in the comment after it is no part of the last name, and a name that holds a ] is unread."""
+    for raw, want in (("[magos] # see [docs]", ["magos"]), ("[magos, other] # [x]", ["magos", "other"]), ("[magos] # note", ["magos"]),
+                      ('["a]b"]', None)):
+        assert G._hermes_list(raw, []) == want, raw
+    make_plugin(hermes_env)
+    put_config(hermes_env, "plugins:\n  enabled: [magos] # see [docs]\n")
+    r = G.hermes_route()
+    assert r["plugin"] is True and r["version"] == G.GUARD_VERSION and r["enabled"] is True, r
 
 
 # ---- texts, the other hosts and the command side (TC-674 to TC-676) -----------------------------------------------------------------------

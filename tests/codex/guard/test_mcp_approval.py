@@ -1,6 +1,6 @@
 """1.0.8 approval in Codex: the MCP approval server (`mcp`, its tool magos_approve, the elicitation form, the snapshot, the in-process run), the
 Codex hook's denial that names the tool and its exact arguments, the deny of `mcp` on every host, the subcommand slot of a guard run, the
-generated [mcp_servers.magos] entry and the Codex lines of doctor (TC-600 to TC-649, TC-683 to TC-697, TC-701 to TC-705)."""
+generated [mcp_servers.magos] entry and the Codex lines of doctor (TC-600 to TC-649, TC-683 to TC-697, TC-701 to TC-705, TC-721, TC-722)."""
 from __future__ import annotations
 
 import io
@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from conftest import SH, G, ROOT, SCRIPT, Result, crashed, retried, run, time_budget
-from test_approval import LAUNCHER, P, QS, S, approvals, armed, audit_lines, common, new_repo, no_file_holds, sha
+from test_approval import BARE_PY, LAUNCHER, P, QS, REAL_WHICH, S, approvals, armed, audit_lines, common, new_repo, no_file_holds, sha
 from test_hook import denied
 
 WIN = sys.platform == "win32"
@@ -129,6 +129,14 @@ def hosts():
     yield make
     for h in made:
         h.close()
+
+
+@pytest.fixture
+def bare_exe(monkeypatch):
+    """On Windows the Codex hook maps a command whose bare py / python resolves (shutil.which in its own PATH) to an .exe only (Recognition 3):
+    pin those names to an .exe, as test_approval does for the Claude Code hook, so that the mapping does not depend on the runner's PATH."""
+    if WIN:
+        monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "C:/Windows/py.exe" if BARE_PY.fullmatch(name) else REAL_WHICH(name, *a, **k))
 
 
 def recording(log, code=0, text="did write", files_of=None):
@@ -868,7 +876,7 @@ def test_every_host_denies_a_tool_command_that_starts_mcp(repo, tmp_path, isolat
     assert not store_exists(approvals(repo), isolated_env / ".magos" / "approvals")
 
 
-def test_the_codex_denial_names_the_tool_and_its_exact_arguments(repo, tmp_path):
+def test_the_codex_denial_names_the_tool_and_its_exact_arguments(repo, tmp_path, bare_exe):
     r, fp = P(repo.path), "0123456789ab"
     arm = ({"subcommand": "arm", "repo": r}, ["--repo=" + r, "--lang=en", "arm"])
     outside = tmp_path / "outside"
@@ -901,6 +909,63 @@ def test_the_codex_denial_of_a_form_the_tool_does_not_take(repo, isolated_env, t
                 "py -3 %s --repo /no/such arm" % QS, 'py -3 %s arm "$R"' % QS):
         assert denied(hook(repo.path, cmd)) == form, cmd
     assert not store_exists(approvals(repo), isolated_env / ".magos" / "approvals")
+
+
+def test_the_codex_denial_maps_only_one_plain_invocation(repo, isolated_env, tmp_path, bare_exe):
+    """TC-721: a cd, an environment assignment, another script, a second command or an install through a copy runs something else than the
+    tool would run in the session directory: none of them maps onto magos_approve."""
+    ra, rb = P(repo.path), P(new_repo(tmp_path / "rB").path)
+    other = tmp_path / "other" / "magos_guard.py"
+    other.parent.mkdir()
+    other.write_bytes(SCRIPT.read_bytes() + b"#")
+    copy = tmp_path / "copy" / "scripts" / "magos_guard.py"
+    copy.parent.mkdir(parents=True)
+    copy.write_bytes(SCRIPT.read_bytes())
+    home, missing = P(tmp_path / "x-home"), P(tmp_path / "missing" / "magos_guard.py")
+    form = G.T("en", "protected_codex_form", why=G._USER_MSG, cmd=G.guard_cmd())
+    for cmd in ("cd '%s'; py -3 %s arm" % (rb, QS), "Set-Location '%s'; py -3 %s disarm" % (rb, QS), "pushd '%s'; py -3 %s arm" % (rb, QS),
+                ["bash", "-lc", "cd '%s' && python3 %s arm" % (rb, QS)], "env -C '%s' python3 %s arm" % (rb, QS),
+                "MAGOS_HOME='%s' python3 %s install --host codex" % (home, QS), "export MAGOS_HOME='%s'; python3 %s install --host codex" % (home, QS),
+                "$env:MAGOS_HOME='%s'; py -3 %s install --host codex" % (home, QS), "py -3 '%s' arm" % P(other),
+                "py -3 '%s' install --host codex" % P(copy), "py -3 '%s' arm" % missing):
+        assert G.protected(cmd if isinstance(cmd, str) else cmd[2]) == ("always", G._USER_MSG), cmd
+        assert G.decide(body(repo.path, cmd), "en", "codex") == ("PROTECTED", form), cmd
+    there = codex_text({"subcommand": "arm", "repo": rb}, ["--repo=" + rb, "--lang=en", "arm"])
+    here = codex_text({"subcommand": "arm", "repo": ra}, ["--repo=" + ra, "--lang=en", "arm"])
+    assert G.decide(body(repo.path, "py -3 %s --repo '%s' arm" % (QS, rb)), "en", "codex") == ("PROTECTED", there)
+    assert G.decide(body(repo.path, "py -3 %s arm" % QS), "en", "codex") == ("PROTECTED", here)
+    assert not store_exists(approvals(repo), tmp_path / "rB" / ".git" / "magos", isolated_env / ".magos" / "approvals", home)
+
+
+@pytest.mark.parametrize("half", ["posix", "windows"])
+def test_a_posix_backslash_stays_a_file_name_character(tmp_path, monkeypatch, half):
+    """TC-722: on POSIX a backslash is a character of a file name, so a directory reading keeps it; on Windows it is a separator, written /."""
+    if half == "posix":
+        if os.name == "nt":
+            pytest.skip("a backslash is a separator on Windows")
+        d = str(tmp_path / "a\\b")
+        new_repo(d)
+        assert os.path.isdir(d) and not os.path.isdir(str(tmp_path / "a" / "b"))
+        assert G._abs_dir(d) == d
+        v, errors = G.mcp_validate({"subcommand": "arm", "repo": d}, "en")
+        assert errors is None and v["repo"] == d and v["args"] == {"subcommand": "arm", "repo": d} and v["argv"][0] == "--repo=" + d, errors
+        assert v["g"] is not None and "\\" in v["g"].top and os.path.samefile(v["g"].top, d)  # the repository opened is that directory
+        assert G.mcp_arguments(G.parse_quiet(["arm"]), d) == {"subcommand": "arm", "repo": d}
+        hh = str(tmp_path / "he\\rmes")
+        plugin = Path(hh) / "plugins" / "magos"
+        (plugin / "scripts").mkdir(parents=True)
+        (plugin / "scripts" / "magos_guard.py").write_bytes(SCRIPT.read_bytes())
+        (plugin / "__init__.py").write_bytes((ROOT / "__init__.py").read_bytes())
+        monkeypatch.setenv("HERMES_HOME", hh)
+        r = G.hermes_route()
+        assert r["dir"] == str(plugin) and r["plugin"] is True and r["version"] == G.GUARD_VERSION and r["callbacks"] is True, r
+    else:
+        if os.name != "nt":
+            pytest.skip("a backslash is a file name character on POSIX")
+        d = tmp_path / "x"
+        d.mkdir()
+        assert G._abs_dir(str(d).replace("/", "\\")) == P(d)
+        assert G.mcp_arguments(G.parse_quiet(["arm"]), str(d).replace("/", "\\")) == {"subcommand": "arm", "repo": P(d)}
 
 
 def test_no_magos_hook_stands_before_the_tool(repo, tmp_path, monkeypatch):
@@ -1228,7 +1293,7 @@ def test_audit_fields_name_the_route():
 
 CODEX_KEYS = ("protected_codex", "protected_codex_form", "protected_codex_never", "protected_mcp", "mcp_ask", "mcp_approve_field", "mcp_where_repo",
               "mcp_where_home", "mcp_ran", "mcp_refused", "mcp_unticked", "mcp_late", "mcp_busy", "mcp_no_form", "mcp_terminal", "mcp_invalid",
-              "mcp_failed", "protected_slot", "ready_own", "protected_long")
+              "mcp_failed", "protected_slot", "ready_own", "protected_long", "protected_deep")
 
 
 def test_messages_of_the_codex_route(repo, guard, tmp_path):
@@ -1240,6 +1305,8 @@ def test_messages_of_the_codex_route(repo, guard, tmp_path):
         for lang in ("zh", "en"):
             text = G.T(lang, key, **{f: "V" for f in fields[0]})
             assert "{" not in text and "}" not in text, (key, lang)
+    for lang in ("zh", "en"):  # the depth limit the hook reads to (TC-716)
+        assert "3" in G.T(lang, "protected_deep") and "MAGOS" in G.T(lang, "protected_deep"), lang
     for lang, terminal in (("en", "real terminal"), ("zh", "真实终端")):
         need = G.T(lang, "need_tty")
         assert terminal in need and "Claude Code" in need and "Codex" in need and "Hermes" in need, need
@@ -1372,12 +1439,15 @@ def test_the_codex_denial_under_policy_never_names_only_the_terminal(repo):
 
 
 @pytest.mark.skipif(not WIN, reason="Codex runs a string command through powershell.exe on Windows only")
-def test_the_codex_mapping_reads_a_windows_command_as_powershell(repo):
+def test_the_codex_mapping_reads_a_windows_command_as_powershell(repo, bare_exe):
     r = P(repo.path)
     back = str(SCRIPT).replace("/", "\\")
-    for cmd, sub in (("py -3 %s --repo %s arm" % (back, str(repo.path).replace("/", "\\")), "arm"), ("& '%s' disarm" % S, "disarm")):
+    for cmd, sub in (("py -3 %s --repo %s arm" % (back, str(repo.path).replace("/", "\\")), "arm"), ("& py -3 '%s' disarm" % S, "disarm")):
         assert G.protected(cmd) == ("always", G._USER_MSG), cmd
         assert denied(hook(repo.path, cmd)) == codex_text({"subcommand": sub, "repo": r}, ["--repo=" + r, "--lang=en", sub]), cmd
+    script = "& '%s' disarm" % S  # the script run by its file association: no interpreter stands before it
+    assert G.protected(script) == ("always", G._USER_MSG)
+    assert denied(hook(repo.path, script)) == G.T("en", "protected_codex_form", why=G._USER_MSG, cmd=G.guard_cmd())
 
 
 def test_a_real_codex_payload_gets_a_deny_object(repo):

@@ -286,7 +286,8 @@ def test_the_gate_probe_fails_closed(monkeypatch):
         patch.setenv("HERMES_PLUGIN_HOST_PROCESS", "1")  # a plugin-host process: the probes would read another process
         assert mod.gate() == "absent"
     with monkeypatch.context() as patch:
-        patch.setitem(sys.modules, "tools", None)  # no tools package at all: the import fails
+        stub_hermes(patch)  # a valid hermes_cli, so the probe reaches the tools import
+        patch.setitem(sys.modules, "tools", None)  # no tools package at all: that import alone fails
         assert mod.gate() == "absent"
 
 
@@ -392,3 +393,37 @@ def test_a_gate_that_would_not_ask_never_gets_a_question(tmp_path, monkeypatch, 
     out = consume(callbacks, cmd, call_kw("y1"), lambda message, rule_key: True)  # a gate that would approve without a human
     assert out.blocked == G.T("en", "protected_hermes_noask", why=G._USER_MSG, how=G.T("en", how)), out
     assert out.asked == [] and out.runs is None and not approvals(r).exists() and mod._KEPT == {}
+
+
+# ---- TC-727: a plugin-host process keeps no mark, and its approval callback answers nothing -----------------------------------------------
+def test_a_plugin_host_process_keeps_no_mark(tmp_path, monkeypatch):
+    mod, (verdict, approval) = plugin()
+    r = new_repo(tmp_path / "r")
+    r.git("config", "magos.approval", "auto-safe")
+    R = str(r.path).replace("\\", "/")
+    monkeypatch.chdir(r.path)  # the payload's directory: this repository, not the checkout the tests run in
+    monkeypatch.setenv("HERMES_PLUGIN_HOST_PROCESS", "1")  # the real gate probe answers absent
+
+    def host(callback, args, kw):
+        """The plugin-host round trip: each callback is its own call into the host and gets a freshly decoded copy of the arguments."""
+        return callback(tool_name="terminal", args=json.loads(json.dumps(args)), **json.loads(json.dumps(kw)))
+
+    commands = ["%s %s version" % (PY, QS), "%s %s --repo '%s' plan --branch agent/x --paths src" % (PY, QS, R),
+                "git add scripts/magos_guard.py", "%s %s --repo '%s' arm" % (PY, QS, R), "%s %s --repo '%s' disarm" % (PY, QS, R)]
+    verdicts = []
+    for number, command in enumerate(commands):
+        args, kw = {"command": command}, call_kw("host_%d" % number)
+        verdicts.append(host(verdict, args, kw))
+        assert mod._KEPT == {}, command  # no args object would ever take a mark
+        assert host(approval, args, kw) is None, command  # never the block of an unprepared approval
+    assert verdicts[:3] == [None, None, None], verdicts
+    assert verdicts[3]["action"] == "modify" and "--approval=" in verdicts[3]["args"]["command"], verdicts[3]  # auto-safe: no question
+    assert [p.suffix for p in approvals(r).iterdir()] == [".json"]  # the arm's token, minted
+    assert verdicts[4] == {"action": "block",
+                           "message": G.T("en", "protected_hermes_noask", why=G._USER_MSG, how=G.T("en", "hermes_how_gate"))}, verdicts[4]
+
+    # Hermes's own process: both callbacks get one args object, whose mark the approval callback takes.
+    monkeypatch.delenv("HERMES_PLUGIN_HOST_PROCESS")
+    args, kw = {"command": commands[0]}, call_kw("own")
+    assert verdict(tool_name="terminal", args=args, **kw) is None and len(mod._KEPT) == 1
+    assert approval(tool_name="terminal", args=args, **kw) is None and mod._KEPT == {}

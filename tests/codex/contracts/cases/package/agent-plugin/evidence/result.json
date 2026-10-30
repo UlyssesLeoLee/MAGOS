@@ -36,7 +36,7 @@
       "missing": []
     },
     {
-      "file": "plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true (Claude Code shows only the commands/ set); the entry skill and the root SKILL.md set neither",
+      "file": "plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true, the entry skill sets user-invocable: false only (Claude Code lists the eight commands/ entries alone), and the root SKILL.md sets neither",
       "passed": true,
       "missing": []
     },

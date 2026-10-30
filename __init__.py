@@ -14,8 +14,9 @@ The module also runs the MAGOS guard on every call of Hermes's ``terminal`` tool
 callbacks. The verdict runs this plugin's own ``scripts/magos_guard.py`` (``hook hermes pre-tool --hermes-gate``) and
 turns its answer into a Hermes directive: nothing, a block, or a modify that hands Hermes the command the guard rebuilt
 with a one-time approval token. For a user-only guard command the approval callback then hands Hermes the guard's
-question, so Hermes asks the user in its own approval prompt before the rewritten command runs. A guard that fails
-blocks the call. MAGOS_GUARD=off in Hermes's environment, or ``hermes plugins disable magos``, turns the guard off.
+question, so Hermes asks the user in its own approval prompt before the rewritten command runs; in a plugin-host
+process the guard asks no question, and the approval callback hands Hermes nothing. A guard that fails blocks the
+call. MAGOS_GUARD=off in Hermes's environment, or ``hermes plugins disable magos``, turns the guard off.
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ GUARD = Path(__file__).parent / "scripts" / "magos_guard.py"  # the guard this p
 GUARD_TOOLS = ("terminal",)  # the Hermes tool that runs shell commands
 GUARD_LIMIT_S = 25  # the guard's run limit, below Hermes's 30 s limit for a pre_tool_call callback
 KEPT_S = 120  # a verdict's mark older than this is dropped
-_KEPT = {}  # id(args) of a call -> (time.monotonic() of the verdict, that args object, the approve directive or None)
+_KEPT = {}  # Hermes's own process only: id(args) of a call -> (time.monotonic() of the verdict, that args object, its approve or None)
 _KEPT_LOCK = threading.Lock()
 _GUARD_WORD = re.compile(r"magos_guard", re.I)
 _QUOTING = re.compile(r"[\\`^'\"]")  # removed before _GUARD_WORD is looked for, so magos_gu""ard still names the guard
@@ -97,10 +98,17 @@ def _off():
     return (os.environ.get("MAGOS_GUARD") or "").strip().lower() == "off"
 
 
+def _host_process():
+    """A Hermes plugin-host process (HERMES_PLUGIN_HOST_PROCESS set, plugins.isolation: host): each callback is its own call into
+    the host and gets a freshly decoded copy of the arguments, so the two callbacks of one call share no args object."""
+    return bool(os.environ.get("HERMES_PLUGIN_HOST_PROCESS"))
+
+
 def _key(args):
-    """The call a mark belongs to: the args object itself.  Hermes hands both callbacks of one call the same args dict (each callback gets
-    a shallow copy of one keyword dict) and every call a dict of its own, so two calls with equal ids and equal commands never share a
-    mark.  The mark holds the object, so its id is not reused while the mark lives."""
+    """The call a mark belongs to in Hermes's own process: the args object itself.  Hermes hands both callbacks of one call
+    the same args dict (each callback gets a shallow copy of one keyword dict) and every call a dict of its own, so two calls
+    with equal ids and equal commands never share a mark.  The mark holds the object, so its id is not reused while the mark
+    lives."""
     return id(args)
 
 
@@ -117,7 +125,7 @@ def gate():
     directive (request_tool_approval without rule_key, or _PreToolCallDirective without a rule_key field), or an import
     or probe that raised. bypass: the gate would answer without a human (yolo in any form, approvals.mode off, or no
     interactive CLI, gateway or ask bridge). ask otherwise. These names are Hermes internals: read, never patched."""
-    if os.environ.get("HERMES_PLUGIN_HOST_PROCESS"):
+    if _host_process():
         return "absent"
     try:
         from hermes_cli import plugins as hermes_plugins
@@ -190,7 +198,9 @@ def _answer(answer):
 
 
 def verdict(tool_name="", args=None, **kw):
-    """The first pre_tool_call callback: run the guard on a terminal call and return its directive."""
+    """The first pre_tool_call callback: run the guard on a terminal call and return its directive.  In Hermes's own process
+    the call keeps a mark for the approval callback; a plugin-host process keeps none (gate() is absent there, so the guard
+    answers with no approve part)."""
     if tool_name not in GUARD_TOOLS or _off():
         return None
     approve = None
@@ -211,6 +221,8 @@ def verdict(tool_name="", args=None, **kw):
         directive = _block(_text("start", err))
     except Exception as err:  # noqa: BLE001 - nothing raises out of the callback: an unexpected failure blocks the call
         directive = _block(_text("failed", "%s: %s" % (type(err).__name__, err)))
+    if _host_process():  # no args object reaches the approval callback: a mark here would never be taken
+        return directive
     with _KEPT_LOCK:  # a mark for every call answered here: a question keeps its approve directive, every other answer None
         now = time.monotonic()
         _prune(now)
@@ -219,8 +231,9 @@ def verdict(tool_name="", args=None, **kw):
 
 
 def approval(tool_name="", args=None, **kw):
-    """The second pre_tool_call callback: the approve directive the verdict kept for this very call, once."""
-    if tool_name not in GUARD_TOOLS or _off():
+    """The second pre_tool_call callback: the approve directive the verdict kept for this very call, once.  Nothing in a
+    plugin-host process, where the verdict's directive is the whole answer."""
+    if tool_name not in GUARD_TOOLS or _off() or _host_process():
         return None
     with _KEPT_LOCK:
         _prune(time.monotonic())

@@ -241,6 +241,11 @@ M = {
                        "没有运行任何东西。",
                        "MAGOS DENIES: this command is longer than the hook reads ({n} characters) and names MAGOS, so the hook cannot tell what it "
                        "runs. Run the guard command as a command of its own, shorter than {n} characters. Nothing ran."),
+    "protected_deep": ("MAGOS 拒绝：此命令在超过 3 层的嵌套文本（子 shell、由 shell 读取的 here-document、引号中的守卫命令、git 别名的值）里提到了 MAGOS，"
+                       "钩子只读到第 3 层，无法判断它会运行什么。请在较浅的层级（最多 3 层）执行守卫命令。没有运行任何东西。",
+                       "MAGOS DENIES: this command names MAGOS in text nested deeper than the hook reads (3 levels of child shells, here-documents a "
+                       "shell reads, quoted guard commands and git alias values), so the hook cannot tell what it runs. Run the guard command at a "
+                       "shallower level, 3 at most. Nothing ran."),
     "mcp_ask": ("MAGOS：批准用户专属的守卫命令 {sub} 吗？\n{where}\n{what}\n先勾选 Approve，再点击 Accept（接受）：这只批准这一项，只执行一次。其他任何回答都不执行。",
                 "MAGOS: approve the user-only guard command {sub}?\n{where}\n{what}\nTick Approve, then Accept: that approves exactly this, once. "
                 "Anything else runs nothing."),
@@ -1697,16 +1702,97 @@ def _script(path, here):
     return None
 
 
+_HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")  # a here-document operator and its delimiter
+_DOC_READERS = frozenset(_SHELLS + ("powershell", "pwsh", "source", "iex", "invoke-expression"))  # a program that reads its input as commands
+_DOC_MARK = re.compile(r"[\\'\"`$()#<]")  # the characters _doc_operator acts on; it passes over every other one
+
+
+def _doc_operator(line, stack):
+    """The first here-document operator of `line` (a _HEREDOC match) that stands outside quotes and outside a comment, or None.  `stack` holds
+    what is open where the line starts and is left as it stands at its end, so a quote or a substitution goes on over a newline: ' and $'
+    (ANSI-C) quotes, " (a $( .. ) or backtick inside it holds commands again), ( for $( .. ) and a subshell, ` for a backtick substitution,
+    and A / a for an arithmetic $(( .. )) or (( .. )) and the parentheses inside it, where << shifts.  A backslash outside single quotes
+    takes the next character literally, a # that starts a word of a command starts a comment, and <<< is a here-string."""
+    found, i, n = None, 0, len(line)
+    while i < n:
+        if stack and stack[-1] == "'":  # a single-quoted string ends at the next quote, on this line or a later one
+            j = line.find("'", i)
+            if j < 0:
+                break
+            stack.pop()
+            i = j + 1
+            continue
+        mark = _DOC_MARK.search(line, i)
+        if mark is None:
+            break
+        i = mark.start()
+        top, c, step = (stack[-1] if stack else ""), line[i], 1
+        if top in ("A", "a"):
+            if c == "(":
+                stack.append("a")
+            elif c == ")":
+                step = 2 if top == "A" and line[i + 1:i + 2] == ")" else 1
+                stack.pop()
+        elif c == "\\":
+            step = 2
+        elif top in ('"', "$'"):
+            if c == top[-1]:
+                stack.pop()
+            elif top == '"' and c == "`":
+                stack.append("`")
+            elif top == '"' and line.startswith("$(", i):
+                stack.append("A" if line.startswith("$((", i) else "(")
+                step = 3 if stack[-1] == "A" else 2
+        elif c == "#" and (i == 0 or line[i - 1] in " \t;&|()<>"):
+            break
+        elif c in "'\"":
+            stack.append(c)
+        elif c == "$" and line[i + 1:i + 2] in ("'", '"'):
+            stack.append("$'" if line[i + 1] == "'" else '"')
+            step = 2
+        elif line.startswith("$((", i) or line.startswith("((", i):
+            stack.append("A")
+            step = 3 if c == "$" else 2
+        elif c == "(":
+            stack.append("(")
+        elif c == ")":
+            if top == "(":
+                stack.pop()
+        elif c == "`":
+            if top == "`":
+                stack.pop()
+            else:
+                stack.append("`")
+        elif line.startswith("<<<", i):
+            step = 3
+        elif line.startswith("<<", i):
+            m = _HEREDOC.match(line, i)
+            found = found or m
+            step = m.end() - i if m else 2
+        i += step
+    return found
+
+
 def _heredocs(cmd, every=None):
-    """-> (command text without heredoc bodies, [bodies fed to a shell]).  A body fed to cat or a file is data, not a command.  `every`, when a
-    list is given, receives every body: an `update-ref --stdin` reads them as instructions."""
-    lines, out, bodies, k = cmd.split("\n"), [], [], 0
+    """-> (command text without heredoc bodies, [bodies fed to a shell]).  A here-document starts at a << that stands outside quotes and
+    comments (_doc_operator, which carries what is open from line to line); its body is commands when a word of its line, or of the first
+    line after the body when its line ends with a pipe, names a POSIX shell, PowerShell, source, iex or Invoke-Expression, read like a
+    program word (`bash <<E`, `"/bin/bash" <<E`, `cat <<E | sh`, `cat <<E |` with `bash` after the body).  A body fed to cat, a file, git
+    commit -F - or an interpreter is data.  `every`, when a list is given, receives every body: an `update-ref --stdin` reads them as
+    instructions."""
+    if "<<" not in cmd:
+        return cmd, []
+    lines, out, bodies, k, stack = cmd.split("\n"), [], [], 0, []
+    last = max(n for n, line in enumerate(lines) if "<<" in line)  # no operator after this line: the lines after it are read as they are
     while k < len(lines):
+        if k > last:
+            out += lines[k:]
+            break
         line = lines[k]
         out.append(line)
         k += 1
-        m = re.search(r"<<(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2", line)
-        if m and "<<<" not in line:
+        m = _doc_operator(line, stack)
+        if m:
             body = []
             while k < len(lines) and (lines[k].strip("\t") if m.group(1) else lines[k]).rstrip("\r") != m.group(3):
                 body.append(lines[k])
@@ -1714,7 +1800,9 @@ def _heredocs(cmd, every=None):
             k += 1
             if every is not None:
                 every.append("\n".join(body))
-            if re.search(r"(?:^|[|;&\s])(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|powershell|pwsh|source|iex|invoke-expression)\b", line, re.I):
+            owners = line + ("\n" + lines[k] if k < len(lines) and line.rstrip().endswith("|") else "")
+            words = re.split(r"[\s|;&()<>]+", owners)  # a program word: its base name as written (a backslash separates) and unescaped
+            if any(_exe(x) in _DOC_READERS for w in words for x in (re.sub(r"[`^'\"]", "", w), _bare(w))):
                 bodies.append("\n".join(body))
     return "\n".join(out), bodies
 
@@ -2575,6 +2663,7 @@ AGENT_SUBS = ("plan", "check", "list", "release", "doctor", "version", "set-plan
 _SLOT_MSG = "the guard runs with a subcommand that is no plain word an agent may run"
 _LONG_MSG = "the command is too long to inspect and names MAGOS"
 _LONG_HINT = re.compile(r"magos|run-guard", re.I)  # a text too long to read that may run the guard: denied on every host (protected)
+_DEEP_MSG = "the command names MAGOS in text nested deeper than the hook reads"  # a text past depth 3 that names MAGOS (_LONG_HINT)
 MCP_ARGS = ("subcommand", "repo", "fingerprint", "reason", "host", "dry_run")  # the arguments of magos_approve, in the order the texts name them
 _MCP_TAKES = {"override": ("repo", "fingerprint", "reason"), "arm": ("repo", "dry_run"), "disarm": ("repo", "dry_run"), "install": ("repo", "host", "dry_run")}
 _HERMES_APPROVAL_TOOLS = {"terminal": "bash"}  # Hermes runs every terminal command with bash (Git Bash on Windows)
@@ -2588,43 +2677,63 @@ def _bare(word):
     return re.sub(r"[\\`^'\"]", "", word)
 
 
+_GUARD_NAMES = ("magos_guard", "run-guard", "magos_~", "run-gu~")  # in a lower-case folded word: it may name the guard (_guard_word)
+_GUARD_HINT = re.compile("|".join(re.escape(w) for w in _GUARD_NAMES), re.I)
+_LAUNCHER_NAME = re.compile(r"run-gu(?:ard|~[0-9]+)(?:\.cmd)?", re.I)  # the base name of the launcher, also its Windows 8.3 short name
+_SCRIPT_SHORT = re.compile(r"magos_~[0-9]+(?:\.py)?", re.I)  # the Windows 8.3 short name of the script
+_WILD = re.compile(r"[{}*?\[]")  # a brace expansion or a glob: the shell makes words of its own from it
+
+
 def _guard_word(word):
-    """'launcher' for a word whose case-folded base name (after the last / or \\) is run-guard.cmd or run-guard, 'script' for a word ending in
-    magos_guard or magos_guard.py, else None; either reading of the word counts."""
-    for w in (word, _bare(word)):
-        if re.split(r"[\\/]", w)[-1].lower() in ("run-guard.cmd", "run-guard"):
+    """'launcher' for a word whose base name (after the last / or \\) is run-guard.cmd or run-guard, 'script' for a word ending in magos_guard
+    or magos_guard.py, in any case, and so for the Windows 8.3 short names run-gu~<n>[.cmd] and magos_~<n>[.py]; else None.  Three readings
+    of the word count, each without its trailing dots and blanks (Windows drops them when it opens the file): as written, with the escape
+    characters and quotes removed (_bare), and that with every $ removed (the empty $'' and $"" of bash, which the lexer leaves as a lone $)."""
+    bare = _bare(word)
+    folded = bare.replace("$", "")
+    if not _GUARD_HINT.search(folded):  # every reading that names the guard holds one of _GUARD_NAMES in this one
+        return None
+    for w in (word, bare, folded):
+        w = w.rstrip(". ")
+        base = re.split(r"[\\/]", w)[-1]
+        if _LAUNCHER_NAME.fullmatch(base):
             return "launcher"
-        if re.search(r"magos_guard(\.py)?$", w, re.I):
+        if re.search(r"magos_guard(\.py)?$", w, re.I) or _SCRIPT_SHORT.fullmatch(base):
             return "script"
     return None
 
 
-def _guard_slot(words, i, launcher):
-    """The index of the subcommand slot of a guard word whose arguments start at words[i]: the first word after the launcher's leading
-    --strict, the global options in any spelling argparse ever took (--repo and --lang with their value, --json, every --name=value) and a
-    `--` (from Python 3.13 on argparse takes the word after it as the subcommand); len(words) when no word is left.  Any other option is the
-    slot itself (argparse refuses it)."""
-    k = i + 1 if launcher and i < len(words) and _bare(words[i]) == "--strict" else i
-    while k < len(words) and _bare(words[k]).startswith("--"):
-        t = _bare(words[k])
+def _slots(words):
+    """One right-to-left pass over `words` -> nxt, len(words) + 2 entries: nxt[p] is the index of the subcommand slot of a guard word whose
+    arguments start at words[p], the first word from p on that is none of the global options in any spelling argparse ever took (--repo and
+    --lang with their value, --json, every --name=value) and no `--`, which ends them (from Python 3.13 on argparse takes the word after it
+    as the subcommand); len(words) when no word is left.  Any other option is the slot itself (argparse refuses it)."""
+    n = len(words)
+    nxt = [n] * (n + 2)
+    for p in range(n - 1, -1, -1):
+        t = _bare(words[p])
         if t == "--":
-            k += 1
-            break
-        if "=" in t:
-            k += 1
-        elif "--repo".startswith(t) or "--lang".startswith(t):
-            k += 2
-        elif "--json".startswith(t):
-            k += 1
+            nxt[p] = p + 1
+        elif t.startswith("--") and ("=" in t or "--json".startswith(t)):
+            nxt[p] = nxt[p + 1]
+        elif t.startswith("--") and ("--repo".startswith(t) or "--lang".startswith(t)):
+            nxt[p] = nxt[p + 2]
         else:
-            break
-    return min(k, len(words))
+            nxt[p] = p
+    return nxt
 
 
-def _guard_sub(rest, launcher):
-    """The subcommand in `rest` (the words after a guard word) that a table names: a name of _USER_ONLY or HOST_ONLY in either reading of the
-    word in the slot (_guard_slot); None for any other word."""
-    k = _guard_slot(rest, 0, launcher)
+def _guard_slot(words, i, launcher, nxt=None):
+    """The index of the subcommand slot of a guard word whose arguments start at words[i], after the launcher's leading --strict (_slots;
+    `nxt`: the table of `words` when the caller holds it)."""
+    nxt = _slots(words) if nxt is None else nxt
+    return nxt[i + 1 if launcher and i < len(words) and _bare(words[i]) == "--strict" else i]
+
+
+def _guard_sub(rest, launcher, k=None):
+    """The subcommand that a table names in the slot `k` of `rest` (default: the slot of a guard word whose arguments start at rest[0],
+    _guard_slot): a name of _USER_ONLY or HOST_ONLY in either reading of the word there; None for any other word."""
+    k = _guard_slot(rest, 0, launcher) if k is None else k
     if k < len(rest):
         for w in (rest[k], _bare(rest[k])):
             if w in _USER_ONLY or w in HOST_ONLY:
@@ -2632,17 +2741,17 @@ def _guard_sub(rest, launcher):
     return None
 
 
-def _slot_problem(pieces, pdyn, j, how, fed, start, quoted):
-    """Is the guard piece pieces[j], which the shell runs (`how`: "program", "interp" or "weak", _run_marks), denied with _SLOT_MSG?  Yes when
-    a piece after it up to and including its slot is dynamic (an unquoted value word-splits into the slot, a PowerShell array passes several
-    words), when xargs, parallel or find -exec feeds it (`fed`: with -I any word becomes the replaced one), or when the slot is no exact
-    AGENT_SUBS word in either reading: hook, mcp, an empty slot (a later word lands there), a glob, a splat (@a) and every other word.  An
-    option argparse refuses and -h / --help stay allowed (nothing runs), except as an argument of Start-Process or start (`start`), whose
-    own parameters (-ArgumentList, -RedirectStandardInput) stand there.  The slot is judged only for "program" and "interp": a "weak" guard
-    (an interpreter met among the arguments of another program: `ionice -c3 python3 G`, also `grep -n python3 G`) and, in a quoted word read
-    as a command (`quoted`), a "program" guard (a commit message names the script) are denied for a dynamic or fed slot only."""
-    k = _guard_slot(pieces, j + 1, _guard_word(pieces[j]) == "launcher")
-    if any(pdyn[j + 1:k + 1]) or fed:
+def _slot_problem(pieces, odd, j, k, how, fed, start, quoted):
+    """Is the guard piece pieces[j], whose slot is pieces[k] (_guard_slot) and which the shell runs (`how`: "program", "interp" or "weak",
+    _run_marks), denied with _SLOT_MSG?  Yes when a piece after it up to and including its slot is dynamic (an unquoted value word-splits
+    into the slot, a PowerShell array passes several words) or holds a brace expansion or a glob (`--json{,} mcp`, `-* mcp`: `odd[p]` counts
+    such pieces before pieces[p]), when xargs, parallel or find -exec feeds it (`fed`: with -I any word becomes the replaced one), or when
+    the slot is no exact AGENT_SUBS word in either reading: hook, mcp, an empty slot (a later word lands there), a splat (@a) and every other
+    word.  An option argparse refuses and -h / --help stay allowed (nothing runs), except as an argument of Start-Process or start (`start`),
+    whose own parameters (-ArgumentList, -RedirectStandardInput) stand there.  The slot is judged only for "program" and "interp": a "weak"
+    guard (an interpreter met among the arguments of another program: `ionice -c3 python3 G`, also `grep -n python3 G`) and, in a quoted
+    word read as a command (`quoted`), a "program" guard (a commit message names the script) are denied for such a piece or a fed slot only."""
+    if odd[min(k + 1, len(pieces))] > odd[j + 1] or fed:
         return True
     if how == "weak" or (quoted and how != "interp"):
         return False
@@ -2657,12 +2766,12 @@ def _slot_problem(pieces, pdyn, j, how, fed, start, quoted):
 _ARG_FEEDERS = ("xargs", "parallel")  # wrappers that add words read from their input to the command they run (xargs -I replaces any word)
 _FIND_RUN = ("-exec", "-execdir", "-ok", "-okdir")  # find runs the command after these with the paths it found
 _STARTERS = ("start", "start-process", "saps")  # cmd's start and PowerShell's Start-Process: their arguments name a program and its words
-_PY_EXE = re.compile(r"py|pyw|pythonw?|python3(?:\.\d+)?w?")  # the base name of a Python interpreter, as _exe returns it
+_PY_EXE = re.compile(r"pyw?|(?:python|pypy)[\w.-]*")  # the base name of a Python interpreter, as _exe returns it (python3.14t, pypy3, ...)
 # Tools that run a program of an environment, with the word that does it: their words up to the program are those of a wrapper.
 _RUN_TOOLS = {"uv": "run", "uvx": None, "poetry": "run", "pdm": "run", "hatch": "run", "pipenv": "run", "rye": "run", "pixi": "run", "conda": "run",
               "mamba": "run", "micromamba": "run", "pyenv": "exec"}
 _WRAP_VALUE = re.compile(r"[0-9]+(?:\.[0-9]+)?[smhd]?")  # a number or a duration after a wrapper (timeout 30s, nice -n 5)
-_RUN_HINT = re.compile(r"magos_guard|run-guard|xargs|parallel|-exec|-ok")  # in the lower-case bare words: a command _run_marks must walk
+_RUN_HINT = re.compile("|".join(re.escape(w) for w in _GUARD_NAMES + _ARG_FEEDERS + _FIND_RUN))  # in the lower-case folded words: walk them
 
 
 def _run_marks(words, pieces, owners, pdyn, fed=False, start=False):
@@ -2742,11 +2851,6 @@ def _run_marks(words, pieces, owners, pdyn, fed=False, start=False):
     return marks, feeds, starts
 
 
-def _user_only(rest, launcher):
-    """Is the subcommand in `rest` (the words after a guard word) user-only (_guard_sub)?"""
-    return _guard_sub(rest, launcher) in _USER_ONLY
-
-
 _METHOD_TAIL = re.compile(r"\.[A-Za-z_]\w*\([^\\/]*$")  # a .Name(...) call at the end of a piece ("a,b".Split(',')); a path segment is none
 
 
@@ -2769,7 +2873,7 @@ def _pieces(words, dyn=None):
 
 def user_only_row(args):
     """The USER_ONLY row of a parsed invocation, or None.  The one place that says which parsed invocation is user-only (an argument predicate
-    of a row belongs here, and the same rule in _user_only)."""
+    of a row belongs here, and the same rule in _guard_sub, which reads the subcommand of a guard word in a command line)."""
     return next((u for u in USER_ONLY if u.name == getattr(args, "cmd", None)), None)
 
 
@@ -2802,6 +2906,33 @@ def _aliased_git(bares):
         if alias or (k < len(bares) and bares[k] not in _BUILTINS):
             return True
     return False
+
+
+def _alias_values(words, bares):
+    """-> [(index of its git word, text)]: the value of every -c alias.<name>=<value> of a git invocation among the words (the two words -c
+    alias.<name>=<value> and the one word -calias.<name>=<value>; `bares`: the bare, lower-case words) as the text git runs: a value that
+    starts with ! as a shell command without it, any other value as `git <value>`.  A word that ends in an odd number of backslashes goes on
+    with the next one (bash keeps an escaped blank in the word)."""
+    out = []
+    for g, x in enumerate(bares):
+        if "git" not in x or _exe(x) != "git":
+            continue
+        k = g + 1
+        while k < len(bares) and bares[k].startswith("-"):
+            at = k + 1 if bares[k] == "-c" and k + 1 < len(bares) and bares[k + 1].startswith("alias.") else \
+                k if bares[k].startswith("-calias.") else None
+            if at is None:
+                k += 2 if bares[k] in _VALUE_OPTS else 1
+                continue
+            end, text = at, words[at]
+            while (len(text) - len(text.rstrip("\\"))) % 2 and end + 1 < len(words):
+                end += 1
+                text += " " + words[end]
+            if "=" in text:
+                value = text.partition("=")[2]
+                out.append((g, value[1:] if value.startswith("!") else "git " + value))
+            k = end + 1
+    return out
 
 
 def _copy_destination(exe, args):
@@ -2858,32 +2989,53 @@ def _state_word(word, roots, lazy=None):
     return False
 
 
+def _severity(found):
+    """The rank of a finding of protected(): 4 a user-only or host-only subcommand, 3 every other one of scope 'always' (a write into an
+    approval store, a magos.* config switch, a text too long or nested too deep to read), 2 a guard run whose subcommand is no plain word an
+    agent may run (_SLOT_MSG), 1 scope 'guarded', 0 none."""
+    if not found:
+        return 0
+    if found[0] != "always":
+        return 1
+    return 4 if found[1] in (_USER_MSG, _HOST_MSG) else 2 if found[1] == _SLOT_MSG else 3
+
+
+def _worse(found, other):
+    """The more severe of two findings (_severity), the first of two of one rank."""
+    return other if _severity(other) > _severity(found) else found
+
+
+def _deep(text):
+    """The finding of a nested text past depth 3, which is not read: 'always' (_DEEP_MSG) when it names MAGOS (magos or run-guard, read
+    without escape characters and quotes), else None."""
+    return ("always", _DEEP_MSG) if _LONG_HINT.search(_bare(text)) else None
+
+
 def protected(text, depth=0, roots=(), lazy=None, fed=False, start=False, quoted=False):
     """-> (scope, reason) or None.  scope 'always': user-only subcommands, the subcommands only a host runs, a guard run whose subcommand is
-    no plain word an agent may run (_slot_problem), and magos.* config; 'guarded': edits of the guard's own state that matter once claims or
-    the hook exist.  Words are inspected, never the whole text, so a commit message or a grep for these names passes; every keyword and path
-    test reads each word as written and with its escape characters removed.  The text of a child shell (bash -c, cmd /c, powershell
-    -Command ...), a here-document that a shell reads (bash <<E, sh -s <<E, cat <<E | bash: _heredocs) and a quoted word that names the
-    guard script or its launcher are read with every check, to depth 3; `fed`, `start` and `quoted` carry what the outer command tells
-    about that text (_run_marks, _slot_problem).  A finding of scope 'always' anywhere in the text wins over a 'guarded' one before it.  A
-    text longer than MAX_TEXT is not read: when it names MAGOS (magos or run-guard, read without escape characters and quotes) it is
-    'always' (_LONG_MSG), else 'guarded'.  `roots`: the absolute guard-home and Hermes-plugin directories (pkey form) whose absolute
-    spellings count as the guard's state; `lazy` gives the store's root (see _state_word)."""
+    no plain word an agent may run (_slot_problem), a write into an approval store, and magos.* config; 'guarded': edits of the guard's own
+    state that matter once claims or the hook exist.  Words are inspected, never the whole text, so a commit message or a grep for these
+    names passes; every keyword and path test reads each word as written and with its escape characters removed.  The text of a child
+    shell (bash -c, cmd /c, powershell -Command ...), a here-document that a shell reads (bash <<E, sh -s <<E, cat <<E | bash: _heredocs),
+    a quoted word that names the guard script or its launcher and the value of a git -c alias.<name>=<value> are read with every check, to
+    depth 3; such a text past depth 3 is not read and is 'always' (_DEEP_MSG) when it names MAGOS.  `fed`, `start` and `quoted` carry what
+    the outer command tells about that text (_run_marks, _slot_problem).  Every part of the text is read and the most severe finding wins
+    (_severity), wherever it stands.  A text longer than MAX_TEXT is not read: when it names MAGOS (magos or run-guard, read without escape
+    characters and quotes) it is 'always' (_LONG_MSG), else 'guarded'.  `roots`: the absolute guard-home and Hermes-plugin directories (pkey
+    form) whose absolute spellings count as the guard's state; `lazy` gives the store's root (see _state_word)."""
     if len(text) > MAX_TEXT:
         return ("always", _LONG_MSG) if _LONG_HINT.search(_bare(text)) else ("guarded", "the command is too long to inspect")
     head, bodies = _heredocs(text)
-    first = None
+    best = None
     for seg in split_command(head):
-        found = _protected_words([w for w, _ in seg], depth, roots, lazy, [d for _, d in seg], fed, start, quoted)
-        if found and found[0] == "always":
-            return found
-        first = first or found
-    for body in bodies if depth < 3 else ():  # a here-document a shell reads runs as commands, as interpret reads it
-        found = protected(body, depth + 1, roots, lazy, fed)
-        if found and found[0] == "always":
-            return found
-        first = first or found
-    return first
+        best = _worse(best, _protected_words([w for w, _ in seg], depth, roots, lazy, [d for _, d in seg], fed, start, quoted))
+        if _severity(best) == 4:
+            return best
+    for body in bodies:  # a here-document a shell reads runs as commands, as interpret reads it
+        best = _worse(best, protected(body, depth + 1, roots, lazy, fed) if depth < 3 else _deep(body))
+        if _severity(best) == 4:
+            return best
+    return best
 
 
 def _protected_words(words, depth, roots, lazy, dyn=None, fed=False, start=False, quoted=False):
@@ -2896,44 +3048,50 @@ def _protected_words(words, depth, roots, lazy, dyn=None, fed=False, start=False
     # a guard piece and the pieces after it, its arguments: `Start-Process py <guard>,disarm` runs disarm
     owners, pieces, pdyn = _pieces(words, dyn)
     at = [(fed, start)] * len(words)  # (fed, start) where each word stands: those of its first piece, else those of the text
-    if _RUN_HINT.search("\n".join(bares)):  # a guard word, or a feeder whose child text may hold one: the walk of _run_marks
+    if _RUN_HINT.search("\n".join(bares).replace("$", "")):  # a guard word, or a feeder whose child text may hold one: the walk of _run_marks
         marks, feeds, starts = _run_marks(words, pieces, owners, pdyn, fed, start)
         for k in range(len(pieces) - 1, -1, -1):
             at[owners[k]] = (feeds[k], starts[k])
     else:
         marks, feeds, starts = [None] * len(pieces), [fed] * len(pieces), [start] * len(pieces)
-    slot, j = None, 0  # slot: a guard run denied with _SLOT_MSG, returned once no user-only or host-only subcommand is found
+    # best: the most severe finding so far (_severity); a user-only or host-only subcommand anywhere in the command keeps its own reason and
+    # ends the reading.  nxt and odd: the slot table (_slots) and the number of dynamic, brace or glob pieces before each piece, made at the
+    # first guard word, so the command is read in time linear in its pieces however many guard words it holds.
+    best, j, nxt, odd = None, 0, None, None
     for i, w in enumerate(words):
         while j < len(pieces) and owners[j] == i:
             kind = _guard_word(pieces[j])
-            k = _guard_slot(pieces, j + 1, kind == "launcher") if kind else len(pieces)
-            sub = next((x for x in (pieces[k], _bare(pieces[k])) if x in _USER_ONLY or x in HOST_ONLY), None) if k < len(pieces) else None
+            if kind and nxt is None:
+                nxt, odd = _slots(pieces), [0]
+                for p, d in zip(pieces, pdyn):
+                    odd.append(odd[-1] + (d or _WILD.search(p) is not None))
+            k = _guard_slot(pieces, j + 1, kind == "launcher", nxt) if kind else len(pieces)
+            sub = _guard_sub(pieces, kind == "launcher", k)
             if sub in _USER_ONLY:  # also behind start, cmd /c start or Start-Process: found anywhere
                 return "always", _USER_MSG
             if sub in HOST_ONLY:  # the approval server: only the host starts it (Codex approval)
                 return "always", _HOST_MSG
-            if kind and marks[j] and _slot_problem(pieces, pdyn, j, marks[j], feeds[j], starts[j], quoted):
-                slot = slot or ("always", _SLOT_MSG)
+            if kind and marks[j] and _slot_problem(pieces, odd, j, k, marks[j], feeds[j], starts[j], quoted):
+                best = _worse(best, ("always", _SLOT_MSG))
             j += 1
-        if depth < 3 and re.search(r"\s", w) and re.search(r"magos_guard|run-guard", w, re.I):  # Start-Process ... -ArgumentList '<guard> disarm'
-            found = protected(w, depth + 1, roots, lazy, at[i][0], at[i][1], True)
-            if found and found[1] != _SLOT_MSG:
-                return found
-            slot = slot or found
-    ci, child = _child_text(words) if depth < 3 else (None, None)
-    found = protected(child, depth + 1, roots, lazy, at[ci][0]) if child else None
-    if found and found[1] != _SLOT_MSG:
-        return found
-    slot = slot or found
-    if slot:  # a user-only or host-only subcommand anywhere in the command keeps its own reason
-        return slot
+        if re.search(r"\s", w) and _GUARD_HINT.search(_bare(w).replace("$", "")):  # Start-Process ... -ArgumentList '<guard> disarm'
+            best = _worse(best, protected(w, depth + 1, roots, lazy, at[i][0], at[i][1], True) if depth < 3 else _deep(w))
+            if _severity(best) == 4:
+                return best
+    ci, child = _child_text(words)
+    for text, f in ([(child, at[ci][0])] if child else []) + [(text, at[g][0]) for g, text in _alias_values(words, bares)]:
+        best = _worse(best, protected(text, depth + 1, roots, lazy, f) if depth < 3 else _deep(text))  # a child shell, an alias value
+        if _severity(best) == 4:
+            return best
+    if _severity(best) == 3:  # the checks below find nothing more severe
+        return best
     reads = any(f in seen for f in _READ_FLAGS)
     magos = any_word(lambda x: x.startswith("magos."))
     if magos and not reads and ("config" in seen or _aliased_git(bares)):
         return "always", "magos.* git config switches"
     if ("config" in seen and "core.hookspath" in seen and not reads) or any_word(lambda x: x.startswith("core.hookspath=")) or \
             ("config" in seen and "--worktree" in seen) or any(_ENV_WRITE.match(w) or _ENV_WRITE.match(_bare(w)) for w in words):
-        return "guarded", "core.hooksPath / GIT_CONFIG_* / worktree config can switch the git layer off"
+        best = _worse(best, ("guarded", "core.hooksPath / GIT_CONFIG_* / worktree config can switch the git layer off"))
     e, redirs = None, _redir_indices(words, len(words))  # the program: the first word that is no assignment, wrapper or redirection of the shell
     for k, w in enumerate(words):
         if k not in redirs and not _ASSIGN.match(w) and bares[k] not in _WRAP:
@@ -2943,14 +3101,17 @@ def _protected_words(words, depth, roots, lazy, dyn=None, fed=False, start=False
     if exe in _WRITE_CMDS or (exe == "sed" and "-i" in words) or (exe == "find" and "-delete" in seen):
         targets = _copy_destination(exe, words[e + 1:]) if exe in _COPIES else None
         hits = [w for w in (words[e + 1:] if targets is None else targets) if _state_word(w, roots, lazy)]
-        if hits:  # an approval store is written by the host hook only, in every repository
-            return ("always", _APPROVAL_MSG) if any(_in_approvals(w) for w in hits) else ("guarded", _STATE_MSG)
-    for k, w in enumerate(words):  # a redirect into the guard's state
+        if any(_in_approvals(w) for w in hits):  # an approval store is written by the host hook only, in every repository
+            return "always", _APPROVAL_MSG
+        best = _worse(best, ("guarded", _STATE_MSG) if hits else None)
+    for k, w in enumerate(words):  # a redirect into the guard's state; every target is read
         m = re.match(r"(?:\d|&)?>>?\|?(.*)$", w)
         target = (m.group(1) or (words[k + 1] if k + 1 < len(words) else "")) if m else ""
         if target and _state_word(target, roots, lazy):
-            return ("always", _APPROVAL_MSG) if _in_approvals(target) else ("guarded", _STATE_MSG)
-    return None
+            if _in_approvals(target):
+                return "always", _APPROVAL_MSG
+            best = _worse(best, ("guarded", _STATE_MSG))
+    return best
 
 
 def claude_matcher(strict=False):
@@ -3011,15 +3172,16 @@ def session_dir(payload):
     return base or os.getcwd()
 
 
-def extract(payload, aliases=None):
+def extract(payload, aliases=None, tamper=True):
     """-> (creations, protected, default_cwd) for the tool names of all three hosts.  The command line of every hooked tool and every MCP tool
-    whose tool_input.command is a string is judged, in addition to (never instead of) the judgement the tool's own name calls for."""
+    whose tool_input.command is a string is judged, in addition to (never instead of) the judgement the tool's own name calls for.  With
+    `tamper` false the tamper filter does not run and protected is None (decide's second walk with the repository's aliases)."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     cwd = session_dir(payload)
     (c, sh), crs, why = shell_command(payload), [], None
     if c is not None:
-        why = protected(c)
+        why = protected(c) if tamper else None
         crs = interpret(c, cwd, 0, aliases, sh=sh) if _gated(c) else []
     if tool in HOOKED_TOOLS["strict"] and not ti.get("path"):
         crs.append(_cr("EnterWorktree", ["worktree-%s" % ti["name"]] if ti.get("name") else [], cwd, not ti.get("name"), "worktree" if ti.get("name") else "auto", tool=True))
@@ -6326,11 +6488,13 @@ def _interpreter_problem(word, cwd):
     """The cause code when the first word of a direct invocation is no interpreter the hook may name, else None.  Accepted: a bare py, python,
     python3 or python3.<n>, optionally with .exe, which on Windows resolves (in the hook's PATH) to an .exe, not to a .bat or .cmd shim that
     would hand the quoted arguments to cmd.exe; or a path to the interpreter that runs the hook.  The guard or its launcher as the first word,
-    a prefix assignment and a wrapper are no interpreter.  `cwd` None: the call names no directory (Hermes approval), so a relative path is
-    APPROVAL_DIRECTORY."""
+    a prefix assignment and a wrapper are no interpreter, and a word that starts with ~ names no path the hook may take (whatever it expands
+    to).  `cwd` None: the call names no directory (Hermes approval), so a relative path and a ~ word are APPROVAL_DIRECTORY."""
     if _guard_word(word):
         return "APPROVAL_SHAPE"
-    if re.search(r"[\\/]", word) or word.startswith("~"):
+    if word.startswith("~"):
+        return "APPROVAL_DIRECTORY" if cwd is None else "APPROVAL_INTERPRETER"
+    if re.search(r"[\\/]", word):
         p = _norm_path(word)
         if not _rooted(p) and cwd is None:
             return "APPROVAL_DIRECTORY"
@@ -6344,17 +6508,26 @@ def _interpreter_problem(word, cwd):
 
 def approval_invocation(payload, cwd, tools=None):
     """-> (invocation, None) or (None, cause code): is the command of a Bash or PowerShell call exactly one direct invocation of this guard
-    (Approval, Recognition 1 to 4)?  One command of the tool's dialect with nothing around it, no redirection and no dynamic word; an interpreter
-    (_interpreter_problem) and only the interpreter options -3, -3.<n> (-32, -64), -B, -E, -I, -s, -u, -X utf8 and -Xutf8; then a word that
-    names this guard (this_guard), joined to the session directory when it is relative.  The invocation: "sh" (the tool's shell), "words" (the
-    interpreter, its options and the absolute script path, which the rewritten command quotes), "args" (the guard's arguments, none of them
-    `--`) and "text" (the command as the payload holds it).  `tools` maps a tool to its dialect (default: Claude Code's Bash and PowerShell);
-    `cwd` None means the call names no directory (Hermes approval): a relative script or interpreter path is then APPROVAL_DIRECTORY."""
+    (Approval, Recognition 1 to 4)?  The call's tool names the dialect (APPROVAL_TOOL for any other tool and for a command that is no string),
+    and direct_invocation reads its command.  `tools` maps a tool to its dialect (default: Claude Code's Bash and PowerShell); `cwd` None means
+    the call names no directory (Hermes approval)."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     sh, c = (_APPROVAL_TOOLS if tools is None else tools).get(tool), ti.get("command")
     if sh is None or not isinstance(c, str):
         return None, "APPROVAL_TOOL"
+    return direct_invocation(c, sh, cwd)
+
+
+def direct_invocation(c, sh, cwd):
+    """-> (invocation, None) or (None, cause code): is the command text `c`, read in the dialect `sh`, exactly one direct invocation of this
+    guard (Approval, Recognition 2 to 4 and the `--` of 5)?  One command with nothing around it, no redirection and no dynamic word; an
+    interpreter (_interpreter_problem) and only the interpreter options -3, -3.<n> (-32, -64), -B, -E, -I, -s, -u, -X utf8 and -Xutf8; then a
+    word that names this guard (this_guard), joined to the session directory `cwd` when it is relative.  The invocation: "sh" (the dialect),
+    "words" (the interpreter, its options and the absolute script path, which the rewritten command quotes), "args" (the guard's arguments,
+    none of them `--`) and "text" (`c` as given).  `cwd` None means the call names no directory (Hermes approval): a relative or ~ script
+    or interpreter path is then APPROVAL_DIRECTORY.  The Claude Code and Hermes hooks read the command of their call with it, the Codex hook the
+    command it maps onto magos_approve (codex_denial)."""
     text = c.strip(" \t\r\n")
     if len(text) > MAX_TEXT or _CTL.search(text.replace("\t", " ")) or _SURROGATE.search(text):
         return None, "APPROVAL_SHAPE"
@@ -6375,15 +6548,16 @@ def approval_invocation(payload, cwd, tools=None):
             k += 1
         else:
             return None, "APPROVAL_SHAPE"
-    if k == len(ws) or _guard_word(ws[k]) != "script" or "--" in ws[k + 1:]:  # argparse reads a word after `--` otherwise from Python 3.13 on
-        return None, "APPROVAL_SHAPE"
+    # the script word ends in magos_guard.py or magos_guard as written (no folded spelling of _guard_word: the rewritten command runs this word)
+    if k == len(ws) or not any(re.search(r"magos_guard(\.py)?$", w, re.I) for w in (ws[k], _bare(ws[k]))) or "--" in ws[k + 1:]:
+        return None, "APPROVAL_SHAPE"  # argparse reads a word after `--` otherwise from Python 3.13 on
     p = _norm_path(ws[k])
-    if not _rooted(p) and cwd is None:
+    if (not _rooted(p) or ws[k].startswith("~")) and cwd is None:
         return None, "APPROVAL_DIRECTORY"
     path = p if _rooted(p) else os.path.normpath(os.path.join(cwd, p))
     if not this_guard(path):
         return None, "APPROVAL_SCRIPT"
-    return {"sh": sh, "words": ws[:k] + [path.replace("\\", "/")], "args": ws[k + 1:], "text": c}, None
+    return {"sh": sh, "words": ws[:k] + [_slashed(path)], "args": ws[k + 1:], "text": c}, None
 
 
 def approval_intact(lead, args, sh, win=None):
@@ -6670,17 +6844,18 @@ class _HostGone(Exception):
 
 
 def _abs_dir(p):
-    """The absolute directory `p` names, normalised with / separators, or None: a drive or UNC path on Windows (a Git Bash /c/... spelling
-    mapped), a /-rooted path elsewhere; never relative, drive-relative or ~, never longer than MAX_DIR, and existing.  Never os.path.isabs,
-    whose Windows result changed in Python 3.13."""
+    """The absolute directory `p` names, normalised and written with / on Windows (_slashed: on POSIX a backslash is a character of a file
+    name and stays), or None: a drive or UNC path on Windows (a Git Bash /c/... spelling mapped), a /-rooted path elsewhere; never relative,
+    drive-relative or ~, never longer than MAX_DIR, and existing: the directory tested is the one returned.  Never os.path.isabs, whose
+    Windows result changed in Python 3.13."""
     if not isinstance(p, str) or not p or p.startswith("~"):
         return None
     q = _norm_path(p)
     rooted = re.match(r"[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]", q) if os.name == "nt" else q.startswith("/")
     if not rooted or len(q) > MAX_DIR:
         return None
-    q = os.path.normpath(q)
-    return q.replace("\\", "/") if os.path.isdir(q) else None
+    q = _slashed(os.path.normpath(q))
+    return q if os.path.isdir(q) else None
 
 
 def _client_name(info):
@@ -6787,35 +6962,11 @@ def ready_command(argv, lang="en"):
     return guard_cmd() + "".join(" " + w for w in out)
 
 
-def _named_invocation(text, sh):
-    """The guard's own reading (parse_quiet) of the words after the first guard script word that a user-only subcommand follows in a command of
-    `text` (read in the dialect `sh`), or None: no such command, a dynamic word among its arguments, or words the parser refuses."""
-    if not text or len(text) > MAX_TEXT:
-        return None
-    for ev in _lex(_heredocs(text)[0], sh):
-        if not isinstance(ev, _Seg):
-            continue
-        words = [w for w, _d in ev]
-        for i, w in enumerate(words):
-            if _guard_word(w) == "script" and _guard_sub(words[i + 1:], False) in _USER_ONLY:
-                if any(d for _w, d in ev[i + 1:]):
-                    return None
-                rest, k = [], i + 1
-                while k < len(words):  # a redirection of the shell is no argument of the guard
-                    if isinstance(words[k], _Redir):
-                        k += words[k].take
-                        continue
-                    rest.append(words[k])
-                    k += 1
-                ns = parse_quiet(rest)
-                return ns if ns is not None and user_only_row(ns) is not None else None
-    return None
-
-
 def mcp_arguments(ns, cwd):
     """The magos_approve arguments that run what a parsed user-only invocation names in the session directory `cwd` (Codex approval, The Codex
     hook), or None when it names what the tool does not take (install's --home or --allow-downgrade).  --lang, --json and an --approval value
-    are dropped; a relative --repo is joined to `cwd`, and without --repo `cwd` is the repository (for install only when it lies in one)."""
+    are dropped; a relative --repo is joined to `cwd`, and without --repo `cwd` is the repository (for install only when it lies in one).  The
+    repository is normalised and written with / on Windows only (_slashed: on POSIX a backslash is a character of a file name and stays)."""
     if getattr(ns, "home", None) or getattr(ns, "allow_downgrade", False):
         return None
     named = _join(cwd, ns.repo) if ns.repo is not None else cwd
@@ -6823,7 +6974,7 @@ def mcp_arguments(ns, cwd):
         return None
     a = {"subcommand": ns.cmd}
     if ns.cmd != "install" or ns.repo is not None or open_repo(cwd) is not None:
-        a["repo"] = os.path.normpath(named).replace("\\", "/")
+        a["repo"] = _slashed(os.path.normpath(named))
     if ns.cmd == "override":
         a.update(fingerprint=ns.fingerprint, reason=ns.reason)
     if ns.cmd == "install":
@@ -6836,16 +6987,23 @@ def mcp_arguments(ns, cwd):
 def codex_denial(payload, cwd, lang):
     """The Codex hook's text for a user-only command (Codex approval, The Codex hook): protected_codex with the magos_approve arguments that run
     exactly what the command names and the ready command, protected_codex_form when its words do not map onto the tool, and under Codex's
-    approval policy never (permission_mode bypassPermissions, where Codex declines the dialog by itself) protected_codex_never.  The deny itself
-    never depends on the mapping."""
+    approval policy never (permission_mode bypassPermissions, where Codex declines the dialog by itself) protected_codex_never.  The command
+    maps only when it is exactly one direct invocation of this guard as the Claude Code hook reads one (direct_invocation, the guard's parser
+    with a probe approval word, and for install the very file the hook runs): a cd, Set-Location, pushd or env -C before the guard, an
+    environment assignment, another script or a second command never maps.  The deny itself never depends on the mapping."""
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     v = None
     try:
         text, sh = shell_command(payload)
         if os.name == "nt" and isinstance(ti.get("command"), str):  # Codex runs a string command through powershell.exe -Command on Windows
             sh = "ps"
-        ns = _named_invocation(text, sh)
-        a = mcp_arguments(ns, cwd) if ns is not None else None
+        inv = direct_invocation(text, sh, cwd)[0] if isinstance(text, str) else None
+        probe = "A" * 43  # the shape of a token: the guard's own parser must read the appended word as the approval option
+        ns = parse_quiet(inv["args"] + ["--approval=" + probe]) if inv is not None else None
+        row = user_only_row(ns) if ns is not None and getattr(ns, "approval", None) == probe else None
+        if row is not None and row.name == "install" and not same_file(inv["words"][-1], os.path.abspath(__file__)):
+            row = None  # install copies the launcher beside the script it runs as: only this very file names a trusted one
+        a = mcp_arguments(ns, cwd) if row is not None else None
         v = mcp_validate(a, lang)[0] if a is not None else None
     except Exception:  # the text falls back to the form the tool takes; the call is denied either way
         v = None
@@ -7357,7 +7515,8 @@ def hermes_answer(payload, crs, lang, gate):
     """The Hermes hook's answer when the MAGOS Hermes plugin runs it (`--hermes-gate`) for a command in which the tamper filter found a
     user-only subcommand (Hermes approval): a HermesApproval that hands Hermes the command rebuilt with a one-time token (modify) and, except
     where auto-safe allows the subcommand, a guard-written question with a request-unique rule key (approve), or a deny (code, message) whose
-    last line names the cause.  The directory comes from the call: its absolute workdir, else absolute paths only."""
+    last line names the cause.  The directory comes from the call: its workdir, an existing directory named by an absolute path (_abs_dir),
+    else absolute paths only."""
     why = _USER_MSG
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
 
@@ -7371,10 +7530,9 @@ def hermes_answer(payload, crs, lang, gate):
     if wd is not None:
         if not isinstance(wd, str) or not wd or wd.startswith("~") or not all(ch.isalnum() or ch in _HERMES_WORKDIR_CHARS for ch in wd):
             return shape("APPROVAL_DIRECTORY")
-        p = _norm_path(wd)
-        if not _rooted(p) or len(p) > MAX_DIR:
+        base = _abs_dir(wd)  # an existing directory: a drive-less /x names another directory in Git Bash than in Python on Windows
+        if base is None:
             return shape("APPROVAL_DIRECTORY")
-        base = os.path.normpath(p)
     inv, cause = approval_invocation(payload, base, _HERMES_APPROVAL_TOOLS)
     if inv is None:
         return shape(cause)
@@ -7445,9 +7603,9 @@ def decide(payload, lang, host=None, gate=None):
         return opened[0]
     if text and any(s not in _BUILTINS for s in _git_subcommands(_bare(text))):  # a git alias may hide a creation anywhere (g''it, g\it)
         aliases = load_aliases(repo()) if repo() else {}
-        crs = extract(payload, aliases)[0] if aliases else crs
-    if not prot and text and len(text) <= MAX_TEXT and _WRITE_HINT.search(re.sub(r"[\\`^'\"]", "", text)):
-        prot = protected(text, roots=tuple(tamper_roots()), lazy=lambda: [pkey(store(repo()))] if repo() else [])
+        crs = extract(payload, aliases, tamper=False)[0] if aliases else crs  # the walk again; the tamper filter has read the text
+    if (not prot or prot[0] != "always") and text and len(text) <= MAX_TEXT and _WRITE_HINT.search(re.sub(r"[\\`^'\"]", "", text)):
+        prot = _worse(prot, protected(text, roots=tuple(tamper_roots()), lazy=lambda: [pkey(store(repo()))] if repo() else []))  # the rooted reading
     if prot:
         if prot[1] == _HOST_MSG:  # mcp: only the host starts the approval server, on every host (Codex approval)
             return "PROTECTED", T(lang, "protected_mcp")
@@ -7455,6 +7613,8 @@ def decide(payload, lang, host=None, gate=None):
             return "PROTECTED", T(lang, "protected_slot", cmd=guard_cmd(), subs="|".join(AGENT_SUBS))
         if prot[1] == _LONG_MSG:  # a text too long to read that names MAGOS, on every host (The subcommand of a guard run)
             return "PROTECTED", T(lang, "protected_long", n=MAX_TEXT)
+        if prot[1] == _DEEP_MSG:  # a nested text past depth 3 that names MAGOS, on every host (The subcommand of a guard run)
+            return "PROTECTED", T(lang, "protected_deep")
         if host == "hermes" and gate is not None and prot[1] == _USER_MSG:  # the MAGOS Hermes plugin: modify and approve (Hermes approval)
             return hermes_answer(payload, crs, lang, gate)
         if host == "claude" and prot[1] == _USER_MSG:  # Claude Code asks the user in its own dialog (Approval)
@@ -7867,11 +8027,11 @@ def codex_mcp_add(home):
 
 
 def _hermes_list(raw, deeper):
-    """The names of a plugins.enabled or plugins.disabled value: a flow list [a, b] of plain or quoted scalars on the key's line, or a block
-    sequence of `- name` lines under it; None when it is neither."""
+    """The names of a plugins.enabled or plugins.disabled value: a flow list [a, b] of plain or quoted scalars on the key's line (it ends at its
+    first ], which a comment may follow), or a block sequence of `- name` lines under it; None when it is neither."""
     raw = raw.strip()
     if raw and not raw.startswith("#"):
-        m = re.fullmatch(r"\[(.*)\](?:\s+#.*)?", raw)
+        m = re.fullmatch(r"\[([^\]]*)\](?:\s+#.*)?", raw)
         if m is None or deeper:
             return None
         items = [x.strip() for x in m.group(1).split(",")] if m.group(1).strip() else []
@@ -7897,7 +8057,7 @@ def hermes_route(home=None):
     shell-hooks-allowlist.json lists that entry's exact command for pre_tool_call (None: no entry, or the file or the command cannot be read),
     "config": the config's path}."""
     hh = home or hermes_home()
-    plugin = os.path.abspath(os.path.join(hh, "plugins", "magos")).replace("\\", "/")
+    plugin = _slashed(os.path.abspath(os.path.join(hh, "plugins", "magos")))
     init = read_quiet(plugin + "/__init__.py")
     guard = read_quiet(plugin + "/scripts/magos_guard.py")
     path, lines, err = _hermes_config(hh)
@@ -8294,22 +8454,23 @@ def hermes_route_report():
         out_text("hermes route: magos is not in plugins.enabled of %s; Hermes loads no MAGOS callbacks" % r["config"])
     else:
         out_text("hermes route: no MAGOS plugin under %s/plugins; the entry under hooks: (install --host hermes) runs the guard, and user-only "
-                 "commands run in the user's own terminal" % hh.replace("\\", "/"))
+                 "commands run in the user's own terminal" % _slashed(hh))
     if r["consented"] is False:
         out_text("hermes entry: %s holds the MAGOS entry under hooks:, but %s/shell-hooks-allowlist.json does not list its command, so Hermes skips "
-                 "it without a word; approve it once (hooks_auto_accept: true, or HERMES_ACCEPT_HOOKS=1 for hermes acp)" % (r["config"], hh.replace("\\", "/")))
+                 "it without a word; approve it once (hooks_auto_accept: true, or HERMES_ACCEPT_HOOKS=1 for hermes acp)" % (r["config"], _slashed(hh)))
         problem = not on  # the guard then runs nowhere in Hermes
     if on and r["entry"] is True:
         out_text("hermes route: %s also holds a MAGOS entry under hooks:; it denies every user-only command before Hermes can ask and runs the guard "
                  "a second time on every terminal call; remove that entry from the Hermes config, the plugin runs the guard" % r["config"])
         problem = True
     s = hermes_settings(hh)
-    if os.environ.get("HERMES_YOLO_MODE", "").strip().lower() in _TRUTHY:
+    how = (hermes_noask("ask", s) or (None, {}))[0]  # the causes, in their order, for which the Hermes hook refuses a question
+    if how == "hermes_how_env":
         out_text("hermes approvals: HERMES_YOLO_MODE is set here: Hermes approves without asking, so the guard refuses the click and user-only "
                  "commands run in the user's own terminal")
-    elif s["error"]:
+    elif how == "hermes_how_config":
         out_text("hermes approvals: %s cannot be read (%s): the guard refuses the click" % (s["path"], s["error"]))
-    elif hermes_mode_off(s):
+    elif how == "hermes_how_mode":
         out_text("hermes approvals: approvals.mode is %s in %s: Hermes approves without asking, so the guard refuses the click and user-only "
                  "commands run in the user's own terminal" % (s["mode"], s["path"]))
     else:
