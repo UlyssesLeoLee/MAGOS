@@ -186,3 +186,8 @@ Version 1.0.9 keeps no mark in a Hermes plugin-host process (`plugins.isolation:
 own copy of the arguments: there the approval callback returns nothing, so a guard command that names `magos_guard` (`plan`,
 `version`, `git add scripts/magos_guard.py`) is no longer blocked as unprepared; in Hermes's own process the callbacks are
 those of 1.0.8.
+
+Version 1.1.0 passes the terminal session's directory as the payload's `cwd` when a call carries no `workdir`
+(`_session_cwd`: Hermes's recorded session directory, else `TERMINAL_CWD`, else Hermes's own directory), so a `cd` of an
+earlier terminal call holds for the creation check and the branch protection; it registers the `git-protect` skill
+with the other command skills.

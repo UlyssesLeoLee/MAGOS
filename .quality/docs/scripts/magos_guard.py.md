@@ -426,7 +426,7 @@ The file holds eleven cooperating parts.
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
-7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.0.9) and equals
+7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.1.0) and equals
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the
@@ -459,7 +459,7 @@ The file holds eleven cooperating parts.
     `update-ref`, `symbolic-ref`, the forced, deleting and renaming forms of `branch`, `checkout -B`, `switch -C`, a
     worktree that checks it out, a local push or fetch into it), and every write whose branch it cannot read while the
     repository holds protection. It is an accident guard for the ordinary spellings of git and the shell, not a
-    boundary against deliberate evasion. The section Branch protection (next version) states it.
+    boundary against deliberate evasion. The section Branch protection (version 1.1.0) states it.
 
 ## Dependencies
 
@@ -765,7 +765,7 @@ that holds a comma).
   a problem when `magos.approval` holds a value that is no level, and checks mode,
   hook uniformity, hook content, claim parsing (unreadable and newer-format claims), orphan claims, the sets (the
   `sets:` line and the set problems of Sets, Hook, list, doctor and the plain commands), the protected branches and
-  their record (Branch protection (next version), doctor), `core.hooksPath` and
+  their record (Branch protection (version 1.1.0), doctor), `core.hooksPath` and
   the backstop command recorded in `<store>/guard`: a recorded script that does not exist is reported as missing with
   the re-arm command, a recorded script that declares an older `GUARD_VERSION` than the running guard, or none, is
   reported as older than this guard with the re-arm command (both count as problems), and a hook that differs from this
@@ -796,7 +796,7 @@ that holds a comma).
   2 usage; 11; 13; 16 blocked; 21; 23; 24 an invalid `--set` or an invalid `--reason` (more than 200 characters, a
   lone surrogate or a control character).
 - `protect --branch B [--release] [--reason R] [--dry-run] [--approval TOKEN]`: user-only; sets or lifts the protection
-  of B (Branch protection (next version), Subcommands). Exit 0; 2; 11; 12 an invalid branch name; 13; 17; 24 an invalid
+  of B (Branch protection (version 1.1.0), Subcommands). Exit 0; 2; 11; 12 an invalid branch name; 13; 17; 24 an invalid
   `--reason`; 25 to 28; 29 a record of a newer format; 30 64 branches protected already.
 - `protect-show [--branch B]`: read-only, no lock; prints the protected branches. Exit 0; 2; 11; 29.
 
@@ -858,7 +858,7 @@ format); 24 INVALID_SPEC (a spec or option value that is invalid in itself; the 
 APPROVAL_UNKNOWN, 26 APPROVAL_EXPIRED, 27 APPROVAL_USED and 28 APPROVAL_MISMATCH (`override`, `arm`, `disarm`,
 `install` and `protect` with an `--approval` token that does not verify; Approval (version 1.0.7)); 29
 PROTECT_NEWER_FORMAT (`protect`, `protect-show`: a protection record of a newer format); 30 PROTECT_LIMIT (`protect`:
-the repository protects 64 branches already; Branch protection (next version)). The
+the repository protects 64 branches already; Branch protection (version 1.1.0)). The
 launcher's refusal of a subcommand other than `hook` is its own exit 2; the guard is not started.
 
 Claim file (LF; the git layer reads only line 1, which is exactly `state=active` in every format): `state=active`,
@@ -904,7 +904,7 @@ Invariants:
 
 1. Creation is denied before it happens; a denial leaves no branch, worktree directory or administrative directory.
 2. Existing lanes are never stopped, modified, stashed, merged or moved; the guard only reads them. The host hook
-   refuses an agent's write to a branch the user protected (Branch protection (next version)); it refuses the command
+   refuses an agent's write to a branch the user protected (Branch protection (version 1.1.0)); it refuses the command
    before it runs and changes nothing.
 3. Unknown is not safe: an ambiguous target (or a `--target` that does not resolve), `git am`, unreadable operation
    metadata, a locked worktree missing on disk, more than 120 unmerged local branches, an unreadable claim, a claim in a
@@ -959,7 +959,7 @@ Invariants:
    hook for exactly one direct invocation of this guard (Approval (version 1.0.7)). A writer or a redirect aimed at an
    approval store (`.git/magos/approvals`, `.magos/approvals`, the absolute `<git-common-dir>/magos/approvals` or
    `<guard home>/approvals`) is denied in every repository and outside any repository, and so is one aimed at an
-   existing branch protection record or its store (Branch protection (next version), Tamper coverage). Edits of the guard's state are denied once
+   existing branch protection record or its store (Branch protection (version 1.1.0), Tamper coverage). Edits of the guard's state are denied once
    the session directory's repository is armed, holds a claim or holds protection (a `protected.json` in its store): `core.hooksPath`, `GIT_CONFIG_*`, worktree config, and
    writers or redirects aimed at `.git/hooks`, `.git/refs`, `.git/HEAD`, `.git/config`, `packed-refs`, `.git/magos`
    (the claims, the set records under `.git/magos/sets`, the protection record `.git/magos/protected.json` and every other file of the store),
@@ -988,7 +988,7 @@ Invariants:
    and `MemoryError` included) is denied when its raw bytes match the prefilter (`git`, `worktree`, `isolation`,
    `start_session`, `EnterWorktree`, `magos`, `hookspath`, `gh`, `claude`, `eval`, `iex`, as substrings in any case).
    An exception while deciding a decoded payload denies the call when the call is recognised as a lane creation or a
-   protected command, or as a write to a branch (a write record of Branch protection (next version)) where a
+   protected command, or as a write to a branch (a write record of Branch protection (version 1.1.0)) where a
    repository it names holds protection or that test raises; when recognising it raises as well, the call is denied when the command text of `tool_input`
    (or, for a tool without a command, its `tool_input` serialised) matches the prefilter. Path fields such as `cwd`
    and `transcript_path` never decide it. Otherwise the hook prints `{}` and a warning on stderr. The launcher turns a missing script, missing
@@ -1969,7 +1969,7 @@ entry under `hooks:` denies every user-only command with the `protected` text.
 
 - `USER_ONLY` is the one table of the user-only subcommands, one row (`name`, `auto_safe`, `scope`) each: `override`
   (no, `repo`), `arm` (yes, `repo`), `disarm` (no, `repo`), `install` (yes, `home`) and `protect` (no, `repo`; Branch
-  protection (next version), Approval). The tamper filter reads its
+  protection (version 1.1.0), Approval). The tamper filter reads its
   names (`_USER_ONLY`), the argument parser gives each of them the hidden option `--approval`, and `user_only_row` maps
   a parsed invocation to its row. `auto_safe` marks a subcommand that adds protection or copies the guard and weakens
   nothing; `scope` names its approval store.
@@ -2066,7 +2066,7 @@ nothing runs, and the record stays for the command or a prune. At level `termina
   - Every subcommand: its name and a dry run.
   - `arm`, `disarm`, `override` and `protect`: the repository.
   - `protect`: the branch, whether the protection is set or lifted, and the reason marked as written by the agent when
-    one is given (Branch protection (next version), Approval).
+    one is given (Branch protection (version 1.1.0), Approval).
   - `install`: the host, the directory it copies the guard and its launcher from (the directory of the running
     guard), the destination `<home>/guard`, and with `--allow-downgrade` that it replaces a newer guard copy.
   - `override`: also the fingerprint, the lane its denial record names (the lane the click lets through) with its
@@ -2725,7 +2725,7 @@ shell-hook consent file's effect on a running Hermes, a session `/yolo` or a hos
 - A MAGOS entry under `hooks:` next to the plugin denies every user-only command before Hermes can ask (`doctor` reports
   it).
 
-## Branch protection (next version)
+## Branch protection (version 1.1.0)
 
 The user protects a branch by name; from then on the host hook refuses every write to that branch that an agent makes
 through a hooked tool: a commit, a merge, a rewrite, a reset, a deletion, a rename, a forced move, a creation of the
@@ -3571,6 +3571,22 @@ Version 1.0.9 of the guard (`GUARD_VERSION` 1.0.9). Relative to the 1.0.8 produc
 
 Its claims, set records, approval records, audit lines and texts are those of 1.0.8, with the `protected_deep` text
 added; commands that 1.0.8 allowed and that none of the readings above concerns are allowed alike.
+
+Version 1.1.0 of the guard (`GUARD_VERSION` 1.1.0). Relative to the 1.0.9 product it:
+
+- adds branch protection (Branch protection (version 1.1.0)): the user-only subcommand `protect` and the agent
+  subcommand `protect-show`, the record `<git-common-dir>/magos/protected.json`, the hook rule that refuses an agent's
+  write to a protected branch in the ordinary spellings of git and the shell (code `BRANCH_PROTECTED`, no override), the
+  tamper rules of the record and of the refs of a protected repository, and its texts, exit codes, audit line and
+  `doctor` section;
+- reads a Codex string command on Windows in the PowerShell dialect, cmd's `cd/d`, `cd..`, `cd\` and `cd;<dir>` as a
+  `cd` (and `;` as no separator in cmd text), and PowerShell's colon parameters of the directory commands
+  (`-Path:<dir>`), for the creation check as well;
+- names `protect` among the user-only subcommands in `_USER_MSG` and the texts that list them.
+
+In a repository without `protected.json` its verdicts are those of 1.0.9, except that a guard word followed by
+`protect` is user-only like one followed by `arm` and that the walker readings above follow the directory the shell
+really enters; it makes no Git call that 1.0.9 did not make for a write command there.
 
 Compatibility: claim files of format 1 written by 1.0.0 to 1.0.3 are read unchanged, and line 1 of every claim stays
 `state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule
