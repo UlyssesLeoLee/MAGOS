@@ -1,0 +1,71 @@
+{
+  "id": "git-protect/forms-and-help",
+  "skill": "git-protect",
+  "feature": "The forms of /GitProtect set, lift or show the protection of a branch; help stops before any inspection and a wrong combination executes nothing",
+  "invocations": {
+    "claude": "/GitProtect main",
+    "codex": "$git-protect main",
+    "hermes": "/git-protect main"
+  },
+  "test_object": {
+    "arguments": [
+      "[<branch>]"
+    ],
+    "also": [
+      "--release",
+      "--status [<branch>]",
+      "--help",
+      "--lang <language>",
+      "--release together with --status",
+      "more than one branch",
+      "a detached HEAD without a branch"
+    ]
+  },
+  "expected": [
+    "The usage line and the argument hint list every option: /GitProtect [<branch>] [--release | --status] [--lang <language>] [--help].",
+    "Without a branch the command takes git branch --show-current, and a detached HEAD stops it and asks for a branch name; a branch that does not exist yet can be protected.",
+    "--help (and --lang) is handled first: the command shows its inline help and stops before any tool call; an unknown option, more than one branch or --release with --status is a usage error that executes nothing.",
+    "--status runs only the read-only guard subcommand protect-show; setting and lifting run the user-only subcommand protect."
+  ],
+  "checks": [
+    {
+      "file": "commands/GitProtect.md",
+      "contains": [
+        "argument-hint: \"[<branch>] [--release | --status] [--lang <language>] [--help]\"",
+        "Handle `--help` first, even if other arguments are present.",
+        "Usage: `/GitProtect [<branch>] [--release | --status] [--lang <language>] [--help]`",
+        "For an unknown option, more than one branch, or `--release` together with `--status`, explain the error, show this help, and stop.",
+        "a detached HEAD stops the command and asks for a branch name",
+        "A branch that does not exist yet can be protected: the name is what is stored.",
+        "- `--status`: Read-only: print the protections of the repository (`magos_guard.py protect-show`); nothing is written and nothing is approved.",
+        "Examples: `/GitProtect main`, `/GitProtect develop --release`, `/GitProtect`, `/GitProtect --status`"
+      ]
+    },
+    {
+      "file": "skills/git-protect/SKILL.md",
+      "contains": [
+        "- Hermes: `/git-protect [<branch>] [--release | --status] [--lang <language>] [--help]`",
+        "- Codex: `$git-protect [<branch>] [--release | --status] [--lang <language>] [--help]`",
+        "If `--help` is present, even with other arguments, answer from the inline Usage section above and stop before any tool call, file read, or repository inspection.",
+        "a detached HEAD stops the command and asks for a branch name"
+      ]
+    },
+    {
+      "file": "references/commands.md",
+      "contains": [
+        "## 9. GitProtect",
+        "`--release` together with `--status`, more than one branch, or an unknown option is a usage error: explain it, show the usage, and execute nothing.",
+        "### Status (`--status`, read-only)",
+        "### Set and release (default, `--release`)",
+        "Run `<guard> protect-show --json`"
+      ]
+    },
+    {
+      "file": "SKILL.md",
+      "contains": [
+        "| `/GitProtect` | `/GitProtect` | `/git-protect` | `$git-protect` |",
+        "| `/GitProtect [<branch>] [--release]`; `--status [<branch>]` |"
+      ]
+    }
+  ]
+}

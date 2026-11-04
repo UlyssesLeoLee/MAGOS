@@ -2555,8 +2555,8 @@ def test_set_subcommands_are_not_user_only(guard, tmp_path):
         assert verdict(hook(armed.path, argv, tool="shell", host="codex")) is None, argv
     assert G.protected("%s set-plan --set demo --target main --spec - <<'EOF'\n%s\nEOF" % (g, body)) is None
     assert G.protected("echo '%s' | %s set-plan --set demo --target main --spec -" % (body, g)) is None
-    # the four user-only subcommands stay denied in the same spellings
-    for sub_name in ("override --fingerprint 0123456789ab --reason y", "arm", "disarm", "install --host codex"):
+    # the five user-only subcommands stay denied in the same spellings
+    for sub_name in ("override --fingerprint 0123456789ab --reason y", "arm", "disarm", "install --host codex", "protect --branch main"):
         for line in ("%s %s" % (g, sub_name), "%s --json --lang en %s" % (g, sub_name), "%s --repo=. %s" % (g, sub_name), "bash -c '%s %s'" % (g, sub_name),
                      'cmd /c start "" /min %s %s' % (g, sub_name), "%s %s <<'EOF'\n%s\nEOF" % (g, sub_name, body), "echo '%s' | %s %s" % (body, g, sub_name),
                      '"%s" --strict %s' % (launcher, sub_name)):

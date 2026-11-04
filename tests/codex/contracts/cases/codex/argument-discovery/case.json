@@ -1,9 +1,9 @@
 {
   "id": "codex/argument-discovery",
   "skill": "all",
-  "feature": "Codex exposes all eight skills with compact usage hints",
+  "feature": "Codex exposes all nine skills with compact usage hints",
   "invocations": {
-    "codex": "$git-recon, $git-analyze, $git-recommend, $git-integrate, $git-cleanup, $git-converge, $git-sweep, $git-plan"
+    "codex": "$git-recon, $git-analyze, $git-recommend, $git-integrate, $git-cleanup, $git-converge, $git-sweep, $git-plan, $git-protect"
   },
   "test_object": {
     "host": "Codex CLI",
@@ -15,11 +15,12 @@
       "git-cleanup",
       "git-converge",
       "git-sweep",
-      "git-plan"
+      "git-plan",
+      "git-protect"
     ]
   },
   "expected": [
-    "All eight skill directories have Codex-recognized names and invocation syntax.",
+    "All nine skill directories have Codex-recognized names and invocation syntax.",
     "Each openai.yaml short description includes its $skill selector and --help."
   ],
   "checks": [
@@ -179,6 +180,28 @@
       "contains": [
         "$git-plan",
         "[--apply]",
+        "[--help]"
+      ],
+      "pattern": "^  short_description: \"([^\"]+)\"$",
+      "length": [
+        25,
+        64
+      ]
+    },
+    {
+      "file": "skills/git-protect/SKILL.md",
+      "contains": [
+        "- Codex: `$git-protect [<branch>] [--release | --status] [--lang <language>] [--help]`",
+        "short-description: \"保护分支；$git-protect [BRANCH] [--release] [--status] [--help].\"",
+        "`--help`:",
+        "Examples:"
+      ]
+    },
+    {
+      "file": "skills/git-protect/agents/openai.yaml",
+      "contains": [
+        "$git-protect",
+        "[--release]",
         "[--help]"
       ],
       "pattern": "^  short_description: \"([^\"]+)\"$",

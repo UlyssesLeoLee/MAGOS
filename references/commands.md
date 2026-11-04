@@ -1,18 +1,18 @@
 # Explicit Command Contracts
 
-This reference defines the command-layer behavior for `multi-agent-git-orchestrator` v1.0.9.
+This reference defines the command-layer behavior for `multi-agent-git-orchestrator` v1.1.0.
 
 These are **semantic command intents**. Canonical names use a leading `/`. A host may expose them as slash commands, palette actions, prompt aliases, or plain-text invocations. If slash commands are unsupported, accept the same name without `/`. The behavior must remain the same.
 
 ## Argument and Help Behavior
 
-All eight commands accept `--help`. When it is present, show that command's usage, argument descriptions, defaults, and examples, then stop before inspecting or changing a repository. `--help` takes precedence over other arguments.
+All nine commands accept `--help`. When it is present, show that command's usage, argument descriptions, defaults, and examples, then stop before inspecting or changing a repository. `--help` takes precedence over other arguments.
 
-**Reply language.** All eight commands accept `--lang <language>`. It selects the language of everything the command says to the user: help text, questions, errors, reports (including the final report of a write command after a long run), and recommendations. When it is absent the reply is in Chinese (简体中文). The value is the next token: a language name or a common code (`English`, `en`, `日本語`, `ja`, `Français`); put a multi-word name in quotes. The option may appear anywhere among the arguments and may be combined with `--help`; help is then shown in the requested language, with flags and examples left untouched. Never translate command names, option names, branch or worktree names, paths, SHAs, Git commands, or status codes such as `BLOCKED_DIRTY`; a short gloss in the reply language next to a code is fine. Remove `--lang` and its value from the arguments before any other parsing, so it never becomes part of a goal, target, or branch name. If `--lang` has no value, or the value is not a language, explain the problem (in Chinese) and show the usage without executing the command.
+**Reply language.** All nine commands accept `--lang <language>`. It selects the language of everything the command says to the user: help text, questions, errors, reports (including the final report of a write command after a long run), and recommendations. When it is absent the reply is in Chinese (简体中文). The value is the next token: a language name or a common code (`English`, `en`, `日本語`, `ja`, `Français`); put a multi-word name in quotes. The option may appear anywhere among the arguments and may be combined with `--help`; help is then shown in the requested language, with flags and examples left untouched. Never translate command names, option names, branch or worktree names, paths, SHAs, Git commands, or status codes such as `BLOCKED_DIRTY`; a short gloss in the reply language next to a code is fine. Remove `--lang` and its value from the arguments before any other parsing, so it never becomes part of a goal, target, or branch name. If `--lang` has no value, or the value is not a language, explain the problem (in Chinese) and show the usage without executing the command.
 
 Recognize only the options listed for each command. For an unknown option or a required option value that is missing or invalid, explain the issue and show the relevant usage without executing the command. If a required positional target is missing, ask the user for it. Host adapters should preserve the supplied argument text and route `--help` to this reference.
 
-Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other seven). Append the same arguments after the host-specific entry point.
+Host entry points are Claude Code `/GitRecon`, Hermes `/git-recon`, and Codex `$git-recon` (use the corresponding command name for the other eight). Append the same arguments after the host-specific entry point.
 
 ## Host Adapter Contract
 
@@ -28,8 +28,8 @@ Each host reaches the same canonical command through its own adapter. Adapters d
 Rules for every adapter:
 
 - `skills/` adapters must not read `commands/*.md`; those wrappers contain Claude-specific loading steps.
-- Codex adapters set `policy.allow_implicit_invocation: false`, so they run only when selected explicitly; the root skill keeps semantic activation. Hermes has no per-skill switch, so `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, and `git-plan` refuse to write unless invoked explicitly.
-- If the shared rules (`SKILL.md`, `references/commands.md`) cannot be read, read-only commands may continue read-only and report the incomplete installation; `GitIntegrate` must not integrate, `GitCleanup` must not delete, `GitConverge` must not merge or delete, `GitSweep` must not merge, delete, or push, and `GitPlan` must not register a plan, create a branch or worktree, merge, or release a set (preview only).
+- Codex adapters set `policy.allow_implicit_invocation: false`, so they run only when selected explicitly; the root skill keeps semantic activation. Hermes has no per-skill switch, so `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`, and `git-protect` refuse to write unless invoked explicitly.
+- If the shared rules (`SKILL.md`, `references/commands.md`) cannot be read, read-only commands may continue read-only and report the incomplete installation; `GitIntegrate` must not integrate, `GitCleanup` must not delete, `GitConverge` must not merge or delete, `GitSweep` must not merge, delete, or push, `GitPlan` must not register a plan, create a branch or worktree, merge, or release a set (preview only), and `GitProtect` must not set or lift a protection (`--status` only).
 - An installed package must contain `SKILL.md`, every file under `references/`, and every `skills/git-*/SKILL.md` with its `agents/openai.yaml`, laid out exactly as in this repository, so that the relative paths above resolve. The root `plugin.json` belongs to the Agent Plugins package (the whole repository), not to the Codex and Hermes skills-directory package.
 
 ## 1. GitRecon
@@ -1044,6 +1044,85 @@ Released claims
 Not touched (lane branches, worktrees, the integration branch)
 ```
 
+## 9. GitProtect
+
+### Invocation
+
+```text
+/GitProtect <branch>
+/GitProtect <branch> --release
+/GitProtect
+/GitProtect --release
+/GitProtect --status [<branch>]
+/GitProtect main --lang English
+/GitProtect --help
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|---|---:|---|
+| `<branch>` | No | The local branch name as `git branch` shows it (`main`, not `refs/heads/main`). Without it, the branch checked out in the invoking worktree (`git branch --show-current`); empty output is a detached HEAD, and the command stops and asks for a branch name. A branch that does not exist yet can be protected: the name is what is stored. With `--status` it is optional and only selects the branch to report. |
+| `--release` | No | Lift the protection of the branch instead of setting it. |
+| `--status` | No | Read-only: print the protections of the repository, and with `<branch>` whether that branch is protected. Nothing is written and nothing is approved. |
+| `--lang <language>` | No | Language of the reply, a name or code such as `English` or `ja`. Default: Chinese. See Argument and Help Behavior. |
+| `--help` | No | Show this command's usage and stop without inspecting or changing the repository. |
+
+`--release` together with `--status`, more than one branch, or an unknown option is a usage error: explain it, show the usage, and execute nothing.
+
+Examples: `/GitProtect main`, `/GitProtect develop --release`, `/GitProtect`, `/GitProtect --status`, `/GitProtect --help`.
+
+### 中文描述
+
+保护指定分支（不指定时为当前 worktree 检出的分支），使守卫的宿主钩子拒绝代理通过受钩工具对它的每一次写入：提交（含 `--amend`）、合并（含 pull 产生的合并）、cherry-pick、revert、rebase、reset、am、`update-ref`、`branch -f/-m/-M/-d/-D`、`checkout -B` / `switch -C`、把它检出到新 worktree、向它 fetch 或 push，以及目标无法读出的写入。读取该分支、在已有 worktree 中检出它、从它创建其他分支仍然允许。设置与解除（`--release`）都通过守卫的用户专属子命令 `protect` 执行，与 `arm`、`disarm` 一样只经用户批准（宿主自己的批准对话框里的一次点击，或用户自己的终端）；`--status` 只读（`protect-show`）。保护记录在守卫的存储 `<git-common-dir>/magos/protected.json` 中，代理不能写；保护只由宿主钩子执行，用户自己的终端和 Git 本身不受影响。它拦的是代理按 git 和 shell 常规写法的误操作，不是刻意绕过（限制见 `references/lane-split.md` 第 15 节）；仓库的 `magos.guard off` 不会关闭保护。本命令从不提交、合并、创建、切换、删除或推送任何分支。
+
+### Definitions
+
+- **guard**: `magos_guard.py`, run as `<guard>` (`references/lane-split.md` section 5). Every call names the repository and the language: `<guard> <subcommand> --repo '<top>' --json --lang <zh or en> ...`, with `<top>` the top level of the invoking worktree (`git rev-parse --show-toplevel`) and `--lang zh` when the reply language is Chinese, else `--lang en`.
+- **protection**: one entry of the record `<git-common-dir>/magos/protected.json`, which only `protect` writes. Only the host hook enforces it, judging each tool call on its own: a line that switches to a protected branch and then writes is refused, and its denial says that the switch and the write may be run as two separate calls (the second is judged against the branch the first left checked out), or, when the write would land on the branch checked out now because the switch is not joined by `&&`, that they can be joined with `&&`. A protection is an accident guard for the ordinary spellings of git and the shell, not a boundary against deliberate evasion, and `magos.guard off` of the repository does not silence it. It belongs to the repository, so it holds in every worktree of it. Names are compared folded (Unicode NFC and case-folded): `Main` and `main` are one protection. What a protection refuses and allows, and how the hook judges a command, is `references/lane-split.md` section 15.
+- **the branch**: the `<branch>` argument, else the output of `git branch --show-current` in the invoking worktree. The command never invents, normalizes or completes a branch name: the guard checks it (`protect` refuses, with exit 12, a name that `git check-ref-format --branch` rejects, a name that starts with `-` or `refs/`, holds `@{` or is exactly `@`, a name longer than 255 characters, and a name the approval dialog would show differently from the stored one).
+
+### Status (`--status`, read-only)
+
+1. Run `<guard> protect-show --json` (with `--branch <branch>` when a branch was given). It takes no lock and writes nothing.
+2. Print the result: the protected branches in record order with `at`, `by`, `via`, `reason` and whether a local branch of that name exists, and with a branch whether it is protected (and the stored spelling).
+3. Exit 11 (`PROTECT_UNREADABLE`) or 29 (a record of a newer format): quote the guard's message and say that every branch of the repository counts as protected for the hook until the user inspects, replaces or removes the record in their own terminal (`doctor` names it). Exit 2 for `protect-show` itself (the guard does not know the subcommand): the guard is older than this command; say to refresh it (plugin update, or `install` by the user).
+
+### Set and release (default, `--release`)
+
+1. Gates: resolve the branch (a detached HEAD stops the command and asks for a branch name); run `<guard> protect-show --json --branch <branch>` and print the current protections (the gates of **Status** step 3 apply: a record that cannot be read or is of a newer format stops the command before any approval is asked).
+2. Run the user-only subcommand `<guard> --repo '<top>' protect --branch <branch>`, with `--release` to lift, by the approval route of the host (`references/lane-split.md` section 3, rule 4): in Claude Code as one direct invocation of the guard script with the `Bash` or `PowerShell` tool, with nothing else on the line, so that the hook answers with the host's permission dialog; in Codex through the MCP tool `magos_approve` of the server `magos` with `subcommand` `protect`, `repo`, `branch` and `release` (true for `--release`); in Hermes with the `terminal` tool, in the foreground, without a pseudo-terminal, as one direct invocation, so that the MAGOS plugin hands Hermes the question. The prompt names the action (protect or lift), the branch and the repository. No approval level runs `protect` without the user's click or terminal, `--release` included. The command never passes `--approval` and never retries a declined or refused call in another form.
+3. When there is no prompt (`magos.approval` is `terminal`, the hook denies the call, Codex's approval policy is `never` or `magos_approve` is not available, or Hermes approves without a human), print the exact command for the user's own terminal (`<guard> --repo '<top>' protect --branch <branch> [--release]`), run nothing, and say that `--status` shows the result afterwards.
+4. Report the result of the guard: `action` (`set` or `release`), `branch`, `stored` (the spelling of the entry that matched, or for a new protection the name as given), `changed` (false when the branch was already protected, or, for `--release`, not protected: nothing was written) and `protected`, the list after the call.
+
+Exit codes of `protect` (each quoted with the guard's message): 0 done or unchanged; 2 usage error or not a git repository (a defect of the command: quote it); 11 the record cannot be read (`PROTECT_UNREADABLE`), or a Git failure; 12 the branch name is refused (say why, and ask for the short local name); 13 lock timeout (repeat the call once); 17 no real console and no approval token (give the command for the user's own terminal); 24 an invalid `--reason`; 25 to 28 the approval token is unknown, expired, already used or does not match (ask the user to approve again); 29 a record of a newer format (the user refreshes the guard); 30 the repository already holds 64 protections (the user lifts one first).
+
+### Hard stop conditions
+
+Never: set or lift a protection without the user's explicit `/GitProtect` invocation, or on your own to make a refused write pass; pass `--approval`, write `magos.*` config (also `magos.approval` and `magos.guard`), or write, move or delete `.git/magos` or `protected.json` yourself; run `override`, `arm`, `disarm` or `install`; retry a refused or declined `protect` in another form, through a variable, another tool or another spelling of the branch; commit, merge, create, switch, delete or push a branch; protect or lift a branch other than the one the user named or the one checked out in the invoking worktree. Do not set or lift a protection when the skill or this reference could not be loaded; `--status` only.
+
+### Output
+
+Write every report in the reply language (Chinese unless `--lang` selects another one), headings and tables included.
+
+Status (`--status`):
+
+```text
+Repository (top level)
+Protected branches (branch, since, by, via, reason, exists), or none
+The named branch: protected (stored spelling) or not
+```
+
+Set and release:
+
+```text
+Branch (resolved from the argument or the current worktree)
+Protected branches before
+Approval (the route: host prompt, or the command for the user's own terminal)
+Result (action, branch, stored, changed) or the refusal with its exit code and remedy
+Protected branches after
+```
+
 ## Command Relationship
 
 ```text
@@ -1063,8 +1142,12 @@ Not touched (lane branches, worktrees, the integration branch)
    ↓ guarded merge-everything-and-delete convergence
 /GitSweep <branch> [--apply] [--push]
    ↓ GitConverge + guarded deletion of merged remote branches
+/GitProtect [<branch>] [--release | --status]
+   ↓ the user's protection of a branch against every agent write (guard state, user-approved)
 ```
 
 `/GitRecon`, `/GitAnalyze`, and `/GitRecommend` are observation/advice commands. `/GitIntegrate` is an integration write-intent. `/GitCleanup` is preview-only unless `--apply` is explicit. `/GitConverge` is preview-only unless `--apply` is explicit; it merges unreviewed local branches only on the user's acceptance of the plan it prints. `/GitSweep` runs the same convergence and is the only command that deletes remote branches, and only those already merged into a branch the remote keeps; with `--push` it is also the only command that pushes commits, one fast-forward push of `<branch>`.
 
 `/GitPlan` is preview-only unless `--apply` (or `--release`) is explicit. It plans the lanes before any sub-agent starts, as two tables (the requirements of the task, and the topic-named lanes that serve them), and converges them afterwards, printing the same tables supplemented with a summary of the changes: only with `--apply` or `--release` does it write the claim store and the set record (always through the guard's `set-*` subcommands); only with `--apply` does it create lane branches and worktrees (`--create`) and merge the lanes into an integration branch of its own, plus one fast-forward of `<branch>` with `--land`; it never pushes and never deletes a branch or a worktree.
+
+`/GitProtect` writes no branch: it sets or lifts the protection of a branch in the guard's state, and only through the user-only guard subcommand `protect`, which the user approves in the host's prompt or runs in their own terminal; `--status` only reads. While a branch is protected, the guard's hook refuses every write to it that an agent makes, including the merges of `/GitIntegrate`, `/GitConverge`, `/GitSweep` and `/GitPlan`: protect `main` or a release branch to keep every agent off it, and merge into it in your own terminal.

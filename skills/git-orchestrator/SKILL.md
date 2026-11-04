@@ -5,7 +5,7 @@ license: Apache-2.0
 user-invocable: false
 compatibility: "Requires Git 2.30+ (Git 2.36+ for the lane guard) or harness-native workspace isolation; intended for Agent Skills-compatible coding agents."
 metadata:
-  version: "1.0.9"
+  version: "1.1.0"
   short-description: "Multi-Agent Git Orchestrator entry for plugin installs."
 ---
 
@@ -17,4 +17,4 @@ Before giving any Git coordination advice, read the package-root `SKILL.md`, two
 
 If `../../SKILL.md` cannot be read, say that the MAGOS installation is incomplete and give no state-dependent Git advice.
 
-The eight explicit commands are separate skills of the same plugin (for example `magos:git-recon`, or `/magos:GitRecon` in Claude Code). This skill never merges, deletes, pushes, or changes a repository on its own; writes go only through those commands and their gates.
+The nine explicit commands are separate skills of the same plugin (for example `magos:git-recon`, or `/magos:GitRecon` in Claude Code). This skill never merges, deletes, pushes, or changes a repository on its own; writes go only through those commands and their gates.

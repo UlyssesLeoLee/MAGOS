@@ -9,6 +9,7 @@
     "git-integrate",
     "git-orchestrator",
     "git-plan",
+    "git-protect",
     "git-recommend",
     "git-recon",
     "git-sweep"

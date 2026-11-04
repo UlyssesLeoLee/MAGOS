@@ -25,13 +25,13 @@
     {
       "file": "scripts/sync_hosts.py",
       "contains": [
-        "\"GitCleanup\", \"GitConverge\", \"GitSweep\", \"GitPlan\")"
+        "\"GitSweep\", \"GitPlan\", \"GitProtect\")"
       ]
     },
     {
       "file": "README.md",
       "contains": [
-        "## 八个核心命令",
+        "## 九个核心命令",
         "### `/GitConverge`",
         "| GitConverge | `/GitConverge` | `/git-converge` | `$git-converge` |",
         "├── GitConverge.md",
@@ -41,8 +41,8 @@
     {
       "file": "references/installation.md",
       "contains": [
-        "共 8 个",
-        "八个 `agents/openai.yaml`"
+        "共 9 个",
+        "九个 `agents/openai.yaml`"
       ]
     },
     {
@@ -58,7 +58,7 @@
       "contains": [
         "version: \"{plugin.yaml version}\"",
         "| `/GitConverge` | `/GitConverge` | `/git-converge` | `$git-converge` |",
-        "discover the eight Agent Skills"
+        "discover the nine Agent Skills"
       ]
     },
     {

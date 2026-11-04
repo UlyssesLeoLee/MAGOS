@@ -21,7 +21,7 @@
       "missing": []
     },
     {
-      "file": "plugin: skills/ discovery (§7.1) finds exactly the eight command adapters and git-orchestrator",
+      "file": "plugin: skills/ discovery (§7.1) finds exactly the nine command adapters and git-orchestrator",
       "passed": true,
       "missing": []
     },
@@ -36,7 +36,7 @@
       "missing": []
     },
     {
-      "file": "plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true, the entry skill sets user-invocable: false only (Claude Code lists the eight commands/ entries alone), and the root SKILL.md sets neither",
+      "file": "plugin: the nine command adapters set user-invocable: false and disable-model-invocation: true, the entry skill sets user-invocable: false only (Claude Code lists the nine commands/ entries alone), and the root SKILL.md sets neither",
       "passed": true,
       "missing": []
     },

@@ -1,0 +1,17 @@
+{
+  "files": [
+    "scripts/sync_hosts.py",
+    "scripts/validate_gemini_adapter.py",
+    "__init__.py",
+    "commands/GitProtect.md",
+    "commands/GitProtect.toml",
+    "skills/git-protect/SKILL.md",
+    "skills/git-protect/agents/openai.yaml",
+    "SKILL.md",
+    "references/commands.md",
+    "references/installation.md",
+    "README.md",
+    "README.en.md",
+    "README.ja.md"
+  ]
+}

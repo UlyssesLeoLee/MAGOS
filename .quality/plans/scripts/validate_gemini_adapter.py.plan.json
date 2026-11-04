@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "source": "scripts/validate_gemini_adapter.py",
-  "baseline_source_sha256": "8b750352b1a1acbcc72faac1b269f96a9ae77c883a4a3de4cebe9f3ed277052b",
-  "prepared_branch": "develop",
+  "baseline_source_sha256": "c3f646f8cee71cdebc0a15ea64425163befdcc81d6ff91f5f43475fb318e720a",
+  "prepared_branch": "agent/git-protect",
   "technical_design": ".quality/docs/scripts/validate_gemini_adapter.py.md",
   "test_design": ".quality/test-design/scripts/validate_gemini_adapter.py.test.md",
-  "prepared_technical_design_sha256": "e94a8ce314f543dbf5c1114863f96a3c8be76e7176aa4552cb263cae0e10d818",
-  "prepared_test_design_sha256": "643bf058d6948bd109d4fd28aacbbcd2816ebe7eea0d2ba81c4da3e46f494cae",
+  "prepared_technical_design_sha256": "9fba1aa0daec1d1dd506ec20265fdd9be404f731f502e966148b4d36a1566864",
+  "prepared_test_design_sha256": "508330571fa2a1495495b126a5fed98041197c72a1eb14c29a776d8bd8b2ddae",
   "prepared_related_design_sha256": {}
 }

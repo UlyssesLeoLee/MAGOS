@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "source": "__init__.py",
-  "baseline_source_sha256": "90761fae2f050ef60c54dc85458b3fddce890a793d256cf8f6621ce5f1fdc101",
-  "prepared_branch": "agent/review-fixes-1.0.9",
+  "baseline_source_sha256": "0840323ffbf1d035f722aeb3cb0428f1e32b8b5ed344f4e17446ccd6dfe9a512",
+  "prepared_branch": "agent/git-protect",
   "technical_design": ".quality/docs/__init__.py.md",
   "test_design": ".quality/test-design/__init__.py.test.md",
-  "prepared_technical_design_sha256": "58640c77f0aafbe91c943df2ca1675a7572518c55056dd40d28dd3b0a5c245aa",
-  "prepared_test_design_sha256": "4f49e1c0d7d13dafafd52e965cca44d60f644fe51a64a60176b177aa0051449f",
+  "prepared_technical_design_sha256": "dbdbcb800531a99de3a1f77686b68b504d2ccdc6d95c0cd30076aeda4c6f253e",
+  "prepared_test_design_sha256": "bd9b18627e3e2f0e97f09f2fcecba2af31c0ea811a166c511b63cf30a3ba3ab8",
   "prepared_related_design_sha256": {}
 }

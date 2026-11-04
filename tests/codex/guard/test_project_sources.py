@@ -40,8 +40,9 @@ class RecordingContext:
         self.hooks.append((name, callback))
 
 
-COMMAND_SKILLS = ["git-recon", "git-analyze", "git-recommend", "git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan"]
-WRITE_COMMANDS = ["git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan"]
+COMMAND_SKILLS = ["git-recon", "git-analyze", "git-recommend", "git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan",
+                  "git-protect"]
+WRITE_COMMANDS = ["git-integrate", "git-cleanup", "git-converge", "git-sweep", "git-plan", "git-protect"]
 
 
 def init_module():
@@ -58,10 +59,11 @@ def test_init_registers_every_skill_with_a_description():
     assert set(mod.INDEX_DESCRIPTIONS) == set(names)
 
 
-def test_init_registers_the_entry_skill_and_the_eight_command_adapters():
+def test_init_registers_the_entry_skill_and_the_nine_command_adapters():
     ctx = RecordingContext()
     init_module().register(ctx)
-    expected = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-orchestrator", "git-plan", "git-recommend", "git-recon", "git-sweep"]
+    expected = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-orchestrator", "git-plan", "git-protect", "git-recommend",
+                "git-recon", "git-sweep"]
     assert [c[0] for c in ctx.calls] == expected
     assert sorted(p.name for p in (ROOT / "skills").iterdir()) == expected  # the directory holds no other skill
 
@@ -75,7 +77,7 @@ def test_init_registers_the_two_guard_callbacks():
     ctx = Ordered()
     mod.register(ctx)
     assert [c[0] for c in ctx.calls] == sorted(p.name for p in (ROOT / "skills").iterdir() if (p / "SKILL.md").is_file())
-    assert ctx.hooks == [("pre_tool_call", mod.verdict, 9), ("pre_tool_call", mod.approval, 9)]  # after the nine skills
+    assert ctx.hooks == [("pre_tool_call", mod.verdict, 10), ("pre_tool_call", mod.approval, 10)]  # after the ten skills
 
 
 def test_the_index_table_is_a_literal_in_the_contract_order():
@@ -106,6 +108,13 @@ def test_the_git_plan_index_line_names_its_writes():
     line = init_module().INDEX_DESCRIPTIONS["git-plan"]
     assert line == ("Registers lane claims and, with --converge --apply, merges the lanes: run only when the user types /magos:git-plan. "
                     "Never load it yourself.")
+    assert len(line) <= 160
+
+
+def test_the_git_protect_index_line_names_its_writes():
+    line = init_module().INDEX_DESCRIPTIONS["git-protect"]
+    assert line == ("Sets or lifts the protection of a branch against agents' commits and merges: run only when the user types "
+                    "/magos:git-protect. Never load it yourself.")
     assert len(line) <= 160
 
 
@@ -195,14 +204,15 @@ def test_package_files_excludes_the_plugin_only_entry(pkg):
     assert mod.file_sha256(repo / "SKILL.md") == __import__("hashlib").sha256((repo / "SKILL.md").read_bytes()).hexdigest()
 
 
-def test_eight_commands_and_their_adapters_are_listed():
+def test_nine_commands_and_their_adapters_are_listed():
     mod = load(ROOT / "scripts" / "sync_hosts.py", "sync_hosts_real")
-    names = ("GitRecon", "GitAnalyze", "GitRecommend", "GitIntegrate", "GitCleanup", "GitConverge", "GitSweep", "GitPlan")
+    names = ("GitRecon", "GitAnalyze", "GitRecommend", "GitIntegrate", "GitCleanup", "GitConverge", "GitSweep", "GitPlan", "GitProtect")
     assert mod.COMMAND_NAMES == names
-    declaration = next(line for line in (ROOT / "scripts" / "sync_hosts.py").read_text(encoding="utf-8").splitlines()
-                       if line.startswith("COMMAND_NAMES = "))
-    assert declaration.endswith('"GitConverge", "GitSweep", "GitPlan")')  # the tail the Claude source-contract case pins
-    assert len(mod.COMMAND_PATHS) == 8 and mod.COMMAND_PATHS[-1] == "commands/GitPlan.md"
+    source = (ROOT / "scripts" / "sync_hosts.py").read_text(encoding="utf-8")
+    declaration = source[source.index("COMMAND_NAMES = "):]
+    declaration = declaration[:declaration.index(")") + 1]
+    assert declaration.endswith('"GitSweep", "GitPlan", "GitProtect")')  # the tail the Claude source-contract case pins
+    assert len(mod.COMMAND_PATHS) == 9 and mod.COMMAND_PATHS[-1] == "commands/GitProtect.md"
     assert all((ROOT / path).is_file() for path in mod.COMMAND_PATHS)
     listed = mod.package_files(ROOT)
     for name in names:
@@ -302,28 +312,28 @@ def test_claude_host_and_plugin_skip(pkg, tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     (home / ".claude" / "commands").mkdir(parents=True)
     code, out = main_of(mod, monkeypatch, capsys, "--home", str(home), "--host", "claude", "--apply")
-    assert code == 0 and "Written: 8" in out and (home / ".claude" / "commands" / "GitRecon.md").is_file()
+    assert code == 0 and "Written: 9" in out and (home / ".claude" / "commands" / "GitRecon.md").is_file()
     (home / ".claude" / "skills" / "magos" / ".claude-plugin").mkdir(parents=True)
     (home / ".claude" / "skills" / "magos" / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": "magos"}), encoding="utf-8")
     code, out = main_of(mod, monkeypatch, capsys, "--home", str(home), "--hermes-root", str(tmp_path / "hr"), "--codex-root", str(tmp_path / "cr"))
     assert "Skipping the claude host" in out and code == 2
 
 
-def test_a_home_without_the_eighth_command_reports_it_missing_and_apply_adds_it(pkg, tmp_path, monkeypatch, capsys):
+def test_a_home_without_the_newest_command_reports_it_missing_and_apply_adds_it(pkg, tmp_path, monkeypatch, capsys):
     repo, mod = pkg
     home = tmp_path / "home"
     commands = home / ".claude" / "commands"
     commands.mkdir(parents=True)
     claude = ("--home", str(home), "--host", "claude")
     code, out = main_of(mod, monkeypatch, capsys, *claude, "--apply")
-    assert code == 0 and "Written: 8" in out
-    (commands / "GitPlan.md").unlink()  # the home of an install that predates the eighth command
+    assert code == 0 and "Written: 9" in out
+    (commands / "GitProtect.md").unlink()  # the home of an install that predates the ninth command
     code, out = main_of(mod, monkeypatch, capsys, *claude, "--verify", "--json")
     report = json.loads(out)
-    assert code == 1 and report["summary"]["missing"] == 1 and report["summary"]["matched"] == 7
-    assert [item["relative_path"] for item in report["files"] if item["status"] == "missing"] == ["commands/GitPlan.md"]
+    assert code == 1 and report["summary"]["missing"] == 1 and report["summary"]["matched"] == 8
+    assert [item["relative_path"] for item in report["files"] if item["status"] == "missing"] == ["commands/GitProtect.md"]
     code, out = main_of(mod, monkeypatch, capsys, *claude, "--apply")
-    assert code == 0 and "Written: 1" in out and (commands / "GitPlan.md").is_file()  # only the missing file is copied
+    assert code == 0 and "Written: 1" in out and (commands / "GitProtect.md").is_file()  # only the missing file is copied
     code, out = main_of(mod, monkeypatch, capsys, *claude, "--verify", "--json")
     assert code == 0 and {item["status"] for item in json.loads(out)["files"]} == {"matched"}
 
@@ -504,6 +514,6 @@ def test_explicit_claude_host_copies_despite_a_marketplace_install(pkg, tmp_path
     plugin_index(home, {"magos@magos": [install_entry("user")]})
     (home / ".claude" / "commands").mkdir(parents=True)
     code, out = main_of(mod, monkeypatch, capsys, "--home", str(home), "--host", "claude", "--apply")
-    assert code == 0 and "magos@magos" in out and "/magos:GitXxx" in out and "Written: 8" in out
+    assert code == 0 and "magos@magos" in out and "/magos:GitXxx" in out and "Written: 9" in out
     assert "Skipping the claude host" not in out
     assert sorted(p.name for p in (home / ".claude" / "commands").iterdir()) == sorted(Path(rel).name for rel in mod.COMMAND_PATHS)

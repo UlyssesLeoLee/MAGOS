@@ -2,6 +2,34 @@
 
 Every version of the `magos` package (the `version` in `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` and the lane guard's `GUARD_VERSION`). A release is tagged `v<version>` on its release commit. The tag `v1.0` marks the skill release 3.4.0 from before the package became a plugin and was renumbered; it is not a plugin version. Install, pin, upgrade and roll back as `references/installation.md` describes.
 
+## 1.1.0
+
+Tag `v1.1.0`. A feature release: the ninth command, `/GitProtect`, lets the user protect a branch so that agents can no longer commit to it, merge into it or rewrite it through the hooked tools of Claude Code, Codex and Hermes. The release also fixes how the hook reads Codex commands on Windows, cmd's `cd` words and PowerShell's colon parameters, and how the Hermes plugin finds the directory a terminal call runs in.
+
+### Added
+
+- **`/GitProtect <branch> [--release] [--status]`.** It runs the new guard subcommands `protect` (user-only: approved by your click in the host's prompt or run in your own terminal, at every approval level, `--release` included) and `protect-show` (read-only). The protection lives in `<git-common-dir>/magos/protected.json`, belongs to the repository and holds in every worktree; up to 64 branches per repository; a branch can be protected before it exists. Codex approves it through `magos_approve` (`subcommand` `protect`, `branch`, `release`), Hermes through the plugin's question.
+- **The hook rule.** In a repository that holds a protection, the hook refuses (code `BRANCH_PROTECTED`, no override) every agent write to a protected branch in the ordinary spellings of git and the shell: `commit` (also `--amend`), `merge`, `pull`, `cherry-pick`, `revert`, `rebase`, `am`, `reset`, `update-ref`, `symbolic-ref`, the forced, deleting and renaming forms of `branch`, `checkout -B` / `switch -C`, a worktree that checks it out, the creation of its name, a fetch into it (a refspec on the line or a configured `remote.<name>.fetch`), a push or `send-pack` into it through a local repository, `reflog --updateref`, and any write whose target the hook cannot read. It reads the line in order: `git switch -c feat && git commit -am x` on a protected `main` writes `feat` and is allowed; `git switch main; git commit` is refused, and the denial says how to split or join the calls. Reads, checking a protected branch out, creating other branches and writing them stay allowed.
+- **The record is guarded.** A write of an existing protection record or its store (also through globs, brace expansions, `.` segments, Windows trailing dots, a `cd` anywhere before it, `find ... -delete`, a read piped into a writer, a git read with `--output`) and a write of the refs of a protected repository are refused; `magos.guard off` does not silence a protection: only `MAGOS_GUARD=off` in the host process and `/GitProtect <branch> --release` do. `doctor` lists the protections; a record that cannot be read protects every branch until you inspect it.
+
+### Fixed
+
+- **Codex on Windows.** A string command is read in the PowerShell dialect, as Codex runs it, so `git -C C:\...\repo commit` and `Set-Location C:\...\repo; ...` name that repository for the creation check and the protection.
+- **cmd.** `cd/d <dir>`, `cd..`, `cd\` and `cd;<dir>` change the directory, and `;` no longer ends a command in cmd text.
+- **PowerShell.** `Set-Location -Path:<dir>`, `-LiteralPath:<dir>` and their prefixes and aliases change the directory.
+- **Hermes plugin.** A terminal call without `workdir` is judged in the directory the session's terminal is in (the directory an earlier `cd` left, else `TERMINAL_CWD`), not in the Hermes process directory.
+- **Repository discovery.** The hook finds a repository as git does (real paths through junctions and symbolic links, a `.git` directory git would skip, bare and nested git directories) without a Git call in a repository that holds no protection.
+
+### Known limits
+
+- A protection is an accident guard, not a boundary against an agent that sets out to evade it: settings, environment variables and options that make git run a program (an editor, a pager, an ssh command, a hook, a filter, `--upload-pack`, ...), URL rewriting (`url.<base>.insteadOf`), git's control files edited between calls, interpreters and the file tools the hook does not see are not judged. Pushes to a remote host and `gh pr merge` are guarded by the hosting service's own branch protection; your own terminal and Git itself are not affected; Gemini CLI has no tool hook, so no protection is enforced there.
+- A `\"` inside double quotes in PowerShell and cmd text and PowerShell's `<# ... #>` block comments are read as before (`references/lane-split.md` section 12).
+
+### Upgrade
+
+1. Upgrade the plugin on each host and restart it: Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`; Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`.
+2. Copies under `~/.magos/guard` (Codex and Hermes entries) are refreshed by running `install --host <host>` again; `doctor` names a stale copy.
+
 ## 1.0.9
 
 Tag `v1.0.9`. A security and fix release after a full review of 1.0.8: the tamper filter now reads every part of a command before it decides, and the approval routes of Codex and Hermes read their directories and commands exactly. In 1.0.8 the hook was the only barrier between an agent's own shell and the approval server it could start, so each gap the review found let a plain shell command approve a user-only guard command (`override`, `arm`, `disarm`, `install`) without a human.

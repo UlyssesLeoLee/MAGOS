@@ -1,0 +1,7 @@
+{
+  "guard_subcommands": [
+    "protect",
+    "protect-show"
+  ],
+  "approval": "user-only, every approval level, --release included"
+}

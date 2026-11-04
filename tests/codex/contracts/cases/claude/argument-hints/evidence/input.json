@@ -7,7 +7,8 @@
     "GitCleanup",
     "GitConverge",
     "GitSweep",
-    "GitPlan"
+    "GitPlan",
+    "GitProtect"
   ],
   "argument_hints": {
     "GitRecon": "[--remote] [--lang <language>] [--help]",
@@ -17,6 +18,7 @@
     "GitCleanup": "[--apply] [--lang <language>] [--help]",
     "GitConverge": "<branch> [--apply] [--discard-ignored] [--lang <language>] [--help]",
     "GitSweep": "<branch> [--apply] [--discard-ignored] [--push] [--remote <name>] [--lang <language>] [--help]",
-    "GitPlan": "<set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]"
+    "GitPlan": "<set> (--into <branch> | --status | --amend | --converge | --release) [--apply] [--create] [--expect-revision <n>] [--include-active] [--land] [--lang <language>] [--help]",
+    "GitProtect": "[<branch>] [--release | --status] [--lang <language>] [--help]"
   }
 }

@@ -2,7 +2,7 @@
 
 Source: `__init__.py`
 
-Source-SHA256: `0840323ffbf1d035f722aeb3cb0428f1e32b8b5ed344f4e17446ccd6dfe9a512`
+Source-SHA256: `07a87960c78d587b8e3f44f69e920b7cfcd34fe6eccb1e302948f82ac8c1fd45`
 
 ## Responsibility
 
@@ -14,9 +14,9 @@ function registers every `skills/<name>/SKILL.md` under the plugin namespace, so
 `/magos:git-recon` and so on, which Codex spells `$magos:git-recon` and Claude Code hides. Without this file Hermes loads the
 package through its portable `plugin.json` and names the commands `/agent-plugin-magos-<digest>:git-recon`.
 
-Nine skills are registered: the entry skill `git-orchestrator` and the eight command adapters `git-recon`,
-`git-analyze`, `git-recommend` (read-only) and `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`
-(commands that write to a repository).
+Ten skills are registered: the entry skill `git-orchestrator` and the nine command adapters `git-recon`,
+`git-analyze`, `git-recommend` (read-only) and `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`,
+`git-protect` (commands that write to a repository or to the guard's state).
 
 Hermes lists every registered plugin skill in the `<available_skills>` index of the system prompt with the description
 passed at registration; it does not read a plugin skill's `SKILL.md` description for that index, so a skill registered
@@ -46,8 +46,9 @@ the child's environment) and the working directory, by attribute only. Host: Her
 `register_skill(name, path, description="")` records one skill and whose `register_hook(name, callback)` adds one
 callback; the module calls `register_skill` for each skill and `register_hook("pre_tool_call", ...)` exactly twice, no
 other `ctx.register_*` method, and `plugin.yaml` declares that hook, because the plugin catalog compares declared
-capabilities. Hermes modules are imported inside the gate probe only (`tools.approval`, `tools.approval_context`,
-`hermes_cli.plugins`) and for the active home (`hermes_constants.get_hermes_home`), each in a `try`, read, never patched.
+capabilities. Hermes modules are imported inside the gate probe (`tools.approval`, `tools.approval_context`, `hermes_cli.plugins`),
+for the terminal session's directory (`tools.approval`, `tools.terminal_tool` in `_session_cwd`) and for the active
+home (`hermes_constants.get_hermes_home`) only, each in a `try`, read, never patched.
 Filesystem: the `skills/` directory next to the module, `Path(__file__).parent / "skills"`, the `SKILL.md` file of each
 child directory, and `scripts/magos_guard.py` next to the module.
 
@@ -92,7 +93,13 @@ other than `terminal` and when `MAGOS_GUARD` is `off`. `verdict` runs the guard 
 (version 1.0.8), The plugin callbacks, of the guard's design states; a guard that cannot start, exits non-zero, prints no
 JSON object or an object of no known shape, or exceeds 25 s, and any other error inside `verdict`, gives a block whose
 message names the cause, says that nothing ran and names the off switches (`MAGOS_GUARD=off`, `hermes plugins disable
-magos`), in Chinese unless `MAGOS_LANG` is `en`. The payload reaches the guard on stdin as ASCII-escaped JSON: a value
+magos`), in Chinese unless `MAGOS_LANG` is `en`. The payload's `cwd` is the directory the terminal call runs in when it
+carries no `workdir`, as Hermes's terminal tool resolves it: the session's recorded directory
+(`tools.terminal_tool.get_session_cwd` of `tools.approval.get_current_session_key(default="")`, else of the call's
+`task_id`), which Hermes records after every command so a `cd` of an earlier call holds; else `TERMINAL_CWD`; else
+Hermes's own directory (`os.getcwd()`, `""` when it is gone). A call with `workdir` keeps the process directory as
+`cwd` (the guard reads `workdir` first). These are Hermes internals, read and never patched; an import or a call that
+raises falls back to the next source. The payload reaches the guard on stdin as ASCII-escaped JSON: a value
 JSON cannot hold is written as its text and a key that is not a string is left out, so every call serialises. The
 child's environment is Hermes's own, with `HERMES_HOME` set to `hermes_constants.get_hermes_home()` when that import
 works, else inherited unchanged. `verdict` keeps a mark for
@@ -109,9 +116,9 @@ no approve. `gate()` returns `ask`, `bypass` or `absent` as that section states.
 `INDEX_DESCRIPTIONS`: a top-level literal `dict` from skill name to one single-line string, with no computed value, so
 a check can read it with `ast.literal_eval` without running the module. It holds exactly one non-empty entry for each
 directory of `skills/` that carries a `SKILL.md`, no entry for anything else, in this order: `git-orchestrator`,
-`git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`.
-`git-plan` comes last, after the read-only commands and the earlier write commands, in the section order of
-`references/commands.md`, so the neighbouring text of the earlier lines stays as it is. The `""` default of the lookup
+`git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`,
+`git-protect`. `git-plan` and `git-protect` come last, after the read-only commands and the earlier write commands, in
+the section order of `references/commands.md` (sections 8 and 9). The `""` default of the lookup
 exists only so that a skill added without a line still registers; the contract check fails that tree.
 
 Line rules, final state:
@@ -122,10 +129,12 @@ Line rules, final state:
 - Read-only commands (`git-recon`, `git-analyze`, `git-recommend`): start with `Read-only` and say
   `Use /magos:<name> when the user asks`; they do not tell the model to stay away from them.
 - Write commands, which are exactly the skills whose `SKILL.md` has the section `## Explicit invocation only`
-  (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`): the line names what the command writes,
+  (`git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`, `git-protect`): the line names what the command writes,
   then `run only when the user types /magos:<name>.`, and ends with `Never load it yourself.`
 - `git-plan` reads: `Registers lane claims and, with --converge --apply, merges the lanes: run only when the user types
   /magos:git-plan. Never load it yourself.` (one line, without a line break).
+- `git-protect` reads: `Sets or lifts the protection of a branch against agents' commits and merges: run only when the user types /magos:git-protect. Never load it yourself.` (one line, without a line break, 149 characters). The command writes the guard's protection
+  record through the user-only guard subcommand `protect`, which the user approves; `--status` only reads.
 - A line names no command other than its own: every text of the form `/<plugin>:<command>` in a line equals
   `/magos:<its own name>`.
 - Every line other than the orchestrator's has at most 160 characters.
@@ -177,3 +186,8 @@ Version 1.0.9 keeps no mark in a Hermes plugin-host process (`plugins.isolation:
 own copy of the arguments: there the approval callback returns nothing, so a guard command that names `magos_guard` (`plan`,
 `version`, `git add scripts/magos_guard.py`) is no longer blocked as unprepared; in Hermes's own process the callbacks are
 those of 1.0.8.
+
+Version 1.1.0 passes the terminal session's directory as the payload's `cwd` when a call carries no `workdir`
+(`_session_cwd`: Hermes's recorded session directory, else `TERMINAL_CWD`, else Hermes's own directory), so a `cd` of an
+earlier terminal call holds for the creation check and the branch protection; it registers the `git-protect` skill
+with the other command skills.

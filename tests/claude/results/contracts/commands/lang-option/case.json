@@ -16,13 +16,14 @@
       "GitCleanup",
       "GitConverge",
       "GitSweep",
-      "GitPlan"
+      "GitPlan",
+      "GitProtect"
     ],
     "default": "Chinese"
   },
   "expected": [
-    "All eight Claude wrappers list --lang in the argument hint, the usage line, the options, and the execution step.",
-    "All eight adapters list --lang in both host usage lines and in the execution section.",
+    "All nine Claude wrappers list --lang in the argument hint, the usage line, the options, and the execution step.",
+    "All nine adapters list --lang in both host usage lines and in the execution section.",
     "The canonical contract defines the option once and every command's argument table repeats it."
   ],
   "checks": [
@@ -121,6 +122,17 @@
       ]
     },
     {
+      "file": "commands/GitProtect.md",
+      "contains": [
+        "[--lang <language>] [--help]",
+        "`--lang <language>` never changes what you do; it only sets the language of everything you write back, this help included",
+        "- `--lang <language>`: Language of the reply",
+        "Write every reply in the language selected by `--lang` (Chinese when absent).",
+        "Reply language: Chinese unless `--lang` selects another one; this includes the final report.",
+        "4. Before you write the final report, check the reply language again"
+      ]
+    },
+    {
       "file": "skills/git-recon/SKILL.md",
       "contains": [
         "[--lang <language>] [--help]`",
@@ -193,9 +205,18 @@
       ]
     },
     {
+      "file": "skills/git-protect/SKILL.md",
+      "contains": [
+        "[--lang <language>] [--help]`",
+        "- `--lang <language>`: Language of the reply",
+        "Reply in the language selected by `--lang` (Chinese when absent)",
+        "Remove `--lang` and its value from the arguments before parsing the rest."
+      ]
+    },
+    {
       "file": "references/commands.md",
       "contains": [
-        "**Reply language.** All eight commands accept `--lang <language>`.",
+        "**Reply language.** All nine commands accept `--lang <language>`.",
         "Chinese (简体中文)",
         "including the final report of a write command after a long run",
         "write it in the reply language, Chinese unless `--lang` selects another one, headings and tables included",
@@ -213,7 +234,7 @@
     {
       "file": "SKILL.md",
       "contains": [
-        "All eight commands accept `--lang <language>`",
+        "All nine commands accept `--lang <language>`",
         "(Chinese when absent)"
       ]
     },

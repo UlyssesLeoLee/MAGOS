@@ -1,12 +1,12 @@
 # codex/argument-discovery
 
 - Skill: `all`
-- Feature: Codex exposes all eight skills with compact usage hints
+- Feature: Codex exposes all nine skills with compact usage hints
 - Result: **PASS**
 
 ## Expected behavior
 
-- All eight skill directories have Codex-recognized names and invocation syntax.
+- All nine skill directories have Codex-recognized names and invocation syntax.
 - Each openai.yaml short description includes its $skill selector and --help.
 
 ## Contract checks
@@ -27,5 +27,7 @@
 - PASS `skills/git-sweep/agents/openai.yaml`
 - PASS `skills/git-plan/SKILL.md`
 - PASS `skills/git-plan/agents/openai.yaml`
+- PASS `skills/git-protect/SKILL.md`
+- PASS `skills/git-protect/agents/openai.yaml`
 
 Evidence scope: source-contract check; no AI host CLI is invoked.

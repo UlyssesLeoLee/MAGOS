@@ -427,3 +427,48 @@ def test_a_plugin_host_process_keeps_no_mark(tmp_path, monkeypatch):
     args, kw = {"command": commands[0]}, call_kw("own")
     assert verdict(tool_name="terminal", args=args, **kw) is None and len(mod._KEPT) == 1
     assert approval(tool_name="terminal", args=args, **kw) is None and mod._KEPT == {}
+
+
+def test_the_payload_uses_the_terminal_session_directory(monkeypatch, tmp_path):
+    mod, (verdict, _) = plugin()
+    monkeypatch.delenv("TERMINAL_CWD", raising=False)
+    D, E, T, W = (str(tmp_path / x) for x in ("D", "E", "T", "W"))
+    key = {"v": ""}
+    approval_mod = types.ModuleType("tools.approval")
+    approval_mod.get_current_session_key = lambda default="default": key["v"] or default
+    term = types.ModuleType("tools.terminal_tool")
+    term.get_session_cwd = lambda k: {"task-1": D, "s1": E}.get(k)
+    tools_pkg = types.ModuleType("tools")
+    tools_pkg.__path__ = []
+    tools_pkg.approval, tools_pkg.terminal_tool = approval_mod, term
+    for name, m in (("tools", tools_pkg), ("tools.approval", approval_mod), ("tools.terminal_tool", term)):
+        monkeypatch.setitem(sys.modules, name, m)
+    kw = {"task_id": "task-1"}
+    assert mod._payload("terminal", {"command": "ls"}, kw)["cwd"] == D
+    key["v"] = "s1"
+    assert mod._payload("terminal", {"command": "ls"}, kw)["cwd"] == E
+    assert mod._payload("terminal", {"command": "ls", "workdir": W}, kw)["cwd"] == os.getcwd()  # the guard reads workdir itself
+
+    def boom(k):
+        raise RuntimeError("no session")
+    term.get_session_cwd = boom
+    monkeypatch.setenv("TERMINAL_CWD", T)
+    assert mod._payload("terminal", {"command": "ls"}, kw)["cwd"] == T  # a raising probe: the next source
+    for name in ("tools", "tools.approval", "tools.terminal_tool"):
+        monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, "tools", None)  # no Hermes: the import fails
+    assert mod._payload("terminal", {"command": "ls"}, kw)["cwd"] == T
+    monkeypatch.delenv("TERMINAL_CWD")
+    assert mod._payload("terminal", {"command": "ls"}, kw)["cwd"] == os.getcwd()
+
+    # End to end: Hermes runs in a topic worktree, the session's recorded directory is R, whose main is protected.
+    from test_branch_protect import World, protect
+    monkeypatch.setattr(G, "user_console", lambda: True)
+    w = World(tmp_path / "e2e")
+    protect(w.R, "main")
+    monkeypatch.chdir(w.W)
+    term.get_session_cwd = lambda k: str(w.R.path)
+    for name, m in (("tools", tools_pkg), ("tools.approval", approval_mod), ("tools.terminal_tool", term)):
+        monkeypatch.setitem(sys.modules, name, m)
+    out = verdict(tool_name="terminal", args={"command": "git commit -m x"}, **call_kw())
+    assert out and out["action"] == "block" and "'main' is protected" in out["message"], out

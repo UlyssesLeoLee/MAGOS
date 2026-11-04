@@ -1,0 +1,125 @@
+{
+  "id": "git-protect/package-wiring",
+  "skill": "git-protect",
+  "feature": "The ninth command is wired into the sync script, the Hermes index, the adapters, the Gemini command, the install guide and the three READMEs",
+  "invocations": {
+    "installer": "python -X utf8 scripts/sync_hosts.py",
+    "claude": "/magos:GitProtect",
+    "codex": "$magos:git-protect",
+    "hermes": "/magos:git-protect",
+    "gemini": "/GitProtect"
+  },
+  "test_object": {
+    "files": [
+      "scripts/sync_hosts.py",
+      "scripts/validate_gemini_adapter.py",
+      "__init__.py",
+      "commands/GitProtect.md",
+      "commands/GitProtect.toml",
+      "skills/git-protect/SKILL.md",
+      "skills/git-protect/agents/openai.yaml",
+      "SKILL.md",
+      "references/commands.md",
+      "references/installation.md",
+      "README.md",
+      "README.en.md",
+      "README.ja.md"
+    ]
+  },
+  "expected": [
+    "COMMAND_NAMES ends with GitSweep, GitPlan, GitProtect, so sync_hosts.py installs commands/GitProtect.md for Claude, and the Codex and Hermes packages carry skills/git-protect with its openai.yaml.",
+    "The Hermes plugin index describes git-protect as a command that sets or lifts a branch protection and must never be loaded by the model.",
+    "The Gemini adapter lists GitProtect and its TOML command activates git-orchestrator.",
+    "Docs list /GitProtect, /git-protect and $git-protect and say nine commands."
+  ],
+  "checks": [
+    {
+      "file": "scripts/sync_hosts.py",
+      "contains": [
+        "\"GitSweep\", \"GitPlan\", \"GitProtect\")"
+      ]
+    },
+    {
+      "file": "scripts/validate_gemini_adapter.py",
+      "contains": [
+        "\"GitSweep\", \"GitPlan\", \"GitProtect\")"
+      ]
+    },
+    {
+      "file": "__init__.py",
+      "contains": [
+        "\"git-protect\": \"Sets or lifts the protection of a branch against agents' commits and merges: run only when the user types /magos:git-protect. Never load it yourself.\","
+      ]
+    },
+    {
+      "file": "commands/GitProtect.md",
+      "contains": [
+        "For a normal invocation, run the Multi-Agent Git Orchestrator command `/GitProtect $ARGUMENTS`.",
+        "`references/commands.md` section **9. GitProtect**",
+        "`magos` (plugin clone directory)",
+        "`multi-agent-git-orchestrator` (frontmatter name)"
+      ]
+    },
+    {
+      "file": "commands/GitProtect.toml",
+      "contains": [
+        "{{args}}",
+        "activate_skill",
+        "references/commands.md",
+        "GitProtect"
+      ]
+    },
+    {
+      "file": "skills/git-protect/SKILL.md",
+      "contains": [
+        "name: git-protect",
+        "Use it only when the user explicitly invokes `/git-protect` in Hermes or `$git-protect` in Codex.",
+        "2. `../../references/commands.md` section **9. GitProtect**",
+        "Do not use `commands/*.md` for this adapter."
+      ]
+    },
+    {
+      "file": "skills/git-protect/agents/openai.yaml",
+      "contains": [
+        "display_name: \"git-protect\""
+      ]
+    },
+    {
+      "file": "references/installation.md",
+      "contains": [
+        "`/magos:GitRecon` … `/magos:GitProtect`",
+        "共 9 个",
+        "九个 `agents/openai.yaml`"
+      ]
+    },
+    {
+      "file": "README.md",
+      "contains": [
+        "## 九个核心命令",
+        "### `/GitProtect`",
+        "└── GitProtect.md",
+        "| GitProtect | `/GitProtect` | `/git-protect` | `$git-protect` |",
+        "| Branch Protection |"
+      ]
+    },
+    {
+      "file": "README.en.md",
+      "contains": [
+        "## The nine commands",
+        "### `/GitProtect` — keep agents off a branch",
+        "| GitProtect | `/GitProtect` | `/git-protect` | `$git-protect` |",
+        "| Branch Protection |"
+      ]
+    },
+    {
+      "file": "README.ja.md",
+      "contains": [
+        "## 9 つのコアコマンド",
+        "### `/GitProtect`",
+        "└── GitProtect.md",
+        "| GitProtect | `/GitProtect` | `/git-protect` | `$git-protect` |",
+        "| Branch Protection |"
+      ]
+    }
+  ]
+}

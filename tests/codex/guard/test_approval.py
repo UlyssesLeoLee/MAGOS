@@ -137,9 +137,10 @@ def run_ps(cmd, cwd):
 # ---- registry and levels (TC-500 to TC-502) ---------------------------------------------------------------------------------------------
 def test_user_only_registry_drives_the_filter_and_the_parser(capsys):
     assert [(u.name, u.auto_safe, u.scope) for u in G.USER_ONLY] == [("override", False, "repo"), ("arm", True, "repo"), ("disarm", False, "repo"),
-                                                                       ("install", True, "home")]
-    assert G._USER_ONLY == ("override", "arm", "disarm", "install")
-    need = {"override": ["--fingerprint", "0123456789ab", "--reason", "r"], "arm": [], "disarm": [], "install": ["--host", "codex"]}
+                                                                       ("install", True, "home"), ("protect", False, "repo")]
+    assert G._USER_ONLY == ("override", "arm", "disarm", "install", "protect")
+    need = {"override": ["--fingerprint", "0123456789ab", "--reason", "r"], "arm": [], "disarm": [], "install": ["--host", "codex"],
+            "protect": ["--branch", "main"]}
     for u in G.USER_ONLY:
         for form in (["--approval=abc"], ["--approval", "abc"]):
             ns = G.build_parser("x").parse_args([u.name] + need[u.name] + form)
@@ -334,8 +335,8 @@ def test_codex_names_the_mcp_route_and_hermes_keeps_todays_denial(repo):
     assert answer(hook(repo.path, cmd))["permissionDecision"] == "ask"
     shutil.rmtree(str(approvals(repo)))
     protected = G.T("en", "protected", why=G._USER_MSG)
-    assert protected == ("MAGOS DENIES: this command would change the guard's own claims/switches/hooks (override / arm / disarm / install are user-only). "
-                         "Only the user may do this, in their own terminal.")
+    assert protected == ("MAGOS DENIES: this command would change the guard's own claims/switches/hooks (override / arm / disarm / install / protect are "
+                         "user-only). Only the user may do this, in their own terminal.")
     codex = G.T("en", "protected_codex", why=G._USER_MSG, call=json.dumps({"subcommand": "arm", "repo": P(repo.path)}),
                 ready=G.ready_command(["--repo=" + P(repo.path), "--lang=en", "arm"]))  # --lang of the payload is dropped
     for host, tool, c, want in (("codex", "Bash", cmd, codex), ("codex", "Bash", ["py", "-3", S, "arm"], codex), ("hermes", "terminal", cmd, protected)):

@@ -131,7 +131,7 @@ Sources: https://agent-plugins.org/specification (1.0.0), the manifest schema be
 https://agentskills.io/specification as the reference validator skills-ref codes them. No official Agent Plugins
 validator exists, and clients must not fetch schemas while loading (§5.2), so the schema is mirrored here.
 
-Plugin clients discover only skills/<dir>/SKILL.md (§6.1, §7.1). They see the eight command adapters and the
+Plugin clients discover only skills/<dir>/SKILL.md (§6.1, §7.1). They see the nine command adapters and the
 git-orchestrator entry skill; the orchestrator SKILL.md at the package root is not a plugin skill, so the entry skill
 and the adapters reach it through their ../../ paths.
 """
@@ -178,13 +178,13 @@ ANNOTATIONS = {"$schema", "$id", "title", "description"}
 TYPES = {"object": dict, "string": str, "array": list}
 
 EXPECTED_PLUGIN_SKILLS = ["git-analyze", "git-cleanup", "git-converge", "git-integrate", "git-orchestrator",
-                         "git-plan", "git-recommend", "git-recon", "git-sweep"]
+                         "git-plan", "git-protect", "git-recommend", "git-recon", "git-sweep"]
 ROOT_SKILL_NAME = "multi-agent-git-orchestrator"
 # The Agent Skills fields, plus two documented Claude Code host keys: `disable-model-invocation: true` keeps the model
-# from invoking a skill through the Skill tool, `user-invocable: false` keeps a skill out of the `/` menu. The eight command
+# from invoking a skill through the Skill tool, `user-invocable: false` keeps a skill out of the `/` menu. The nine command
 # adapters set both, because Claude Code gets its commands from commands/ and would otherwise list every command twice
 # (/magos:GitRecon and /magos:git-recon). The entry skill is loaded by the model and typed by nobody, so it sets
-# `user-invocable: false` only: the menu then lists the eight commands under one naming. Hermes reads the frontmatter as a
+# `user-invocable: false` only: the menu then lists the nine commands under one naming. Hermes reads the frontmatter as a
 # mapping and ignores the keys; Codex reads only the fields it knows.
 MODEL_INVOCATION_KEY = "disable-model-invocation"
 USER_INVOCABLE_KEY = "user-invocable"
@@ -445,9 +445,9 @@ def check_shipped_versions(root: Path) -> list[str]:
 def check_model_invocation(root: Path) -> list[str]:
     """Claude Code lists every skills/ skill in its `/` menu and offers it to the model unless its frontmatter hides it.
 
-    Claude Code gets its eight commands from commands/, so the eight command adapters (made for Codex and Hermes) set
+    Claude Code gets its nine commands from commands/, so the nine command adapters (made for Codex and Hermes) set
     `user-invocable: false` and `disable-model-invocation: true`. The entry skill is loaded by the model and typed by nobody, so it sets
-    `user-invocable: false` only, and the menu lists the eight commands under one naming. The root SKILL.md sets neither.
+    `user-invocable: false` only, and the menu lists the nine commands under one naming. The root SKILL.md sets neither.
     """
     problems = []
     pages = [(f"skills/{path.parent.name}/SKILL.md", path, "entry" if path.parent.name == ENTRY_SKILL else "adapter") for path in adapter_skill_files(root)]
@@ -464,11 +464,11 @@ def check_model_invocation(root: Path) -> list[str]:
                 problems.append(f"{label} must set {USER_INVOCABLE_KEY}: false (Claude Code must not list an adapter in its / menu)")
         else:
             if kind == "entry" and fields.get(USER_INVOCABLE_KEY) is not False:
-                problems.append(f"{label} must set {USER_INVOCABLE_KEY}: false (the menu lists the eight commands only; the model loads the entry skill)")
+                problems.append(f"{label} must set {USER_INVOCABLE_KEY}: false (the menu lists the nine commands only; the model loads the entry skill)")
             if MODEL_INVOCATION_KEY in fields:
                 problems.append(f"{label} must not set {MODEL_INVOCATION_KEY} (the model loads it on its own)")
             if kind == "root" and USER_INVOCABLE_KEY in fields:
-                problems.append(f"{label} must not set {USER_INVOCABLE_KEY} (only the eight command adapters and the entry skill do)")
+                problems.append(f"{label} must not set {USER_INVOCABLE_KEY} (only the nine command adapters and the entry skill do)")
     return problems
 
 
@@ -554,13 +554,13 @@ def check(root: Path) -> list[dict]:
          lambda: check_version(root)),
         ("plugin: the entry skill's metadata.version and the guard's GUARD_VERSION equal the manifest version",
          lambda: check_shipped_versions(root)),
-        ("plugin: skills/ discovery (§7.1) finds exactly the eight command adapters and git-orchestrator", discovery),
+        ("plugin: skills/ discovery (§7.1) finds exactly the nine command adapters and git-orchestrator", discovery),
         ("plugin: every discovered skill meets Agent Skills (strict YAML, allowed fields, name = directory, "
          "string-only metadata)", lambda: [problem for path in found for problem in skill_problems(path, path.parent.name)]),
         ("plugin: root SKILL.md (not a plugin skill) meets the same Agent Skills rules",
          lambda: skill_problems(root / "SKILL.md", ROOT_SKILL_NAME)),
-        ("plugin: the eight command adapters set user-invocable: false and disable-model-invocation: true, the entry skill sets "
-         "user-invocable: false only (Claude Code lists the eight commands/ entries alone), and the root SKILL.md sets neither",
+        ("plugin: the nine command adapters set user-invocable: false and disable-model-invocation: true, the entry skill sets "
+         "user-invocable: false only (Claude Code lists the nine commands/ entries alone), and the root SKILL.md sets neither",
          lambda: check_model_invocation(root)),
         ("plugin: package paths stay inside the plugin root and include no links (§4.1)", lambda: check_containment(root)),
         ("plugin: mcp.json is absent or valid (§7.2)", lambda: check_mcp(root)),
