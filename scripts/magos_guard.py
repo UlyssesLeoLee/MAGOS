@@ -3829,7 +3829,7 @@ def git_dir_writes(text, cwd, depth=0, sh=None):
     found = []
     if depth > 3 or not text:
         return found
-    events = _lex(text, sh)
+    events = _lex(text, "cmd" if sh == "cmd" else None)  # backslashes kept: a path is read as written and without escapes (_readings)
     segs = [k for k, ev in enumerate(events) if isinstance(ev, list)]
     cur, stack = cwd, []
     for n, k in enumerate(segs):

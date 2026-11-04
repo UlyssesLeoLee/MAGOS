@@ -444,7 +444,8 @@ def test_the_hook_code_opens_no_network_connection(monkeypatch, tmp_path):
     imports = {(a.name if isinstance(n, ast.Import) else n.module, getattr(_enclosing(n, ast.FunctionDef), "name", None))
                for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom)) for a in n.names}
     assert imports == {(name, None) for name in ("__future__", "inspect", "json", "os", "re", "subprocess", "sys", "threading", "time",
-                                                 "pathlib")} | {("hermes_cli", "gate"), ("tools", "gate"), ("hermes_constants", "_env")}, imports
+                                                 "pathlib")} | {("hermes_cli", "gate"), ("tools", "gate"), ("hermes_constants", "_env"), ("tools.approval", "_session_cwd"),
+                                                                           ("tools.terminal_tool", "_session_cwd")}, imports
     assert ".hermes/" + "config.yaml" not in source  # the Hermes scanner reads that text as a change to Hermes's own configuration
 
     # The guard starts processes at one place, Git.run, whose argv is git, the pinned options and the arguments.

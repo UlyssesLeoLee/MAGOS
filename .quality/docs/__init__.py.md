@@ -46,8 +46,9 @@ the child's environment) and the working directory, by attribute only. Host: Her
 `register_skill(name, path, description="")` records one skill and whose `register_hook(name, callback)` adds one
 callback; the module calls `register_skill` for each skill and `register_hook("pre_tool_call", ...)` exactly twice, no
 other `ctx.register_*` method, and `plugin.yaml` declares that hook, because the plugin catalog compares declared
-capabilities. Hermes modules are imported inside the gate probe only (`tools.approval`, `tools.approval_context`,
-`hermes_cli.plugins`) and for the active home (`hermes_constants.get_hermes_home`), each in a `try`, read, never patched.
+capabilities. Hermes modules are imported inside the gate probe (`tools.approval`, `tools.approval_context`, `hermes_cli.plugins`),
+for the terminal session's directory (`tools.approval`, `tools.terminal_tool` in `_session_cwd`) and for the active
+home (`hermes_constants.get_hermes_home`) only, each in a `try`, read, never patched.
 Filesystem: the `skills/` directory next to the module, `Path(__file__).parent / "skills"`, the `SKILL.md` file of each
 child directory, and `scripts/magos_guard.py` next to the module.
 
