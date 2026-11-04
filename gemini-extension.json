@@ -1,6 +1,6 @@
 {
   "name": "magos",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Multi-Agent Git Orchestrator (MAGOS): coordinate parallel AI coding agents with branch and worktree reconnaissance, analysis, safe integration, cleanup, convergence, remote sweep, lane planning, and branch protection.",
   "contextFileName": "GEMINI.md"
 }

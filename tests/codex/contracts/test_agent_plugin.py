@@ -322,7 +322,7 @@ MUTATIONS = [
      edit("plugin.json", '"license": "Apache-2.0",',
           '"license": "Apache-2.0",\n  "extensions": {"com.example.client": {"x": NaN}},'),
      [MANIFEST]),
-    ("manifest version drifts from SKILL.md", manifest(lambda data: data.update(version="1.1.0")), [VERSION]),
+    ("manifest version drifts from SKILL.md", manifest(lambda data: data.update(version="0.0.1")), [VERSION]),
     ("manifest version is a number", manifest(lambda data: data.update(version=3)), [MANIFEST, VERSION]),
     ("commands.md states another version",
      edit("references/commands.md", "`multi-agent-git-orchestrator` v%s." % PACKAGE_VERSION,
