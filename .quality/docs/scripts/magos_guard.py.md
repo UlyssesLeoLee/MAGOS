@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `c4285cc4de3137fcc429e3e7c7a8831cb794510188427ccaeb7dc404dd25618b`
+Source-SHA256: `c09b59f9e611c3b7765199debcdb859ee278722142a77e24da1935b58b063092`
 
 ## Responsibility
 
@@ -2969,8 +2969,8 @@ computed for each worktree of a repository in the text order of the line:
 1. Start: the branch checked out where the invocation runs, read at hook time in its repository: the `branch` of the
    `worktrees(g)` entry whose path is the invocation's worktree top (`pkey` comparison), which also names an unborn
    branch; for a git directory without a work tree (a bare repository, a `--git-dir` redirect without one) the branch
-   `symbolic-ref -q HEAD` prints there under `refs/heads/`, which also names an unborn branch (exit 1 is a detached
-   HEAD, any other failure makes the start unknown). A detached worktree whose git directory holds
+   `branch --show-current` prints there, which also names an unborn branch (an empty line is a detached HEAD, a failure
+   makes the start unknown). A detached worktree whose git directory holds
    `rebase-merge/head-name` or `rebase-apply/head-name` writes the branch that file names (`refs/heads/<b>`); any other
    detached HEAD writes no branch. A directory that the same `&&` chain creates with `git worktree add` writes the
    branch that `worktree add` checks out there (none for `--detach`), and a repository that the chain creates with
@@ -3299,7 +3299,7 @@ PROTECT_NEWER_FORMAT; 30 PROTECT_LIMIT. `protect-show`: 0; 2; 11; 29.
   store per directory a write record names (Finding the store), also for a redirect and outside any repository. The
   tamper rules stat the paths a word names and expand its globs (bounded as Path reading states). In a repository that
   holds protection, or whose layout the walk does not understand, also the memoised repository opening (two
-  `rev-parse` calls), one memoised `worktree list`, `symbolic-ref` for a git directory without a work tree, one
+  `rev-parse` calls), one memoised `worktree list`, `branch --show-current` for a git directory without a work tree, one
   `rev-parse --verify --quiet` per remote-only checkout name, one `config --get-regexp` for the remotes and their
   refspecs, `config` for `rebase.updateRefs` when a rebase is judged, and one read of the record and of a head-name
   file, all on the hook's 18 s budget; the current-branch walk checks the same deadline.

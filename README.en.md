@@ -1038,7 +1038,8 @@ On a refusal the agent explains it and carries on on another branch; you merge i
 
 - It never commits, merges, creates, switches, deletes or pushes a branch; it changes only the guard's protection record.
 - The agent never sets or lifts a protection on its own, never passes `--approval`, never writes `.git/magos` or `magos.*` config itself, and never retries a refused or declined call in another form.
-- Only the host hooks enforce a protection: your own terminal, programs the hooks do not see, and Git itself are not affected; `git config --local magos.guard off` switches the guard off for the repository, protections included.
+- Only the host hooks enforce a protection: your own terminal, programs the hooks do not see, and Git itself are not affected. `git config --local magos.guard off` switches off the lane checks of the repository but not its protections; only `MAGOS_GUARD=off` in the host process and `/GitProtect <branch> --release` lift them.
+- A protection is an accident guard: it refuses an agent's writes in the ordinary spellings of git and the shell, not deliberate evasion (settings that run a program such as `GIT_SEQUENCE_EDITOR`, URL rewriting, git's control files edited between calls). The full list of limits is `references/lane-split.md` section 15.
 
 ---
 

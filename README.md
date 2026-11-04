@@ -1043,7 +1043,8 @@ magos_guard.py set-update --repo /work/app-sweep-readiness-claim-store --set swe
 
 - 本命令从不提交、合并、创建、切换、删除或推送任何分支，只改守卫的保护记录。
 - 代理从不自己设置或解除保护，从不传 `--approval`，从不自己写 `.git/magos` 或 `magos.*` 配置，被拒绝或你没批准时也不换一种写法重试。
-- 保护只由宿主钩子执行：你自己的终端、钩子看不到的程序和 Git 本身不受影响；`git config --local magos.guard off` 会关闭该仓库的守卫，保护也随之失效。
+- 保护只由宿主钩子执行：你自己的终端、钩子看不到的程序和 Git 本身不受影响。`git config --local magos.guard off` 只关闭该仓库的车道检查，不会关闭保护；只有宿主进程环境里的 `MAGOS_GUARD=off` 和 `/GitProtect <分支> --release` 能让保护失效。
+- 保护是防误操作：它拦代理按 git 和 shell 常规写法的写入，不防刻意绕过（例如用会执行程序的设置 `GIT_SEQUENCE_EDITOR`、URL 改写、在两次调用之间改 git 的控制文件）。完整的限制见 `references/lane-split.md` 第 15 节。
 
 ---
 

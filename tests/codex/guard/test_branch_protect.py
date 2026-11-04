@@ -1,4 +1,4 @@
-"""Branch protection (TC-728 to TC-779): the record <git-common-dir>/magos/protected.json and its format gate, the user-only `protect` with
+"""Branch protection (TC-728 to TC-815): the record <git-common-dir>/magos/protected.json and its format gate, the user-only `protect` with
 its three approval routes, the agent subcommand `protect-show`, the hook rule that refuses an agent's write to a protected branch (the refused
 operations, the current branch, the unknown targets that fail closed), the tamper filter of a repository whose only guard state is a
 protection, doctor, the texts and the exit codes."""
@@ -395,7 +395,7 @@ def test_protect_show_reads_without_writing(tmp_path, console):
     r = gp(R, "protect-show")
     assert r.rc == 0 and r.out.strip() == G.T("en", "protect_show_none", repo=repo_text(R)) and not store_of(R).exists(), r
     rc, v = jgp(R, "protect-show")
-    assert rc == 0 and v["branches"] == [] and v["enforced"] is True
+    assert rc == 0 and v["branches"] == [] and "enforced" not in v
     assert gp(R, "protect", "--branch", "main", "--reason", "freeze").rc == 0 and gp(R, "protect", "--branch", "future").rc == 0
     snap = snapshot()
     r = gp(R, "protect-show")
@@ -408,11 +408,11 @@ def test_protect_show_reads_without_writing(tmp_path, console):
     for name in ("topic", "a b"):
         r = gp(R, "protect-show", "--branch", name)
         assert r.rc == 0 and r.out.split("\n")[0] == G.T("en", "protect_show_not", b=name, repo=repo_text(R)), r
-    R.git("config", "--local", "magos.guard", "off")
-    r = gp(R, "protect-show")
-    assert r.out.rstrip("\n").split("\n")[-1] == G.T("en", "protect_show_off")
+    before = gp(R, "protect-show").out
+    R.git("config", "--local", "magos.guard", "off")  # silences no protection: the output is unchanged
+    assert gp(R, "protect-show").out == before
     rc, v = jgp(R, "protect-show", "--branch", "main")
-    assert v["enforced"] is False and v["protected"] is True and v["stored"] == "main" and v["branch"] == "main"
+    assert "enforced" not in v and v["protected"] is True and v["stored"] == "main" and v["branch"] == "main"
     assert [set(b) for b in v["branches"]] == [{"branch", "at", "by", "via", "reason", "exists"}] * 2
     assert snapshot() == snap
 
@@ -668,13 +668,18 @@ def test_the_hook_fails_closed_on_an_unreadable_or_newer_record(world):
         assert bp(decide(world.U.path, "git commit -m x")) is None
 
 
-def test_off_switches_silence_the_protection(world, tmp_path, monkeypatch):
+def test_only_the_host_switch_silences_the_protection(world, tmp_path, monkeypatch):
     R = world.R
     R2 = new_repo(tmp_path / "R2")
     protect(R2, "main")
-    R.git("config", "--local", "magos.guard", "off")
-    assert bp(decide(R.path, "git commit -m x")) is None
+    R.git("config", "--local", "magos.guard", "off")  # by git config, as the user's terminal writes it
+    assert decide(R.path, "git commit -m x") == hit(R, "git commit")
     assert decide(R.path, "git -C %s commit -m x" % G.sh_quote(P(R2.path))) == hit(R2, "git commit")
+    R.git("config", "--local", "--unset", "magos.guard")
+    with open(str(common(R) / "config"), "a", encoding="utf-8") as fh:  # by a file write that no hook saw
+        fh.write("[magos]\n\tguard = off\n")
+    assert R.git("config", "magos.guard") == "off"
+    assert decide(R.path, "git commit -m x") == hit(R, "git commit")
     monkeypatch.setenv("MAGOS_GUARD", "off")
     assert bp(decide(R.path, "git commit -m x")) is None and bp(decide(R.path, "git -C %s commit -m x" % G.sh_quote(P(R2.path)))) is None
 
@@ -772,13 +777,14 @@ def test_the_tamper_filter_covers_a_repository_with_only_protection(world):
     for cmd, tool in lines + [("git config core.hooksPath x", "Bash")]:
         v = decide(R.path, cmd, tool=tool)
         assert v and v[0] == "PROTECTED" and v[1].startswith(G.T("en", "protected", why="")[:40]), (cmd, v)
-    record = ("PROTECTED", G.T("en", "protected", why=G._PROTECT_MSG))
-    assert decide(R.path, "rm .git/magos/protected.json") == record
+    assert decide(R.path, "rm .git/magos/protected.json") == ("PROTECTED", protected)  # the guarded rule of R's own store answers first
+    assert decide(U.path, "rm %s/protected.json" % store) == ("PROTECTED", G.T("en", "protected", why=G._PROTECT_MSG))  # the record rule
     assert decide(R.path, "echo %s > .git/refs/heads/main" % sha) == ("PROTECTED", protected)
     assert decide(R.path, "cat .git/magos/protected.json") is None
-    for k, (cmd, tool) in enumerate(lines):  # U holds no record: the record writes are denied everywhere, the ref writes are U's own
-        v = decide(U.path, cmd.replace(store, P(store_of(U))), tool=tool)
-        assert v == (record if k < 3 else None), (cmd, v)
+    ustore = P(store_of(U))
+    for cmd, tool in lines:  # U holds no record, no claim and no ARMED: the verdict of the guard of 1.0.9, which allows them
+        cmd = cmd.replace(store, ustore).replace(store.replace("/", "\\"), ustore.replace("/", "\\"))
+        assert decide(U.path, cmd, tool=tool) is None, cmd
 
 
 def test_protect_is_user_only_and_protect_show_is_an_agent_subcommand(world):
@@ -918,16 +924,16 @@ def test_doctor_reports_the_protection(tmp_path, console):
     for data in (b"{", b'{"v": 9}'):
         rec_path(R).write_bytes(data)
         assert doctor(R).rc == 1
-    rec_path(R).write_bytes(G.protect_bytes(None, [{"branch": "main"}]))
+    rec_path(R).write_bytes(G.protect_bytes(None, [{"branch": "main"}, {"branch": "release/1.0"}]))
     R.git("config", "--local", "magos.guard", "off")
     d = doctor(R)
-    assert "protected branches are not enforced: magos.guard is off in this repository" in d.out.splitlines() and d.rc == base.rc, d.out
+    assert "protected branches: 2: main, release/1.0" in d.out.splitlines() and not any("enforced" in x for x in d.out.splitlines()), d.out
 
 
 PROTECT_KEYS = ("branch_protected", "branch_protected_unknown", "branch_protected_record", "protect_why_unreadable", "protect_why_newer", "protect_unreadable",
                 "protect_newer", "protect_bad_name", "protect_limit", "protect_ok", "protect_ok_release", "protect_same", "protect_same_release", "protect_dry",
                 "protect_dry_release", "protect_show_none", "protect_show_head", "protect_show_line", "protect_show_reason", "protect_exists", "protect_absent",
-                "protect_show_one", "protect_show_not", "protect_show_off", "approval_what_protect", "approval_what_unprotect", "approval_protect_reason")
+                "protect_show_one", "protect_show_not", "branch_protected_order", "approval_what_protect", "approval_what_unprotect", "approval_protect_reason")
 
 
 def test_the_protection_messages():
@@ -1121,35 +1127,15 @@ def test_a_local_remote_is_judged_like_dot(world):
     unknown_text(decide(W, "git push"))
 
 
-RUNS_TEXT = [("git -c core.editor=x commit --amend", "core.editor"), ("git -c sequence.editor=x rebase -i main", "sequence.editor"),
-             ("git -c core.fsmonitor=x status", "core.fsmonitor"), ("git -c core.pager=x log", "core.pager"), ("git -c core.sshCommand=x fetch origin", "core.sshCommand"),
-             ("git -c credential.helper=x fetch origin", "credential.helper"), ("git -c diff.external=x diff", "diff.external"),
-             ("git -c diff.t.textconv=x diff", "diff.t.textconv"), ("git -c merge.m.driver=x merge main", "merge.m.driver"),
-             ("git -c filter.f.clean=x add a.txt", "filter.f.clean"), ("git -c difftool.d.cmd=x difftool", "difftool.d.cmd"),
-             ("git --config-env=core.editor=E commit", "core.editor"), ("GIT_SEQUENCE_EDITOR=x git rebase -i main", "GIT_SEQUENCE_EDITOR"),
-             ("GIT_EDITOR=x git merge main", "GIT_EDITOR"), ("env GIT_SSH_COMMAND=x git fetch origin", "GIT_SSH_COMMAND"), ("export GIT_PAGER=x; git log", "GIT_PAGER"),
-             ("EDITOR=x git status", "EDITOR"), ("$env:GIT_EXTERNAL_DIFF='x'; git diff", "GIT_EXTERNAL_DIFF"), ("git config diff.external x", "diff.external"),
-             ("git config --local core.editor x", "core.editor"),
-             # the programs a signing key, a diff driver and a transport option name
-             ("git -c gpg.program=x tag -s v1 -m x", "gpg.program"), ("git -c gpg.ssh.program=x tag -s v1 -m x", "gpg.ssh.program"),
-             ("git -c gpg.x509.program=x commit -S -m x", "gpg.x509.program"), ("git -c diff.d.command=x diff", "diff.d.command"),
-             ("git fetch --upload-pack=x origin", "--upload-pack"), ("git fetch --upload x origin", "--upload-pack"),
-             ("git pull --upload-pack x origin main", "--upload-pack"), ("git ls-remote --upload-pack=x origin", "--upload-pack"),
-             ("git ls-remote --exec=x origin", "--exec"), ("git clone -u x origin c", "-u"), ("git clone --upload-pack=x origin c", "--upload-pack"),
-             ("git push --receive-pack=x origin topic", "--receive-pack"), ("git push --exec=x https://example.invalid/r.git topic", "--exec")]
-
-
-def test_settings_that_run_command_text_fail_closed(world):
-    for cmd, key in RUNS_TEXT:
-        tool = "PowerShell" if cmd.startswith("$env:") else "Bash"
-        t = unknown_text(decide(world.W, cmd, tool=tool))
-        assert ("git runs command text from the" in t or "git runs the program the option" in t) and key in t, (cmd, t)
-        assert bp(decide(world.U.path, cmd, tool=tool)) is None, cmd
-    for cmd in ("git -c color.ui=never log", "git -c user.name=x status", "git config --get core.editor", "git -c alias.st=status st", "EDITOR=x ls",
-                "git tag -s v1 -m x", "git -c gpg.format=ssh tag -s v1 -m x", "git fetch origin", "git ls-remote origin", "git clone origin c",
-                "git push origin topic", "git fetch -u origin", "git -c diff.d.binary=true diff"):
-        same_as_unprotected(world.W, cmd, world.R)
+def test_settings_that_run_a_program_are_not_judged(world):
+    lines = ["GIT_EDITOR=true git rebase --continue", "git -c core.editor=true merge --continue", "GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash main",
+             "git -c core.pager=cat log", "git -c sequence.editor=x rebase -i main", 'git commit -m "set EDITOR=vim and GIT_PAGER=less"',
+             "git -c core.hooksPath=/dev/null commit -m x", "git config --local core.editor true", "git fetch --upload-pack=git-upload-pack ../o"]
+    for cmd in lines:
+        assert bp(decide(world.W, cmd)) is None, cmd
         assert bp(decide(world.U.path, cmd)) is None, cmd
+    denies_main(decide(world.R.path, "GIT_EDITOR=true git commit --amend"))
+    denies_main(decide(world.R.path, "git -c core.editor=true rebase --continue"))
 
 
 def test_a_pathspec_file_reset_is_a_full_reset(world):
@@ -1176,11 +1162,10 @@ def test_every_writer_of_the_record_is_refused_everywhere(world):
               "ren %s\\protected.json p.bak" % w, "rm -rf %s" % a, "find %s -delete" % a, "ls > %s/protected.json" % a]
     record = ("PROTECTED", G.T("en", "protected", why=G._PROTECT_MSG))
     for cmd in writes:
-        assert G.protected(cmd) == ("always", G._PROTECT_MSG), cmd
-        for where in (world.U.path, world.R.path, outside):
+        for where in (world.U.path, outside):
             assert every_host(where, cmd) == [record] * 4, (cmd, where)
-    assert G.protected("cp x .git/magos/protected.json") == ("always", G._PROTECT_MSG)
-    assert every_host(world.R.path, "cp x .git/magos/protected.json") == [record] * 4
+        assert all(v and v[0] == "PROTECTED" and v[1] in (record[1], G.T("en", "protected", why=G._STATE_MSG)) for v in every_host(world.R.path, cmd)), cmd
+    assert all(v and v[0] == "PROTECTED" for v in every_host(world.R.path, "cp x .git/magos/protected.json"))
     for cmd in ("cat %s/protected.json" % a, "Get-Content %s\\protected.json" % w, "ls %s" % a, "grep main %s/protected.json" % a,
                 "find %s -name '*.json'" % a, "wc -c %s/protected.json" % a, "diff x %s/protected.json" % a, "test -f %s/protected.json" % a):
         assert G.protected(cmd) is None, cmd
@@ -1211,16 +1196,13 @@ CD_GIT = [("cd .git && rm -rf magos", "Bash"), ("cd .git/magos; echo {} > protec
 def test_a_cd_into_the_git_directory_is_refused_where_protection_exists(world):
     R, U = world.R, world.U
     head = G.T("en", "protected", why="")[:40]
-    record = ("PROTECTED", G.T("en", "protected", why=G._PROTECT_MSG))
     for cmd, tool in CD_GIT:
         v = decide(R.path, cmd.replace("{R}", P(R.path)), tool=tool)
         assert v and v[0] == "PROTECTED" and v[1].startswith(head), (cmd, v)
     for cmd in ("cd .git && cat HEAD", "cd .git && ls refs/heads", "cd .git; git status"):
         assert decide(R.path, cmd) is None, cmd
-    for cmd, tool in CD_GIT:  # U: only the record rule (a word that names the record or its store) denies, never the git-directory rule
-        v = decide(U.path, cmd.replace("{R}", P(U.path)), tool=tool)
-        assert v in (None, record), (cmd, v)
-    assert decide(U.path, "cd .git/magos; echo {} > protected.json") == record and decide(U.path, "cd .git && rm -rf magos") == record
+    for cmd, tool in CD_GIT:  # U holds no record, no claim and no ARMED: the verdict of the guard of 1.0.9, which allows them
+        assert decide(U.path, cmd.replace("{R}", P(U.path)), tool=tool) is None, cmd
 
 
 def test_the_current_branch_follows_the_order_of_the_line(world, tmp_path, console):
@@ -1286,8 +1268,11 @@ def test_the_store_is_found_without_git(world, tmp_path, monkeypatch):
     odd = tmp_path / "odd"
     odd.mkdir()
     (odd / ".git").write_text("gitdir: %s\n" % P(tmp_path / "nowhere"), encoding="utf-8")
-    for where, cmd, env in ((world.U.path, "git commit -m x", True), (outside, "git --git-dir=%s update-ref HEAD x" % P(B), False),
-                            (outside, "git commit -m x", False), (odd, "git commit -m x", False)):
+    for where, cmd in ((outside, "git --git-dir=%s update-ref HEAD x" % P(B)), (outside, "git commit -m x")):
+        calls.clear()
+        r = hook_in(where, cmd)
+        assert r.out.strip() == "{}" and calls == [], (where, cmd, r)  # an existing git directory without a record, no repository: no Git call
+    for where, cmd, env in ((world.U.path, "git commit -m x", True), (odd, "git commit -m x", False)):
         if env:
             monkeypatch.setenv("GIT_DIR", str(world.U.path / ".git"))
         assert G.find_store(str(where)) is None or not env
@@ -1378,3 +1363,282 @@ def test_the_action_and_stored_fields(tmp_path, console):
         assert rc == 0 and (v["action"], v["stored"], v["changed"]) == (action, stored, changed), (args, v)
         seen.append((action, stored))
     assert [(x["action"], x["stored"]) for x in audit_lines(store_of(R)) if x["op"] == "protect"] == seen
+
+
+# ---- the accident guard (TC-799 to TC-815) ---------------------------------------------------------------------------------------------------
+def refused(where, cmd, tool="Bash"):
+    """A deny of the tamper filter with the `protected` text (its reason: the record, the guarded state of a store, a git directory)."""
+    v = decide(where, cmd, tool=tool)
+    assert v and v[0] == "PROTECTED" and v[1].startswith(G.T("en", "protected", why="")[:40]), (cmd, where, v)
+    return v
+
+
+def test_the_record_rule_needs_an_existing_record(world):
+    U, R = world.U, world.R
+    B = new_repo(world.tmp / "B")
+    outside = world.tmp / "outside"
+    outside.mkdir()
+    for cmd in ("rm -rf .git/magos", "cd .git && rm -rf magos", "install x .git/magos/protected.json", "echo {} > .git/magos/protected.json",
+                "rm -rf %s/.git/magos" % P(B.path)):
+        for where in (U.path, outside):  # no record, no claim, no ARMED: the verdict of the guard of 1.0.9, which allows them
+            assert decide(where, cmd) is None, (cmd, where)
+    for cmd, tool in (("Test-Path .git/magos/protected.json", "PowerShell"), ("Get-ChildItem .git\\magos", "PowerShell"), ("gci .git/magos", "Bash"),
+                      ("Get-FileHash .git\\magos\\protected.json", "PowerShell"), ("jq . .git/magos/protected.json", "Bash"), ("du -sh .git/magos", "Bash"),
+                      ("echo .git/magos/protected.json", "Bash"), ("realpath .git/magos/protected.json", "Bash"),
+                      ("sha256sum .git/magos/protected.json", "Bash")):
+        assert decide(R.path, cmd, tool=tool) is None, cmd
+
+
+def test_record_spellings_are_read_as_paths(world):
+    R, U = world.R, world.U
+    for cmd in ("rm -r .git/./magos", "rm -r .git/mag*", "rm .git/m*/protected.json", "rm -r .git/[m]agos", "rm -r .git/{magos,nothing}",
+                "rm -rf .g*/magos", "rm -rf .[g]it/magos", "rm -rf .g*", "mv .git/mag* ../gone", "find . -name protected.json -delete",
+                "find . -path '*magos*' -delete", "find .git -delete"):
+        refused(R.path, cmd)
+    if WIN:
+        refused(R.path, "Remove-Item .git.\\magos.\\protected.json", "PowerShell")
+        refused(R.path, 'cmd /c "del .git.\\magos.\\protected.json"')
+    outside = world.tmp / "outside"
+    outside.mkdir()
+    record = ("PROTECTED", G.T("en", "protected", why=G._PROTECT_MSG))
+    for where in (U.path, outside):
+        for cmd in ("rm %s/.git/magos/./protected.json" % P(R.path), "rm %s/.git/mag*/protected.json" % P(R.path)):
+            assert decide(where, cmd) == record, (cmd, where)
+    for cmd in ("find . -name '*.pyc' -delete", "rm -rf build/*", "cp -r . ../backup"):
+        assert decide(R.path, cmd) is None, cmd
+    assert rec_path(R).is_file()
+
+
+def test_reads_that_write_and_ref_spellings(world):
+    R = world.R
+    assert (common(R) / "refs" / "heads" / "main").is_file()
+    for cmd in ("git log -1 --format=%H --output=.git/refs/heads/main", "git show --output=.git/magos/protected.json HEAD",
+                "git diff --ou=.git/magos/protected.json", "rg --pre=sh x .git/magos", "find .git -fls .git/refs/heads/main", "rm .git/./refs/heads/main",
+                "cp x .git/refs/heads/ma*", "rm -rf .git/reftable"):
+        refused(R.path, cmd)
+    if WIN:
+        refused(R.path, "echo x > .git.\\HEAD", "PowerShell")
+    for cmd in ("git log --oneline -1", "git show HEAD:a.txt", "rg main .git/magos", "find .git -name HEAD"):
+        assert decide(R.path, cmd) is None, cmd
+
+
+def short_path(p):
+    """The 8.3 short spelling of an existing Windows path, or None when the volume makes none."""
+    import ctypes
+    buf = ctypes.create_unicode_buffer(1024)
+    n = ctypes.windll.kernel32.GetShortPathNameW(str(p), buf, 1024)
+    return buf.value if n and buf.value.lower() != str(p).lower() else None
+
+
+def dir_link(link, target):
+    if WIN:
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+    else:
+        os.symlink(str(target), str(link))
+
+
+def test_the_store_is_found_as_git_finds_the_repository(world, monkeypatch):
+    R, U = world.R, world.U
+    sha = R.git("rev-parse", "HEAD")
+    sub = R.path / "sub"
+    (sub / ".git").mkdir(parents=True)
+    (sub / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")  # no objects: git skips it and finds R
+    denies_main(decide(R.path, "git -C sub commit --allow-empty -m x"))
+    wt2 = U.path / "wt2"
+    (wt2 / ".git").mkdir(parents=True)
+    (wt2 / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (wt2 / ".git" / "commondir").write_text(str(common(R)) + "\n", encoding="utf-8")  # a git directory whose common directory is R's
+    assert bp(decide(U.path, "git -C wt2 update-ref HEAD %s" % sha)) is not None
+    dir_link(U.path / "link", R.path)
+    denies_main(decide(U.path, "git -C link commit -m x"))
+    B = U.path / "B.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(R.path), str(B)], check=True)
+    protect(B, "main")
+    denies_main(decide(B, "git branch -f main %s" % sha))
+    assert decide(R.path, "git -C sub status") is None
+    calls = counted(monkeypatch)
+    assert hook_in(U.path, "git commit -m x").out.strip() == "{}" and calls == []
+
+
+def test_a_negated_exempt_word_writes(world):
+    R = world.R
+    for cmd in ("git commit --dry-run --no-dry-run -m x", "git commit --dry-run --no-dry -m x", "git merge --abort --no-abort", "git merge --quit --no-quit",
+                "git commit --dry-run --no-frobnicate -m x", "git commit -- --dry-run"):
+        denies_main(decide(R.path, cmd), cmd)
+    for cmd in ("git commit --no-dry-run --dry-run -m x", "git commit --dry-run", "git merge --abort"):
+        same_as_unprotected(R.path, cmd, R)
+
+
+def test_switch_and_checkout_options_are_read_as_git_reads_them(world):
+    R, W = world.R, world.W
+    protect(R, "future")
+    R.git("update-ref", "refs/remotes/origin/future", "HEAD")
+    for cmd in ("git checkout --conflict merge main && git commit -m x", "git checkout --conflict=merge main && git commit -m x",
+                "git switch --conflict merge main && git commit -m x"):
+        split(bp(decide(W, cmd)))
+    for cmd in ("git checkout --track remotes/origin/future", "git checkout --track refs/remotes/origin/future", "git switch -t refs/remotes/origin/future"):
+        t = bp(decide(W, cmd))
+        assert t is not None and "'future' is protected" in t, (cmd, t)
+
+
+def test_negation_and_pipelines_in_the_order(world):
+    R = world.R
+    for cmd in ("! git switch -c X && git commit -m x", "git switch -c feat | cat && git commit -m x"):
+        denies_main(decide(R.path, cmd), cmd)
+    for cmd in ("git switch -c feat && cat <<EOF | git commit -F -\nmsg\nEOF", "git switch -c feat && echo x | git commit -F -"):
+        same_as_unprotected(R.path, cmd, R)
+
+
+def test_the_same_worktree_in_another_spelling(tmp_path, console):
+    R2 = new_repo(tmp_path / "R2")
+    R2.git("switch", "-q", "-c", "feat")
+    protect(R2, "main")
+    split(bp(decide(R2.path, "GIT_DIR=.git git switch main && git commit -m x")))
+    dir_link(tmp_path / "lnk", R2.path)
+    split(bp(decide(R2.path, "git -C %s switch main && git commit -m x" % G.sh_quote(P(tmp_path / "lnk")))))
+    short = short_path(R2.path) if WIN else None
+    if short:
+        split(bp(decide(R2.path, "git -C %s switch main && git commit -m x" % G.sh_quote(short.replace("\\", "/")))))
+
+
+def test_the_order_walk_is_bounded(tmp_path, console, monkeypatch):
+    R2 = new_repo(tmp_path / "R2")
+    R2.git("switch", "-q", "-c", "topic")
+    protect(R2, "main")
+    line = "git switch topic && git commit -m x; " * 600 + "git switch main && git commit -m x"
+    assert len(line) > 22000
+    t0 = time.monotonic()
+    r = hook_proc(R2.path, line)
+    assert time.monotonic() - t0 < 10 and "'main' is protected" in (denied(r) or ""), r
+    monkeypatch.setattr(G, "HOOK_DEADLINE", None)
+
+    def start(g, r, ctx):  # the deadline passes while the walk runs
+        G.HOOK_DEADLINE = time.monotonic() - 1
+        return ["topic"], None
+    monkeypatch.setattr(G, "_start", start)
+    t = unknown_text(decide(R2.path, "git switch topic && git commit -m x"))
+    assert "ran out of time" in t
+
+
+def test_remotes_are_read_with_all_their_urls(world):
+    R, W = world.R, world.W
+    R.git("remote", "add", "two", "https://example.invalid/r.git")
+    R.git("config", "--add", "remote.two.url", ".")
+    denies_main(decide(W, "git push two topic:main"))
+    R.git("remote", "add", "origin", "https://example.invalid/o.git")
+    denies_main(decide(W, "git -c remote.origin.url=. push origin topic:main"))
+    R.git("remote", "add", "self", ".")
+    for cmd in ("git push --repo=self", "git push --repo self"):
+        unknown_text(decide(W, cmd))
+    denies_main(decide(W, "git send-pack . topic:main"))
+    unknown_text(decide(W, "git send-pack --all ."))
+    denies_main(decide(W, "git reflog delete --updateref main@{0}"))
+    unknown_text(decide(W, "git reflog expire --updateref --all"))
+    for cmd in ("git reflog expire --all", "git send-pack https://example.invalid/r.git topic:main", "git push two topic:feat"):
+        same_as_unprotected(W, cmd, R)
+
+
+def test_configured_refspecs_decide_a_fetch_without_refspec(world, tmp_path):
+    R, W = world.R, world.W
+    O = tmp_path / "O.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(R.path), str(O)], check=True)
+    R.git("remote", "add", "origin", P(O))
+    R.git("config", "branch.topic.remote", "origin")
+    R.git("config", "branch.topic.merge", "refs/heads/topic")
+    plain = ("git fetch", "git fetch origin", "git fetch --all", "git pull", "git remote update")
+    for cmd in plain:
+        same_as_unprotected(W, cmd, R)
+    denies_main(decide(W, "git -c remote.origin.fetch=+refs/heads/main:refs/heads/main fetch origin"))
+    R.git("config", "--add", "remote.origin.fetch", "+refs/heads/x:refs/heads/main")
+    for cmd in ("git fetch origin", "git remote update", "git pull"):
+        denies_main(decide(W, cmd), cmd)
+    R.git("config", "--unset", "remote.origin.fetch", "refs/heads/x:")
+    denies_main(decide(W, "git fetch . topic --refmap=+refs/heads/topic:refs/heads/main"))
+    unknown_text(decide(W, 'git -c "remote.origin.fetch=+refs/heads/*:refs/heads/*" fetch origin'))
+    R.git("remote", "set-url", "origin", "https://example.invalid/o.git")
+    for cmd in plain:
+        same_as_unprotected(W, cmd, R)
+
+
+def test_an_unborn_head_of_a_git_directory_is_its_branch(world, tmp_path):
+    B = tmp_path / "B.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(B)], check=True)
+    (B / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    protect(B, "main")
+    sha = world.R.git("rev-parse", "HEAD")
+    for cmd in ("git --git-dir=%s update-ref HEAD %s" % (G.sh_quote(P(B)), sha), "GIT_DIR=%s git update-ref HEAD %s" % (G.sh_quote(P(B)), sha)):
+        denies_main(decide(world.U.path, cmd), cmd)
+    (B / "HEAD").write_text("ref: refs/heads/dev\n", encoding="utf-8")
+    assert bp(decide(world.U.path, "git --git-dir=%s update-ref HEAD %s" % (G.sh_quote(P(B)), sha))) is None
+
+
+def test_the_order_text_and_the_name_list(world, tmp_path):
+    R = world.R
+    order, splitted = G.T("en", "branch_protected_order"), G.T("en", "branch_protected_split")
+    for cmd, tool in (("git switch -c feat; git commit -am x", "Bash"), ("git switch -c feat; if ($?) { git commit -am x }", "PowerShell")):
+        t = denies_main(decide(R.path, cmd, tool=tool), cmd)
+        assert t.endswith(" " + order) and splitted not in t, (cmd, t)
+    assert order not in split(bp(decide(world.W, "git switch main && git commit -m x")))
+    R8 = new_repo(tmp_path / "R8")
+    protect(R8, *["b%d" % k for k in range(8)])
+    for lang in ("zh", "en"):
+        t = bp(decide(R8.path, "git $c -m x", lang=lang))
+        assert t is not None and t.count(", ") >= 5 and G.T(lang, "show_more", n=2) in t, (lang, t)
+    for cmd in ("GIT_EDITOR=true git commit -m x", "git -c core.editor=true commit -m x", "git commit -m x"):  # the operation is never a bare git
+        t = denies_main(decide(R.path, cmd), cmd)
+        assert t.startswith("MAGOS DENIES git commit:"), (cmd, t)
+
+
+def test_a_name_the_dialog_would_change_is_refused(tmp_path, console):
+    R = new_repo(tmp_path / "R")
+    for name in ("ｍａｉｎ", "ma‍in", "a’b"):
+        rc, v = jgp(R, "protect", "--branch", name)
+        assert rc == 12 and "approval dialog" in v["message"] and not rec_path(R).exists(), (name, v)
+    assert gp(R, "protect", "--branch", "main").rc == 0
+
+
+def test_no_git_call_for_redirects_without_protection(world, monkeypatch):
+    U, R = world.U, world.R
+    outside = world.tmp / "outside"
+    outside.mkdir()
+    calls = counted(monkeypatch)
+    for where, cmd in ((U.path, "git --git-dir=%s commit -m x" % G.sh_quote(P(common(U)))), (U.path, "GIT_DIR=%s git commit -m x" % G.sh_quote(P(common(U)))),
+                       (outside, "git commit -m x")):
+        calls.clear()
+        assert hook_in(where, cmd).out.strip() == "{}", (where, cmd)
+        write = list(calls)
+        calls.clear()
+        assert hook_in(where, cmd.replace("commit -m x", "status")).out.strip() == "{}"
+        assert write == calls, (where, cmd, write, calls)  # the write costs no Git call beyond those of its read twin (the alias reading's own)
+    for cmd in ("git --git-dir=%s commit -m x" % G.sh_quote(P(common(R))), "GIT_DIR=%s git commit -m x" % G.sh_quote(P(common(R)))):
+        assert "'main' is protected" in (denied(hook_in(U.path, cmd)) or ""), cmd
+
+
+def test_the_start_branch_stays_without_a_proven_switch(world, tmp_path):
+    R = world.R
+    for cmd in ("git switch topic; git commit -m x", "git switch topic || git commit -m x"):
+        denies_main(decide(R.path, cmd), cmd)
+    unknown_text(decide(world.W, "(git switch $B) && git commit -m x"))
+    B = tmp_path / "B.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(R.path), str(B)], check=True)
+    protect(B, "main")
+    assert decide(world.U.path, "rm %s/magos/protected.json" % P(B)) == ("PROTECTED", G.T("en", "protected", why=G._PROTECT_MSG))
+
+
+def test_the_magos_flows_stay_allowed_beside_a_protection(world, tmp_path):
+    R = world.R
+    O = tmp_path / "O.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(R.path), str(O)], check=True)
+    R.git("remote", "add", "origin", P(O))
+    L, I = tmp_path / "L", tmp_path / "I"
+    R.git("worktree", "add", "-q", "-b", "agent/s/api", str(L), "main")
+    R.git("worktree", "add", "-q", "-b", "agent/s/integration", str(I), "main")
+    for cmd in ("git rebase main", "git merge main", "git commit -m x", "git push origin agent/s/api", "git push -u origin agent/s/api"):
+        same_as_unprotected(L, cmd, R)
+    for cmd in ("git merge --no-ff agent/s/api", "git merge --no-ff --no-edit agent/s/api"):
+        same_as_unprotected(I, cmd, R)
+    for cmd in ("git switch -c agent/t/integration main", "git branch -d agent/s/api", "git worktree remove %s" % G.sh_quote(P(L)), "git worktree prune",
+                "git fetch --prune"):
+        same_as_unprotected(R.path, cmd, R)
+    for where, cmd in ((R.path, "git merge --no-ff agent/s/api"), (I, "git switch main && git merge --no-ff agent/s/api")):
+        denies_main(decide(where, cmd), cmd)
