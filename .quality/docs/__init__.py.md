@@ -111,8 +111,7 @@ a check can read it with `ast.literal_eval` without running the module. It holds
 directory of `skills/` that carries a `SKILL.md`, no entry for anything else, in this order: `git-orchestrator`,
 `git-recon`, `git-analyze`, `git-recommend`, `git-integrate`, `git-cleanup`, `git-converge`, `git-sweep`, `git-plan`,
 `git-protect`. `git-plan` and `git-protect` come last, after the read-only commands and the earlier write commands, in
-the section order of `references/commands.md` (sections 8 and 9), so the neighbouring text of the earlier lines stays as
-it is. The `""` default of the lookup
+the section order of `references/commands.md` (sections 8 and 9). The `""` default of the lookup
 exists only so that a skill added without a line still registers; the contract check fails that tree.
 
 Line rules, final state:

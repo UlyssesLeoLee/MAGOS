@@ -90,7 +90,7 @@ otherwise TC-004 and TC-011 turn red, and their `agents/openai.yaml` and the com
 `tests/codex/contracts/install_layout.py` (`EXPECTED_SKILLS` and `CHECKOUT_SKILLS`) lists `git-plan` and `git-protect`, so the
 installed package holds ten skills and a checkout eleven; the contract cases `package/install-layout` and
 `package/agent-plugin` (with their evidence under `tests/codex/contracts/cases/package/`) follow that list,
-`plugin.yaml` keeps the name and version of `plugin.json`, and the nine earlier lines of `INDEX_DESCRIPTIONS` keep their text and order, which the mutation anchors
+`plugin.yaml` keeps the name and version of `plugin.json`, and the lines of `INDEX_DESCRIPTIONS` have the text and order that the mutation anchors
 of `tests/codex/contracts/test_agent_plugin.py` rely on. The Hermes probe and host cases
 (`tests/codex/hermes_probe.py`, `tests/codex/run_host_cases.py`) resolve `/git-plan` and `/git-protect` through the skill package, not
 through this module, and are unaffected. The module remains outside the Codex and Hermes skill packages

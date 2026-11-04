@@ -112,7 +112,7 @@
     {
       "file": "skills/git-protect/SKILL.md",
       "contains": [
-        "description: \"保护分支免受代理的提交与合并（仅显式调用，写守卫状态）；/git-protect [BRANCH] [--release] [--help].\""
+        "description: \"保护分支；/git-protect [BRANCH] [--release|--status] [--lang <language>] [--help].\""
       ],
       "pattern": "^description: \"([^\"]+)\"$",
       "length": [

@@ -44,7 +44,7 @@ Downstream callers:
   checkout adds the plugin-only `git-orchestrator`).
 - The Claude source-contract case `git-converge/package-wiring` (`tests/claude/contracts/cases.json`) pins the tail
   `"GitSweep", "GitPlan", "GitProtect")` of `COMMAND_NAMES`. The tuple lists the commands in the section order of
-  `references/commands.md`: the seven earlier commands, then `GitPlan` (section 8) and `GitProtect` (section 9) last, and
+  `references/commands.md`: the seven commands of sections 1 to 7, then `GitPlan` (section 8) and `GitProtect` (section 9) last, and
   `COMMAND_PATHS` derives
   `commands/<name>.md` from it, so adding a command is one entry and the order of the inventory lines follows it.
 - `scripts/magos_guard.py install` copies the lane guard for Codex and Hermes, because this script never ships it.

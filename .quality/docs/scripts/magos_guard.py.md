@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `0db8468df4736e80170cf2404cb6d7a0bf031ec966e14e73501cf7f9cf9662cd`
+Source-SHA256: `c4285cc4de3137fcc429e3e7c7a8831cb794510188427ccaeb7dc404dd25618b`
 
 ## Responsibility
 
@@ -2912,8 +2912,10 @@ the walker does not read. While the repository a git invocation acts on holds pr
 `branch_protected_unknown` and the cause `git runs command text from the setting <key>`: a `-c <key>=<value>` (also
 `--config-env=<key>=<var>`) of the invocation, and a `git config` (without a read option) that sets the key, for
 `core.fsmonitor`, `core.editor`, `sequence.editor`, `core.sshCommand`, `core.pager`, `core.hooksPath`,
-`core.askPass`, `credential.helper`, `diff.external`, `pager.<cmd>`, and every key ending in `.cmd`, `.textconv` or
-`.driver` and every `filter.<name>.<key>` (`merge.<driver>.driver`, `difftool.<t>.cmd`, `diff.<d>.textconv`); and an
+`core.askPass`, `credential.helper`, `diff.external`, `gpg.program`, `pager.<cmd>`, and every key ending in `.cmd`, `.command`,
+`.program`, `.textconv` or `.driver` and every `filter.<name>.<key>` (`merge.<driver>.driver`, `difftool.<t>.cmd`, `diff.<d>.command`, `diff.<d>.textconv`, `gpg.ssh.program`); the options
+`--upload-pack`, `--receive-pack` and `--exec` of `fetch`, `push`, `pull`, `ls-remote` and `clone`, which run a program
+against any repository; and an
 environment assignment of `GIT_SEQUENCE_EDITOR`, `GIT_EDITOR`, `GIT_EXTERNAL_DIFF`, `GIT_SSH`, `GIT_SSH_COMMAND`,
 `GIT_ASKPASS`, `GIT_PAGER`, `GIT_PROXY_COMMAND`, `EDITOR` or `VISUAL` (a prefix assignment, `env`, `export`,
 PowerShell `$env:`, cmd `set`) in a line that runs git. `-c alias.<name>=<value>` keeps its own reading (the alias text

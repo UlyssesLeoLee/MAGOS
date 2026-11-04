@@ -55,7 +55,7 @@ strictly above 90 percent for the file and for the project).
 - Package list: an empty `references/` directory, an adapter without `agents/openai.yaml`, the plugin-only entry skill
   (never listed), a source that is a symlink or a directory (source error, nothing written), the real `git-plan` and
   `git-protect` adapters with their `agents/openai.yaml` (listed by the `skills/*/SKILL.md` glob without a code change).
-- Command list: a Claude home that holds only the eight earlier command files (`GitProtect.md` is `missing`, `--verify`
+- Command list: a Claude home that lacks the `GitProtect.md` command file (it is `missing`, `--verify`
   exits 1, `--apply` writes exactly one file and deletes nothing), a command name without its file in the repository
   (a source error, nothing written).
 - Destinations: a destination that is a directory or a symlink, a destination whose parent is a link or junction that
