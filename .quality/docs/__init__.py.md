@@ -92,7 +92,13 @@ other than `terminal` and when `MAGOS_GUARD` is `off`. `verdict` runs the guard 
 (version 1.0.8), The plugin callbacks, of the guard's design states; a guard that cannot start, exits non-zero, prints no
 JSON object or an object of no known shape, or exceeds 25 s, and any other error inside `verdict`, gives a block whose
 message names the cause, says that nothing ran and names the off switches (`MAGOS_GUARD=off`, `hermes plugins disable
-magos`), in Chinese unless `MAGOS_LANG` is `en`. The payload reaches the guard on stdin as ASCII-escaped JSON: a value
+magos`), in Chinese unless `MAGOS_LANG` is `en`. The payload's `cwd` is the directory the terminal call runs in when it
+carries no `workdir`, as Hermes's terminal tool resolves it: the session's recorded directory
+(`tools.terminal_tool.get_session_cwd` of `tools.approval.get_current_session_key(default="")`, else of the call's
+`task_id`), which Hermes records after every command so a `cd` of an earlier call holds; else `TERMINAL_CWD`; else
+Hermes's own directory (`os.getcwd()`, `""` when it is gone). A call with `workdir` keeps the process directory as
+`cwd` (the guard reads `workdir` first). These are Hermes internals, read and never patched; an import or a call that
+raises falls back to the next source. The payload reaches the guard on stdin as ASCII-escaped JSON: a value
 JSON cannot hold is written as its text and a key that is not a string is left out, so every call serialises. The
 child's environment is Hermes's own, with `HERMES_HOME` set to `hermes_constants.get_hermes_home()` when that import
 works, else inherited unchanged. `verdict` keeps a mark for

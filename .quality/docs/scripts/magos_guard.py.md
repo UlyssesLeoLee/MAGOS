@@ -335,7 +335,9 @@ The file holds eleven cooperating parts.
      as well. In a tool whose shell the hook cannot name (the Codex and Hermes shell tools, MCP tools) a change inside a
      group, a background list, any pipeline command or substituted text is possible. A command inside substituted text
      is no command of the line. Inside a group, a brace block or the evaluated or substituted text, its own definite
-     changes hold. In cmd `&` runs the next command after the first one and ends a list like `;`. A change in a child
+     changes hold. In cmd `&` runs the next command after the first one and ends a list; cmd joins commands with `&`,
+     `&&`, `||` and `|` only, so in cmd text `;` ends nothing: it is a delimiter inside the command (`echo a; git
+     commit` is one `echo`, `cd;x` is `cd x`). A change in a child
      shell (`bash -c`, `bash x.sh`, `pwsh -Command`, `cmd /c`) never reaches the line. A builtin started through a
      program wrapper (`env`, `sudo`, `doas`, `nohup`, `nice`, `xargs`, `timeout`, `watch`, `wsl`, `uv`, `npx`,
      `stdbuf`, `setsid`, `exec`) changes nothing, because the wrapper starts a program and no program can change the
@@ -363,7 +365,12 @@ The file holds eleven cooperating parts.
      POSIX-rooted targets and for `;`, `&&` and newline separators. bash and PowerShell refuse a `cd` with a second
      directory argument (`cd /d <dir>` in bash, `cd <dir> extra`), which follows the same rule; redirections (`>x`,
      `2>&1`, `> x`) are no directory arguments. cmd's `cd /d <dir>` changes the drive and the directory, and cmd's `cd`
-     reads the rest of the line as one path.
+     reads the rest of the line as one path. cmd ends a command name at the first delimiter, so `cd/d <dir>`, `cd..`,
+     `cd..\<dir>`, `cd\` and `cd;<dir>` (also `chdir`, `,` and `=` like `;`) are a `cd` whose first argument is the rest
+     of the word, the delimiters before it dropped. In PowerShell text and text whose shell is not known, the
+     colon form of a directory parameter names the directory: `-Path:<dir>` and `-LiteralPath:<dir>` (a unique prefix of
+     either, from `-Pat` and `-L`, and the aliases `-PSPath` and `-LP`) of `cd`, `chdir`, `sl`, `Set-Location`, `pushd`
+     and `Push-Location`.
    - Inside an `&&` chain the elements after a `cd` run only when the `cd` succeeded, so for those later elements of the
      same chain the hook follows the `cd` into its target `T` when an earlier element of that chain creates `T`: after
      `git init T` or `git clone <src> T`, or when a `git init` runs in `T` earlier in the chain, nothing is judged (a new
@@ -401,7 +408,10 @@ The file holds eleven cooperating parts.
    or cmd option are joined with spaces into the text it runs, an encoded value is decoded, and one that does not
    decode counts as a dynamic creation); otherwise its words joined with POSIX quoting (a word holding a space, a quote, a backslash or a
    shell character is quoted), read as bash. The `Bash` and `Monitor` tools run bash, the `PowerShell` tool runs
-   PowerShell, and the shell of every other tool's string command is not known. The command line is judged in addition to, never instead of, the
+   PowerShell, and the shell of every other tool's string command is not known. On Windows a string command of the
+   Codex hook (`hook codex`) is read in the PowerShell dialect, because Codex runs it through `powershell.exe
+   -Command`: the creation check, the tamper filter and the branch protection read it as the Codex denial does
+   (Codex approval (version 1.0.8)), so `git -C C:\...\R commit` names the repository R. The command line is judged in addition to, never instead of, the
    judgement the tool itself calls for: an `Agent`, `Task` or `Workflow` call with worktree isolation, an
    `EnterWorktree` call and an MCP session tool are judged as such whether or not they carry a command. An MCP tool that
    is not a session tool and has no string command is answered `{}` before any repository is opened or any git runs.
@@ -2916,13 +2926,13 @@ The controls stay allowed: `git commit --dry-run`, `git commit -m x --dry-run`, 
 
 **Local remotes.** A `push`, `fetch`, `pull` or `send-pack` whose repository word is a remote name, or that names none,
 is judged like one to `.` or to a path when an effective URL of that remote is local. The remote is the one git uses:
-the value of `push --repo=<name>`, else the repository word, else `branch.<current>.remote` (for a push
+the value of `push --repo=<name>` (also `--rep` and longer prefixes, with `=` or as the next word), else the repository word, else `branch.<current>.remote` (for a push
 `branch.<current>.pushRemote` and `remote.pushDefault` first), else `origin`. Its URLs are, for a push, every
 `remote.<name>.pushurl` value, else every `remote.<name>.url` value, and for a fetch every `remote.<name>.url` value:
 the values of the repository's configuration, read once per repository and hook call with `git config --get-regexp
 ^(remote|branch)\.` (memoised), and only in a repository that holds protection or whose record cannot be read,
 followed by the line's `-c remote.<name>.url=<u>` / `-c remote.<name>.pushurl=<u>` values, which git adds to the
-configured ones. The remote is local when any of its URLs is local: `.`, a `file://` URL, or a path (absolute, relative
+configured ones; an empty value clears the values before it, as git reads an empty value of a multi-valued key. The remote is local when any of its URLs is local: `.`, a `file://` URL, or a path (absolute, relative
 to the invocation's directory, `~`) that names an existing directory; the push or fetch is then judged in the
 repository at that path with its refspecs, and a push with no refspec has an unknown destination (it follows
 `push.default` and the upstream). A URL that is clearly not local (`<scheme>://<host>/...` other than `file://`,
@@ -2930,14 +2940,19 @@ repository at that path with its refspecs, and a push with no refspec has an unk
 `-c` value) counts as not local. URL rewriting (`url.<base>.insteadOf`, `pushInsteadOf`) is not applied (Limits and
 cost).
 
-**Configured refspecs.** A fetch with no refspec on the line (also the fetch of `pull`, `fetch --all`, `fetch
---multiple <remote>...`, `remote update [<group> | <remote>...]`) writes the destinations of the configured
-`remote.<name>.fetch` values of every remote it fetches (the configuration read as Local remotes reads it, plus the
-line's `-c remote.<name>.fetch=<spec>` values, which git adds); `--refmap=<spec>` replaces those values for the bare
-refspecs of the line (a source without `:`), so `git fetch . topic --refmap=+refs/heads/topic:refs/heads/main` writes
-`main`. A destination that names `refs/heads/<b>` (or a bare `<b>`) writes b, and one with `*` under `refs/heads/` makes
-the destination unknown, as on the line (Unknown targets); destinations outside `refs/heads/` (the default
-`refs/remotes/<name>/*`) write no branch. This holds for local and non-local remotes alike, so `git fetch`, `git
+**Configured refspecs.** Every fetch (also the fetch of `pull`, `fetch --all`, `fetch --multiple <remote>...`,
+`remote update [<group> | <remote>...]`) writes the destinations of the configured `remote.<name>.fetch` values of
+every remote it fetches (the configuration read as Local remotes reads it, plus the line's `-c
+remote.<name>.fetch=<spec>` values, which git adds), because git updates them also for the sources a refspec of the line
+names (its opportunistic update): with no refspec on the line every configured value counts, with refspecs only the
+values whose source pattern can match a source of the line (`main`, `refs/heads/main`; a `*` source matches any), so
+`git fetch origin main:tmp` writes `main` too when `+refs/heads/main:refs/heads/main` is configured, and `git fetch
+origin topic` writes nothing protected when only `+refs/heads/x:refs/heads/main` is. `--refmap=<spec>` replaces the
+configured values for the sources the line names, so `git fetch . topic --refmap=+refs/heads/topic:refs/heads/main`
+writes `main`. A destination that names `refs/heads/<b>` (or a bare `<b>`) writes b; a destination with `*` that can
+reach `refs/heads/` (`refs/heads/*`, `refs/*`, `refs/h*`, `*`) makes the destination unknown, as on the line (Unknown
+targets), so a mirror's `+refs/*:refs/*` is unknown; other destinations (the default `refs/remotes/<name>/*`) write no
+branch. A dynamic `--refmap` or `-c remote.<name>.fetch` value makes the destination unknown. This holds for local and non-local remotes alike, so `git fetch`, `git
 fetch origin` and `git pull` on a topic branch are allowed in a protected repository whatever the remote's URL is,
 unless the configuration maps a remote branch onto a protected one. `remote update` with a group or no argument
 fetches the remotes of `remotes.<group>` or every remote; a group the hook cannot read makes the destination unknown.
@@ -2980,7 +2995,8 @@ computed for each worktree of a repository in the text order of the line:
    `--track` form or a remote-only name creates; nothing for `--detach` and for the path forms of the table), the
    `<branch>` of a `rebase`, the target of `symbolic-ref HEAD refs/heads/<b>`, the branch of `stash branch` and the new
    name of `branch -m` / `-M` of the current branch. The options of `switch` and `checkout` that take a separate value
-   (`-b`, `-B`, `-c`, `-C`, `--orphan`, `--conflict`, `--pathspec-from-file`) take the next word, so `git checkout
+   (`-b`, `-B`, `-c`, `-C`, `--orphan`, `--conflict`, `--pathspec-from-file`, the last two also by a unique prefix from
+   `--conf` and `--pathspec-f`) take the next word, so `git checkout
    --conflict merge main` checks out `main`. The local branch of `--track` / `-t <ref>` is the ref without
    `refs/remotes/<remote>/`, else without `remotes/<remote>/`, else without its first segment (`origin/future`,
    `remotes/origin/future` and `refs/remotes/origin/future` all create `future`). A checkout record counts only for the
@@ -2988,7 +3004,8 @@ computed for each worktree of a repository in the text order of the line:
    main` never moves this repository's set. A worktree is identified by the real path (`os.path.realpath`, which
    resolves symbolic links, junctions and 8.3 short names) of its git directory: the `.git` directory, the git
    directory a `.git` file names, or the `--git-dir` / `GIT_DIR` value; so `GIT_DIR=.git git switch main`, a short
-   name, a junction or a symbolic link of the worktree count as the worktree itself. The key is found without Git and
+   name, a junction or a symbolic link of the worktree count as the worktree itself; a `--git-dir` / `GIT_DIR` value that
+   is a `.git` file (a linked worktree's) is the git directory the file names. The key is found without Git and
    memoised per directory within a hook call; it is never compared with the paths of `worktrees(g)`, which keep their
    own form.
 3. Order. The records are taken in the order in which their text stands in the line. A write record is judged against
@@ -2996,7 +3013,8 @@ computed for each worktree of a repository in the text order of the line:
    set at a later record is {X} when every connector between the two is `&&` (the later record runs only when the
    checkout succeeded), and the earlier set with X added when any other connector stands between them (`;`, a newline,
    `||`, `&`), because the checkout may have failed. A pipeline is one element of its `&&` chain (the shell binds `|`
-   tighter than `&&`): a write in a pipeline that follows the checkout's `&&` sees {X}
+   tighter than `&&`), and so is a group or brace block that follows an `&&` (`a && (b && c)` runs c only when a
+   succeeded): a write in a pipeline or group that follows the checkout's `&&` sees {X}
    (`git switch -c feat && cat <<EOF | git commit -F -`), while a checkout that is itself an element of a pipeline, and
    a checkout of a negated command (`! git switch -c X && ...`, which runs the rest only when the checkout failed), add
    X to the earlier set instead of replacing it. A checkout record inside text whose order the walk cannot
@@ -3013,7 +3031,8 @@ computed for each worktree of a repository in the text order of the line:
    `branch_protected_split`: the checkout and the write may be run as two separate calls, and the second call is then
    judged against the branch the first one left checked out. When the protected branch is the start branch and a
    checkout record of the same worktree stands before the write joined by another connector than `&&` (`git switch
-   -c feat; git commit -am x`, PowerShell 5.1's `git switch -c feat; if ($?) { git commit -am x }`), the deny text adds
+   -c feat; git commit -am x`, PowerShell 5.1's `git switch -c feat; if ($?) { git commit -am x }`, a piped or negated
+   checkout), the deny text adds
    `branch_protected_order`: join the checkout and the write with `&&`, or run them as two calls.
 
    The walk does at most one store lookup per distinct directory, and it checks the hook's deadline (`HOOK_DEADLINE`)
@@ -3040,7 +3059,8 @@ resolved.
 - A Git failure or an exhausted budget while the protection of a repository is judged, in a repository that holds
   protection. An exception inside the judgement denies a call that yields a write record only when a repository the
   call names (the session directory's, and each a record names that the hook can open) holds protection, or when that
-  test raises as well (Invariant 8); elsewhere the hook prints `{}` and the warning of Invariant 8, so a repository
+  test raises as well (Invariant 8); the test finds each store as Finding the store does, so a redirect into a git
+  directory without a record costs no Git call there either; elsewhere the hook prints `{}` and the warning of Invariant 8, so a repository
   without `protected.json` keeps its verdicts.
 
 **Allowed.** Everything else that a hooked tool runs: reads (`status`, `diff`, `log`, `show`, `blame`, `rev-parse`,
@@ -3054,8 +3074,9 @@ main`), `fetch` of remote-tracking refs, `push` to a remote, `tag`, `stash` (exc
 call, the way git discovers a repository: from the real path (`os.path.realpath`) of the directory the record runs in
 it walks up, and at each directory d it tests, in this order:
 
-1. `d/.git` as a directory: it counts only when it is a git directory, that is, it holds a `HEAD` file and `objects`
-   and `refs` directories, or a `commondir` file whose common directory holds them. Its common directory is the
+1. `d/.git` as a directory: it counts only when it is a git directory, that is, it holds a `HEAD` file that git
+   reads as a HEAD (a `ref: refs/` line or a 40- or 64-digit object id) and `objects` and `refs` directories, or a
+   `commondir` file whose common directory holds them. Its common directory is the
    directory its `commondir` file names (relative to it), else itself. A `.git` directory that is no git directory is
    skipped, as git skips it, and the walk goes on.
 2. `d/.git` as a file: its `gitdir:` line names the git directory (relative to the file's directory when it is
@@ -3084,14 +3105,21 @@ a bare `git`. Names from the command line pass through `_shown` (control charact
 ### Tamper coverage
 
 - Path reading. The rules below read a word or a redirect target of a command as a path from the directory that
-  command runs in (after the line's `cd`, `pushd`, `Set-Location`, `env -C`, `sudo -D` and `git -C`), in every
+  command runs in: the line's `cd`, `pushd`, `chdir`, `Set-Location`, `sl` and `Push-Location` move it (`popd` and
+  `Pop-Location` return), whatever their target names, with the target read as a path itself (globs and the spellings
+  below; the colon forms and cmd's cd words of the Command detector), and `env -C`, `sudo -D` and `git -C` set it for
+  their own command; a target the reading cannot resolve to one directory leaves the directory unknown, and the words
+  after it are not read. Paths are read in every
   separator, `.`, `..` and case spelling, and as the platform resolves it (`os.path.abspath`, which on Windows also
   drops the trailing dots of every segment: `.git.\magos.\protected.json` is the record). A word with a glob (`*`, `?`,
   `[`) or a bash brace expansion (`{a,b}`) is expanded on the file system from that directory, braces first (at most
   64 alternatives) and then the glob (at most 4,096 matches, hidden names only for a pattern segment that starts with
-  `.`, as bash and Python's glob read them), and every match is tested; a dynamic word is not read. The filter's gate
-  opens on a text that holds `.git`, `packed-refs`, `magos`, `protected`, `reftable`, or a word with a glob or brace
-  that starts with `.`.
+  `.`, as bash and Python's glob read them; the directory part the word does not write is taken literally, so a `[` in
+  the session directory's path is no pattern), and every match is tested; a dynamic word is not read. The value of an
+  exclusion option (`-x`, `-X`, `--exclude`, `--exclude=`, `--exclude-dir`, `--exclude-from`) is no write target. The
+  filter's gate opens on a text that holds `.git`, `packed-refs`, `magos`, `protected`, `reftable`, a `find` write
+  action, or a word with a glob or brace that starts with `.`, and whenever the session directory lies in a git
+  directory. Each git directory's store is looked up once per call.
 - The record. A word or redirect target of a command whose program is not on the read-only list below is a write of
   the record when the path it reads as is an existing protection record (`<common>/magos/protected.json`), a store
   directory that holds one, or a git directory whose store holds one (the git-directory rule below). This holds for a
@@ -3102,8 +3130,9 @@ a bare `git`. Names from the command line pass through `_shown` (control charact
   guarded rule of the store may still apply as before). `find` with a write action (`-delete`, `-exec`, `-execdir`,
   `-ok`, `-okdir`, `-fls`, `-fprint`, `-fprint0`, `-fprintf`) is such a write when one of its start directories is a
   store or git directory that holds a record, lies inside one, or is a work tree top whose git directory holds one,
-  and its `-name`, `-iname`, `-path` and `-ipath` patterns (all of them, read as `find` matches) can match the record
-  or its store directory, or it has none. So `rm`, `mv`, `cp`, `tee`, `sed -i`, `truncate`, `chmod` and the writers the
+  and its `-name`, `-iname`, `-path` and `-ipath` tests can match the record or its store directory (it has none, or
+  one that matches it; a test after `-not` or `!` that matches the record excludes it, unless the expression holds
+  `-o` / `-or`), its start directories compared by their real paths. So `rm`, `mv`, `cp`, `tee`, `sed -i`, `truncate`, `chmod` and the writers the
   filter does not know (`install`, `dd of=`, `fsutil`, `icacls`, `tar -C`, `unzip -d`, `Expand-Archive`, `rsync`,
   `robocopy`, `xcopy`, `ren`, `Rename-Item`) are denied when a word of theirs names an existing record or its store,
   also as `.git/./magos`, `.git/mag*/protected.json`, `.g*/magos`, `.git/{magos,x}` or `.git.\magos.\protected.json`,
@@ -3116,16 +3145,18 @@ a bare `git`. Names from the command line pass through `_shown` (control charact
   `sha1sum`, `md5sum`, `cksum`, `echo`, `printf`, `basename`, `dirname`, and `git` with a subcommand that only reads
   (`status`, `log`, `show`, `diff`, `rev-parse`, `ls-files`, `cat-file`, `for-each-ref`, `branch --list`, `config
   --get`) and no `--output` option (any prefix of it git accepts, from `--ou`), which writes a file. A command whose
-  program is on the list and which has no redirect into the protected paths is no write.
-- The refs. A word that names `refs/heads` (or a file below it), `HEAD`, `packed-refs` or `reftable` (the directory or
-  a file below it) of a git directory (`.git/refs/heads/main`, `.git/HEAD`, `.git/packed-refs`, `.git/reftable/...`,
+  program is on the list and which has no redirect into the protected paths is no write, unless a pipe feeds its
+  output to a command that is not on the list (`echo .git/magos/protected.json | xargs rm`, `Get-ChildItem .git/magos |
+  Remove-Item`): then its words are read as that command's.
+- The refs. A word that names `refs` or `refs/heads` (or a file below it), `HEAD`, `packed-refs` or `reftable` (the
+  directory or a file below it) of a git directory (`.git/refs/heads/main`, `.git/HEAD`, `.git/packed-refs`, `.git/reftable/...`,
   the absolute spellings, a linked worktree's `.git/worktrees/<w>/HEAD`), read as Path reading states, is a write
   target under the same read-only list. It is judged in the repository that path belongs to, found as Finding the
   store finds it, and denied with the `protected` text when that repository holds protection (or its record cannot be
   read); otherwise it keeps the rule below.
 - The git directory. A `cd`, `pushd`, `chdir`, `Set-Location`, `sl`, `Push-Location`, `env -C` or `sudo -D` whose
-  target is a `.git` directory or a path below it (relative or absolute: `.git`, `.git/magos`, `.git/refs/heads`), or a
-  `git -C` with such a value, followed in the same line by a command whose program is not on the read-only list (also
+  target, read as Path reading states, is a `.git` directory or a path below it (relative or absolute: `.git`,
+  `.git/magos`, `.git/refs/heads`, `.g*`), or a `git -C` with such a value, followed in the same line by a command whose program is not on the read-only list (also
   inside `( .. )`, a brace block, `bash -c`, `pwsh -Command` and `cmd /c` text), and a command not on the list with a
   word that names the `.git` directory itself (`mv .git ../g`, `rm -rf .git`, `Remove-Item -Recurse .git`), are denied
   with the `protected` text when that git directory belongs to a repository that holds protection or whose record
@@ -3195,7 +3226,7 @@ Entries of the table `M` (`T(lang, key, **fields)`), zh first and en second:
 | `branch_protected_unknown` | MAGOS 拒绝 {op}：无法确定它写入哪个分支（{why}），而 {repo} 中有受保护的分支（{list}）。没有执行任何操作。请用字面的分支名和目录，一次只写一条 git 命令。 | MAGOS DENIES {op}: the branch it writes cannot be read ({why}), and {repo} holds protected branches ({list}). Nothing ran. Write the command with literal branch names and directories, one git command at a time. |
 | `branch_protected_record` | MAGOS 拒绝 {op}：{why}。在它能被读取之前，{repo} 中对任何分支的写入都被拒绝。没有执行任何操作。请用户升级本守卫，或在自己的终端里检查该文件。 | MAGOS DENIES {op}: {why}. Until it can be read, every write to a branch of {repo} is refused. Nothing ran. The user upgrades this guard or inspects the file in their own terminal. |
 | `branch_protected_split` | 这个受保护的分支来自本行中一条在写入之前的 checkout/switch：可以把 checkout 和写入分成两次单独的调用，第二次调用按第一次留下的分支判断。 | The protected branch is one a checkout or switch earlier in this line may leave checked out: run the checkout and the write as two separate calls; the second call is judged against the branch the first one left checked out. |
-| `branch_protected_order` | 本行在写入之前有一条 checkout/switch，但它们之间不是 &&：checkout 可能失败，写入仍会落在当前的受保护分支上。请用 && 连接 checkout 和写入，或分成两次单独的调用。 | This line runs a checkout or switch before the write, but not joined by &&: the checkout may fail and the write would then land on the protected branch checked out now. Join the checkout and the write with &&, or run them as two separate calls. |
+| `branch_protected_order` | 本行在写入之前有一条 checkout/switch，但它与写入之间不只用 && 连接（还有 ;、\|\|、管道或 !）：checkout 可能失败，写入仍会落在当前的受保护分支上。请只用 && 连接 checkout 和写入，或分成两次单独的调用。 | This line runs a checkout or switch before the write, but not joined to it by && alone (a ;, \|\|, a pipe or a ! stands between them): the checkout may fail and the write would then land on the protected branch checked out now. Join the checkout and the write with && alone, or run them as two separate calls. |
 | `protect_why_unreadable` | 分支保护记录 {f} 无法读取（{err}） | the branch protection record {f} cannot be read ({err}) |
 | `protect_why_newer` | 分支保护记录 {f} 由更新版本的 MAGOS 写入（v={v}） | the branch protection record {f} was written by a newer MAGOS (v={v}) |
 | `protect_unreadable` | MAGOS：分支保护记录 {f} 无法读取（{err}），未做任何修改；请用户检查该文件。 | MAGOS: the branch protection record {f} cannot be read ({err}); nothing was changed. The user must inspect the file. |
@@ -3279,11 +3310,10 @@ PROTECT_NEWER_FORMAT; 30 PROTECT_LIMIT. `protect-show`: 0; 2; 11; 29.
   - a dynamic word in a path of the tamper rules, and a glob that expands to more than 4,096 paths;
   - a path above the git directory (`rm -rf <work tree top>`), which removes the protected branch together with the
     repository.
-- Shell-dialect readings shared with the creation check (Known limits) apply to protection as well: PowerShell's and
-  cmd's `\"` inside double quotes and PowerShell's `<# ... #>` comments, cmd's `cd/d`, `cd..` and `cd;x`, and
-  PowerShell's `Set-Location -Path:<dir>`. On Codex for Windows a string command is read in the bash dialect although
-  Codex runs it through `powershell.exe -Command`, so a Windows path in it (`git -C C:\...\R commit`) is not followed:
-  this is a known gap of the walker that its own fix closes for both checks.
+- Shell-dialect readings shared with the creation check (Known limits) apply to protection as well: a `\"` inside
+  double quotes, which the lexer reads as an escaped quote while PowerShell keeps the backslash and cmd toggles its
+  quoting at every `"`, and PowerShell's `<# ... #>` block comments, which the lexer reads as a line comment from `#`;
+  both are spellings an agent writes to hide a command, not ordinary ones.
 - Tools that change git without a command string (an MCP or host tool that commits, merges or syncs a branch with
   structured arguments) are not judged; TC-760's session tools are. Gemini CLI has no tool hook: no protection is
   enforced there, and `protect` there has only the console gate.
@@ -3567,6 +3597,9 @@ Known limits, stated in `references/lane-split.md` section 12:
   interpreter the hook cannot read.
 - Tools whose shell the hook cannot name judge the commands after a group, a background list, a pipeline command or
   substituted text in every state.
+- A `\"` inside double quotes in PowerShell and cmd text is read as an escaped quote (PowerShell keeps the backslash
+  and ends the string, cmd toggles its quoting at every `"`), and PowerShell's `<# ... #>` block comment is read as a
+  line comment from `#`, so a command such a spelling hides is not read.
 - PowerShell's typographic quotes (`‘ ’ ‚ ‛` and `“ ” „`), which PowerShell reads as quote characters, are read as
   ordinary characters of a word.
 - PowerShell's backtick escapes that differ between Windows PowerShell 5.1 and PowerShell 7 are read as PowerShell 7
