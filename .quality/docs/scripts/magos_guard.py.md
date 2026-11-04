@@ -947,7 +947,8 @@ Invariants:
    guard run). The value of a `-c alias.<name>=<value>` is read like the text of a child shell. The one exception is the ask or allow of the Claude Code
    hook for exactly one direct invocation of this guard (Approval (version 1.0.7)). A writer or a redirect aimed at an
    approval store (`.git/magos/approvals`, `.magos/approvals`, the absolute `<git-common-dir>/magos/approvals` or
-   `<guard home>/approvals`) is denied in every repository and outside any repository. Edits of the guard's state are denied once
+   `<guard home>/approvals`) is denied in every repository and outside any repository, and so is one aimed at a branch
+   protection record (Branch protection (next version), Tamper coverage). Edits of the guard's state are denied once
    the session directory's repository is armed, holds a claim or holds protection (a `protected.json` in its store): `core.hooksPath`, `GIT_CONFIG_*`, worktree config, and
    writers or redirects aimed at `.git/hooks`, `.git/refs`, `.git/HEAD`, `.git/config`, `packed-refs`, `.git/magos`
    (the claims, the set records under `.git/magos/sets`, the protection record `.git/magos/protected.json` and every other file of the store),
@@ -2771,8 +2772,10 @@ fails ends the call, and a failure writes nothing:
 11. One audit line (Audit below), then the result: `protect_ok` or `protect_ok_release`, exit 0.
 
 The `--json` result of every outcome carries `decision` (`allow` or `deny`), `code` (the `EXIT` name of the exit code,
-`OK` for 0), `message` and `exit_code`; a success adds `action` (`protect` or `release`), `branch` (as given),
-`stored` (the spelling of the entry that matched, null when none did), `changed` (true when the record was written),
+`OK` for 0), `message` and `exit_code`; a success adds `action` (`set` or `release`, the same word as the audit
+line), `branch` (as given), `stored` (the spelling of the entry that matched; for a set that adds an entry, the name as
+given, which is the spelling the new entry stores; null for a release that matched none), `changed` (true when the
+record was written),
 `dry_run` and `protected` (the stored names after the call, in record order); exit 12 and 24 add `errors: [{field,
 code, text}]`; exit 11 adds `unknowns: [{code, text}]`. Stderr stays empty except for a usage error and the
 Git-failure and internal-error lines of Errors (exit 11).
@@ -2851,27 +2854,71 @@ last column writes no branch and is allowed.
 
 | Invocation | Branches it writes | Allowed forms |
 | --- | --- | --- |
-| `commit` (every option: `--amend`, `--fixup`, `-C`, `--allow-empty`, ...) | current | `--dry-run`; `-h` or `--help` as the only argument |
-| `merge` (also `--continue`, `--ff-only`, `--squash`, `--no-commit`) | current | `--abort`, `--quit`; help |
+| `commit` (every option: `--amend`, `--fixup`, `-C`, `--allow-empty`, ...) | current | `--dry-run` standing as an option of its own (Exempt words below); `-h` or `--help` as the only argument |
+| `merge` (also `--continue`, `--ff-only`, `--squash`, `--no-commit`) | current | `--abort`, `--quit` as options of their own; help |
 | `pull` (with or without `--rebase`) | current, and the destination of every refspec as for `fetch` | help |
-| `cherry-pick`, `revert` (also `--continue`, `--skip`, `--abort`, `-n`) | current | `--quit`; help |
+| `cherry-pick`, `revert` (also `--continue`, `--skip`, `--abort`, `-n`) | current | `--quit` as an option of its own; help |
 | `rebase` | the explicit `<branch>` when given (the second positional word, or the first after `--root`), else current; for `--continue` and `--skip` current | `--abort`, `--quit`, the option that edits the instruction list of a running rebase (its name is written in two parts in this document: `--edit-` followed by `to` and `do`), `--show-current-patch`; help |
-| `am` (also `--continue`, `--skip`, `--resolved`, `-r`, `--abort`) | current | `--quit`, `--show-current-patch`; help |
-| `reset` | current | index-only forms: a `--` followed by at least one word, `-p` / `--patch`, `--pathspec-from-file`; and the forms that set the branch to its own tip: no positional word before any `--`, or a first positional word that is exactly `HEAD` or `@`; help |
+| `am` (also `--continue`, `--skip`, `--resolved`, `-r`, `--abort`) | current | `--quit`, `--show-current-patch` as options of their own; help |
+| `reset` (also `--pathspec-from-file`, which counts as a full reset because its file may hold no pathspec) | current | index-only forms: a `--` followed by at least one word, `-p` / `--patch`; and the forms that set the branch to its own tip: no positional word before any `--`, or a first positional word that is exactly `HEAD` or `@`; help |
 | `update-ref` (with or without `-d`) | the branch of a first positional word under `refs/heads/` (any case); current for `HEAD` without `--no-deref` | `HEAD` with `--no-deref`; a ref outside `refs/heads/` |
 | `update-ref --stdin` | every branch a `create`, `update` or `delete` instruction names under `refs/heads/`; current for `HEAD` | `verify` instructions; refs outside `refs/heads/` |
 | `symbolic-ref` | the branch of a first positional word under `refs/heads/` (also with `-d` / `--delete`) | `symbolic-ref HEAD <target>` (it checks the target out) and every read form |
 | `branch` | `-f <b>` and a plain `<b>`: b; `-d`, `-D`, `--delete`: every positional word; `-m`, `-M`: the old and the new name, with one positional word current and the new name; `-c`, `-C`: the new name | the list modes, `-u` / `--set-upstream-to`, `--unset-upstream`, `--edit-description` |
-| `switch`, `checkout` | the name of `-c`, `-C`, `-b`, `-B` and `--orphan` | every other form: switching to a branch, `--detach`, paths; the remote-only `<name>` and `--track <remote>/<b>`, which create the local branch at the remote's tip as a checkout of it |
+| `switch`, `checkout` | the name of `-c`, `-C`, `-b`, `-B` and `--orphan`; the local branch that `--track` / `-t <remote>/<b>` creates; the remote-only `<b>` of `switch <b>` and `checkout <b>` when no local branch `<b>` exists (one memoised `rev-parse --verify --quiet refs/heads/<b>` per name), which creates it | switching to an existing local branch, a protected one included; `--detach`; the path forms (`checkout -- <paths>`, and `checkout <tree-ish> <path>...` with two or more positional words, none of `-b`, `-B`, `-t`, `--track`, `--orphan` and no `--`), which check nothing out |
 | `worktree add` | the name of `-b` / `-B`; the branch it checks out (`<path> <b>`, and for a single `<path>` the branch named after the directory) | `--detach`; `-b <new> <path> <b>` (b is only the start point) |
 | `stash branch <b>` | b | every other `stash` form |
-| `fetch` | the destination of every refspec under `refs/heads/` or bare (also forced `+`) | no refspec (the configured refspecs, a limit), refspecs into other namespaces |
-| `push` into a local repository (`.`, a path, `file://`) | in that repository: every destination (the empty-source deletions `:b` and `+:b` included) and, with `--delete` / `-d`, every positional word after the repository | a push to a remote (another repository: a limit) |
+| `fetch` | the destination of every refspec under `refs/heads/` or bare (also forced `+`), also when the repository is named through a local remote (Local remotes below) | no refspec from a non-local remote (the configured refspecs, a limit), refspecs into other namespaces |
+| `push` into a local repository (`.`, a path, `file://`, or a remote whose URL is one of these: Local remotes below) | in that repository: every destination (the empty-source deletions `:b` and `+:b` included) and, with `--delete` / `-d`, every positional word after the repository; with no refspec the destination follows `push.default` and the upstream: unknown | a push to a non-local remote (another repository: a limit) |
+| any git invocation with `-c <key>=<value>` for a key that makes git run command text, an environment assignment that does, or `git config` that sets such a key (Command text below) | unknown: refused wherever the repository holds protection | the same keys read (`git config --get`), every other key |
 | `filter-branch`, `filter-repo`, `fast-import`, `subtree`, `flow` | unknown: refused wherever the repository holds protection | none |
 
 A tool that names a branch or worktree itself (`EnterWorktree name=N`, an MCP session tool with `branch=`) writes the
 name its creation record holds and is refused when that name is protected. `git flow`, already an auto-named creation,
 is refused wherever the repository holds protection.
+
+**Exempt words.** The options of `commit`, `merge`, `cherry-pick`, `revert` and `am` are read the way git reads them
+before an exempt word (`--dry-run`, `--abort`, `--quit`, `--show-current-patch`) counts: a bundle of short options is
+read letter by letter, and at the first letter that takes a value the rest of the word, or else the next word, is that
+value (`commit -am --dry-run`: `a`, then `m` takes `--dry-run`); a long option is read by its full name or by a prefix
+that names exactly one long option of the subcommand (`--mess` is `--message`), and an option that takes a value
+without `=` takes the next word. The options that take a value: for `commit` `-m`, `-F`, `-C`, `-c`, `-t`, `--message`,
+`--file`, `--reuse-message`, `--reedit-message`, `--fixup`, `--squash`, `--template`, `--author`, `--date`,
+`--cleanup`, `--trailer`, `--pathspec-from-file`; for `merge` `-m`, `-F`, `-s`, `-X`, `--message`, `--file`,
+`--strategy`, `--strategy-option`, `--into-name`, `--cleanup`; for `cherry-pick` and `revert` `-m`, `-X`, `--mainline`,
+`--strategy`, `--strategy-option`, `--cleanup`; for `am` `--exclude`, `--include`, `--directory`, `--patch-format`,
+`--resolvemsg`, `--quoted-cr`, `--empty`, `--whitespace`. An exempt word counts only where it stands as an option of its
+own; a word that is the value of the option before it is no exemption, so `git commit -am --dry-run`, `git commit -qm
+--dry-run`, `git commit --mess --dry-run`, `git merge -m --abort feat`, `git cherry-pick -X --quit feat`, `git revert
+--strategy-option --quit HEAD`, `git am --exclude --quit x.patch` and `git am --include --show-current-patch x` are
+writes. When a word before the exempt word is an option the reading does not know (it may take the exempt word as its
+value), the exemption is not proven and the invocation is judged as a write. The controls stay allowed: `git commit
+--dry-run`, `git commit -m x --dry-run`, `git merge --abort`, `git cherry-pick --quit`, `git am --show-current-patch`.
+
+**Local remotes.** A `push`, `fetch` or `pull` whose repository word is a remote name, or that names none, is judged
+like one to `.` or to a path when the effective URL of that remote is local. The remote without a repository word is
+the one git uses: `branch.<current>.remote` (for a push `branch.<current>.pushRemote` and `remote.pushDefault` first),
+else `origin`. Its URL is the line's `-c remote.<name>.url=<u>` / `-c remote.<name>.pushurl=<u>` (the last one wins),
+else the repository's configuration, read once per repository and hook call with `git config --get-regexp
+^(remote|branch)\.` (memoised), and only in a repository that holds protection or whose record cannot be read. A URL
+is local when it is `.`, a `file://` URL, or a path (absolute, relative to the invocation's directory, `~`) that names
+an existing directory; the push or fetch is then judged in the repository at that path with its refspecs, and with no
+refspec its destination is unknown (it follows `push.default`, the upstream or the configured fetch refspecs). A URL
+that is clearly not local (`<scheme>://<host>/...` other than `file://`, `<user>@<host>:<path>`, `<host>:<path>`) is not
+judged, and a remote whose URL cannot be read (no such key, a dynamic `-c` value) counts as not local.
+
+**Command text.** Some settings make git run a command, so a line that sets one can make git write a branch in a way
+the walker does not read. While the repository a git invocation acts on holds protection, these are refused with
+`branch_protected_unknown` and the cause `git runs command text from the setting <key>`: a `-c <key>=<value>` (also
+`--config-env=<key>=<var>`) of the invocation, and a `git config` (without a read option) that sets the key, for
+`core.fsmonitor`, `core.editor`, `sequence.editor`, `core.sshCommand`, `core.pager`, `core.hooksPath`,
+`core.askPass`, `credential.helper`, `diff.external`, `pager.<cmd>`, and every key ending in `.cmd`, `.textconv` or
+`.driver` and every `filter.<name>.<key>` (`merge.<driver>.driver`, `difftool.<t>.cmd`, `diff.<d>.textconv`); and an
+environment assignment of `GIT_SEQUENCE_EDITOR`, `GIT_EDITOR`, `GIT_EXTERNAL_DIFF`, `GIT_SSH`, `GIT_SSH_COMMAND`,
+`GIT_ASKPASS`, `GIT_PAGER`, `GIT_PROXY_COMMAND`, `EDITOR` or `VISUAL` (a prefix assignment, `env`, `export`,
+PowerShell `$env:`, cmd `set`) in a line that runs git. `-c alias.<name>=<value>` keeps its own reading (the alias text
+is walked). Configuration written by other means (an editor, a file tool, the user's terminal) is not read: a key
+already present in a configuration file runs as git runs it (Limits and cost).
 
 **Unknown targets.** The target is unknown, and the record is refused wherever the repository it acts on holds
 protection (the deny names the cause and the protected branches): a dynamic subcommand (`git $c`); a dynamic or
@@ -2887,9 +2934,10 @@ their unique prefixes of at least three letters; any other option written withou
 separate value makes the `<branch>` word unknown); the operations of the last table row. A current-branch target is
 unknown as Current branch states.
 
-**Current branch.** The branch a `current` record writes is the union of:
+**Current branch.** The branch a `current` record writes is one of a set of possible current branches. The set is
+computed for each worktree of a repository in the text order of the line:
 
-1. The branch checked out where the invocation runs, read at hook time in its repository: the `branch` of the
+1. Start: the branch checked out where the invocation runs, read at hook time in its repository: the `branch` of the
    `worktrees(g)` entry whose path is the invocation's worktree top (`pkey` comparison), which also names an unborn
    branch; for a git directory without a work tree (a bare repository, a `--git-dir` redirect without one) the branch
    `rev-parse --symbolic-full-name HEAD` prints there under `refs/heads/`. A detached worktree whose git directory holds
@@ -2897,15 +2945,32 @@ unknown as Current branch states.
    detached HEAD writes no branch. A directory that the same `&&` chain creates with `git worktree add` writes the
    branch that `worktree add` checks out there (none for `--detach`), and a repository that the chain creates with
    `git init` or `git clone` holds no protection.
-2. Every branch the line may check out before the write: the name of every `switch` and `checkout` of the line (the
-   first positional word before any `--`, also a creating form's name; nothing for `--detach` or paths after `--`), the
-   `<branch>` of every `rebase`, the target of every `symbolic-ref HEAD refs/heads/<b>`, the name of every `stash
-   branch` and the new name of every `branch -m` / `-M`. Every such command of the line counts, in any directory and
-   in any order, so a line cannot move its worktree onto a protected branch and write it (`git switch main && git
-   merge x`). A checkout whose branch cannot be read makes every current target of the line unknown: a dynamic name,
-   `-`, `@{-<n>}`, `bisect reset`, `gh pr checkout`.
+2. Checkout records: every command of the line that may move the worktree's HEAD to a branch X: a `switch` or
+   `checkout` to a branch (the first positional word before any `--`, the name of a creating form, the local branch a
+   `--track` form or a remote-only name creates; nothing for `--detach` and for the path forms of the table), the
+   `<branch>` of a `rebase`, the target of `symbolic-ref HEAD refs/heads/<b>`, the branch of `stash branch` and the new
+   name of `branch -m` / `-M` of the current branch. A checkout record counts only for the worktree it acts on (its
+   directory after `cd`, `-C`, `env -C`, `--git-dir`), so `git -C <other repository> switch main` never moves this
+   repository's set.
+3. Order. The records are taken in the order in which their text stands in the line. A write record is judged against
+   the set at its position: a checkout that stands after the write does not reach it. After a checkout record X, the
+   set at a later record is {X} when every connector between the two is `&&` (the later record runs only when the
+   checkout succeeded), and the earlier set with X added when any other connector stands between them (`;`, a newline,
+   `||`, `|`, `&`), because the checkout may have failed. A checkout record inside text whose order the walk cannot
+   place against the write (a group, a subshell, substituted text, a child shell, a compound command, a function body,
+   a loop) adds X to the set of every write record of the line. A checkout whose branch cannot be read makes the set
+   unknown for every record after it in the line: a dynamic name, `-`, `@{-<n>}`, `bisect reset`, `gh pr checkout`.
 
-The target is unknown when step 1 cannot be read: a Git failure or an exhausted budget, a head-name file that cannot
+   So, with `main` protected and checked out: `git switch -c feat && git commit -am x`, `git checkout -b f2 && git add
+   -A && git commit -m x`, `git stash && git switch topic && git stash pop && git commit -m x` and `git switch -c
+   agent/s/integration main && git merge agent/s/lane-a` are allowed (each writes the new branch); in a worktree on
+   `topic`, `git commit -m x && git switch main` is allowed (the commit runs before the switch); `git switch main && git
+   commit -m x`, `git switch main; git commit -m x` and `git switch main || git commit -m x` are refused. When the
+   protected branch is in the set only through a checkout record of the line, the deny text adds
+   `branch_protected_split`: the checkout and the write may be run as two separate calls, and the second call is then
+   judged against the branch the first one left checked out.
+
+The target is unknown when the start of step 1 cannot be read: a Git failure or an exhausted budget, a head-name file that cannot
 be read, a directory that is dynamic or does not exist and is no worktree the chain creates, a redirect that cannot be
 resolved.
 
@@ -2930,12 +2995,22 @@ resolved.
   without `protected.json` keeps its verdicts.
 
 **Allowed.** Everything else that a hooked tool runs: reads (`status`, `diff`, `log`, `show`, `blame`, `rev-parse`,
-`branch --list`, `for-each-ref`), `switch <b>` and `checkout <b>` of a protected branch, `merge`, `rebase`,
+`branch --list`, `for-each-ref`), `switch <b>` and `checkout <b>` of a protected branch that exists as a local branch, `merge`, `rebase`,
 `cherry-pick` and the other rows into an unprotected current branch whose source is a protected branch
 (`git merge main` on a topic branch), the creation of other branches from a protected one (`git switch -c topic
 main`), `fetch` of remote-tracking refs, `push` to a remote, `tag`, `stash` (except `stash branch`), `restore`,
-`apply`. A repository without the record costs one store stat per repository a write record names, after the
-memoised opening of that repository.
+`apply`. A repository without the record costs no Git call (Finding the store below).
+
+**Finding the store.** The hook finds the record of the repository a write or creation record acts on without a Git
+call: from the directory the record runs in it walks up to the first directory that holds a `.git` entry. A `.git`
+directory is the common directory; a `.git` file names the git directory in its `gitdir:` line (relative to the file's
+directory when it is relative), whose `commondir` file, when present, names the common directory (relative to the git
+directory). It then tests whether `<common>/magos/protected.json` exists. Only when the file exists, or when the layout
+is not understood, the repository is opened with Git as before: a `GIT_DIR`, `GIT_COMMON_DIR` or `GIT_WORK_TREE` in
+the hook's environment or in the record's redirect state, a walk that reaches the root of the file system without a
+`.git` entry (a bare repository, a git directory, no repository), and a `.git` file that cannot be read or names no
+existing directory. `holds_protection` answers from this test. A repository without protection therefore costs no Git
+call for its write records.
 
 **Texts.** `branch_protected` names the operation (the invocation's subcommand and its deciding option, for example
 `git branch -D`), the branch as the record stores it, the repository (`repo_dir`), that nothing ran, that the agent
@@ -2947,13 +3022,36 @@ characters).
 
 ### Tamper coverage
 
-- The record lies in the store, `.git/magos`, so a writer or a redirect aimed at it (the relative path, the absolute
-  `<git-common-dir>/magos/protected.json` in any separator or case spelling the platform folds) is an edit of the
-  guard's state (Invariant 7).
-- `decide()` denies an edit of the guard's state (scope `guarded`) once the session directory's repository is armed,
-  holds a claim or holds protection. In a repository whose only guard state is a protection, `rm .git/magos/protected.json`,
-  `echo <sha> > .git/refs/heads/main`, a write to `packed-refs` or `.git/HEAD`, `core.hooksPath` and `GIT_CONFIG_*`
-  are therefore denied with the `protected` text.
+- The record. A word that names the record or the store directory that holds it (`magos/protected.json` and the
+  `magos` directory under a git directory: `.git/magos`, `.git/magos/protected.json`, the absolute
+  `<git-common-dir>/magos` and its `protected.json`, in every separator, `..` and case spelling the platform folds) is
+  a write target in every command whose program is not on the read-only list below, and so is the target of a
+  redirect. Such a write is denied with scope `always` and the reason `_PROTECT_MSG` (the `protected` text naming the
+  branch protection record), in every repository and outside any repository, like a write into an approval store: a
+  command that runs in repository B reaches the record of repository A by its absolute path. So `rm`, `mv`, `cp`,
+  `tee`, `sed -i`, `truncate`, `chmod` and every writer the filter does not know (`install`, `dd of=`, `fsutil`,
+  `icacls`, `tar -C`, `unzip -d`, `Expand-Archive`, `rsync`, `robocopy`, `xcopy`, `ren`, `Rename-Item`) are denied when
+  a word of theirs names the record or the store directory.
+- The read-only list: `cat`, `head`, `tail`, `less`, `more`, `ls`, `dir`, `stat`, `type`, `Get-Content`, `gc`,
+  `Select-String`, `grep`, `rg`, `find` without `-delete`, `-exec`, `-execdir`, `-ok`, `-okdir`, `-fprint`, `-fprint0`
+  and `-fprintf`, `file`, `wc`, `diff`, `test`, `[`, and `git` with a subcommand that only reads (`status`, `log`,
+  `show`, `diff`, `rev-parse`, `ls-files`, `cat-file`, `for-each-ref`, `branch --list`, `config --get`). A command
+  whose program is on the list and which has no redirect into the protected paths is no write.
+- The refs. A word that names `refs/heads` (or a file below it), `HEAD` or `packed-refs` of a git directory
+  (`.git/refs/heads/main`, `.git/HEAD`, `.git/packed-refs`, the absolute spellings, a linked worktree's
+  `.git/worktrees/<w>/HEAD`) is a write target under the same read-only list. It is judged in the repository that
+  path belongs to, found as Finding the store finds it, and denied with the `protected` text when that repository
+  holds protection (or its record cannot be read); otherwise it keeps the rule below.
+- The git directory. A `cd`, `pushd`, `chdir`, `Set-Location`, `sl`, `Push-Location`, `env -C` or `sudo -D` whose
+  target is a `.git` directory or a path below it (relative or absolute: `.git`, `.git/magos`, `.git/refs/heads`), or a
+  `git -C` with such a value, followed in the same line by a command whose program is not on the read-only list (also
+  inside `( .. )`, a brace block, `bash -c`, `pwsh -Command` and `cmd /c` text), and a command not on the list with a
+  word that names the `.git` directory itself (`mv .git ../g`, `rm -rf .git`, `Remove-Item -Recurse .git`), are denied
+  with the `protected` text when that git directory belongs to a repository that holds protection or whose record
+  cannot be read.
+- Besides these, `decide()` denies an edit of the guard's state (scope `guarded`) once the session directory's
+  repository is armed, holds a claim or holds protection: in a repository whose only guard state is a protection,
+  `core.hooksPath`, `GIT_CONFIG_*` and the edits of the other store files are denied with the `protected` text.
 - `protect` is a user-only subcommand: a guard word followed by it in its slot (every spelling of the global options,
   behind the launcher, a wrapper, `Start-Process`, a PowerShell comma list, a child shell, a here-document, a quoted
   word that names the guard) has scope `always` with the reason `_USER_MSG`, which names it. A commit message that
@@ -3014,6 +3112,7 @@ Entries of the table `M` (`T(lang, key, **fields)`), zh first and en second:
 | `branch_protected` | MAGOS 拒绝 {op}：分支「{b}」在 {repo} 中受保护，agent 不能向它提交、合并进它或改写它。没有执行任何操作。请在另一个分支上工作（例如 git switch -c <主题分支>），把合入「{b}」交给用户：由用户在自己的终端里执行，或由用户用 /GitProtect {b} --release 解除保护。 | MAGOS DENIES {op}: the branch '{b}' is protected in {repo}; an agent may not commit to it, merge into it or rewrite it. Nothing ran. Work on another branch (for example git switch -c <topic>) and leave the merge into '{b}' to the user, who runs it in their own terminal or lifts the protection with /GitProtect {b} --release. |
 | `branch_protected_unknown` | MAGOS 拒绝 {op}：无法确定它写入哪个分支（{why}），而 {repo} 中有受保护的分支（{list}）。没有执行任何操作。请用字面的分支名和目录，一次只写一条 git 命令。 | MAGOS DENIES {op}: the branch it writes cannot be read ({why}), and {repo} holds protected branches ({list}). Nothing ran. Write the command with literal branch names and directories, one git command at a time. |
 | `branch_protected_record` | MAGOS 拒绝 {op}：{why}。在它能被读取之前，{repo} 中对任何分支的写入都被拒绝。没有执行任何操作。请用户升级本守卫，或在自己的终端里检查该文件。 | MAGOS DENIES {op}: {why}. Until it can be read, every write to a branch of {repo} is refused. Nothing ran. The user upgrades this guard or inspects the file in their own terminal. |
+| `branch_protected_split` | 这个受保护的分支来自本行中一条在写入之前的 checkout/switch：可以把 checkout 和写入分成两次单独的调用，第二次调用按第一次留下的分支判断。 | The protected branch is one a checkout or switch earlier in this line may leave checked out: run the checkout and the write as two separate calls; the second call is judged against the branch the first one left checked out. |
 | `protect_why_unreadable` | 分支保护记录 {f} 无法读取（{err}） | the branch protection record {f} cannot be read ({err}) |
 | `protect_why_newer` | 分支保护记录 {f} 由更新版本的 MAGOS 写入（v={v}） | the branch protection record {f} was written by a newer MAGOS (v={v}) |
 | `protect_unreadable` | MAGOS：分支保护记录 {f} 无法读取（{err}），未做任何修改；请用户检查该文件。 | MAGOS: the branch protection record {f} cannot be read ({err}); nothing was changed. The user must inspect the file. |
@@ -3079,15 +3178,23 @@ PROTECT_NEWER_FORMAT; 30 PROTECT_LIMIT. `protect-show`: 0; 2; 11; 29.
 - A protection covers local branches only. `git push origin HEAD:<branch>` (any push to a remote), `gh pr merge` and
   a merge on a hosting service write a remote repository's branch of that name and are not refused; the host's own
   branch protection guards those.
-- `fetch` and `pull` without a refspec use the configured refspecs, which the hook does not read; a configured
-  destination under `refs/heads/` is not seen. `help.autocorrect` can run a refused verb under a misspelt subcommand,
+- Configuration that makes git run command text, written by other means than a git invocation of a hooked tool (an
+  editor, a file tool, a script, the user's terminal), is not read: a key already present in a configuration file
+  runs as git runs it. Interpreters (`python -c`, a Node script) and the file tools the hook does not see (`Write`,
+  `Edit`) stay out of reach of the tamper filter as well: they can change the record, the refs and the configuration.
+- `fetch` and `pull` from a non-local remote without a refspec use the configured refspecs, which the hook does not
+  read; a configured destination under `refs/heads/` is not seen. A remote whose URL the hook cannot read is taken as
+  not local. `help.autocorrect` can run a refused verb under a misspelt subcommand,
   which the hook reads as written. A `git-<name>` program other than those of the last table row is not read.
 - At most `PROTECT_MAX` (64) protected branches per repository, a branch name of 255 characters, a reason of 200
   characters, a record of 1 MiB.
-- Cost: one memoised repository opening (two `rev-parse` calls) and one stat of the store per repository a write
-  record names; in a repository that holds protection also `config magos.guard` and one memoised `worktree list` (and `rev-parse` for a git directory without a work
-  tree, `config` for `rebase.updateRefs` when a rebase is judged), one read of the record and of a head-name file, all
-  on the hook's 18 s budget.
+- Cost: in a repository without protection no Git call: one walk up the directories and one stat of the store per
+  repository a write record names (Finding the store), as without branch protection. In a repository that holds
+  protection, or whose layout the walk does not understand, also the memoised repository opening (two `rev-parse`
+  calls), `config magos.guard`, one memoised `worktree list`, `rev-parse` for a git directory without a work tree,
+  one `rev-parse --verify --quiet` per remote-only checkout name, one `config --get-regexp` for the remotes, `config`
+  for `rebase.updateRefs` when a rebase is judged, and one read of the record and of a head-name file, all on the
+  hook's 18 s budget.
 
 ## Change Notes
 
@@ -3458,7 +3565,7 @@ Known limits, stated in `references/lane-split.md` section 12:
   first four words that are no option (four option values before it hide it), and `env -S` with bundled short options
   before the `S` (`env -vS`, `env -iS`) or the `\_` separator (`env -S 'git\_switch\_-c\_x'`) is not split. Keep the
   repository armed.
-- The tamper filter does not follow these routes: user-only commands (`disarm`, `override`, `arm`, `install`) pass
+- The tamper filter does not follow these routes: user-only commands (`disarm`, `override`, `arm`, `install`, `protect`) pass
   through a guard word that no interpreter, wrapper or `Start-Process` runs followed by a variable (`$g = '<guard>'; py
   $g $a`), an argument split by a block comment (`py magos_guard.py <##> disarm`), `env -S` with a guard word that no
   interpreter runs, a program the walk does not unwrap that runs the script without an interpreter word (`ionice -c3
