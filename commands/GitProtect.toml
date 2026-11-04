@@ -14,7 +14,7 @@ MANDATORY EXECUTION ORDER:
 4. Return contract-defined tables, evidence, blockers, risks, and safe next actions. Recheck the requested reply language before answering. Never claim operations ran when they were not performed.
 
 SOURCE-SPECIFIC CONSTRAINTS:
-Without a branch use `git branch --show-current`; a detached HEAD stops and asks for a branch. `--status` is read only and runs `magos_guard.py protect-show`. Setting or lifting (`--release`) runs the user-only guard subcommand `magos_guard.py protect --branch <branch> [--release]` as one direct command that the user approves; never pass `--approval`, never write `.git/magos` or `magos.*` config, never retry a refused or declined protect in another form; when no approval prompt exists, print the command for the user's own terminal. The command never commits, merges, creates, switches, deletes or pushes a branch.
+Without a branch use `git branch --show-current`; a detached HEAD stops and asks for a branch. `--status` is read only and runs `magos_guard.py protect-show`. Setting or lifting (`--release`) runs the user-only guard subcommand `magos_guard.py protect --branch <branch> [--release]` as one direct command that the user approves; never pass `--approval`, never write `.git/magos` or `magos.*` config, never retry a refused or declined protect in another form; when no approval prompt exists, print the command for the user's own terminal. The command never commits, merges, creates, switches, deletes or pushes a branch. Gemini CLI has no tool hook: a protection set here is enforced by the Claude Code, Codex and Hermes hooks, never in Gemini; say so in the result.
 
 Safety classification: Explicit command only; guard state changes only with the user's approval.
 '''

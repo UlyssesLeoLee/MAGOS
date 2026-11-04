@@ -933,7 +933,8 @@ def test_doctor_reports_the_protection(tmp_path, console):
 PROTECT_KEYS = ("branch_protected", "branch_protected_unknown", "branch_protected_record", "protect_why_unreadable", "protect_why_newer", "protect_unreadable",
                 "protect_newer", "protect_bad_name", "protect_limit", "protect_ok", "protect_ok_release", "protect_same", "protect_same_release", "protect_dry",
                 "protect_dry_release", "protect_show_none", "protect_show_head", "protect_show_line", "protect_show_reason", "protect_exists", "protect_absent",
-                "protect_show_one", "protect_show_not", "branch_protected_order", "approval_what_protect", "approval_what_unprotect", "approval_protect_reason")
+                "protect_show_one", "protect_show_not", "branch_protected_split", "branch_protected_order", "approval_what_protect", "approval_what_unprotect",
+                "approval_protect_reason")
 
 
 def test_the_protection_messages():
@@ -1642,3 +1643,135 @@ def test_the_magos_flows_stay_allowed_beside_a_protection(world, tmp_path):
         same_as_unprotected(R.path, cmd, R)
     for where, cmd in ((R.path, "git merge --no-ff agent/s/api"), (I, "git switch main && git merge --no-ff agent/s/api")):
         denies_main(decide(where, cmd), cmd)
+
+
+# ---- round C (TC-819 to TC-827) --------------------------------------------------------------------------------------------------------------
+def test_the_tamper_rules_follow_every_directory_change(world):
+    R, P = world.R, world.tmp
+    for cmd in ("cd R && rm -rf .git/magos", "pushd R; rm .git/magos/protected.json; popd", "cd R/.git && rm -rf magos",
+                "git -C R log -1 --output=.git/magos/protected.json"):
+        refused(P, cmd)
+    (R.path / "sub").mkdir(exist_ok=True)
+    for cmd, tool in (("cd .g* && rm -r magos", "Bash"), ("cd .gi? && rm -rf magos", "Bash"), ("cd .g*/magos && rm protected.json", "Bash"),
+                      ("cd sub && cd ../.git && rm -r magos", "Bash"), ("Set-Location -Path:.git; Remove-Item magos -Recurse", "PowerShell")):
+        refused(R.path, cmd, tool)
+    for cmd in ("cd R && cat .git/magos/protected.json", "cd R && rm -rf build"):
+        assert decide(P, cmd) is None, cmd
+
+
+def test_the_refs_directory_and_a_head_git_cannot_read(world):
+    R = world.R
+    for cmd in ("rm -r .git/refs", "rm -r .git/r*"):
+        refused(R.path, cmd)
+    refused(world.U.path, "rm -r %s/.git/refs" % P(R.path))
+    for head in (b"junk\n", b""):
+        sub = R.path / ("sub%d" % len(head))
+        (sub / ".git" / "objects").mkdir(parents=True)
+        (sub / ".git" / "refs").mkdir()
+        (sub / ".git" / "HEAD").write_bytes(head)
+        denies_main(decide(R.path, "git -C %s commit --allow-empty -m x" % sub.name), head)
+
+
+def test_a_read_that_feeds_a_writer_is_a_write(world):
+    R = world.R
+    for cmd, tool in (("echo .git/magos/protected.json | xargs rm", "Bash"), ("realpath .git/magos/protected.json | xargs rm -f", "Bash"),
+                      ("ls .git/refs/heads | xargs -I{} rm .git/refs/heads/{}", "Bash"),
+                      ("Get-ChildItem .git/magos | Remove-Item -Recurse -Force", "PowerShell")):
+        refused(R.path, cmd, tool)
+    for cmd, tool in (("echo .git/magos/protected.json | wc -c", "Bash"), ("Get-ChildItem .git/magos | Measure-Object", "PowerShell")):
+        assert decide(R.path, cmd, tool=tool) is None, cmd
+
+
+def test_find_and_excludes_are_read_as_find_reads_them(world, tmp_path, console):
+    R = world.R
+    for cmd in ("find . -name '*.json' -delete", "find . -type f -exec sed -i s/a/b/ {} +", "find . -name x -o -name '*.json' -delete"):
+        refused(R.path, cmd)
+    dir_link(world.U.path / "J", R.path)
+    refused(world.U.path, "find J -name protected.json -delete")
+    R2 = new_repo(tmp_path / "p[1]" / "R2")
+    protect(R2, "main")
+    refused(R2.path, "rm -rf .git/mag*")
+    for cmd in ("find . -type f -not -path './.git/*' -exec sed -i s/a/b/ {} +", "find . ! -path '*/.git/*' -name '*.json' -delete",
+                "zip -r ../out.zip . -x '.git/*'", "tar --exclude='.git/*' -cf ../x.tar .", "rsync -a --exclude .git ./ ../b"):
+        assert decide(R.path, cmd) is None, cmd
+
+
+def test_a_glob_over_many_refs_costs_one_lookup(world):
+    U = world.U
+    sha = U.git("rev-parse", "HEAD")
+    heads = common(U) / "refs" / "heads"
+    for k in range(4000):
+        (heads / ("b%04d" % k)).write_text(sha + "\n", encoding="utf-8")
+    t0 = time.monotonic()
+    assert decide(U.path, "rm -rf .git/refs/heads/*") is None
+    assert time.monotonic() - t0 < 3
+
+
+def test_configured_refspecs_follow_the_sources_git_fetches(tmp_path, console):
+    seed = new_repo(tmp_path / "seed")
+    seed.git("branch", "topic")
+    seed.git("branch", "x")
+    O, C, M = tmp_path / "O.git", tmp_path / "C", tmp_path / "M.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed.path), str(O)], check=True)
+    subprocess.run(["git", "clone", "-q", str(O), str(C)], check=True)
+
+    def g(*a):
+        return subprocess.run(["git", "-C", str(C)] + list(a), check=True, capture_output=True, text=True).stdout.strip()
+    g("switch", "-q", "topic")
+    protect(C, "main")
+    g("config", "--add", "remote.origin.fetch", "+refs/heads/main:refs/heads/main")
+    denies_main(decide(C, "git fetch origin main:tmpx"))
+    g("config", "--unset", "remote.origin.fetch", "refs/heads/main:")
+    g("config", "--add", "remote.origin.fetch", "+refs/heads/x:refs/heads/main")
+    for cmd in ("git fetch origin topic", "git pull --no-rebase origin topic"):
+        assert bp(decide(C, cmd)) is None, cmd
+    subprocess.run(["git", "clone", "-q", "--mirror", str(O), str(M)], check=True)
+    protect(M, "main")
+    for cmd in ("git fetch", "git remote update"):
+        unknown_text(decide(M, cmd))
+    unknown_text(decide(C, "git fetch . topic --refmap=$M"))
+
+
+def test_push_repo_prefixes_and_an_empty_url_value(world):
+    R, W = world.R, world.W
+    R.git("remote", "add", "self", ".")
+    for cmd in ("git -c remote.self.push=refs/heads/topic:refs/heads/main push --rep=self", "git push --rep self"):
+        unknown_text(decide(W, cmd))
+    R.git("remote", "add", "p", ".")
+    R.git("config", "remote.p.pushurl", "https://example.invalid/x.git")
+    denies_main(decide(W, "git -c remote.p.pushurl= push p topic:main"))
+    same_as_unprotected(W, "git push p topic:main", R)
+
+
+def test_groups_prefixes_gitfiles_and_the_order_text(world, tmp_path, console):
+    R, W = world.R, world.W
+    split(bp(decide(W, "git checkout --conf merge main && git commit -m x")))
+    for cmd in ("git switch -c feat && (git add -A && git commit -m x)", "git switch -c feat && { git commit -m x; }"):
+        same_as_unprotected(R.path, cmd, R)
+    R3 = new_repo(tmp_path / "R3")
+    R3.git("switch", "-q", "-c", "dev")
+    R3.git("branch", "topic")
+    W3 = tmp_path / "W3"
+    R3.git("worktree", "add", "-q", str(W3), "topic")
+    protect(R3, "main")
+    split(bp(decide(W3, "git --git-dir=.git switch main && git commit -m x")))
+    order = G.T("en", "branch_protected_order")
+    t = denies_main(decide(R.path, "git checkout topic 2>&1 | tail -5 && git commit -am x"))
+    assert t.endswith(" " + order) and "a pipe" in order, t
+
+
+def test_the_hook_fallback_finds_a_redirect_store_without_git(world, tmp_path, monkeypatch):
+    U = world.U
+    lines = ("GIT_DIR=%s git commit -m x" % G.sh_quote(P(common(U))), "GIT_DIR=.git git commit -m x")
+    monkeypatch.setattr(G, "BUDGET_S", 0)
+    for cmd in lines:
+        r = hook_in(U.path, cmd)
+        assert r.out.strip() == "{}" and "warning" in r.err, (cmd, r)
+    monkeypatch.undo()
+    nogit = tmp_path / "nogit"
+    nogit.mkdir()
+    monkeypatch.setenv("PATH", str(nogit))
+    for cmd in lines:
+        p = subprocess.run([sys.executable, "-B", str(SCRIPT), "--lang", "en", "hook", "claude", "pre-tool"],
+                           input=json.dumps(payload("Bash", cmd, U.path)).encode("utf-8"), capture_output=True, timeout=120)
+        assert p.stdout.decode().strip() == "{}" and b"warning" in p.stderr, (cmd, p)

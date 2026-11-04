@@ -436,10 +436,11 @@ M = {
     "branch_protected_split": ("这个受保护的分支来自本行中一条在写入之前的 checkout/switch：可以把 checkout 和写入分成两次单独的调用，第二次调用按第一次留下的分支判断。",
                                "The protected branch is one a checkout or switch earlier in this line may leave checked out: run the checkout and the "
                                "write as two separate calls; the second call is judged against the branch the first one left checked out."),
-    "branch_protected_order": ("本行在写入之前有一条 checkout/switch，但它们之间不是 &&：checkout 可能失败，写入仍会落在当前的受保护分支上。请用 && 连接 checkout "
-                               "和写入，或分成两次单独的调用。",
-                               "This line runs a checkout or switch before the write, but not joined by &&: the checkout may fail and the write would then "
-                               "land on the protected branch checked out now. Join the checkout and the write with &&, or run them as two separate calls."),
+    "branch_protected_order": ("本行在写入之前有一条 checkout/switch，但它与写入之间不只用 && 连接（还有 ;、||、管道或 !）：checkout 可能失败，写入仍会落在当前的受保护"
+                               "分支上。请只用 && 连接 checkout 和写入，或分成两次单独的调用。",
+                               "This line runs a checkout or switch before the write, but not joined to it by && alone (a ;, ||, a pipe or a ! stands between "
+                               "them): the checkout may fail and the write would then land on the protected branch checked out now. Join the checkout and "
+                               "the write with && alone, or run them as two separate calls."),
     "protect_why_unreadable": ("分支保护记录 {f} 无法读取（{err}）", "the branch protection record {f} cannot be read ({err})"),
     "protect_why_newer": ("分支保护记录 {f} 由更新版本的 MAGOS 写入（v={v}）", "the branch protection record {f} was written by a newer MAGOS (v={v})"),
     "protect_unreadable": ("MAGOS：分支保护记录 {f} 无法读取（{err}），未做任何修改；请用户检查该文件。",
@@ -930,7 +931,7 @@ def _lex(cmd, sh=None):
         elif mode == "pat" and c == ")" and not st["open"]:
             seg_end()
             cases[-1] = "body"
-        elif (c in ";\n&|" and not glue) or (c in "()" and not st["has"] and not cur) or (c == ")" and not st["open"]) or \
+        elif ((c in "\n&|" or (c == ";" and sh != "cmd")) and not glue) or (c in "()" and not st["has"] and not cur) or (c == ")" and not st["open"]) or \
                 (c == "{" and not fdvar and (not st["has"] or (ps and prev not in "$@"))) or (c == "}" and (not st["has"] or (ps and not st["b"]))):
             mark, arm = None, False
             if c == "|":
@@ -1784,7 +1785,10 @@ def _exempt(sub, a, names):
     return hit
 
 
-_CO_VALUED = ("--conflict", "--pathspec-from-file")  # the options of switch and checkout whose value may be the next word
+def _co_valued(t):
+    """Is `t` an option of switch and checkout whose value is the next word: --conflict (from --conf) or --pathspec-from-file (from
+    --pathspec-f), written without =?"""
+    return "=" not in t and ((len(t) >= 6 and "--conflict".startswith(t)) or (len(t) >= 12 and "--pathspec-from-file".startswith(t)))
 
 
 def track_name(ref):
@@ -1829,16 +1833,18 @@ def _git_writes_of(sub, a, ad, here, W, cfgs, ins):
                                                                               any(f.startswith(t[2:]) for f in _FETCH_VALUED))}
         pk = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and k not in valued]
         many = "--all" in a or "--multiple" in a
-        bare = [t for t, _d in pk[1:] if ":" not in t.lstrip("+")]
+        specs = [] if many else pk[1:]
         refmap = _option_values(a, "refmap", 4)
+        odd = any(d for _t, d in specs) or any(ad[k + 1] for k, t in enumerate(a[:-1]) if t in ("--refmap", "--refm", "--refma")) or \
+            any(d and t.startswith("--refm") and "=" in t for t, d in zip(a, ad))
         if many or any(d for _t, d in pk[:1]):  # --all, --multiple, a dynamic remote word: every remote the configuration names
             remotes = "all" if "--all" in a or not many else [t for t, _d in pk]
         else:
             remotes = [pk[0][0]] if pk else None
-        far = []
-        if many or len(pk) <= 1 or bare:
-            far = [W("git " + sub, remote=pk[0][0] if pk and not many else None, remotes=remotes, urls=_remote_cfgs(cfgs),
-                     refmap=refmap if bare and refmap else None)]
+        srcs = [t.lstrip("+").split(":", 1)[0] for t, _d in specs] if specs else None  # git's opportunistic update follows these sources
+        far = [W("git " + sub, remote=pk[0][0] if pk and not many else None, remotes=remotes, urls=_remote_cfgs(cfgs), srcs=srcs,
+                 refmap=refmap if specs and refmap else None, dynamic=odd,
+                 why="a refspec or --refmap value of the line is dynamic" if odd else None)]
         if sub == "fetch":
             return far
         return far + _sub_writes(sub, a, ad, here, W, cfgs, ins)
@@ -1949,7 +1955,7 @@ def _sub_writes(sub, a, ad, here, W, cfgs, ins):
         cut = a.index("--") if "--" in a else len(a)
         if sub == "checkout" and cut < len(a) - 1:
             return []  # paths: no branch is checked out
-        valued = {k + 1 for k, t in enumerate(a[:cut]) if t in _CO_VALUED}  # --conflict <style>, --pathspec-from-file <f>: values, not names
+        valued = {k + 1 for k, t in enumerate(a[:cut]) if _co_valued(t)}  # --conflict <style>, --pathspec-from-file <f>: values, not names
         pos = [(t, ad[k]) for k, t in enumerate(a[:cut]) if not t.startswith("-") and k not in valued]
         tracked = any(t.startswith(("--track", "-t")) for t in a)
         if not pos or (sub == "checkout" and len(pos) > 1 and not tracked):
@@ -1994,7 +2000,7 @@ def _sub_writes(sub, a, ad, here, W, cfgs, ins):
             return []
         valued = {k + 1 for k, t in enumerate(a) if t == "-o" or (t.startswith("--") and "=" not in t and len(t) >= 5 and any(f.startswith(t[2:]) for f in _PUSH_VALUED))}
         pk = [(t, ad[k]) for k, t in enumerate(a) if not t.startswith("-") and k not in valued]
-        repo = _option_values(a, "repo", 4) if sub == "push" else []
+        repo = _option_values(a, "repo", 3) if sub == "push" else []
         word, wdyn = pk[0] if pk else (repo[-1], False) if repo else (None, False)  # --repo=<r> names the repository when no word does
         if wdyn:
             target = ""
@@ -2604,6 +2610,31 @@ def _plain_args(rest, dyn):
     return out
 
 
+_CMD_CD = re.compile(r"(cd|chdir)([\\/.;,=+].*)$", re.I)
+
+
+def _cd_split(words, dyn, i):
+    """cmd's cd words (Command detector): `cd/d x`, `cd..`, `cd..\\x`, `cd\\` and `cd;x` (also chdir) are a cd whose first argument is the rest
+    of the word, the delimiters ; , = before it dropped.  -> (words, dyn)."""
+    m = _CMD_CD.match(words[i]) if i is not None and i < len(words) else None
+    if m is None:
+        return words, dyn
+    tail = m.group(2).lstrip(";,=")
+    return words[:i] + [m.group(1)] + ([tail] if tail else []) + words[i + 1:], dyn[:i] + [False] + ([dyn[i]] if tail else []) + dyn[i + 1:]
+
+
+def _colon_dir(rest, rdyn):
+    """The directory a PowerShell directory command names in a colon parameter (-Path:<d>, -LiteralPath:<d>, a unique prefix of either from
+    -Pat and -L, -PSPath:, -LP:), as (word, dynamic), or None."""
+    for w, d in zip(rest, rdyn):
+        m = re.match(r"-([A-Za-z]+):(.+)$", w)
+        if m:
+            n = m.group(1).lower()
+            if n in ("pspath", "lp") or (len(n) >= 3 and "path".startswith(n)) or "literalpath".startswith(n):
+                return m.group(2), d
+    return None
+
+
 def _wrapped_dir(words, dyn, i):
     """The directory that `env -C <dir>` / `env --chdir[=]<dir>` or `sudo -D <dir>` / `sudo --chdir[=]<dir>` among the wrapper words
     words[:i] names for the program they run: (value, dynamic), or None."""
@@ -2909,6 +2940,9 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                           words[k - 1] not in vals), len(words))
         if i >= len(words):
             return False, []
+        if sh == "cmd":  # cd/d x, cd.., cd;x: cmd ends the command name at a delimiter
+            words, dyn = _cd_split(words, dyn, i)
+            low = [w.lower() for w in words]
         redirs = _redir_indices(words, i)  # the redirections (and their targets) before the program: no assignment, wrapper or option among them
         exe, rest = _exe(galias.get(words[i], words[i])), words[i + 1:]
         spelled = _spelled(galias.get(words[i], words[i])) if sh is None and exe not in _KNOWN else None  # g\it, g^it, g`it: the shell may or may not remove them
@@ -2958,7 +2992,8 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
                 elif exe in ("popd", "pop-location"):  # back to the directory pushd left (unknown when the stack is not the line's own)
                     st[0] = dirs.pop() if dirs else None
                 else:
-                    tgt = [(w, d) for w, d in _plain_args(rest, dyn[i + 1:]) if not w.startswith("-") and not (sh == "cmd" and w.lower() == "/d")]
+                    named = _colon_dir(rest, dyn[i + 1:]) if sh != "cmd" else None  # Set-Location -Path:<dir>
+                    tgt = [named] if named else [(w, d) for w, d in _plain_args(rest, dyn[i + 1:]) if not w.startswith("-") and not (sh == "cmd" and w.lower() == "/d")]
                     if sh == "cmd" and len(tgt) > 1:  # cmd's cd takes the rest of the line as one path
                         tgt = [(" ".join(w for w, _ in tgt), any(d for _, d in tgt))]
                     dirs += [here] if exe in ("pushd", "push-location") else []
@@ -3078,7 +3113,7 @@ def interpret(cmd, cwd, depth=0, aliases=None, gitdir=(), sh=None, dirs=(), fina
             over = [_anywhere("nested text", _OVER_WORK)]
             break
         fr = frames[-1]
-        if isinstance(ev, str) and ev not in ("&&", "|"):  # a pipeline is one element of its && chain
+        if isinstance(ev, str) and ev not in ("&&", "|", "(", "{"):  # a pipeline, and a group after &&, is one element of its && chain
             chain += 1
         if ev in ("(", "{", "K("):  # a group, a brace block, a compound command: it keeps the states it was opened in
             states = states if fr["inside"] else _enter(fr, states)
@@ -3589,7 +3624,7 @@ def _deep(text):
 
 
 _PROTECT_MSG = "the branch protection record <git-common-dir>/magos/protected.json and its store are written by the user-only protect only"
-_REF_PATH = re.compile(r"(?:^|/)\.git/+(?:refs/+heads(?:/.*)?|HEAD|packed-refs|reftable(?:/.*)?|worktrees/+[^/]+/+HEAD)/*$|(?:^|/)packed-refs$", re.I)
+_REF_PATH = re.compile(r"(?:^|/)\.git/+(?:refs(?:/+heads(?:/.*)?)?|HEAD|packed-refs|reftable(?:/.*)?|worktrees/+[^/]+/+HEAD)/*$|(?:^|/)packed-refs$", re.I)
 _GITDIR_WORD = re.compile(r"(?:^|/)\.git/*$", re.I)
 _GITDIR_IN = re.compile(r"(?:^|/)\.git(?:/|$)", re.I)
 _READ_PROGRAMS = frozenset(("cat", "head", "tail", "less", "more", "ls", "dir", "stat", "type", "get-content", "gc", "select-string", "grep", "rg",
@@ -3601,7 +3636,12 @@ _FIND_PATTERNS = frozenset(("-name", "-iname", "-path", "-ipath", "-wholename", 
 _GIT_READS = frozenset("status log show diff rev-parse ls-files cat-file for-each-ref".split())  # the git subcommands that only read
 _MAGIC = re.compile(r"[*?\[]")  # a glob the shell expands
 _GLOB_CAP, _BRACE_CAP = 4096, 64  # the paths a glob may expand to, the words a brace expansion may make (Tamper coverage, Path reading)
-_TAMPER_GATE = re.compile(r"\.git|packed-refs|magos|protected|reftable|(?:^|[\s'\"=/\\])\.[^\s/\\]*[*?\[{]", re.I)
+_TAMPER_GATE = re.compile(r"\.git|packed-refs|magos|protected|reftable|-delete|-exec|-ok|-fls|-fprint|(?:^|[\s'\"=/\\])\.[^\s/\\]*[*?\[{]", re.I)
+_PIPE_READS = frozenset(("measure-object", "measure", "select-object", "select", "sort-object", "sort", "where-object", "where", "format-table", "ft",
+                         "format-list", "fl", "out-string", "out-host", "out-null", "uniq", "cut"))  # with _READ_PROGRAMS: what a read may feed
+_EXCLUDE_OPTS = ("-x", "-X", "--exclude", "--exclude-dir", "--exclude-from")  # their value names what a program leaves out
+_FIND_TESTS = ("-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex", "-lname", "-ilname", "-newer",
+               "-samefile", "-type", "-user", "-group", "-perm", "-size")  # the tests of find whose value is the next word
 
 
 def _readings(word):
@@ -3661,7 +3701,8 @@ def _paths(word, at):
             if not full:
                 continue
             if _MAGIC.search(c) and (_GITDIR_IN.search(str(at).replace("\\", "/") + "/" + c) or re.search(r"(?:^|/)\.[^/]*[*?\[]|magos|protected", c, re.I)):
-                out += [os.path.abspath(x) for x in itertools.islice(glob.iglob(full), _GLOB_CAP)]
+                pattern = c if _rooted(c) else os.path.join(glob.escape(str(at)), c)  # a [ in the directory is no pattern
+                out += [os.path.abspath(x) for x in itertools.islice(glob.iglob(pattern), _GLOB_CAP)]
             else:
                 out.append(os.path.abspath(full))
     return list(dict.fromkeys(out))
@@ -3699,10 +3740,23 @@ def _find_writes(words, e, at):
         if x.startswith(("-", "(", "!", ")")):
             break
         starts.append(x)
-    pats = [(args[k].lower(), args[k + 1]) for k in range(len(args) - 1) if args[k].lower() in _FIND_PATTERNS]
+    pats, neg, ors, k = [], False, False, 0
+    while k < len(args):
+        x = args[k].lower()
+        if x in ("-not", "!"):
+            neg, k = True, k + 1
+            continue
+        ors = ors or x in ("-o", "-or")
+        if x in _FIND_PATTERNS and k + 1 < len(args):
+            pats.append((x, args[k + 1], neg))
+            k += 2
+        else:
+            k += 1
+        neg = False
     out = []
     for s in starts or ["."]:
         for root in (_paths(s, at) if at else []):
+            root = _real(root)  # store_state compares real paths
             state, common = store_state(root)
             if state != "held":
                 continue
@@ -3711,7 +3765,10 @@ def _find_writes(words, e, at):
                 if not _under(target, root):
                     continue
                 shown = s.rstrip("/\\") + "/" + os.path.relpath(target, root).replace("\\", "/")
-                if not pats or any(_find_match(o, pat, target, shown) for o, pat in pats):
+                pos = [(o, pat) for o, pat, n in pats if not n]
+                if not ors and any(_find_match(o, pat, target, shown) for o, pat, n in pats if n):
+                    continue  # -not -path './.git/*': the expression leaves the record out
+                if not pos or any(_find_match(o, pat, target, shown) for o, pat in pos):
                     out.append(("record", target))
                     break
     return out
@@ -3761,19 +3818,26 @@ def _redirect_targets(words):
     return [t for t in out if t]
 
 
-def git_dir_writes(text, cwd, depth=0):
+def git_dir_writes(text, cwd, depth=0, sh=None):
     """The writes of a command line into a git directory that the tamper filter judges per repository (Branch protection, Tamper coverage):
     ("record", path) for a redirect, or a word of a command that is not read-only, that names an existing protection record or its store (also
-    a find that would delete it), ("ref", path) for one that names refs/heads, HEAD, packed-refs or reftable of a git directory, ("gitdir",
-    path) for a command that is not read-only after a cd, pushd, Set-Location, env -C, sudo -D or git -C into a git directory, or with a word
-    that names the `.git` directory itself.  Words are read as paths (_paths: normalised, braces and globs expanded)."""
-    found, ctx = [], None
+    a find that would delete it), ("ref", path) for one that names refs, refs/heads, HEAD, packed-refs or reftable of a git directory,
+    ("gitdir", path) for a command that is not read-only and runs in a git directory, or with a word that names the `.git` directory itself.
+    The directory each command runs in follows every cd, pushd, chdir, Set-Location, sl and Push-Location of the line (popd and Pop-Location
+    return) and env -C, sudo -D and git -C for their own command; words are read as paths (_paths); a read whose output a pipe feeds to a
+    command that is not a read counts as that command; the values of exclusion options are skipped."""
+    found = []
     if depth > 3 or not text:
         return found
-    for seg in split_command(text):
-        words, dyn = [w for w, _ in seg], [d for _, d in seg]
+    events = _lex(text, sh)
+    segs = [k for k, ev in enumerate(events) if isinstance(ev, list)]
+    cur, stack = cwd, []
+    for n, k in enumerate(segs):
+        words, dyn = [w for w, _ in events[k]], [d for _, d in events[k]]
         e = _program(words)
-        base = _join(cwd, ctx) if ctx else cwd
+        if sh == "cmd" and e is not None:
+            words, dyn = _cd_split(words, dyn, e)
+        base = cur
         for t in _redirect_targets(words):
             for full in (_paths(t, base) if base else []):
                 kind = _path_kind(full)
@@ -3786,55 +3850,102 @@ def git_dir_writes(text, cwd, depth=0):
             found += git_dir_writes(child, base, depth + 1)
         exe = _exe(_bare(words[e]))
         if exe in _DIR_CMDS:
-            tgt = next((w for w in words[e + 1:] if not w.startswith("-")), None)
-            if tgt is not None:
-                into = _into_gitdir(tgt)
-                ctx = _join(base, into) if into else None
+            tw = _dir_word(words[e + 1:], dyn[e + 1:], sh)
+            if exe in ("pushd", "push-location"):
+                stack.append(cur)
+            cur = None if tw is None or tw[1] else _one_dir(tw[0], base)
             continue
         if exe in ("popd", "pop-location"):
-            ctx = None
+            cur = stack.pop() if stack else None
             continue
-        here = ctx
+        at = base
         wrapped = _wrapped_dir(words, dyn, e)
-        if wrapped and _into_gitdir(wrapped[0]):
-            here = _join(base, _into_gitdir(wrapped[0]))
+        if wrapped:
+            at = None if wrapped[1] else _one_dir(wrapped[0], base)
         if exe == "git":
-            k = e + 1
-            while k < len(words) and words[k].startswith("-"):
-                if words[k] == "-C" and k + 1 < len(words) and _into_gitdir(words[k + 1]):
-                    here = _join(base, _into_gitdir(words[k + 1]))
-                k += 2 if words[k] in _VALUE_OPTS else 1
-        if read_only(words, e):
+            j = e + 1
+            while j < len(words) and words[j].startswith("-"):
+                if words[j] == "-C" and j + 1 < len(words):
+                    at = None if dyn[j + 1] else _one_dir(words[j + 1], at)
+                j += 2 if words[j] in _VALUE_OPTS else 1
+        if read_only(words, e) and all(_reads_only(events[x]) for x in _piped(events, segs, n)):
             continue
-        at = _join(cwd, here) if here else base
-        if here and at:
+        if at is None:
+            continue
+        if _GITDIR_IN.search(at.replace("\\", "/")):
             found.append(("gitdir", at))
         if exe == "find":
             found += _find_writes(words, e, at)
+        skip, valued = False, _EXCLUDE_OPTS + (_FIND_TESTS if exe == "find" else ())  # their values are patterns, not write targets
         for w in words[e + 1:]:
-            for full in (_paths(w, at) if at else []):
+            if skip or w in valued or w.startswith(("--exclude=", "--exclude-dir=", "--exclude-from=")):
+                skip = not skip and w in valued
+                continue
+            for full in _paths(w, at):
                 kind = _path_kind(full)
                 if kind and not (kind == "gitdir" and exe == "git"):  # git's own --git-dir value or pathspec moves no git directory
                     found.append((kind, full))
     return found
 
 
-def _into_gitdir(word):
-    """The reading of a directory word that names a `.git` directory or a path below it, as written (a backslash read as a separator, as
-    PowerShell and cmd read it) or without escape characters and quotes, or None."""
-    return next((r for r in _readings(word) if _GITDIR_IN.search(r)), None)
+def _piped(events, segs, n):
+    """The positions of the segments a pipe feeds from segs[n] on: the rest of its pipeline."""
+    out = []
+    while n + 1 < len(segs) and segs[n] + 1 < len(events) and events[segs[n] + 1] == "|":
+        n += 1
+        out.append(segs[n])
+    return out
 
 
-def tamper_verdict(text, cwd, lang):
+def _reads_only(seg):
+    """Does a segment that a pipe feeds only read its input (a program of the read-only list or of _PIPE_READS)?"""
+    words = [w for w, _ in seg]
+    e = _program(words)
+    return e is None or _exe(_bare(words[e])) in _READ_PROGRAMS or _exe(_bare(words[e])) in _PIPE_READS
+
+
+def _dir_word(rest, rdyn, sh):
+    """The directory word of a directory command: a PowerShell colon parameter, else its first word that is no option (cmd's /d skipped), as
+    (word, dynamic), or None."""
+    named = _colon_dir(rest, rdyn) if sh != "cmd" else None
+    if named:
+        return named
+    return next(((w, d) for w, d in zip(rest, rdyn) if not w.startswith("-") and not (sh == "cmd" and w.lower() == "/d")), None)
+
+
+def _one_dir(word, base):
+    """The one directory a directory word names from `base`, read as _paths reads it, or None when it names none or several; a single path
+    that does not exist (yet) is that path."""
+    if base is None:
+        return None
+    found = _paths(word, base)
+    dirs = [x for x in found if os.path.isdir(x)]
+    if len(dirs) == 1:
+        return dirs[0]
+    return found[0] if not dirs and len(found) == 1 and not _MAGIC.search(word) else None
+
+
+def _gitdir_key(path):
+    """The git directory part of a path (up to its first `.git` segment), the unit tamper_verdict looks a store up for."""
+    m = re.match(r"(.*?[\\/]\.git)(?=[\\/]|$)", path, re.I)
+    return m.group(1) if m else path
+
+
+def tamper_verdict(text, cwd, lang, sh=None):
     """The tamper rules a repository decides (Branch protection, Tamper coverage): a write of an existing protection record or its store, from
     every session directory, and the writes into refs, HEAD, packed-refs, reftable and a git directory, denied where that repository holds
-    protection or its record cannot be read.  -> None or ("PROTECTED", text)."""
-    if not text or len(text) > MAX_TEXT or not _TAMPER_GATE.search(text):
+    protection or its record cannot be read; each git directory's store is looked up once.  -> None or ("PROTECTED", text)."""
+    inside = cwd is not None and _GITDIR_IN.search(str(cwd).replace("\\", "/"))
+    if not text or len(text) > MAX_TEXT or not (_TAMPER_GATE.search(text) or inside):
         return None
-    for kind, path in git_dir_writes(text, cwd):
+    states = {}
+    for kind, path in git_dir_writes(text, cwd, sh=sh):
         if kind == "record":
             return "PROTECTED", T(lang, "protected", why=_PROTECT_MSG)
-        if store_state(path)[0] == "held":
+        key = _gitdir_key(path)
+        if key not in states:
+            states[key] = store_state(key)[0]
+        if states[key] == "held":
             return "PROTECTED", T(lang, "protected", why=_STATE_MSG)
     return None
 
@@ -3963,14 +4074,17 @@ def shell_text(payload):
     return shell_command(payload)[0]
 
 
-def shell_command(payload):
+def shell_command(payload, host=None):
     """-> (command line or None, its shell dialect).  Codex passes argv: the script of a shell's -c / -Command / -EncodedCommand / /c element
     (_child_script: the words after a PowerShell or cmd option are joined into the text it runs) is read in that shell's dialect; the
     elements of any other argv are quoted back into a line (each holding a space, a quote, a backslash or a shell character) read as bash.
-    A string command is read in the tool's shell (Monitor and MCP tools take a string only)."""
+    A string command is read in the tool's shell (Monitor and MCP tools take a string only); on Windows a string command of the Codex hook
+    in PowerShell, which Codex runs it through."""
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     c, sh = ti.get("command"), _TOOL_SHELL.get(tool)
+    if host == "codex" and os.name == "nt" and isinstance(c, str):
+        sh = "ps"
     if isinstance(c, list) and tool != "Monitor" and not tool.startswith("mcp__"):
         parts = [str(x) for x in c]
         exe = _exe(parts[0]) if parts else ""
@@ -4000,7 +4114,7 @@ def session_dir(payload):
     return base or os.getcwd()
 
 
-def extract(payload, aliases=None, tamper=True, writes=None):
+def extract(payload, aliases=None, tamper=True, writes=None, host=None):
     """-> (creations, protected, default_cwd) for the tool names of all three hosts; the write records of the command line are added to the
     list `writes` when it is given.  The command line of every hooked tool and every MCP tool
     whose tool_input.command is a string is judged, in addition to (never instead of) the judgement the tool's own name calls for.  With
@@ -4008,7 +4122,7 @@ def extract(payload, aliases=None, tamper=True, writes=None):
     tool = str(payload.get("tool_name") or "")
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
     cwd = session_dir(payload)
-    (c, sh), crs, why = shell_command(payload), [], None
+    (c, sh), crs, why = shell_command(payload, host), [], None
     if c is not None:
         why = protected(c) if tamper else None
         crs = interpret(c, cwd, 0, aliases, sh=sh, writes=writes) if _gated(c) else []
@@ -7656,10 +7770,15 @@ def _real(p):
 
 
 def _is_gitdir(d):
-    """-> the common directory of `d` when git takes `d` for a git directory (a HEAD file, and objects and refs directories in it or in the
-    common directory its commondir file names), else None."""
-    if not os.path.isfile(os.path.join(d, "HEAD")):
+    """-> the common directory of `d` when git takes `d` for a git directory (a HEAD file git reads as one: a `ref: refs/` line or an object id,
+    and objects and refs directories in it or in the common directory its commondir file names), else None."""
+    try:
+        with open(os.path.join(d, "HEAD"), "rb") as fh:
+            head = fh.read(256).strip()
+    except OSError:
         return None
+    if not (head.startswith(b"ref: refs/") or re.fullmatch(rb"[0-9a-f]{40}|[0-9a-f]{64}", head)):
+        return None  # git skips a git directory whose HEAD it cannot read
     common = _common_of_gitdir(d)
     return common if common and os.path.isdir(os.path.join(common, "objects")) and os.path.isdir(os.path.join(common, "refs")) else None
 
@@ -7738,7 +7857,12 @@ def _wt_key(r, ctx=None):
 
 def _wt_key_of(r):
     if r.get("redirect"):
-        return ("gd", pkey(_real(r["gitdir"]))) if r.get("gitdir") else None
+        gd = r.get("gitdir")
+        if not gd:
+            return None
+        if os.path.isfile(gd):  # a linked worktree's .git file: the git directory it names
+            gd = _gitfile_target(gd) or gd
+        return ("gd", pkey(_real(gd)))
     cwd = r.get("cwd")
     if cwd is None:
         return None
@@ -7746,6 +7870,18 @@ def _wt_key_of(r):
         return ("dir", pkey(str(cwd)))
     found = find_store(cwd)
     return ("gd", pkey(found[2])) if found and found[2] else ("dir", pkey(_real(str(cwd))))
+
+
+def _gitfile_target(path):
+    """The git directory a `.git` file names in its gitdir: line (relative to the file's directory), or None."""
+    try:
+        text = _read_retry(path).strip()
+    except (OSError, ValueError):
+        return None
+    if not text.startswith("gitdir:"):
+        return None
+    gd = text[7:].strip()
+    return gd if _rooted(gd) else os.path.join(os.path.dirname(path), gd)
 
 
 def _start(g, r, ctx):
@@ -7873,8 +8009,15 @@ def _local_url(url, here):
 
 
 def _remote_values(conf, r, key):
-    """The values of a remote key: the configured ones, then the line's -c values, which git adds to them; (value, dynamic)."""
-    return [(v, False) for v in conf.get(key, [])] + [(v.partition("=")[2], d) for v, d in r.get("urls") or () if v.partition("=")[0].lower() == key]
+    """The values of a remote key: the configured ones, then the line's -c values, which git adds to them, an empty value clearing the
+    values before it; (value, dynamic)."""
+    out = []
+    for v, d in [(v, False) for v in conf.get(key, [])] + [(v.partition("=")[2], d) for v, d in r.get("urls") or () if v.partition("=")[0].lower() == key]:
+        if v == "" and not d:
+            out = []
+        else:
+            out.append((v, d))
+    return out
 
 
 def _remote_target(g, r, ctx):
@@ -7922,6 +8065,7 @@ def _fetch_dests(g, r, ctx):
         specs = [(v, False) for v in r["refmap"]]
     else:
         specs = [x for n in dict.fromkeys(names) for x in _remote_values(conf, r, "remote.%s.fetch" % n.lower())]
+    srcs = r.get("srcs")
     out = []
     for v, dyn in specs:
         if dyn:
@@ -7929,15 +8073,24 @@ def _fetch_dests(g, r, ctx):
         spec = v.strip().lstrip("+")
         if not spec or spec.startswith("^") or ":" not in spec:
             continue  # a negative refspec, or one that stores nothing
-        dst = spec.split(":", 1)[1]
+        src, dst = spec.split(":", 1)
+        if srcs is not None and r.get("refmap") is None and not any(_src_matches(src, x) for x in srcs):
+            continue  # git updates the configured destination only for the sources the line fetches
+        if "*" in dst and (not dst.lower().startswith("refs/") or fnmatch.fnmatchcase("refs/heads/x", dst)):
+            return [], "the fetch refspec %s maps refs onto local branches the hook cannot list" % _shown(spec, 60)
         m = _REFSPEC_DST.fullmatch(dst)
         name = m.group(1) if m else dst if dst and not dst.lower().startswith("refs/") else None
         if name is None:
             continue  # refs/remotes/..., refs/tags/...: no branch
-        if "*" in name:
-            return [], "the fetch refspec %s maps branches onto local branches the hook cannot list" % _shown(spec, 60)
         out.append(name)
     return out, None
+
+
+def _src_matches(pattern, src):
+    """Can the source pattern of a configured refspec match the source `src` a fetch line names (`main`, `refs/heads/main`)?"""
+    pattern = pattern or "HEAD"
+    names = {src, "refs/heads/" + src, "refs/tags/" + src} if not src.startswith("refs/") else {src}
+    return any(fnmatch.fnmatchcase(n, pattern) for n in names) if "*" in pattern else pattern in names
 
 
 def _record_place(r, session):
@@ -8011,6 +8164,8 @@ def _judge_protection(r, ctx, lang):
         if cause:
             return unknown(cause)
         if "remote" in r and r["verb"] != "git push":  # a fetch, pull or remote update: the refspecs the line does not spell out
+            if r["dynamic"]:
+                return unknown(r.get("why") or "a refspec of the line is dynamic")
             names, why = _fetch_dests(g, r, ctx)
             if why:
                 return unknown(why)
@@ -8088,7 +8243,19 @@ def protection_named(writes, cwd):
             state = store_state(d)[0]
             if state == "held" or (state == "unknown" and (lambda g: g is not None and holds_protection(g))(open_repo(d))):
                 return True
-        return any((lambda g: g is not None and holds_protection(g))(open_gitdir(w["gitdir"])) for w in writes if w.get("redirect") and w.get("gitdir"))
+        for w in writes:
+            gd = w.get("gitdir") if w.get("redirect") else None
+            if not gd:
+                continue
+            common = _common_of_gitdir(gd) if os.path.isdir(gd) else None
+            if common is not None:  # found without Git, as Finding the store finds it
+                if os.path.lexists(os.path.join(common, "magos", "protected.json")):
+                    return True
+                continue
+            g = open_gitdir(gd)
+            if g is not None and holds_protection(g):
+                return True
+        return False
     except BaseException:
         return True
 
@@ -9266,7 +9433,7 @@ def decide(payload, lang, host=None, gate=None):
     if tool.startswith("mcp__") and not isinstance(ti.get("command"), str) and not _MCP_SESSION.fullmatch(tool):
         return None  # an MCP tool that runs no command and starts no session: answered before any repository is opened or any git runs
     writes = []
-    crs, prot, cwd = extract(payload, writes=writes)
+    crs, prot, cwd = extract(payload, writes=writes, host=host)
     text, opened = shell_text(payload), []
 
     def repo():  # the session directory's repository, opened at most once
@@ -9277,7 +9444,7 @@ def decide(payload, lang, host=None, gate=None):
         aliases = load_aliases(repo()) if repo() else {}
         if aliases:  # the walk again; the tamper filter has read the text
             writes = []
-            crs = extract(payload, aliases, tamper=False, writes=writes)[0]
+            crs = extract(payload, aliases, tamper=False, writes=writes, host=host)[0]
     if (not prot or prot[0] != "always") and text and len(text) <= MAX_TEXT and _WRITE_HINT.search(re.sub(r"[\\`^'\"]", "", text)):
         prot = _worse(prot, protected(text, roots=tuple(tamper_roots()), lazy=lambda: [pkey(store(repo()))] if repo() else []))  # the rooted reading
     if prot:
@@ -9298,7 +9465,7 @@ def decide(payload, lang, host=None, gate=None):
         g = repo()
         if prot[0] == "always" or (g and (guard_mode(g) == "armed" or holds_claims(g) or holds_protection(g))):
             return "PROTECTED", T(lang, "protected", why=prot[1])
-    v = tamper_verdict(text, cwd, lang) or protection_verdict(crs, writes, cwd, lang)  # Branch protection: before the creation check
+    v = tamper_verdict(text, cwd, lang, shell_command(payload, host)[1]) or protection_verdict(crs, writes, cwd, lang)  # Branch protection: before the creation check
     if v:
         return v
     return enforce(crs, cwd, lang) if crs else None
@@ -9380,7 +9547,7 @@ def _hook(args):
     except BaseException as err:  # fail closed only when the call looks lane-creating or protected, or writes a branch where protection is held
         try:
             writes = []
-            crs, prot, cwd = extract(payload, writes=writes)
+            crs, prot, cwd = extract(payload, writes=writes, host=args.host)
             writes = [w for w in writes if _protection_judged(w)]
             looks = bool(crs) or bool(prot) or (bool(writes) and protection_named(writes, cwd))
         except BaseException:

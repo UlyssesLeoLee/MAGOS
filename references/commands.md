@@ -1111,7 +1111,6 @@ Status (`--status`):
 Repository (top level)
 Protected branches (branch, since, by, via, reason, exists), or none
 The named branch: protected (stored spelling) or not
-Not enforced (only when magos.guard is off)
 ```
 
 Set and release:

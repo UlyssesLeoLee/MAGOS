@@ -143,12 +143,32 @@ def gate():
         return "absent"
 
 
-def _payload(tool_name, args, kw):
-    """The call in the shape of a Hermes shell-hook payload, which the guard's Hermes hook reads."""
+def _session_cwd(args, kw):
+    """The directory a terminal call without workdir runs in, as Hermes's terminal tool resolves it: the session's recorded directory (Hermes
+    records it after every command, so a cd of an earlier call holds), else TERMINAL_CWD; None when neither is known.  Hermes internals:
+    read, never patched."""
+    if isinstance(args, dict) and args.get("workdir"):
+        return None  # the guard reads workdir itself
     try:
-        cwd = os.getcwd()  # Hermes's own directory, as in a shell-hook payload: not the directory the command runs in
-    except OSError:
-        cwd = ""
+        from tools.approval import get_current_session_key
+        from tools.terminal_tool import get_session_cwd
+        recorded = get_session_cwd(get_current_session_key(default="") or kw.get("task_id") or "")
+        if isinstance(recorded, str) and recorded:
+            return recorded
+    except Exception:  # noqa: BLE001 - outside Hermes, or another Hermes: the next source
+        pass
+    return os.environ.get("TERMINAL_CWD") or None
+
+
+def _payload(tool_name, args, kw):
+    """The call in the shape of a Hermes shell-hook payload, which the guard's Hermes hook reads; its cwd is the terminal session's
+    directory (_session_cwd), else Hermes's own directory."""
+    cwd = _session_cwd(args, kw)
+    if cwd is None:
+        try:
+            cwd = os.getcwd()
+        except OSError:
+            cwd = ""
     return {"hook_event_name": "pre_tool_call", "tool_name": tool_name,
             "tool_input": args if isinstance(args, dict) else None,
             "session_id": kw.get("session_id") or kw.get("parent_session_id") or "",
