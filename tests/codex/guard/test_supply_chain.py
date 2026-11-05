@@ -40,7 +40,7 @@ TOKEN = re.compile(r"\bgithub\s*(?:\.\s*token\b|\[\s*['\"]token['\"]\s*\])", re.
 ACTION_INPUTS = {"actions/checkout": {"persist-credentials"}, "actions/setup-python": {"python-version"},
                  "github/codeql-action/init": {"languages", "build-mode"}, "github/codeql-action/analyze": {"category"}}
 JOB_KEYS = {"name", "runs-on", "timeout-minutes", "permissions", "strategy", "defaults", "steps", "env"}  # no container, services or reusable workflow
-RUNNERS = {"ubuntu-latest", "windows-latest"}
+RUNNERS = {"ubuntu-latest", "ubuntu-24.04", "windows-latest"}
 # The only write a workflow token may hold: CodeQL uploads its results.
 WRITE_GRANTS = {("codeql.yml", "analyze", "security-events")}
 # The only step that names the job token: zizmor's online audits. (checkout and setup-python receive it through their default inputs.)

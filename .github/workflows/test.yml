@@ -61,7 +61,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-24.04]  # Ubuntu 24.04: the last Ubuntu image with a Python 3.9 build
         python: ["3.9", "3.14"]
         include:  # pytest 9 needs Python 3.10+; the 3.9 legs use the last releases that support 3.9
           - python: "3.9"
