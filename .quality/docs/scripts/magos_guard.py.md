@@ -426,7 +426,7 @@ The file holds eleven cooperating parts.
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
-7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.1.0) and equals
+7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.1.1) and equals
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the
@@ -3587,6 +3587,10 @@ Version 1.1.0 of the guard (`GUARD_VERSION` 1.1.0). Relative to the 1.0.9 produc
 In a repository without `protected.json` its verdicts are those of 1.0.9, except that a guard word followed by
 `protect` is user-only like one followed by `arm` and that the walker readings above follow the directory the shell
 really enters; it makes no Git call that 1.0.9 did not make for a write command there.
+
+Version 1.1.1 of the guard (`GUARD_VERSION` 1.1.1) behaves as 1.1.0: its verdicts, texts, records and commands are those
+of 1.1.0. The release runs the Linux legs of the test workflow on `ubuntu-24.04`, the last Ubuntu image with a Python
+3.9 build, so the minimum Python is tested on Linux as well as on Windows.
 
 Compatibility: claim files of format 1 written by 1.0.0 to 1.0.3 are read unchanged, and line 1 of every claim stays
 `state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule
