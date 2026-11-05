@@ -2,6 +2,19 @@
 
 Every version of the `magos` package (the `version` in `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` and the lane guard's `GUARD_VERSION`). A release is tagged `v<version>` on its release commit. The tag `v1.0` marks the skill release 3.4.0 from before the package became a plugin and was renumbered; it is not a plugin version. Install, pin, upgrade and roll back as `references/installation.md` describes.
 
+## 1.1.1
+
+Tag `v1.1.1`. A maintenance release of 1.1.0: the guard, the commands and every verdict are those of 1.1.0.
+
+### Fixed
+
+- **Tests on Linux with Python 3.9.** `ubuntu-latest` names Ubuntu 26.04, which has no Python 3.9 build, so the Linux 3.9 leg of the test workflow could not start. The test workflow runs its Linux legs on `ubuntu-24.04`, and the minimum Python (3.9) is tested on Linux again as well as on Windows.
+
+### Upgrade
+
+1. Upgrade the plugin on each host and restart it: Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`; Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`.
+2. Copies under `~/.magos/guard` (Codex and Hermes entries) are refreshed by running `install --host <host>` again; `doctor` names a stale copy.
+
 ## 1.1.0
 
 Tag `v1.1.0`. A feature release: the ninth command, `/GitProtect`, lets the user protect a branch so that agents can no longer commit to it, merge into it or rewrite it through the hooked tools of Claude Code, Codex and Hermes. The release also fixes how the hook reads Codex commands on Windows, cmd's `cd` words and PowerShell's colon parameters, and how the Hermes plugin finds the directory a terminal call runs in.
