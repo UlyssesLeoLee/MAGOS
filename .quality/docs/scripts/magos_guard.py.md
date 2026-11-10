@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `07a82af7496bc7856a63f878a9b47a7fe3bde10ef1e1525bd794ebcb31f966ab`
+Source-SHA256: `b5112c606ffed435240dcffd322e9d92666540f2788536d5e2c3a6617053c8cd`
 
 ## Responsibility
 
@@ -2183,7 +2183,7 @@ a reason typed in a terminal, `agent` for one that came through the dialog. The 
 keep `<store>/denials/<fingerprint>.json`: `{"v": 1, "fp", "lane", "branches", "target", "at", "expires"}`.
 `branches` holds the conflicting branches of the verdict (`(detached) <worktrees>` for a detached one); `at` and
 `expires` are seconds since the epoch. A record is valid for one hour, like an override record. The override dialog, the confirmation of the `override` command and the
-fill-in of a missing fingerprint read it (Override without a fingerprint (next version), Live denials), which also retires it. `check` writes none, and a failure
+fill-in of a missing fingerprint read it (Override without a fingerprint (next version), Live denials); `note_denial`, `override` and `plan` retire it. `check` writes none, and a failure
 to write one changes no verdict and no message.
 
 ### Tamper filter
@@ -2420,9 +2420,8 @@ works without that hook.
    drive spelling is mapped), a `/`-rooted path elsewhere, never relative, drive-relative or starting with `~`; it is
    normalised and written with `/` on Windows only (on POSIX a backslash is a character of a file name and stays, as for
    the guard home), and the directory tested is the one written; for `override`, `arm`, `disarm` and `protect` it lies
-   in a Git repository. `fingerprint` is 12 lowercase hex digits (for `override` it may be absent: the server resolves it
-   before anything else, Override without a fingerprint (next version), and the result is one of the errors of the
-   text), the `reason` of `override`
+   in a Git repository. `fingerprint` is 12 lowercase hex digits (for `override` it may be absent: once the other arguments and the repository are checked, the server
+   resolves it, Override without a fingerprint (next version), and a failure is one of the errors of the text), the `reason` of `override`
    holds a character that is not blank (that of `protect` may be empty), `host` is a host name, `branch` is a string
    (`protect` requires it; the command judges the name), and `dry_run` and `release` are booleans. The text lists every error, and
    nothing runs.
@@ -3375,14 +3374,14 @@ that names no conflicting branch has no record and cannot be filled in; its fing
    fingerprint: the MCP approval server resolves it before it builds the command, and the routes of Claude Code and Hermes
    refuse an override without `--fingerprint` (The routes of Claude Code and Hermes).
 3. No `--fingerprint`: `resolve_fingerprint`. None: exit 2 with `override_no_denial`. Several: exit 2 with
-   `override_many_denials`, which lists at most six (fingerprint, lane, target, age in minutes) and then `+<n> more`,
-   and asks for `--fingerprint`. One: its fingerprint is used.
+   `override_many_denials`, which lists at most six (fingerprint, lane, target, age in minutes) and then `+<n> more` in the
+   language of the request, counts the denials (`20+` when the list of `live_denials` was cut at 20) and asks for `--fingerprint`. One: its fingerprint is used.
 4. A malformed fingerprint: exit 2.
 5. The gate. With `--approval` the token is verified and consumed (exit 25 to 28 when it does not verify). Without it the
    console gate asks for a real console (exit 17 otherwise), and then the confirmation, which depends on the denial record
    of the fingerprint:
    - the record is live: the console shows `override_confirm` (the fingerprint; the lane and the target the override lets
-     through; the conflicting branches, at most six, then `+<n> more`; the reason; each value as `_dialog` shows it: NFKC,
+     through; the conflicting branches, at most six, then `+<n> more` in the language of the request; the reason; each value as `_dialog` shows it: NFKC,
      controls, format and separator characters removed, JSON-quoted) and reads one line; `y` or `yes` in any case confirms,
      and any other line, or no line within 120 seconds (the process ends), is exit 17;
    - no record is live: the user retypes the fingerprint (`Type <fp> to confirm`); a wrong retype, or no line within 120
@@ -3419,13 +3418,13 @@ maps `override --reason R` (with or without `--repo`) onto `magos_approve` argum
 | `override_many_denials` | MAGOS：本仓库有 {n} 条未过期的拒绝记录，请用 --fingerprint 指定要覆盖的那一条：\n{list} | MAGOS: this repository has {n} live denials; name the one to override with --fingerprint:\n{list} |
 | `override_token_needs_fp` | MAGOS：带 --approval 的 override 必须同时给出 --fingerprint。 | MAGOS: override with --approval must also name its --fingerprint. |
 | `denial_line` | {fp}　车道 {lane}　目标 {target}　{age} 分钟前 | {fp}  lane {lane}  target {target}  {age} min ago |
-| `approval_fp_auto` | 指纹 {fp} 由守卫自动填入：它是本仓库唯一未过期的拒绝记录。 | The fingerprint {fp} was filled in by the guard: it is the only live denial of this repository. |
+| `approval_fp_auto` | 指纹 {fp} 由守卫自动填入：它是本仓库唯一未过期的拒绝记录；批准前请核对上面写的 lane 和分支。 | The fingerprint {fp} was filled in by the guard: it is the only live denial of this repository. Check the lane and the branches named above before you approve. |
 | `approval_fingerprint` | 没有 --fingerprint 的 override 在这里不能批准：守卫无法在对话框里告诉你它会放行哪一次拒绝。请在命令里写上拒绝信息给出的 --fingerprint；在 Codex 中，magos_approve 不带指纹也可以。 | An override without --fingerprint cannot be approved here: the dialog could not tell the user which denial it lets through. Write the --fingerprint the denial printed in the command; in Codex magos_approve also works without it. |
 
 `overridden` ends with the instruction to run `plan` for the lane again and then create it (zh: 请立即为该 lane 重新执行 plan（覆盖只通过 plan 生效），然后再创建它。
 en: Run plan for the lane again now (the override takes effect only through it), then create it.). The Options text of a denial names
 `magos_approve` with `subcommand` `override`, the repository and the reason, says that the tool fills in the fingerprint when
-the repository has only one live denial and asks for the printed fingerprint otherwise.
+the repository has exactly one live denial record (`check` writes none) and asks for the printed fingerprint otherwise.
 
 ### Limits
 

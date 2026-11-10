@@ -1,18 +1,15 @@
-"""Override without a fingerprint (TC-830 to TC-834): the live denials of a repository, `override` that takes the only one in a real terminal
+"""Override without a fingerprint (TC-830 to TC-838): the live denials of a repository, `override` that takes the only one in a real terminal
 and asks for a y instead of the retyped fingerprint, the MCP approval server that fills the fingerprint in, the routes of Claude Code and
 Hermes that do not, and the texts."""
 from __future__ import annotations
 
 import json
-import re
 import string
 import time
 
-import pytest
-
 from conftest import G, ROOT, run
-from test_approval import P, PY, QS, approvals, audit_lines, common, hook_proc
-from test_mcp_approval import ACCEPT, hosts, recording  # noqa: F401
+from test_approval import P, PY, QS, approvals, audit_lines, common
+from test_mcp_approval import ACCEPT, approve_in_process, hosts, plan_denial, recording  # noqa: F401
 from test_hermes_approval import H, hermes_env  # noqa: F401
 
 FP = ["0123456789ab", "1123456789ab", "2123456789ab", "3123456789ab", "4123456789ab", "5123456789ab", "6123456789ab", "7123456789ab"]
@@ -28,10 +25,15 @@ def denial(repo, fp, lane="agent/a", target="main", branches=("agent/b",), age=0
     (d / (fp + ".json")).write_text(json.dumps(doc), encoding="utf-8")
 
 
-def clear(repo):
+def clear_denials(repo):
     d = common(repo) / "magos" / "denials"
     for f in list(d.glob("*")) if d.is_dir() else []:
         f.unlink()
+
+
+def run_override(repo, *more, stdin=b"y\n", fp=None):
+    base = ["--repo", str(repo.path), "--lang", "en", "override"] + (["--fingerprint", fp] if fp else []) + ["--reason", "typed by the user"]
+    return run(base + list(more), stdin=stdin)
 
 
 def test_live_denials_and_the_resolution(repo):
@@ -52,10 +54,10 @@ def test_live_denials_and_the_resolution(repo):
     assert live[1]["branches"] == ["agent/b", "agent/c"] and live[3]["target"] is None and live[3]["at"] == 0
     kind, found = G.resolve_fingerprint(g)
     assert kind == "many" and [r["fp"] for r in found] == [FP[3], FP[2], FP[1], FP[7]]
-    clear(repo)
+    clear_denials(repo)
     denial(repo, FP[1])
     assert G.resolve_fingerprint(g) == ("one", FP[1])
-    clear(repo)
+    clear_denials(repo)
     hostile = [("1" * 11 + "a", 10 ** 400), ("2" * 11 + "a", float("nan")), ("3" * 11 + "a", float("inf")), ("4" * 11 + "a", "soon"), ("5" * 11 + "a", True)]
     for fp, at in hostile:  # an `at` that is no finite number counts 0 and breaks nothing
         denial(repo, fp, at=at)
@@ -64,17 +66,17 @@ def test_live_denials_and_the_resolution(repo):
     kind, found = G.resolve_fingerprint(g)
     assert kind == "many" and len(found) == 5 and all(r["at"] == 0 for r in found), found
     assert G.denial_list(found, "en").count("\n") == 4
-    clear(repo)
+    clear_denials(repo)
     for k in range(30):  # junk named like a fingerprint does not hide a live record, and at most 20 records are kept
         (common(repo) / "magos" / "denials").mkdir(parents=True, exist_ok=True)
         (common(repo) / "magos" / "denials" / ("%012x.json" % (k + 1))).write_text("junk", encoding="utf-8")
     denial(repo, FP[1], age=3000)
     assert G.resolve_fingerprint(g) == ("one", FP[1])
-    clear(repo)
+    clear_denials(repo)
     for k in range(25):
         denial(repo, "%012x" % (k + 100), age=k)
     assert len(G.live_denials(g)) == 20
-    clear(repo)
+    clear_denials(repo)
     for k in range(7):
         denial(repo, FP[k], age=k * 10)
     kind, found = G.resolve_fingerprint(g)
@@ -105,7 +107,7 @@ def test_a_denial_is_retired_when_it_is_answered_or_its_lane_is_planned(repo, mo
     G.note_denial(g, "agent/c", dict(v, fingerprint=FP[3]))
     assert sorted(r["fp"] for r in G.live_denials(g)) == [FP[2], FP[3]]
     monkeypatch.setattr(G, "user_console", lambda: True)
-    assert over(repo, fp=FP[2]).rc == 0  # the override has answered it
+    assert run_override(repo, fp=FP[2]).rc == 0  # the override has answered it
     assert [r["fp"] for r in G.live_denials(g)] == [FP[3]] and G.resolve_fingerprint(g) == ("one", FP[3])
     r = run(["--repo", str(repo.path), "--lang", "en", "plan", "--branch", "agent/c", "--paths", "docs/none.md"])  # a conflict-free plan of the lane
     assert r.rc == 0 and G.live_denials(g) == [], r
@@ -114,22 +116,43 @@ def test_a_denial_is_retired_when_it_is_answered_or_its_lane_is_planned(repo, mo
 def test_the_console_shows_agent_text_as_the_dialogs_do(repo, monkeypatch):
     monkeypatch.setattr(G, "user_console", lambda: True)
     bad = "agent/x\x9b3A\x85\u202edocs\u2028\u2066y"
+    hostile = "\x9b\x85\u202e\u2028\u2066"
     denial(repo, FP[1], lane=bad, target=bad, branches=(bad, "agent/b"))
-    r = over(repo, stdin=b"n\n")
-    prompt = r.err.replace("\r\n", "\n")
-    assert not [ch for ch in "\x9b\x85\u202e\u2028\u2066" if ch in prompt] and G.denial_list(G.live_denials(G.open_repo(str(repo.path))), "en").isprintable() is False or True
-    assert not [ch for ch in "\x9b\x85\u202e\u2028\u2066" if ch in G.denial_list(G.live_denials(G.open_repo(str(repo.path))), "en")]
-    for n in range(8):
-        denial(repo, "%012x" % (n + 500), branches=["agent/n%d" % k for k in range(9)])
-    clear(repo)
+    prompt = run_override(repo, stdin=b"n\n").err.replace("\r\n", "\n")
+    assert "Override denial " + FP[1] in prompt and not [ch for ch in hostile if ch in prompt], prompt
+    assert not [ch for ch in hostile if ch in G.denial_list(G.live_denials(G.open_repo(str(repo.path))), "en")]
+    clear_denials(repo)
     denial(repo, FP[2], branches=["agent/n%d" % k for k in range(9)])
-    r = over(repo, stdin=b"n\n")
-    assert G.T("en", "show_more", n=3) in r.err.replace("\r\n", "\n")
+    for lang in ("en", "zh"):  # the count that follows the six names is in the language of the request
+        r = run(["--repo", str(repo.path), "--lang", lang, "override", "--reason", "x"], stdin=b"n\n")
+        assert G.T(lang, "show_more", n=3) in r.err.replace("\r\n", "\n"), (lang, r.err)
+    assert G.T("zh", "show_more", n=3) != G.T("en", "show_more", n=3)
 
 
-def over(repo, *more, stdin=b"y\n", fp=None):
-    base = ["--repo", str(repo.path), "--lang", "en", "override"] + (["--fingerprint", fp] if fp else []) + ["--reason", "typed by the user"]
-    return run(base + list(more), stdin=stdin)
+def test_the_count_of_many_denials_says_when_the_list_was_cut(repo, monkeypatch):
+    for k in range(25):
+        denial(repo, "%012x" % (k + 100), age=k)
+    r = run(["--repo", str(repo.path), "--lang", "en", "override", "--reason", "x"])
+    assert r.rc == 2 and G.T("en", "override_many_denials", n="20+", list="").split("\n")[0] in r.err, r
+    clear_denials(repo)
+    for k in range(3):
+        denial(repo, FP[k])
+    r = run(["--repo", str(repo.path), "--lang", "en", "override", "--reason", "x"])
+    assert G.T("en", "override_many_denials", n=3, list="").split("\n")[0] in r.err, r
+
+
+def test_a_real_denial_goes_through_the_approval_server_without_a_fingerprint(repo, guard):
+    fp = plan_denial(repo, guard)  # a real `plan` denial writes the record the server resolves
+    assert [r["fp"] for r in G.live_denials(G.open_repo(str(repo.path)))] == [fp]
+    r, res, msg = approve_in_process({"subcommand": "override", "repo": P(repo.path), "reason": "the user agreed"})
+    assert r.rc == 0 and res["result"]["structuredContent"]["exit_code"] == 0, (r, res)
+    text = msg["params"]["message"]
+    assert fp in text and '"agent/x"' in text and G.T("en", "approval_fp_auto", fp=json.dumps(fp)) in text, text
+    rec = json.loads((common(repo) / "magos" / "override" / (fp + ".json")).read_text(encoding="utf-8"))
+    assert (rec["fp"], rec["reason"], rec["reason_by"], rec["via"]) == (fp, "the user agreed", "agent", "prompt")
+    assert not (common(repo) / "magos" / "denials" / (fp + ".json")).exists()
+    again = guard(repo, "plan", "--branch", "agent/new", "--paths", "src/a.py", "--json")
+    assert again.rc == 0 and json.loads(again.out)["code"] == "OVERRIDDEN", again
 
 
 def test_override_without_a_fingerprint_in_a_terminal(repo, monkeypatch):
@@ -139,13 +162,13 @@ def test_override_without_a_fingerprint_in_a_terminal(repo, monkeypatch):
     record = store / "override" / (fp + ".json")
     denial(repo, fp, lane="agent/a", target="main", branches=("agent/b", "agent/c"))
     for typed in (b"n\n", b"\n", (fp + "\n").encode("ascii"), b"yes please\n", b""):
-        r = over(repo, stdin=typed)
+        r = run_override(repo, stdin=typed)
         assert r.rc == G.EXIT["CONSOLE_REQUIRED"] and not record.exists(), (typed, r)
         assert G.T("en", "override_confirm", fp=fp, lane='"agent/a"', target='"main"', branches='"agent/b", "agent/c"',
                    reason='"typed by the user"') in r.err.replace("\r\n", "\n"), r.err
     for typed in (b"y\n", b"YES\n", b"Yes\n"):
         denial(repo, fp, lane="agent/a", target="main", branches=("agent/b", "agent/c"))  # the answered denial is retired: write it again
-        r = over(repo, stdin=typed)
+        r = run_override(repo, stdin=typed)
         assert r.rc == 0 and r.out.strip() == G.T("en", "overridden", fp=fp), (typed, r)
         assert not (store / "denials" / (fp + ".json")).exists()
         doc = json.loads(record.read_text(encoding="utf-8"))
@@ -155,30 +178,30 @@ def test_override_without_a_fingerprint_in_a_terminal(repo, monkeypatch):
         record.unlink()
     denial(repo, fp, lane="agent/a", target="main", branches=("agent/b", "agent/c"))
     denial(repo, FP[1], lane="agent/d", target=None, branches=())
-    r = over(repo)
+    r = run_override(repo)
     assert r.rc == 2 and not record.exists() and G.T("en", "override_many_denials", n=2, list="") .split("\n")[0] in r.err, r
     assert FP[0] in r.err and FP[1] in r.err and "agent/a" in r.err and "agent/d" in r.err
-    clear(repo)
-    r = over(repo)
+    clear_denials(repo)
+    r = run_override(repo)
     assert r.rc == 2 and G.T("en", "override_no_denial") in r.err and not record.exists(), r
     denial(repo, fp)
     r = run(["--repo", str(repo.path), "--lang", "en", "override", "--reason", "r", "--approval=" + "A" * 43])
     assert r.rc == 2 and G.T("en", "override_token_needs_fp") in r.err and not record.exists(), r
-    r = over(repo, fp=fp, stdin=b"y\n")  # a named fingerprint with a live record: y confirms
+    r = run_override(repo, fp=fp, stdin=b"y\n")  # a named fingerprint with a live record: y confirms
     assert r.rc == 0 and record.exists(), r
     record.unlink()
     denial(repo, fp)  # the answered denial was retired
-    r = over(repo, fp=fp, stdin=(fp + "\n").encode("ascii"))  # and the retyped fingerprint does not
+    r = run_override(repo, fp=fp, stdin=(fp + "\n").encode("ascii"))  # and the retyped fingerprint does not
     assert r.rc == G.EXIT["CONSOLE_REQUIRED"] and not record.exists(), r
-    clear(repo)
+    clear_denials(repo)
     denial(repo, fp, age=4000)  # the record has expired: the fingerprint is retyped, as before
-    assert over(repo, fp=fp, stdin=b"y\n").rc == G.EXIT["CONSOLE_REQUIRED"] and not record.exists()
-    assert over(repo, fp=fp, stdin=(fp + "\n").encode("ascii")).rc == 0 and record.exists()
-    clear(repo)
+    assert run_override(repo, fp=fp, stdin=b"y\n").rc == G.EXIT["CONSOLE_REQUIRED"] and not record.exists()
+    assert run_override(repo, fp=fp, stdin=(fp + "\n").encode("ascii")).rc == 0 and record.exists()
+    clear_denials(repo)
     monkeypatch.setattr(G, "user_console", lambda: False)  # no console: nothing is asked
     denial(repo, fp)
     record.unlink()
-    r = over(repo)
+    r = run_override(repo)
     assert r.rc == G.EXIT["CONSOLE_REQUIRED"] and not record.exists(), r
 
 
@@ -212,13 +235,13 @@ def test_the_approval_server_fills_in_the_fingerprint(hosts, repo):
     # several denials, none: errors of the call, no dialog
     res = h.result(h.call(tool))
     assert res["isError"] is True and "fingerprint: 2 live denials" in res["structuredContent"]["text"] and FP[1] in res["structuredContent"]["text"]
-    clear(repo)
+    clear_denials(repo)
     res = h.result(h.call(tool))
     assert res["isError"] is True and "fingerprint: no live denial in this repository" in res["structuredContent"]["text"] and len(log) == 2
     # a given fingerprint is used as before, without the sentence
     denial(repo, FP[2])
     cid, msg = h.dialog(dict(tool, fingerprint=FP[2]))
-    assert FP[2] in msg["params"]["message"] and G.T("en", "approval_fp_auto", fp=json.dumps(FP[2])).split(" ")[0] not in msg["params"]["message"].split("\n")[2][-80:]
+    assert FP[2] in msg["params"]["message"]
     assert "approval_fp_auto" not in msg["params"]["message"] and "filled in by the guard" not in msg["params"]["message"]
     h.answer(msg["id"], {"action": "cancel"})
     h.next()
