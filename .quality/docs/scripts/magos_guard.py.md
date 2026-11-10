@@ -2185,10 +2185,12 @@ a reason typed in a terminal, `agent` for one that came through the dialog. The 
 ### Denial records
 
 `plan` (when it would write and denies with a conflict) and the host hook (when it denies a creation with a conflict)
-keep `<store>/denials/<fingerprint>.json`: `{"v": 1, "fp", "lane", "branches", "target", "at", "expires"}`.
+keep `<store>/denials/<fingerprint>.json`: `{"v": 1, "fp", "lane", "branches", "target", "entries", "at", "expires"}`;
+`entries` is the manifest the denial judged (the entries `plan` was given, or those of the claim whose creation the hook
+denied).
 `branches` holds the conflicting branches of the verdict (`(detached) <worktrees>` for a detached one); `at` and
 `expires` are seconds since the epoch. A record is valid for one hour, like an override record. The override dialog, the confirmation of the `override` command and the
-fill-in of a missing fingerprint read it; `note_denial`, `override`, `plan`, `set-plan`, `release` and an allowed creation of the host hook retire it (Override without a fingerprint (version 1.1.2), Live denials). `check` writes none, and a failure
+fill-in of a missing fingerprint read it; `note_denial`, `override`, `plan`, `set-plan`, `release`, `set-release` and an allowed creation of the host hook retire it (Override without a fingerprint (version 1.1.2), Live denials). `check` writes none, and a failure
 to write one changes no verdict and no message.
 
 ### Tamper filter
@@ -3367,19 +3369,24 @@ finite number counts 0), then by fingerprint. `resolve_fingerprint(g)` is its an
 there is none, `("many", records)` when there are several. The record that resolves a missing fingerprint is the one
 every later step shows: nothing reads it again. `denial_list(records, lang)` shows at most six of them, one `denial_line`
 each (the lane and the target as `_dialog` shows them, cut to 60 characters; the age in whole minutes, `?` for a record
-without a finite `at`), and then `show_more`. A count of denials reads `20+` when `live_denials` returns its maximum of 20
-records.
+without a finite `at`), and then `show_more`. A count of denials, and the count of `show_more` after a list that
+`live_denials` cut, ends in `+` when `live_denials` returns its maximum of 20 records (`20+`, `+14+ more`).
 
 The records of the creation check are written by `plan` in write mode and by the host hook (`note_denial`) and expire after
-one hour. A record is retired as soon as its lane no longer waits for an answer:
+one hour. A record is retired as soon as its lane no longer waits for an answer. A record waits for the manifest it judged
+(`entries`), so a step that proves only the lane's registered manifest retires only the records of that manifest (a record
+without `entries` counts as one of it):
 
-- `note_denial` removes the older records of the same lane before it writes the new one;
+- `note_denial` removes the older records of the same lane and manifest before it writes the new one;
 - `override` removes the record of the fingerprint it recorded;
-- `plan` in write mode removes the records of its lane when the lane is allowed (registered, amended or unchanged), and
-  the record of the fingerprint of an override it consumed;
-- `set-plan` (also `--amend`) removes the records of every lane and of the integration branch it registers;
-- `release` removes the records of the lane it releases;
-- the host hook removes the records of a lane whose creation it allows.
+- `plan` in write mode that registers or amends the claim of a lane removes every record of that lane, and the record of
+  the fingerprint of an override it consumed; an unchanged `plan` of the lane removes the records of its manifest;
+- the host hook removes the records of the registered manifest of a lane whose creation it allows (a denied
+  `plan --amend` of the lane keeps its record);
+- `set-plan` (also `--amend`) that writes the set removes every record of each lane and of the integration branch it
+  registers and of each lane whose claim it removes; an unchanged `set-plan --amend` removes the records of each lane's
+  manifest;
+- `release` and `set-release` remove every record of the lanes they release.
 
 Each removal is best effort: a record that cannot be read or removed stays until it expires. A denial that names no
 conflicting branch has no record and cannot be filled in; its fingerprint has to be given.
@@ -3727,8 +3734,9 @@ Version 1.1.2 of the guard (`GUARD_VERSION` 1.1.2) overrides a denial without a 
 fingerprint (version 1.1.2)): the MCP approval server of Codex and the command `override` in a real terminal take the
 only live denial record of the repository; the console confirms a denial whose record is live with `y` or the
 fingerprint; the routes of Claude Code and Hermes refuse an `override` without `--fingerprint` (`APPROVAL_FINGERPRINT`);
-`note_denial`, `override`, `plan`, `set-plan`, `release` and the host hook retire the denial records whose lane no
-longer waits for an answer; the readers of the denial store skip a record too deeply nested to decode; the texts
+`note_denial`, `override`, `plan`, `set-plan`, `release`, `set-release` and the host hook retire the denial records whose
+lane no longer waits for an answer, each record carrying the manifest it judged; the readers of the denial, override
+and approval stores take a record too deeply nested to decode as unreadable; the texts
 `options` and `overridden` name the route and the re-plan. Every verdict of the creation check and of branch
 protection, every other text and every other record and command are those of 1.1.1.
 
