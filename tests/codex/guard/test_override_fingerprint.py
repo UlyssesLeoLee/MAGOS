@@ -4,6 +4,7 @@ Hermes that do not, and the texts."""
 from __future__ import annotations
 
 import json
+import re
 import string
 import time
 
@@ -311,7 +312,7 @@ def _hook_body(repo, cmd):
             "tool_use_id": "toolu_1"}
 
 
-def test_a_denial_is_retired_wherever_its_lane_stops_waiting(repo, guard, tmp_path):
+def test_a_denial_is_retired_wherever_its_lane_stops_waiting(repo, guard, tmp_path, monkeypatch):
     g = G.open_repo(str(repo.path))
 
     def lanes():
@@ -350,6 +351,17 @@ def test_a_denial_is_retired_wherever_its_lane_stops_waiting(repo, guard, tmp_pa
     repo.branch_with("agent/w", "src/c.py")
     assert guard(repo, "plan", "--amend", "--branch", "agent/l", "--paths", "src/b.py", "src/c.py").rc == 10 and lanes() == ["agent/l", "agent/other"]
     assert create("agent/l") is None and lanes() == ["agent/l", "agent/other"]
+    repo.branch_with("agent/z", "src/b.py")  # a denial of the registered manifest, overridden and consumed by an unchanged plan
+    v = create("agent/l")
+    assert v and v[0] == "CONFLICT" and lanes() == ["agent/l", "agent/l", "agent/other"], (v, lanes())
+    x = re.search(r"--fingerprint ([0-9a-f]{12})", v[1]).group(1)
+    monkeypatch.setattr(G, "user_console", lambda: True)
+    r = run(["--repo", str(repo.path), "--lang", "en", "override", "--fingerprint", x, "--reason", "ok"], stdin=b"y\n")
+    assert r.rc == 0 and lanes() == ["agent/l", "agent/other"], r
+    r = guard(repo, "--json", "plan", "--branch", "agent/l", "--paths", "src/b.py")
+    assert r.rc == 0 and json.loads(r.out)["code"] == "OVERRIDDEN" and json.loads(r.out)["unchanged"] is True, r
+    assert lanes() == ["agent/l", "agent/other"]  # the wider amend still waits
+    repo.git("branch", "-D", "agent/z")
     repo.git("branch", "-D", "agent/w")
     assert guard(repo, "plan", "--amend", "--branch", "agent/l", "--paths", "src/b.py", "src/c.py").rc == 0 and lanes() == ["agent/other"]
     # release of the lane
@@ -380,6 +392,11 @@ def test_a_denial_is_retired_wherever_its_lane_stops_waiting(repo, guard, tmp_pa
     r = guard(repo, "set-release", "--set", "demo", "--abandon", "--reason", "dropped")
     assert r.rc == 0 and lanes() == ["agent/other"], (r, lanes())
     assert G.resolve_fingerprint(g)[1]["fp"] == FP[7]
+    # one manifest in two spellings: the later denial supersedes the earlier
+    deny = {"decision": "deny", "conflicts": [{"branch": "agent/q", "worktrees": []}], "target": {"name": "main"}}
+    G.note_denial(g, "agent/s", dict(deny, fingerprint=FP[4]), ["src/s.py"])
+    G.note_denial(g, "agent/s", dict(deny, fingerprint=FP[5]), ["./src/s.py"])
+    assert sorted((r["lane"], r["fp"]) for r in G.live_denials(g)) == [("agent/other", FP[7]), ("agent/s", FP[5])]
 
 
 def test_a_record_too_deep_to_read_breaks_nothing(repo, guard):

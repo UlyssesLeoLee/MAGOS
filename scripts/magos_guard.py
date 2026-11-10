@@ -4953,7 +4953,8 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
                     os.remove(os.path.join(store(g), "override", v["fingerprint"] + ".json"))
                 except OSError:
                     pass
-            drop_denials(g, fp=v["fingerprint"], lane=name)  # the lane is planned: its denial records no longer wait for an answer
+            drop_denials(g, fp=v["fingerprint"], lane=name, entries=[e.raw for e in entries] if v["unchanged"] else None)  # the lane is planned:
+            # the records of a new manifest have their answer, every one of the lane; of an unchanged one (an override consumed), those of it
             return v
     except LockTimeout:
         return deny("LOCK_TIMEOUT", message=T(lang, "lock", s=os.environ.get("MAGOS_LOCK_TIMEOUT", int(LOCK_S))), target=snap["target"])
@@ -8770,11 +8771,23 @@ def live_denials(g):
     return sorted(out, key=lambda r: (-r["at"], r["fp"]))
 
 
+def _manifest_key(entries):
+    """A manifest in the parser's normal form: the set of its entries' alts (`src/b.py`, `./src/b.py` and `src\\b.py` are one entry), an entry
+    the parser refuses as it is written."""
+    out = set()
+    for raw in entries:
+        try:
+            out.add(parse_entry(str(raw)).alts)
+        except (ManifestError, ValueError, TypeError):
+            out.add(str(raw))
+    return frozenset(out)
+
+
 def _same_manifest(rec, entries):
     """Does the denial record `rec` wait for the manifest `entries`?  Every record does when `entries` is None, and a record without a list
-    `entries` waits for any manifest."""
+    `entries` waits for any manifest; manifests are compared in the parser's normal form."""
     have = rec.get("entries")
-    return entries is None or not isinstance(have, list) or sorted(str(e) for e in have) == sorted(entries)
+    return entries is None or not isinstance(have, list) or _manifest_key(have) == _manifest_key(entries)
 
 
 def drop_denials(g, fp=None, lane=None, entries=None):
