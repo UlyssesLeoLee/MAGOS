@@ -56,7 +56,7 @@ def test_live_denials_and_the_resolution(repo):
     assert kind == "many" and [r["fp"] for r in found] == [FP[3], FP[2], FP[1], FP[7]]
     clear_denials(repo)
     denial(repo, FP[1])
-    assert G.resolve_fingerprint(g) == ("one", FP[1])
+    assert G.resolve_fingerprint(g)[1]["fp"] == FP[1]
     clear_denials(repo)
     hostile = [("1" * 11 + "a", 10 ** 400), ("2" * 11 + "a", float("nan")), ("3" * 11 + "a", float("inf")), ("4" * 11 + "a", "soon"), ("5" * 11 + "a", True)]
     for fp, at in hostile:  # an `at` that is no finite number counts 0 and breaks nothing
@@ -71,7 +71,7 @@ def test_live_denials_and_the_resolution(repo):
         (common(repo) / "magos" / "denials").mkdir(parents=True, exist_ok=True)
         (common(repo) / "magos" / "denials" / ("%012x.json" % (k + 1))).write_text("junk", encoding="utf-8")
     denial(repo, FP[1], age=3000)
-    assert G.resolve_fingerprint(g) == ("one", FP[1])
+    assert G.resolve_fingerprint(g)[1]["fp"] == FP[1]
     clear_denials(repo)
     for k in range(25):
         denial(repo, "%012x" % (k + 100), age=k)
@@ -96,7 +96,7 @@ def test_a_removed_file_does_not_empty_the_list(repo, monkeypatch):
             raise FileNotFoundError(path)
         return real(path)
     monkeypatch.setattr(G.os.path, "getmtime", flaky)
-    assert G.resolve_fingerprint(g) == ("one", FP[2])
+    assert G.resolve_fingerprint(g)[1]["fp"] == FP[2]
 
 
 def test_a_denial_is_retired_when_it_is_answered_or_its_lane_is_planned(repo, monkeypatch):
@@ -108,7 +108,7 @@ def test_a_denial_is_retired_when_it_is_answered_or_its_lane_is_planned(repo, mo
     assert sorted(r["fp"] for r in G.live_denials(g)) == [FP[2], FP[3]]
     monkeypatch.setattr(G, "user_console", lambda: True)
     assert run_override(repo, fp=FP[2]).rc == 0  # the override has answered it
-    assert [r["fp"] for r in G.live_denials(g)] == [FP[3]] and G.resolve_fingerprint(g) == ("one", FP[3])
+    assert [r["fp"] for r in G.live_denials(g)] == [FP[3]] and G.resolve_fingerprint(g)[1]["fp"] == FP[3]
     r = run(["--repo", str(repo.path), "--lang", "en", "plan", "--branch", "agent/c", "--paths", "docs/none.md"])  # a conflict-free plan of the lane
     assert r.rc == 0 and G.live_denials(g) == [], r
 
@@ -160,16 +160,17 @@ def test_override_without_a_fingerprint_in_a_terminal(repo, monkeypatch):
     store = common(repo) / "magos"
     fp = FP[0]
     record = store / "override" / (fp + ".json")
+    prompt = G.T("en", "override_confirm", fp=fp, lane='"agent/a"', target='"main"', branches='"agent/b", "agent/c"', reason='"typed by the user"')
     denial(repo, fp, lane="agent/a", target="main", branches=("agent/b", "agent/c"))
-    for typed in (b"n\n", b"\n", (fp + "\n").encode("ascii"), b"yes please\n", b""):
+    for typed in (b"n\n", b"\n", b"yes please\n", (fp.upper() + "\n").encode("ascii"), b""):
         r = run_override(repo, stdin=typed)
         assert r.rc == G.EXIT["CONSOLE_REQUIRED"] and not record.exists(), (typed, r)
-        assert G.T("en", "override_confirm", fp=fp, lane='"agent/a"', target='"main"', branches='"agent/b", "agent/c"',
-                   reason='"typed by the user"') in r.err.replace("\r\n", "\n"), r.err
-    for typed in (b"y\n", b"YES\n", b"Yes\n"):
+        assert prompt in r.err.replace("\r\n", "\n"), r.err
+    for typed in (b"y\n", b"YES\n", b"Yes\n", (fp + "\n").encode("ascii")):  # y in any case, or the fingerprint as the earlier versions asked
         denial(repo, fp, lane="agent/a", target="main", branches=("agent/b", "agent/c"))  # the answered denial is retired: write it again
         r = run_override(repo, stdin=typed)
         assert r.rc == 0 and r.out.strip() == G.T("en", "overridden", fp=fp), (typed, r)
+        assert prompt in r.err.replace("\r\n", "\n"), r.err
         assert not (store / "denials" / (fp + ".json")).exists()
         doc = json.loads(record.read_text(encoding="utf-8"))
         assert (doc["fp"], doc["reason"], doc["reason_by"], doc["via"]) == (fp, "typed by the user", "user", "terminal")
@@ -191,8 +192,9 @@ def test_override_without_a_fingerprint_in_a_terminal(repo, monkeypatch):
     assert r.rc == 0 and record.exists(), r
     record.unlink()
     denial(repo, fp)  # the answered denial was retired
-    r = run_override(repo, fp=fp, stdin=(fp + "\n").encode("ascii"))  # and the retyped fingerprint does not
-    assert r.rc == G.EXIT["CONSOLE_REQUIRED"] and not record.exists(), r
+    r = run_override(repo, fp=fp, stdin=(fp + "\n").encode("ascii"))  # and so does the retyped fingerprint
+    assert r.rc == 0 and record.exists(), r
+    record.unlink()
     clear_denials(repo)
     denial(repo, fp, age=4000)  # the record has expired: the fingerprint is retyped, as before
     assert run_override(repo, fp=fp, stdin=b"y\n").rc == G.EXIT["CONSOLE_REQUIRED"] and not record.exists()
@@ -211,7 +213,8 @@ def test_the_approval_server_fills_in_the_fingerprint(hosts, repo):
     log = []
     h = hosts(runner=recording(log))
     tool = {"subcommand": "override", "repo": P(repo.path), "reason": "the user agreed"}
-    assert "fingerprint" not in G.MCP_TOOL_SPEC["inputSchema"].get("required", []) and "Optional" in G.MCP_TOOL_SPEC["inputSchema"]["properties"]["fingerprint"]["description"]
+    assert G.MCP_TOOL_SPEC["inputSchema"]["required"] == ["subcommand"]
+    assert "Optional" in G.MCP_TOOL_SPEC["inputSchema"]["properties"]["fingerprint"]["description"]
     cid, msg = h.dialog(tool)
     text = msg["params"]["message"]
     assert fp in text and '"agent/a"' in text and '"agent/b"' in text and G.T("en", "approval_fp_auto", fp=json.dumps(fp)) in text, text
@@ -300,3 +303,92 @@ def test_the_override_texts(repo):
     en = G.T("en", "options", target="main", cmd="g", fp="0123456789ab")
     assert "magos_approve (subcommand override, the reason and the repository" in en and "fills in the fingerprint" in en
     assert G.T("en", "overridden", fp="f").endswith("then create it.") and G.T("zh", "overridden", fp="f").endswith("然后再创建它。")
+
+
+def _hook_body(repo, cmd):
+    return {"session_id": "s-1", "cwd": str(repo.path), "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": cmd},
+            "tool_use_id": "toolu_1"}
+
+
+def test_a_denial_is_retired_wherever_its_lane_stops_waiting(repo, guard, tmp_path):
+    g = G.open_repo(str(repo.path))
+
+    def lanes():
+        return sorted(r["lane"] for r in G.live_denials(g))
+    denial(repo, FP[7], lane="agent/other")  # a live record of another lane stays through all of it
+    # the host hook allows a creation it denied before
+    assert guard(repo, "plan", "--branch", "agent/l", "--paths", "src/b.py").rc == 0
+    repo.branch_with("agent/z", "src/b.py")
+    create = _hook_body(repo, "git worktree add ../wl -b agent/l")
+    v = G.decide(create, "en", "claude")
+    assert v and v[0] == "CONFLICT" and lanes() == ["agent/l", "agent/other"], (v, lanes())
+    repo.git("branch", "-D", "agent/z")
+    assert G.decide(create, "en", "claude") is None and lanes() == ["agent/other"]
+    # an unchanged plan of the lane
+    repo.branch_with("agent/z", "src/b.py")
+    assert G.decide(create, "en", "claude")[0] == "CONFLICT" and lanes() == ["agent/l", "agent/other"]
+    repo.git("branch", "-D", "agent/z")
+    r = guard(repo, "--json", "plan", "--branch", "agent/l", "--paths", "src/b.py")
+    assert r.rc == 0 and json.loads(r.out)["unchanged"] is True and lanes() == ["agent/other"], r
+    # release of the lane
+    G.note_denial(g, "agent/l", {"decision": "deny", "fingerprint": FP[6], "conflicts": [{"branch": "agent/b", "worktrees": []}], "target": {"name": "main"}})
+    assert lanes() == ["agent/l", "agent/other"]
+    r = guard(repo, "release", "--branch", "agent/l", "--reason", "done")
+    assert r.rc == 0 and lanes() == ["agent/other"], r
+    # set-plan registers a lane that plan was denied
+    repo.branch_with("agent/x", "src/a.py")
+    assert guard(repo, "plan", "--branch", "agent/demo/api", "--paths", "src/a.py").rc == 10 and lanes() == ["agent/demo/api", "agent/other"]
+    spec = {"v": 1, "title": "Demo", "requirements": [{"id": "R1", "text": "the task is done"}], "base": repo.git("rev-parse", "main").strip(),
+            "sheet": "# Plan demo -> main  rev 1\n- [ ] api\n", "notes": [], "shared": [],
+            "lanes": [{"id": "api", "title": "lane api", "branch": "agent/demo/api", "worktree": P(tmp_path / "wt" / "wt-demo-api"), "serves": ["R1"],
+                       "outcome": "o", "paths": ["src/api/"], "depends_on": [], "acceptance": "it works"}]}
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(spec), encoding="utf-8")
+    r = guard(repo, "set-plan", "--set", "demo", "--target", "main", "--spec", str(spec_file))
+    assert r.rc == 0 and lanes() == ["agent/other"], (r, lanes())
+    assert G.resolve_fingerprint(g)[1]["fp"] == FP[7]
+
+
+def test_a_record_too_deep_to_read_breaks_nothing(repo, guard):
+    g = G.open_repo(str(repo.path))
+    deep = common(repo) / "magos" / "denials" / "cccccccccccc.json"
+    deep.parent.mkdir(parents=True, exist_ok=True)
+    deep.write_text("[" * 200000, encoding="utf-8")
+    assert G.live_denials(g) == [] and G.denial_record(g, "cccccccccccc") is None
+    r = run(["--repo", str(repo.path), "--lang", "en", "override", "--reason", "x"])
+    assert r.rc == 2 and G.T("en", "override_no_denial") in r.err, r
+    assert guard(repo, "plan", "--branch", "agent/free", "--paths", "docs/free.md").rc == 0
+    assert guard(repo, "plan", "--branch", "agent/l", "--paths", "src/b.py").rc == 0
+    repo.branch_with("agent/x", "src/a.py")
+    r = guard(repo, "plan", "--branch", "agent/new", "--paths", "src/a.py")
+    assert r.rc == 10 and "--fingerprint" in r.out, r
+    v = G.mcp_validate({"subcommand": "override", "repo": P(repo.path), "reason": "x"}, "en")
+    assert v[1] is None and v[0]["ns"].fingerprint == G.live_denials(g)[0]["fp"], v
+    repo.branch_with("agent/z", "src/b.py")
+    hv = G.decide(_hook_body(repo, "git worktree add ../wl -b agent/l"), "en", "claude")
+    assert hv and hv[0] == "CONFLICT", hv
+    assert deep.exists()  # a record that cannot be read stays until it expires
+
+
+def test_the_resolved_record_is_the_one_shown(repo, hosts, monkeypatch):
+    fp = FP[0]
+    denial(repo, fp, lane="agent/a", target="main", branches=("agent/b",))
+    real_resolve, real_record, done = G.resolve_fingerprint, G.denial_record, []
+
+    def resolve(g):
+        out = real_resolve(g)
+        done.append(1)
+        return out
+    monkeypatch.setattr(G, "resolve_fingerprint", resolve)
+    monkeypatch.setattr(G, "denial_record", lambda g, f: None if done else real_record(g, f))  # the record is gone once it was resolved
+    monkeypatch.setattr(G, "user_console", lambda: True)
+    r = run_override(repo, stdin=b"n\n")
+    assert r.rc == G.EXIT["CONSOLE_REQUIRED"] and 'lane: "agent/a"' in r.err and "Type " + fp not in r.err, r
+    done.clear()
+    h = hosts(runner=recording([]))
+    _cid, msg = h.dialog({"subcommand": "override", "repo": P(repo.path), "reason": "x"})
+    text = msg["params"]["message"]
+    assert '"agent/a"' in text and '"agent/b"' in text and G.T("en", "approval_fp_auto", fp=json.dumps(fp)) in text, text
+    assert G.T("en", "approval_no_record") not in text, text
+    h.answer(msg["id"], {"action": "cancel"})
+    h.next()
