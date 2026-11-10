@@ -3380,9 +3380,10 @@ step that proves only the lane's registered manifest retires only the records of
 
 - `note_denial` removes the older records of the same lane and manifest before it writes the new one;
 - `override` removes the record of the fingerprint it recorded;
-- `plan` in write mode that registers or amends the claim of a lane removes every record of that lane, and the record of
-  the fingerprint of an override it consumed; an unchanged `plan` of the lane, also one that consumes an override, removes
-  the records of its manifest and the record of that override's fingerprint;
+- `plan` in write mode that registers the claim of a lane, or amends it to another manifest, removes every record of that
+  lane, and the record of the fingerprint of an override it consumed; a `plan` whose manifest is the registered one (also
+  one that consumes an override, or an amend that only spells the manifest otherwise) removes the records of that
+  manifest and the record of the override's fingerprint;
 - the host hook removes the records of the registered manifest of a lane whose creation it allows (a denied
   `plan --amend` of the lane keeps its record);
 - `set-plan` (also `--amend`) that writes the set removes every record of each lane and of the integration branch it
@@ -3390,7 +3391,9 @@ step that proves only the lane's registered manifest retires only the records of
   manifest;
 - `release` and `set-release` remove every record of the lanes they release.
 
-Each removal is best effort: a record that cannot be read or removed stays until it expires. A denial that names no
+The caller's manifest is brought to the normal form once per removal, and a record of the lane is set aside at its first
+entry the manifest does not hold. Each removal is best effort: a record that cannot be read or removed stays until it
+expires. A denial that names no
 conflicting branch has no record and cannot be filled in; its fingerprint has to be given.
 
 ### The command
