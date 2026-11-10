@@ -2,6 +2,32 @@
 
 Every version of the `magos` package (the `version` in `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` and the lane guard's `GUARD_VERSION`). A release is tagged `v<version>` on its release commit. The tag `v1.0` marks the skill release 3.4.0 from before the package became a plugin and was renumbered; it is not a plugin version. Install, pin, upgrade and roll back as `references/installation.md` describes.
 
+## 1.1.2
+
+Tag `v1.1.2`. A feature release for the override of a denial: nobody has to copy or retype its 12-hex fingerprint any more when the repository has exactly one live denial. Branch protection and every verdict of the creation check are those of 1.1.1.
+
+### Added
+
+- **Codex: `magos_approve` without a fingerprint.** For `override` the tool's `fingerprint` argument is optional. When the repository has exactly one live denial record, the tool takes its fingerprint, and the dialog says that the guard filled it in and shows the lane, the target and the conflicting branches the override lets through; the user ticks Approve and accepts as before. With none or several live denials the call fails with a text that says so and lists them, and no dialog opens. The Options text of a denial in Codex names the call with the repository and the reason only.
+- **`override --reason ...` without `--fingerprint` in a real terminal.** The command takes the only live denial of the repository; with several it lists them (at most six, then the count of the rest), with none it says so (both exit 2).
+- **A confirmation instead of a retyped fingerprint.** While the denial record is live, the console shows what the override lets through (the lane, the target, the conflicting branches and the reason, quoted and cleaned of control characters) and the user types `y`; the fingerprint is still accepted. A denial without a live record is confirmed as before, by retyping the fingerprint.
+
+### Changed
+
+- **Claude Code and Hermes** refuse an `override` without `--fingerprint` (their approval binds the words of the command, so the denial has to be named in it); a repository at `magos.approval` `terminal` reports its level first.
+- **Denial records** are retired when their lane no longer waits for an answer: a new denial of a lane replaces the older ones, an override removes the record it answered, and `plan`, `set-plan`, `release` and an allowed creation remove the records of their lane. A damaged record (a time that is no finite number, JSON nested too deeply to read, a file that vanishes while it is listed) no longer breaks the reading.
+- The text printed after an override tells the agent to run `plan` for the lane again and then create it.
+
+### Known limits
+
+- The click is the route of 1.0.8: the user ticks Approve and accepts in Codex's dialog. Under Codex's approval policy `never` Codex declines the form itself and the terminal remains; Codex's hooks cannot ask the user, so a denial cannot open a dialog by itself.
+- A denial that names no conflicting branch, and a denial of `check`, leave no record: their fingerprint has to be given.
+
+### Upgrade
+
+1. Upgrade the plugin on each host and restart it: Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`; Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`.
+2. Copies under `~/.magos/guard` (Codex and Hermes entries) are refreshed by running `install --host <host>` again; `doctor` names a stale copy.
+
 ## 1.1.1
 
 Tag `v1.1.1`. A maintenance release of 1.1.0: the guard, the commands and every verdict are those of 1.1.0.
