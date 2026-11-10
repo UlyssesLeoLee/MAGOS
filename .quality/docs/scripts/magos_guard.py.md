@@ -3374,13 +3374,15 @@ without a finite `at`), and then `show_more`. A count of denials, and the count 
 
 The records of the creation check are written by `plan` in write mode and by the host hook (`note_denial`) and expire after
 one hour. A record is retired as soon as its lane no longer waits for an answer. A record waits for the manifest it judged
-(`entries`), so a step that proves only the lane's registered manifest retires only the records of that manifest (a record
-without `entries` counts as one of it):
+(`entries`, compared in the manifest parser's normal form, so `src/b.py`, `./src/b.py` and `src\b.py` are one entry), so a
+step that proves only the lane's registered manifest retires only the records of that manifest (a record without
+`entries` counts as one of it):
 
 - `note_denial` removes the older records of the same lane and manifest before it writes the new one;
 - `override` removes the record of the fingerprint it recorded;
 - `plan` in write mode that registers or amends the claim of a lane removes every record of that lane, and the record of
-  the fingerprint of an override it consumed; an unchanged `plan` of the lane removes the records of its manifest;
+  the fingerprint of an override it consumed; an unchanged `plan` of the lane, also one that consumes an override, removes
+  the records of its manifest and the record of that override's fingerprint;
 - the host hook removes the records of the registered manifest of a lane whose creation it allows (a denied
   `plan --amend` of the lane keeps its record);
 - `set-plan` (also `--amend`) that writes the set removes every record of each lane and of the integration branch it
