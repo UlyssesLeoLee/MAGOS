@@ -112,7 +112,7 @@ def test_override_recorded_in_the_claim_survives_revalidation(repo, guard, monke
     repo.branch_with("agent/x", "src/a.py")
     fp = json.loads(guard(repo, "--json", "plan", "--branch", "agent/ov", "--paths", "src/a.py").out)["fingerprint"]
     monkeypatch.setattr(G, "user_console", lambda: True)
-    assert run(["--repo", str(repo.path), "override", "--fingerprint", fp, "--reason", "ok"], stdin=(fp + "\n").encode()).rc == 0
+    assert run(["--repo", str(repo.path), "override", "--fingerprint", fp, "--reason", "ok"], stdin=b"y\n").rc == 0  # a live denial record: the console asks for a y
     assert guard(repo, "plan", "--branch", "agent/ov", "--paths", "src/a.py").rc == 0
     assert denied(hook(repo, command="git worktree add ../w -b agent/ov")) is None  # the claim carries the override fingerprint
     repo.commit("src/b.py", "x\n", cwd=repo.path)  # the target moves: fingerprint changes, the override no longer applies

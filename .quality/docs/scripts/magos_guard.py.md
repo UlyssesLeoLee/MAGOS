@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `8211b312a82aa395c7f974b237fe6a20ad19597431cf6fe0305b629fac8fd5b9`
+Source-SHA256: `f50a2a0b6cdc1cb0b04d5fd06f34b2fb748a9e4725021ba863889c39aac363fe`
 
 ## Responsibility
 
@@ -3355,8 +3355,9 @@ is still the only thing that lets an override run, and every route shows the use
 that `denial_record` accepts (the `fp` equals the name, a string `lane`, a list `branches`, an `expires` in the future).
 A file that cannot be read, that holds another fingerprint or that has expired is skipped. The list is ordered newest
 first by `at` (a record without a number counts 0), then by fingerprint, and at most 20 records are read.
-`resolve_fingerprint(g)` is its answer for one repository: the fingerprint of the only live denial; `("none", None)`
-when there is none; `("many", records)` when there are several. The records of the creation check are written by `plan`
+`resolve_fingerprint(g)` is its answer for one repository, a pair: `("one", fp)` for the only live denial, `("none", None)`
+when there is none, `("many", records)` when there are several. `denial_list(records, lang)` shows at most six of them,
+one `denial_line` each, and then `show_more`. The records of the creation check are written by `plan`
 in write mode and by the host hook (`note_denial`), one hour before they expire; a denial that names no conflicting
 branch has no record and cannot be filled in (its fingerprint has to be given).
 

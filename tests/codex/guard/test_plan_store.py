@@ -382,7 +382,7 @@ def test_override_gate_and_consumption(repo, guard, monkeypatch):
     monkeypatch.setattr(G, "user_console", lambda: True)
     r = run(["--repo", str(repo.path), "--lang", "en", "override", "--fingerprint", fp, "--reason", "x"], stdin=b"wrong\n")
     assert r.rc == 17
-    r = run(["--repo", str(repo.path), "--lang", "en", "override", "--fingerprint", fp, "--reason", "user said so"], stdin=(fp + "\n").encode())
+    r = run(["--repo", str(repo.path), "--lang", "en", "override", "--fingerprint", fp, "--reason", "user said so"], stdin=b"y\n")  # a live denial record: a y confirms it
     assert r.rc == 0 and fp in r.out
     store = claims_dir(repo).parent
     rec = json.loads((store / "override" / (fp + ".json")).read_text(encoding="utf-8"))
