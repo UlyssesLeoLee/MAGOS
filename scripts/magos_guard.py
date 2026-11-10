@@ -4953,8 +4953,10 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
                     os.remove(os.path.join(store(g), "override", v["fingerprint"] + ".json"))
                 except OSError:
                     pass
-            drop_denials(g, fp=v["fingerprint"], lane=name, entries=[e.raw for e in entries] if v["unchanged"] else None)  # the lane is planned:
-            # the records of a new manifest have their answer, every one of the lane; of an unchanged one (an override consumed), those of it
+            raws = [e.raw for e in entries]
+            kept = v["unchanged"] or bool(old) and _manifest_key(old["entries"]) == _manifest_key(raws)  # the registered manifest, maybe respelled
+            drop_denials(g, fp=v["fingerprint"], lane=name, entries=raws if kept else None)  # the lane is planned: a new manifest answers every
+            # record of the lane; the registered one (an override consumed, or a respelling) only the records of that manifest
             return v
     except LockTimeout:
         return deny("LOCK_TIMEOUT", message=T(lang, "lock", s=os.environ.get("MAGOS_LOCK_TIMEOUT", int(LOCK_S))), target=snap["target"])
@@ -8771,23 +8773,33 @@ def live_denials(g):
     return sorted(out, key=lambda r: (-r["at"], r["fp"]))
 
 
+def _entry_key(raw):
+    """One entry in the parser's normal form, its alts (`src/b.py`, `./src/b.py` and `src\\b.py` are one entry); an entry the parser refuses as
+    it is written."""
+    try:
+        return parse_entry(str(raw)).alts
+    except (ManifestError, ValueError, TypeError):
+        return str(raw)
+
+
 def _manifest_key(entries):
-    """A manifest in the parser's normal form: the set of its entries' alts (`src/b.py`, `./src/b.py` and `src\\b.py` are one entry), an entry
-    the parser refuses as it is written."""
-    out = set()
-    for raw in entries:
-        try:
-            out.add(parse_entry(str(raw)).alts)
-        except (ManifestError, ValueError, TypeError):
-            out.add(str(raw))
-    return frozenset(out)
+    """A manifest in the parser's normal form: the set of its entries' keys."""
+    return frozenset(_entry_key(raw) for raw in entries)
 
 
-def _same_manifest(rec, entries):
-    """Does the denial record `rec` wait for the manifest `entries`?  Every record does when `entries` is None, and a record without a list
-    `entries` waits for any manifest; manifests are compared in the parser's normal form."""
+def _same_manifest(rec, key):
+    """Does the denial record `rec` wait for the manifest whose normal form is `key`?  Every record does when `key` is None, and a record
+    without a list `entries` waits for any manifest; the record is set aside at its first entry that `key` does not hold."""
     have = rec.get("entries")
-    return entries is None or not isinstance(have, list) or _manifest_key(have) == _manifest_key(entries)
+    if key is None or not isinstance(have, list):
+        return True
+    seen = set()
+    for raw in have:
+        k = _entry_key(raw)
+        if k not in key:
+            return False
+        seen.add(k)
+    return seen == key
 
 
 def drop_denials(g, fp=None, lane=None, entries=None):
@@ -8795,6 +8807,7 @@ def drop_denials(g, fp=None, lane=None, entries=None):
     and the records of the lane `lane` (compared folded) that wait for the manifest `entries` (every record of the lane when it is None); best
     effort: a record that cannot be read or removed stays until it expires."""
     root = os.path.join(store(g), "denials")
+    key = None if entries is None else _manifest_key(entries)  # the caller's manifest, brought to the normal form once
     for n in _denial_files(root):
         try:
             path = os.path.join(root, n)
@@ -8804,7 +8817,7 @@ def drop_denials(g, fp=None, lane=None, entries=None):
             if lane is None:
                 continue
             rec = json.loads(_read_retry(path))
-            if fold(str(rec.get("lane"))) == fold(lane) and _same_manifest(rec, entries):
+            if fold(str(rec.get("lane"))) == fold(lane) and _same_manifest(rec, key):
                 os.remove(path)
         except (OSError, ValueError, TypeError, AttributeError, RecursionError, MemoryError):
             pass

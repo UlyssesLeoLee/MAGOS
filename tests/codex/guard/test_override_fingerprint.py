@@ -358,10 +358,14 @@ def test_a_denial_is_retired_wherever_its_lane_stops_waiting(repo, guard, tmp_pa
     monkeypatch.setattr(G, "user_console", lambda: True)
     r = run(["--repo", str(repo.path), "--lang", "en", "override", "--fingerprint", x, "--reason", "ok"], stdin=b"y\n")
     assert r.rc == 0 and lanes() == ["agent/l", "agent/other"], r
+    v = create("agent/l")  # the hook honours the claim, not the override record: it denies again and writes x again
+    assert v and v[0] == "CONFLICT" and x in [r["fp"] for r in G.live_denials(g)], v
     r = guard(repo, "--json", "plan", "--branch", "agent/l", "--paths", "src/b.py")
     assert r.rc == 0 and json.loads(r.out)["code"] == "OVERRIDDEN" and json.loads(r.out)["unchanged"] is True, r
-    assert lanes() == ["agent/l", "agent/other"]  # the wider amend still waits
+    assert lanes() == ["agent/l", "agent/other"] and x not in [r["fp"] for r in G.live_denials(g)]  # the wider amend still waits
     repo.git("branch", "-D", "agent/z")
+    r = guard(repo, "plan", "--amend", "--branch", "agent/l", "--paths", "./src/b.py")  # the registered manifest, spelled otherwise
+    assert r.rc == 0 and lanes() == ["agent/l", "agent/other"], (r, lanes())
     repo.git("branch", "-D", "agent/w")
     assert guard(repo, "plan", "--amend", "--branch", "agent/l", "--paths", "src/b.py", "src/c.py").rc == 0 and lanes() == ["agent/other"]
     # release of the lane
