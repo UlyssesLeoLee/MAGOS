@@ -768,7 +768,7 @@ def test_an_override_takes_effect_only_through_a_re_plan(repo, guard, monkeypatc
     assert reason and "agent/x" in reason and "a re-plan is required" in reason
     fp = re.search(r"--fingerprint ([0-9a-f]{12})", reason).group(1)
     monkeypatch.setattr(G, "user_console", lambda: True)
-    assert run(["--repo", str(repo.path), "override", "--fingerprint", fp, "--reason", "ok"], stdin=(fp + "\n").encode()).rc == 0
+    assert run(["--repo", str(repo.path), "override", "--fingerprint", fp, "--reason", "ok"], stdin=b"y\n").rc == 0  # a live denial record: the console asks for a y
     record = G.os.path.join(G.store(G.open_repo(str(repo.path))), "override", fp + ".json")
     for _ in range(2):
         assert "agent/x" in (verdict(hook(repo.path, cmd)) or "")  # the hook never reads the record

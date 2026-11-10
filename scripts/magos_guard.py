@@ -44,7 +44,7 @@ except ImportError:  # POSIX
 if sys.platform == "win32":  # CreateProcess searches the working directory before PATH unless this is set: a git.exe planted there never runs
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
 
-GUARD_VERSION = "1.1.1"  # the one version constant of the guard; equals the package version (plugin.json, .claude-plugin/plugin.json, plugin.yaml, SKILL.md)
+GUARD_VERSION = "1.1.2"  # the one version constant of the guard; equals the package version (plugin.json, .claude-plugin/plugin.json, plugin.yaml, SKILL.md)
 CLAIM_FORMAT = 1  # the claim file format this guard reads and writes (line `v=`); a claim of a newer format is never misread
 SET_FORMAT = 1  # the set record format this guard reads and writes (field `v`); a record of a newer format is never misread
 PROTECT_FORMAT = 1  # the protection record format this guard reads and writes (field `v`); a record of a newer format is never misread
@@ -120,15 +120,17 @@ M = {
     "k_declared": ("账本中已声明", "declared in the ledger"),
     "options": ("可选处理：① 缩小或拆分 manifest；② 等对方合入 {target} 后再创建；③ 对方若已合并或已放弃，用 {cmd} release --branch <对方分支> 释放它的登记（未合并的工作不会被释放）；"
                 "④ 仅在用户明确同意后，把 {cmd} override --fingerprint {fp} --reason \"<用户原话>\" 单独作为一条命令执行：在 Claude Code 中由用户在对话框里批准；"
-                "在 Codex 中调用 MCP 工具 magos_approve（subcommand 为 override，并给出指纹、理由和仓库），由用户在 Codex 的对话框里批准；"
+                "在 Codex 中调用 MCP 工具 magos_approve（subcommand 为 override，并给出理由和仓库；"
+                "本仓库恰好有一条未过期的拒绝记录时（check 不写记录），指纹由工具自动填入，否则请给出上面的指纹），由用户在 Codex 的对话框里批准；"
                 "在装有 MAGOS Hermes 插件的 Hermes 中由用户在 Hermes 的审批提示中批准；没有这条途径时（Codex 中没有 MCP 服务器 magos，Hermes 中没有该插件）"
                 "或 magos.approval 为 terminal 时，由用户本人在自己的终端里运行；"
                 "覆盖只通过 plan 生效，之后必须重新 plan（re-plan）。",
                 "Options: (1) shrink or split the manifest; (2) wait until they are merged into {target}; (3) if the other lane is merged or abandoned, release its claim with "
                 "{cmd} release --branch <their branch> (unmerged work is never released); (4) only with the user's explicit consent, "
                 "run {cmd} override --fingerprint {fp} --reason \"<user's words>\" as a command of its own: in Claude Code the user approves it in Claude Code's dialog; "
-                "in Codex call the MCP tool magos_approve (subcommand override, the fingerprint, the reason and the repository) and the user approves it in "
-                "Codex's dialog; in Hermes with the MAGOS Hermes plugin the user approves it in Hermes's approval prompt; where no such route exists "
+                "in Codex call the MCP tool magos_approve (subcommand override, the reason and the repository; the tool fills in the fingerprint when the "
+                "repository has exactly one live denial record (check writes none), otherwise give the one printed above) and the user approves it "
+                "in Codex's dialog; in Hermes with the MAGOS Hermes plugin the user approves it in Hermes's approval prompt; where no such route exists "
                 "(Codex without the MCP server magos, Hermes without the plugin) or with magos.approval terminal, the USER runs it in their own "
                 "terminal; the override takes effect only through plan, so a re-plan is required."),
     "newer_only": ("只有能读取该格式的 MAGOS 才能处理这份登记：请升级本守卫（doctor 显示版本，install 刷新副本），或用写入它的那个 MAGOS 执行这条命令。",
@@ -149,7 +151,26 @@ M = {
     "blocked_alias": ("MAGOS：拒绝 release：「{b}」的登记存放在 {f}，不在它自己的路径上；请用户手工检查后删除。",
                       "MAGOS: release refused: the claim of '{b}' is stored in {f}, not at its own path; the user must inspect and remove it by hand."),
     "released": ("MAGOS：已释放「{b}」的登记。", "MAGOS: released the claim of '{b}'."),
-    "overridden": ("MAGOS：已记录用户覆盖（指纹 {fp}，1 小时内有效）。", "MAGOS: recorded the user's override (fingerprint {fp}, valid for 1 hour)."),
+    "overridden": ("MAGOS：已记录用户覆盖（指纹 {fp}，1 小时内有效）。请立即为该 lane 重新执行 plan（覆盖只通过 plan 生效），然后再创建它。",
+                   "MAGOS: recorded the user's override (fingerprint {fp}, valid for 1 hour). Run plan for the lane again now (the override takes effect only through it), then create it."),
+    "override_confirm": ("覆盖拒绝 {fp}：\n  车道：{lane}\n  目标：{target}\n  冲突的分支：{branches}\n  理由：{reason}\n确认覆盖请输入 y（或指纹）后回车（其他任何输入都不覆盖）：",
+                         "Override denial {fp}:\n  lane: {lane}\n  target: {target}\n  conflicting branches: {branches}\n  reason: {reason}\n"
+                         "Type y (or the fingerprint) and Enter to confirm (anything else overrides nothing): "),
+    "override_no_denial": ("MAGOS：本仓库没有未过期的拒绝记录（记录保留一小时）：请重新执行被拒绝的命令，或给出拒绝信息里的 --fingerprint。",
+                           "MAGOS: this repository has no live denial (a denial record lives one hour): run the denied command again, or give the --fingerprint a "
+                           "denial printed."),
+    "override_many_denials": ("MAGOS：本仓库有 {n} 条未过期的拒绝记录，请用 --fingerprint 指定要覆盖的那一条：\n{list}",
+                              "MAGOS: this repository has {n} live denials; name the one to override with --fingerprint:\n{list}"),
+    "override_token_needs_fp": ("MAGOS：带 --approval 的 override 必须同时给出 --fingerprint。",
+                                "MAGOS: override with --approval must also name its --fingerprint."),
+    "denial_line": ("{fp}　车道 {lane}　目标 {target}　{age} 分钟前", "{fp}  lane {lane}  target {target}  {age} min ago"),
+    "approval_fp_auto": ("指纹 {fp} 由守卫自动填入：它是本仓库唯一未过期的拒绝记录；批准前请核对上面写的 lane 和分支。",
+                         "The fingerprint {fp} was filled in by the guard: it is the only live denial of this repository. Check the lane and the branches named "
+                         "above before you approve."),
+    "approval_fingerprint": ("没有 --fingerprint 的 override 在这里不能批准：守卫无法在对话框里告诉你它会放行哪一次拒绝。请在命令里写上拒绝信息给出的 --fingerprint；"
+                             "在 Codex 中，magos_approve 不带指纹也可以。",
+                             "An override without --fingerprint cannot be approved here: the dialog could not tell the user which denial it lets through. Write the "
+                             "--fingerprint the denial printed in the command; in Codex magos_approve also works without it."),
     "need_tty": ("MAGOS：这条用户专属命令需要真实终端（当前标准输入不是控制台），或者由用户在 Claude Code 的对话框中批准，或者在 Codex 中通过 MCP 工具 "
                  "magos_approve 在 Codex 的对话框中批准，或者在 Hermes 的审批提示中批准（守卫会自己加上 --approval）。",
                  "MAGOS: this user-only command needs a real terminal (stdin is not a console), or the user's approval in Claude Code's dialog, in Codex "
@@ -4753,7 +4774,7 @@ def read_override(g, fp):
     try:
         doc = json.loads(_read_retry(os.path.join(store(g), "override", fp + ".json")))
         return doc if doc.get("fp") == fp and doc.get("expires", "") > now_iso() else None
-    except (OSError, ValueError):
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError, MemoryError):  # an unreadable record counts as none
         return None
 
 
@@ -4907,7 +4928,10 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
             if reason:
                 return deny("INVALID_MANIFEST", message=T(lang, "invalid", errors="  [BRANCH_NAME] %s: %s" % (name, reason)), target=snap["target"])
             v = judge_now(claims, bad_claims)
-            if v["decision"] == "deny" or v["unchanged"] and not v["overridden"]:
+            if v["decision"] == "deny":
+                return v
+            if v["unchanged"] and not v["overridden"]:
+                drop_denials(g, lane=name, entries=[e.raw for e in entries])  # the lane is planned as it was: the records of this manifest have their answer
                 return v
             old = claims.get(fold(name))
             owner = branch_set(g, name, old) if old else None
@@ -4929,6 +4953,10 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
                     os.remove(os.path.join(store(g), "override", v["fingerprint"] + ".json"))
                 except OSError:
                     pass
+            raws = [e.raw for e in entries]
+            kept = v["unchanged"] or bool(old) and _manifest_key(old["entries"]) == _manifest_key(raws)  # the registered manifest, maybe respelled
+            drop_denials(g, fp=v["fingerprint"], lane=name, entries=raws if kept else None)  # the lane is planned: a new manifest answers every
+            # record of the lane; the registered one (an override consumed, or a respelling) only the records of that manifest
             return v
     except LockTimeout:
         return deny("LOCK_TIMEOUT", message=T(lang, "lock", s=os.environ.get("MAGOS_LOCK_TIMEOUT", int(LOCK_S))), target=snap["target"])
@@ -4987,7 +5015,7 @@ def cmd_plan(args, write):
         return finish(args, deny("INVALID_MANIFEST", message=T(args.lang, "invalid", errors="\n".join("  [%s] %s" % e for e in errors))), args.branch)
     v = plan_core(g, args.branch, entries, write, getattr(args, "amend", False), args.lang, getattr(args, "target", None), getattr(args, "worktree", ""))
     if write and v.get("decision") == "deny":  # the override dialog names the branches of this denial (check writes nothing)
-        note_denial(g, args.branch, v)
+        note_denial(g, args.branch, v, [e.raw for e in entries])
     path = v.pop("worktree", "") or "<path>"  # the worktree the claim registers, no key of the --json verdict
     if v["decision"] == "allow" and "message" not in v:
         v["message"] = "\n".join([T(args.lang, "ok_plan", b=args.branch, n=len(entries), example='git worktree add "%s" -b %s %s' % (path, args.branch, v["target"]["name"]))
@@ -5077,20 +5105,33 @@ def user_console():
         return False
 
 
-def challenge(expected, lang):
-    """User-only confirmation: refuses at once without a console (no read, so no hang); waits 120 s for typed input otherwise."""
+def _typed(prompt, lang):
+    """The line the user types at `prompt` on a real console, or None without a console (no read, so no hang); waits 120 s for typed input
+    and then ends the process (the reader thread may still hold stdin)."""
     if not user_console():
         sys.stderr.write(T(lang, "need_tty") + "\n")
-        return False
-    sys.stderr.write("Type %s to confirm: " % expected)
+        return None
+    sys.stderr.write(prompt)
     sys.stderr.flush()
     box = []
     t = threading.Thread(target=lambda: box.append(sys.stdin.readline().strip()), daemon=True)
     t.start()
     t.join(120)
     if not box:
-        os._exit(EXIT["CONSOLE_REQUIRED"])  # the reader thread may still hold stdin
-    return box[0] == expected
+        os._exit(EXIT["CONSOLE_REQUIRED"])
+    return box[0]
+
+
+def challenge(expected, lang):
+    """User-only confirmation: refuses at once without a console (no read, so no hang); waits 120 s for typed input otherwise."""
+    return _typed("Type %s to confirm: " % expected, lang) == expected
+
+
+def confirm_yes(prompt, lang, also=None):
+    """User-only confirmation by one typed line after `prompt` (the override's description): `y` or `yes` in any case, or `also` as written
+    (the fingerprint, which the retype of earlier versions asked for)."""
+    typed = _typed(prompt, lang)
+    return typed is not None and (typed.lower() in ("y", "yes") or (also is not None and typed == also))
 
 
 def _rename(src, dst, tries=40):
@@ -5188,7 +5229,7 @@ def consume_approval(args, root, where):
         if not (isinstance(rec, dict) and rec.get("v") == 1 and rec.get("used") is False and rec.get("via") in ("prompt", "auto-safe")):
             raise ValueError("not an approval record of format 1")
         expires = _record_expiry(rec)
-    except (OSError, ValueError, TypeError, KeyError):
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, MemoryError):
         return refuse("APPROVAL_UNKNOWN", "approval_unknown")
     if time.time() > expires:
         return refuse("APPROVAL_EXPIRED", "approval_expired")
@@ -5202,17 +5243,19 @@ def consume_approval(args, root, where):
     return None, rec
 
 
-def user_gate(args, root, where, retype=None, dry=False):
+def user_gate(args, root, where, retype=None, dry=False, prompt=None):
     """The approval of a user-only command -> (exit code or None, via, record).  With --approval the token is verified and consumed
     (consume_approval) and neither the console nor the challenge is asked, also for a dry run; without it a dry run needs nothing, and every
-    other run a real console and, with `retype`, the user typing it (challenge).  via: terminal, or the record's prompt or auto-safe."""
+    other run a real console and, with `retype`, the user typing it (challenge) or, when `prompt` (the description of what the command lets
+    through) is given, answering it with y or `retype` (confirm_yes).  via: terminal, or the record's prompt or auto-safe."""
     if getattr(args, "approval", None) is not None:
         code, rec = consume_approval(args, root, where)
         return code, (rec or {}).get("via"), rec
     if dry:
         return None, None, None
     if retype is not None:
-        return (None, "terminal", None) if challenge(retype, args.lang) else (EXIT["CONSOLE_REQUIRED"], None, None)
+        ok = confirm_yes(prompt, args.lang, retype) if prompt is not None else challenge(retype, args.lang)
+        return (None, "terminal", None) if ok else (EXIT["CONSOLE_REQUIRED"], None, None)
     if user_console():
         return None, "terminal", None
     sys.stderr.write(T(args.lang, "need_tty") + "\n")
@@ -5293,6 +5336,7 @@ def cmd_release(args):
                 sys.stderr.write(T(args.lang, "blocked_alias", b=doc["branch"], f=doc["file"]) + "\n")
                 return EXIT["BLOCKED"]
             os.remove(path)
+            drop_denials(g, lane=doc["branch"])  # a released lane waits for no override
             audit(g, op="release", branch=doc["branch"], reason=args.reason, host="cli")
     except LockTimeout:
         sys.stderr.write(T(args.lang, "lock", s=int(LOCK_S)) + "\n")
@@ -5321,21 +5365,40 @@ def cmd_override(args):
     g = open_repo(args.repo)
     if g is None:
         return 2
-    if not re.fullmatch(r"[0-9a-f]{12}", args.fingerprint):
+    fp, denial = args.fingerprint, None
+    if fp is None:  # the only live denial of the repository (Override without a fingerprint)
+        if getattr(args, "approval", None) is not None:
+            sys.stderr.write(T(args.lang, "override_token_needs_fp") + "\n")
+            return 2
+        kind, found = resolve_fingerprint(g)
+        if kind == "none":
+            sys.stderr.write(T(args.lang, "override_no_denial") + "\n")
+            return 2
+        if kind == "many":
+            sys.stderr.write(T(args.lang, "override_many_denials", n=_denial_count(found), list=denial_list(found, args.lang)) + "\n")
+            return 2
+        fp, denial = found["fp"], found
+    if not re.fullmatch(r"[0-9a-f]{12}", fp):
         sys.stderr.write("the fingerprint is the 12 hex digits printed with a denial\n")
         return 2
-    code, via, rec = user_gate(args, os.path.join(store(g), "approvals"), g.common, retype=args.fingerprint)
+    if denial is None:  # a given fingerprint: its live record, if any; the console shows what it lets through and asks for a y (or the fingerprint)
+        denial = denial_record(g, fp)
+    prompt = None if denial is None else T(args.lang, "override_confirm", fp=fp, lane=_dialog(denial["lane"], 80), reason=_dialog(args.reason, 160),
+                                           target="-" if denial["target"] is None else _dialog(denial["target"], 80),
+                                           branches=_names_text(denial["branches"], args.lang) or "-")
+    code, via, rec = user_gate(args, os.path.join(store(g), "approvals"), g.common, retype=fp, prompt=prompt)
     if code:
         return code
     by = "user" if via == "terminal" else "agent"  # a reason typed in a terminal is the user's; one that came through the dialog the agent's
     now = time.time()
-    doc = {"fp": args.fingerprint, "reason": args.reason, "by": who(g), "at": now_iso(), "expires": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + 3600)),
+    doc = {"fp": fp, "reason": args.reason, "by": who(g), "at": now_iso(), "expires": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + 3600)),
            "via": via, "reason_by": by}
     os.makedirs(os.path.join(store(g), "override"), exist_ok=True)
-    with open(os.path.join(store(g), "override", args.fingerprint + ".json"), "wb") as fh:
+    with open(os.path.join(store(g), "override", fp + ".json"), "wb") as fh:
         fh.write(json.dumps(doc, ensure_ascii=False).encode("utf-8"))
-    audit(g, op="override", fingerprint=args.fingerprint, reason=args.reason, reason_by=by, via=via, host="cli", **approval_fields(rec))
-    out_text(T(args.lang, "overridden", fp=args.fingerprint))
+    audit(g, op="override", fingerprint=fp, reason=args.reason, reason_by=by, via=via, host="cli", **approval_fields(rec))
+    drop_denials(g, fp=fp)  # the denial has its answer
+    out_text(T(args.lang, "overridden", fp=fp))
     return 0
 
 
@@ -6529,7 +6592,7 @@ def plan_set(g, args, mdl):
         file_writes.append((path, data, _file_bytes(path)))
         written.append(path)
     wanted = {fold(w["branch"]) for w in wants}
-    deletes = []
+    deletes, gone = [], []
     for key, doc in own_claims.items():
         if key not in wanted:
             real = in_store(os.path.join(store(g), "claims"), doc["file"])
@@ -6537,6 +6600,7 @@ def plan_set(g, args, mdl):
                 warns.append({"code": "CLAIM_NOT_REMOVED", "text": "the claim file %s lies outside the claim store and was left alone" % doc["file"]})
             else:
                 deletes.append((doc["file"], _file_bytes(doc["file"])))
+                gone.append(doc["branch"])
     unchanged = rec is not None and core(new) == core(rec) and not file_writes and not deletes
     revision = rec["revision"] if unchanged else (rec["revision"] + 1 if rec else 1)
     if not unchanged:
@@ -6550,7 +6614,12 @@ def plan_set(g, args, mdl):
                               requirements=[r["id"] for r in new["requirements"]], lanes=lanes_audit, integration=ib, host="cli",
                               **({"previous_revision": rec["revision"], "removed": removed} if rec else {}))
             commit_store(file_writes, deletes)
+            for branch in [w["branch"] for w in wants] + gone:  # the set registers or removes these claims: their denial records have their answer
+                drop_denials(g, lane=branch)
             audit_after(g, line, warns)
+    elif write:
+        for want in wants:  # an unchanged set: the records of each lane's registered manifest have their answer
+            drop_denials(g, lane=want["branch"], entries=want["entries"])
     lane_rows = [{"id": ln["id"], "title": ln["title"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"], "depends_on": ln["depends_on"],
                   "serves": ln["serves"], "outcome": ln["outcome"], "acceptance": ln["acceptance"], "state": ln["state"],
                   "create": 'git worktree add "%s" -b %s %s' % (ln["worktree"], ln["branch"], new["target"])} for ln in new_lanes]
@@ -7179,6 +7248,8 @@ def release_set(g, args):
     line = audit_line(g, op="set-release", set=name, revision=rec["revision"], reason=args.reason, abandon=args.abandon, lanes=[x["id"] for x in rec["lanes"]],
                       claims=released, host="cli")
     commit_store([], deletes + [(record, _file_bytes(record))])  # the claims first, the record last: one transaction
+    for branch in released:  # a released lane waits for no override
+        drop_denials(g, lane=branch)
     audit_after(g, line, warns)
     lines = [T(lang, "set_released", s=name, n=len(released))] + ["(%s) %s" % (w["code"], w["text"]) for w in warns]
     return {"decision": "allow", "code": "OK", "set": name, "abandoned": args.abandon, "released": released, "warnings": warns, "message": "\n".join(lines)}
@@ -7563,6 +7634,12 @@ def lane_signal(g, cwd_top):
     return any(b != (here or {}).get("branch") for b in list_refs(g)[0])
 
 
+def _claim_entries(g, name):
+    """The entries the claim of `name` registers, or None when it has no readable claim."""
+    doc = read_claims(g)[0].get(fold(name))
+    return [str(e) for e in doc["entries"]] if doc else None
+
+
 def check_creation(g, name, cr, lang, mode):
     """-> None (allow) or a deny verdict for creating branch `name`."""
     claims, bad = read_claims(g)
@@ -7685,8 +7762,11 @@ def judge_creation(cr, default_cwd, lang, seen=None):
             v = check_creation(g, n, cr, lang, mode)
         except GitFail as err:
             v = deny("UNKNOWN", unknowns=[{"code": err.code, "text": str(err)}]) if mode == "armed" or cr["kind"] == "worktree" else None
+        else:
+            if v is None:  # the creation is allowed: the records of the lane's registered manifest have their answer (a denied amend keeps its own)
+                drop_denials(g, lane=n, entries=_claim_entries(g, n))
         if v:
-            note_denial(g, n, v)  # the override dialog names the branches of this denial
+            note_denial(g, n, v, _claim_entries(g, n))  # the override dialog names the branches of this denial
             if v["code"] == "NO_MANIFEST" and (cr.get("redirect") or cr["verb"] == "push"):  # the creation is in another repository: the plan command names it
                 v["message"] = T(lang, "nomanifest", b=n) + "\n" + T(lang, "how_plan", cmd='%s --repo "%s"' % (guard_cmd(), repo_dir(g)), b=n)
             return v["code"], v.get("message") or render(lang, v, n)
@@ -8446,11 +8526,11 @@ def approval_what(lang, row, ns, t):
     """What a click approves, the {what} of every route's question (Approval routes): every subcommand its dry run; arm, disarm and override
     the repository; install the host, the directory it copies from (that of this guard), the destination and an --allow-downgrade; override
     also the fingerprint, the lane and target and the conflicting branches of its denial record (at most six, then +<n> more) and the reason,
-    marked as written by the agent; protect the branch, whether it sets or lifts the protection, and a reason, marked as written by the agent.  `t`: {"g": the repository or None, "dest": the guard home install copies to}."""
+    marked as written by the agent (and, when the MCP approval server took the fingerprint from the only live denial, that it did: `ns.fp_auto`); protect the branch, whether it sets or lifts the protection, and a reason, marked as written by the agent.  `t`: {"g": the repository or None, "dest": the guard home install copies to}."""
     dry = T(lang, "approval_dry") if getattr(ns, "dry_run", False) else ""
     repo = _dialog(repo_dir(t["g"]), 200) if t["g"] is not None else ""
     if row.name == "override":
-        rec = denial_record(t["g"], ns.fingerprint)
+        rec = getattr(ns, "denial", None) or denial_record(t["g"], ns.fingerprint)  # the resolved record, else the live one of the fingerprint
         if rec is None:
             denied = T(lang, "approval_no_record")
         else:
@@ -8459,6 +8539,8 @@ def approval_what(lang, row, ns, t):
             denied = T(lang, "approval_denied", lane=_dialog(rec["lane"], 80), target="-" if rec["target"] is None else _dialog(rec["target"], 80),
                        branches=names)
         what = T(lang, "approval_what_override", fp=_dialog(ns.fingerprint, 16), repo=repo, denied=denied, reason=_dialog(ns.reason, 160))
+        if getattr(ns, "fp_auto", False):  # the MCP approval server took the only live denial
+            what += " " + T(lang, "approval_fp_auto", fp=_dialog(ns.fingerprint, 16))
     elif row.name == "protect":  # the branch and the reason come from the agent: both are shown as JSON strings
         why = getattr(ns, "reason", "") or ""
         reason = T(lang, "approval_protect_reason", reason=_dialog(why, 160)) if why else ""
@@ -8506,19 +8588,31 @@ def approval_reentry(payload, cwd):
                 rec.get("command_sha256") == hashlib.sha256(inv["text"].encode("utf-8")).hexdigest()):
             return None
         return "live" if _record_expiry(rec) >= time.time() else "expired"
-    except (OSError, ValueError, TypeError, KeyError):
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, MemoryError):
         return None
+
+
+def _needs_fingerprint(ns, row):
+    """An override without --fingerprint: a token binds the words the agent wrote, so the routes of Claude Code and Hermes never mint one for it
+    (Override without a fingerprint, The routes of Claude Code and Hermes)."""
+    return row.name == "override" and getattr(ns, "fingerprint", None) is None
+
+
+def _fp_hint(lang, cause):
+    """The sentence that follows the shape text for the cause APPROVAL_FINGERPRINT (an override without --fingerprint)."""
+    return "\n" + T(lang, "approval_fingerprint") if cause == "APPROVAL_FINGERPRINT" else ""
 
 
 def approval_answer(payload, cwd, crs, lang):
     """The Claude Code hook's answer to a command in which the tamper filter found a user-only subcommand (Approval): an Approval (ask, or
     allow where magos.approval auto-safe allows the subcommand) that hands the host the command rebuilt with a one-time token, a deny
-    (code, message) whose last line names the cause, or None for the hook's own rewritten command run through the hooks again."""
+    (code, message) whose cause code stands on a line of its own (the last one, but for APPROVAL_FINGERPRINT followed by the approval_fingerprint
+    sentence), or None for the hook's own rewritten command run through the hooks again."""
     why = _USER_MSG
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
 
     def shape(cause):
-        return "PROTECTED", T(lang, "protected_shape", why=why, cmd=guard_cmd()) + "\n[%s]" % cause
+        return "PROTECTED", T(lang, "protected_shape", why=why, cmd=guard_cmd()) + "\n[%s]" % cause + _fp_hint(lang, cause)
     if _carries_approval(str(ti.get("command") or "")):  # an agent never supplies a token
         again = approval_reentry(payload, cwd)
         if again == "live":
@@ -8546,6 +8640,8 @@ def approval_answer(payload, cwd, crs, lang):
         return shape(t)
     if t["level"] == "terminal":
         return "PROTECTED", T(lang, "protected_level", why=why)
+    if _needs_fingerprint(ns, row):
+        return shape("APPROVAL_FINGERPRINT")
     auto = t["level"] == "auto-safe" and row.auto_safe and \
         (row.scope != "home" or (pkey(t["dest"]) == pkey(guard_home()) and not getattr(ns, "allow_downgrade", False)))
     now, token = time.time(), secrets.token_urlsafe(32)
@@ -8582,7 +8678,7 @@ def _prune(root, now, pattern, grace, age, tmp):
             elif pattern.fullmatch(name):
                 try:
                     stale = _record_expiry(json.loads(_read_retry(p))) + grace < now
-                except (OSError, ValueError, TypeError, KeyError):
+                except (OSError, ValueError, TypeError, KeyError, RecursionError, MemoryError):
                     stale = os.path.getmtime(p) + age < now
             else:
                 continue
@@ -8603,24 +8699,36 @@ def prune_denials(root, now):
     _prune(root, now, _DENIAL_FILE, 0, DENIAL_S, False)
 
 
-def note_denial(g, lane, v):
-    """Keep the branches a conflict denial names in <store>/denials/<fingerprint>.json for the override dialog (plan in write mode, the host hook
-    for a creation); best effort, so a failure changes no verdict and no message."""
+def note_denial(g, lane, v, entries=None):
+    """Keep the branches a conflict denial names in <store>/denials/<fingerprint>.json for the override dialog, the console confirmation and the
+    fill-in of a missing fingerprint, after it retired the older records of the same lane (plan in write mode, the host hook
+    for a creation), with the manifest the denial judged (`entries`: the planned entries, or those of the claim whose creation was denied); best
+    effort, so a failure changes no verdict and no message."""
     fp, conflicts = v.get("fingerprint"), v.get("conflicts")
     if v.get("decision") != "deny" or not fp or not conflicts:
         return
     now = time.time()
     try:
+        drop_denials(g, lane=lane, entries=entries)  # a new denial of the lane and manifest supersedes the older ones: its fingerprint is the state now
         rec = {"v": 1, "fp": fp, "lane": lane, "branches": [c["branch"] or "(detached) " + ", ".join(c["worktrees"]) for c in conflicts],
-               "target": (v.get("target") or {}).get("name"), "at": now, "expires": now + DENIAL_S}
+               "target": (v.get("target") or {}).get("name"), "entries": None if entries is None else [str(e) for e in entries], "at": now,
+               "expires": now + DENIAL_S}
         write_atomic(os.path.join(store(g), "denials", fp + ".json"), json.dumps(rec, ensure_ascii=False).encode("utf-8"))
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError, MemoryError):
         pass
 
 
+def _finite_time(raw):
+    """A record's `at` as a float when it is a finite number, else 0."""
+    try:
+        return float(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) and math.isfinite(raw) else 0.0
+    except OverflowError:
+        return 0.0
+
+
 def denial_record(g, fp):
-    """What the live denial record of fingerprint `fp` names -> {"lane", "target" (None when it names none), "branches"}, or None (no
-    repository, no such record, or one that has expired, cannot be read or names no lane)."""
+    """What the live denial record of fingerprint `fp` names -> {"lane", "target" (None when it names none), "branches", "at" (0 when the record
+    holds no finite number)}, or None (no repository, no such record, or one that has expired, cannot be read or names no lane)."""
     if g is None or not isinstance(fp, str) or not re.fullmatch(r"[0-9a-f]{12}", fp):
         return None
     try:
@@ -8629,9 +8737,129 @@ def denial_record(g, fp):
                 _record_expiry(rec) <= time.time():
             return None
         target = rec.get("target")
-        return {"lane": rec["lane"], "target": None if target is None else str(target), "branches": [str(b) for b in rec["branches"]]}
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return {"lane": rec["lane"], "target": None if target is None else str(target), "branches": [str(b) for b in rec["branches"]],
+                "at": _finite_time(rec.get("at"))}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError, MemoryError):
         return None
+
+
+def _denial_files(root):
+    """The names of the denial record files `<12 hex>.json` in the directory `root` (none when it cannot be listed)."""
+    try:
+        return [n for n in os.listdir(root) if _DENIAL_FILE.fullmatch(n)]
+    except OSError:
+        return []
+
+
+def live_denials(g):
+    """The live denial records of a repository, newest first (Override without a fingerprint, Live denials) -> [{"fp", "lane", "target",
+    "branches", "at"}]: the files `<12 hex>.json` of <store>/denials that denial_record accepts; the newest 200 files are looked at and the first 20
+    valid records kept; an `at` that is no finite number counts 0."""
+    root = os.path.join(store(g), "denials")
+    files = []
+    for n in _denial_files(root):
+        try:
+            files.append((os.path.getmtime(os.path.join(root, n)), n))
+        except OSError:
+            continue  # removed while the directory was listed
+    out = []
+    for _m, n in sorted(files, reverse=True)[:200]:
+        rec = denial_record(g, n[:-5])
+        if rec is None:
+            continue
+        out.append(dict(rec, fp=n[:-5]))
+        if len(out) >= 20:
+            break
+    return sorted(out, key=lambda r: (-r["at"], r["fp"]))
+
+
+def _entry_key(raw):
+    """One entry in the parser's normal form, its alts (`src/b.py`, `./src/b.py` and `src\\b.py` are one entry); an entry the parser refuses as
+    it is written."""
+    try:
+        return parse_entry(str(raw)).alts
+    except (ManifestError, ValueError, TypeError):
+        return str(raw)
+
+
+def _manifest_key(entries):
+    """A manifest in the parser's normal form: the set of its entries' keys."""
+    return frozenset(_entry_key(raw) for raw in entries)
+
+
+def _same_manifest(rec, key, known=None):
+    """Does the denial record `rec` wait for the manifest whose normal form is `key`?  Every record does when `key` is None, and a record
+    without a list `entries` waits for any manifest; `known` maps the caller's entries as written to their keys, so they are not parsed
+    again, and the record is set aside at its first entry that `key` does not hold."""
+    have = rec.get("entries")
+    if key is None or not isinstance(have, list):
+        return True
+    known = known or {}
+    seen = set()
+    for raw in have:
+        k = known[raw] if isinstance(raw, str) and raw in known else _entry_key(raw)
+        if k not in key:
+            return False
+        seen.add(k)
+    return seen == key
+
+
+def drop_denials(g, fp=None, lane=None, entries=None):
+    """Retire denial records that no longer wait for an answer (Override without a fingerprint, Live denials): the record of the fingerprint `fp`,
+    and the records of the lane `lane` (compared folded) that wait for the manifest `entries` (every record of the lane when it is None); best
+    effort: a record that cannot be read or removed stays until it expires."""
+    root = os.path.join(store(g), "denials")
+    known = None if entries is None else {str(raw): _entry_key(raw) for raw in entries}  # the caller's manifest, brought to the normal form once
+    key = None if known is None else frozenset(known.values())
+    for n in _denial_files(root):
+        try:
+            path = os.path.join(root, n)
+            if n == (fp or "") + ".json":
+                os.remove(path)
+                continue
+            if lane is None:
+                continue
+            rec = json.loads(_read_retry(path))
+            if fold(str(rec.get("lane"))) == fold(lane) and _same_manifest(rec, key, known):
+                os.remove(path)
+        except (OSError, ValueError, TypeError, AttributeError, RecursionError, MemoryError):
+            pass
+
+
+def _names_text(names, lang):
+    """At most six agent-chosen names as _dialog shows them, then show_more in the language of the request."""
+    shown = ", ".join(_dialog(n, 80) for n in names[:6])
+    return shown + (" " + T(lang, "show_more", n=len(names) - 6) if len(names) > 6 else "")
+
+
+def _denial_line(r, lang, limit, now=None):
+    """One live denial as `denial_line` shows it: the fingerprint, the lane and the target as _dialog shows them (cut to `limit`), its age in minutes."""
+    now = time.time() if now is None else now
+    return T(lang, "denial_line", fp=r["fp"], lane=_dialog(r["lane"], limit), target="-" if r["target"] is None else _dialog(r["target"], limit),
+             age=max(0, int((now - r["at"]) // 60)) if r["at"] else "?")
+
+
+def _denial_count(records):
+    """How many live denials, as a text: `20+` when live_denials returned its maximum of 20 records."""
+    return "%d+" % len(records) if len(records) >= 20 else str(len(records))
+
+
+def resolve_fingerprint(g):
+    """-> ("one", record) for the only live denial of the repository (the record as live_denials read it, with its "fp"), ("none", None), or
+    ("many", records) (Override without a fingerprint).  The record is the one every later step shows: nothing reads it again."""
+    live = live_denials(g)
+    if len(live) == 1:
+        return "one", live[0]
+    return ("many", live) if live else ("none", None)
+
+
+def denial_list(records, lang):
+    """At most six live denials, one `denial_line` each, then show_more (its count a floor, `<n>+`, after a list live_denials cut at 20)."""
+    now = time.time()
+    lines = [_denial_line(r, lang, 60, now) for r in records[:6]]
+    rest = len(records) - 6
+    more = T(lang, "show_more", n="%d+" % rest if len(records) >= 20 else rest)  # live_denials keeps 20: after a cut list the rest is a floor
+    return "\n".join("  " + x for x in lines) + ("\n  " + more if rest > 0 else "")
 
 
 # ---------------------------------------------------------------- Codex approval (1.0.8): the MCP approval server and the Codex hook's route
@@ -8647,7 +8875,8 @@ MCP_TOOL_SPEC = {
             "subcommand": {"type": "string", "enum": ["override", "arm", "disarm", "install", "protect"], "description": "The user-only guard subcommand."},
             "repo": {"type": "string", "description": "The absolute path of the repository. Required for override, arm, disarm and protect; for "
                                                       "install the repository whose magos.approval applies (optional)."},
-            "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{12}$", "description": "override: the 12 hex digits the denial printed."},
+            "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{12}$", "description": "override: the 12 hex digits the denial printed. Optional: left out, "
+                                                                                       "the tool takes the only live denial of the repository."},
             "reason": {"type": "string", "description": "override: the user's words; protect: the user's words, optional and may be empty. The dialog "
                                                         "shows them as written by the agent."},
             "host": {"type": "string", "enum": ["claude", "codex", "hermes"], "description": "install: the host whose hook entry install prints."},
@@ -8691,10 +8920,11 @@ def _client_name(info):
     return _shown(info["name"] + ("/" + v if isinstance(v, str) and v else ""), 80)
 
 
-def mcp_validate(arguments, lang):
+def mcp_validate(arguments, lang, resolve=True):
     """-> ({"row", "args", "argv", "repo", "g", "ns"}, None) or (None, [error lines]): the arguments of one magos_approve call checked as the guard
     checks a command (Codex approval, The tool call 1 and 2).  The command line is built from single-word --option=value forms and read back by
-    the guard's own parser, which must give back the row, a probe approval word and every value."""
+    the guard's own parser, which must give back the row, a probe approval word and every value.  An override without a fingerprint takes the only
+    live denial of the repository (resolve_fingerprint) unless `resolve` is false (the Codex hook's text names the call before the tool runs)."""
     if not isinstance(arguments, dict):
         return None, ["the arguments are not a JSON object"]
     errors = ["%s: not an argument of magos_approve" % _shown(str(k), 40) for k in arguments if k not in MCP_ARGS]
@@ -8736,11 +8966,21 @@ def mcp_validate(arguments, lang):
     fp, reason, host, branch = arguments.get("fingerprint"), arguments.get("reason"), arguments.get("host"), arguments.get("branch")
     if sub == "protect" and "branch" not in arguments:  # the name itself is checked by the command (exit 12 in the tool result)
         errors.append("branch: required for protect")
+    fp_auto, denial = False, None
     if sub == "override":
-        if "fingerprint" not in arguments:
-            errors.append("fingerprint: required for override")
-        elif isinstance(fp, str) and not re.fullmatch(r"[0-9a-f]{12}", fp):
-            errors.append("fingerprint: the 12 lowercase hex digits a denial prints")
+        if "fingerprint" in arguments:
+            if isinstance(fp, str) and not re.fullmatch(r"[0-9a-f]{12}", fp):
+                errors.append("fingerprint: the 12 lowercase hex digits a denial prints")
+        elif resolve and g is not None:
+            kind, found = resolve_fingerprint(g)
+            if kind == "one":
+                fp, fp_auto, denial = found["fp"], True, found
+            elif kind == "none":
+                errors.append("fingerprint: no live denial in this repository (a denial record lives one hour): run the denied command again, or give the "
+                              "fingerprint a denial printed")
+            else:
+                errors.append("fingerprint: %s live denials (%s): give the fingerprint of the one the user means"
+                              % (_denial_count(found), "; ".join(_denial_line(r, lang, 40) for r in found[:6])))
         if "reason" not in arguments:
             errors.append("reason: required for override")
         elif isinstance(reason, str) and not reason.strip():
@@ -8756,7 +8996,7 @@ def mcp_validate(arguments, lang):
     reason = (reason or "") if sub == "protect" else reason  # an absent reason of protect is the parser's default ""
     argv = ([] if sub == "install" else ["--repo=" + path]) + ["--lang=" + lang, sub]  # install's repo names only the level
     if sub == "override":
-        argv += ["--fingerprint=" + fp, "--reason=" + reason]
+        argv += (["--fingerprint=" + fp] if fp is not None else []) + ["--reason=" + reason]
     elif sub == "install":
         argv += ["--host=" + host]
     elif sub == "protect":
@@ -8777,6 +9017,7 @@ def mcp_validate(arguments, lang):
         pairs = (("subcommand", sub), ("repo", path), ("fingerprint", fp if sub == "override" else None), ("reason", reason if sub == "override" else None),
                  ("host", host if sub == "install" else None), ("dry_run", True if dry else None))
     args = dict((k, v) for k, v in pairs if v is not None)
+    ns.fp_auto, ns.denial = fp_auto, denial  # the record the fingerprint was taken from is the one the dialog shows
     return {"row": row, "args": args, "argv": argv, "repo": path, "g": g, "ns": ns}, None
 
 
@@ -8810,7 +9051,8 @@ def mcp_arguments(ns, cwd):
     if ns.cmd != "install" or ns.repo is not None or open_repo(cwd) is not None:
         a["repo"] = _slashed(os.path.normpath(named))
     if ns.cmd == "override":
-        a.update(fingerprint=ns.fingerprint, reason=ns.reason)
+        a.update({"fingerprint": ns.fingerprint} if ns.fingerprint is not None else {})
+        a.update(reason=ns.reason)
     if ns.cmd == "install":
         a["host"] = ns.host
     if ns.cmd == "protect":  # release only when true, reason only when not empty
@@ -8842,7 +9084,7 @@ def codex_denial(payload, cwd, lang):
         if row is not None and row.name == "install" and not same_file(inv["words"][-1], os.path.abspath(__file__)):
             row = None  # install copies the launcher beside the script it runs as: only this very file names a trusted one
         a = mcp_arguments(ns, cwd) if row is not None else None
-        v = mcp_validate(a, lang)[0] if a is not None else None
+        v = mcp_validate(a, lang, resolve=False)[0] if a is not None else None  # the tool resolves a missing fingerprint when it is called
     except Exception:  # the text falls back to the form the tool takes; the call is denied either way
         v = None
     if payload.get("permission_mode") == "bypassPermissions":
@@ -9353,13 +9595,13 @@ def hermes_answer(payload, crs, lang, gate):
     """The Hermes hook's answer when the MAGOS Hermes plugin runs it (`--hermes-gate`) for a command in which the tamper filter found a
     user-only subcommand (Hermes approval): a HermesApproval that hands Hermes the command rebuilt with a one-time token (modify) and, except
     where auto-safe allows the subcommand, a guard-written question with a request-unique rule key (approve), or a deny (code, message) whose
-    last line names the cause.  The directory comes from the call: its workdir, an existing directory named by an absolute path (_abs_dir),
+    cause code stands on a line of its own (the last one, but for APPROVAL_FINGERPRINT followed by the approval_fingerprint sentence).  The directory comes from the call: its workdir, an existing directory named by an absolute path (_abs_dir),
     else absolute paths only."""
     why = _USER_MSG
     ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
 
     def shape(cause):
-        return "PROTECTED", T(lang, "protected_shape_hermes", why=why, cmd=guard_cmd()) + "\n[%s]" % cause
+        return "PROTECTED", T(lang, "protected_shape_hermes", why=why, cmd=guard_cmd()) + "\n[%s]" % cause + _fp_hint(lang, cause)
     if _carries_approval(str(ti.get("command") or "")):  # Hermes runs its hooks once per call: no rewritten command comes back here
         return "PROTECTED", T(lang, "approval_given_hermes", why=why)
     if payload.get("tool_name") != "terminal" or any(ti.get(k) not in (None, False) for k in ("background", "pty")):
@@ -9396,6 +9638,8 @@ def hermes_answer(payload, crs, lang, gate):
         return shape(t)
     if t["level"] == "terminal":
         return "PROTECTED", T(lang, "protected_level", why=why)
+    if _needs_fingerprint(ns, row):
+        return shape("APPROVAL_FINGERPRINT")
     auto = t["level"] == "auto-safe" and row.auto_safe and \
         (row.scope != "home" or (pkey(t["dest"]) == pkey(guard_home()) and not getattr(ns, "allow_downgrade", False)))
     life = APPROVAL_S
@@ -10547,7 +10791,7 @@ def build_parser(repo_default=None):
     p.add_argument("--branch", required=True)
     p.add_argument("--reason", default="")
     p = sub.add_parser("override", parents=[common])
-    p.add_argument("--fingerprint", required=True)
+    p.add_argument("--fingerprint")
     p.add_argument("--reason", required=True)
     p = sub.add_parser("hook", parents=[common])
     p.add_argument("host", choices=("claude", "codex", "hermes"))

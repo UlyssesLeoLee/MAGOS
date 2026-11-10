@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `8211b312a82aa395c7f974b237fe6a20ad19597431cf6fe0305b629fac8fd5b9`
+Source-SHA256: `53bc548e315d5d0bb82a292998c0a9487fd0a3049c1cb91a9f72aa8ae8644c9c`
 
 ## Responsibility
 
@@ -426,7 +426,7 @@ The file holds eleven cooperating parts.
    rename or copy (`git branch -m/-M/-c/-C`) writes the new ref outside a reference transaction, so the git layer does
    not see it; the host hook denies it in every option spelling (bundled short options and abbreviated long options
    included).
-7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.1.1) and equals
+7. **Version, installer and doctor.** `GUARD_VERSION` is the single version constant of the guard (1.1.2) and equals
    the package version. `version` reports the running guard; `install` keeps the user-level copy that the Codex hook
    (and the Hermes hook when it cannot run the Hermes plugin's own launcher) runs, records where the copy came from in
    `VERSION.json` on every install and appends to `<guard home>/audit.log`; `doctor` checks the interpreter, Git, the
@@ -633,9 +633,11 @@ that holds a comma).
   integration claim of that set) is refused with exit 16 and the message that names the set (`blocked_set`): the
   claims of a set are released only by `set-release`; the claim of a set that has no record (a registration that was
   interrupted) is released like any other.
-- `override --fingerprint FP --reason R [--approval TOKEN]`: exits 2 unless FP is the 12 lowercase hex digits a denial
-  prints; then, without `--approval`, refuses (exit 17) unless stdin and stdout are a real console and the user retypes
-  the fingerprint, and with `--approval` verifies and consumes the token instead (exit 25 to 28 when it does not
+- `override [--fingerprint FP] --reason R [--approval TOKEN]`: without `--fingerprint` it takes the only live denial of
+  the repository (Override without a fingerprint (version 1.1.2)); exits 2 unless FP is the 12 lowercase hex digits a
+  denial prints; then, without `--approval`, refuses (exit 17) unless stdin and stdout are a real console and the user
+  confirms (types `y` or the fingerprint when the denial record is live, else retypes the fingerprint), and with `--approval` verifies
+  and consumes the token instead (exit 25 to 28 when it does not
   verify; Approval (version 1.0.7)); writes a one-shot record valid for one hour (`fp`, `reason`, `by`, `at`,
   `expires`, `via`, `reason_by`) and appends an audit line (`ts`, `by`, `op` `override`, `fingerprint`, `reason`,
   `reason_by`, `via`, `host` `cli`, `tool_use_id` for a run approved with a token (null through the MCP approval
@@ -843,8 +845,9 @@ on stdout.
 
 Exit codes: 0 allow, registered, ok or unchanged, and the end of `mcp`'s input; 1 `doctor` found a problem, a usage
 error of `hook` (a failure the launcher maps, never a deny), or `mcp` could not write to the host or failed outside a
-request; 2 usage error of any other command, not a git repository, a malformed fingerprint, or a
-guard home whose launcher path `install` refuses on Windows; 3 arm refused; 10 CONFLICT, NO_MANIFEST, UNPLANNABLE,
+request; 2 usage error of any other command, not a git repository, a malformed fingerprint, an `override` without
+`--fingerprint` that carries `--approval` or finds no live denial or several (Override without a fingerprint (version
+1.1.2), The command, steps 2 and 3), or a guard home whose launcher path `install` refuses on Windows; 3 arm refused; 10 CONFLICT, NO_MANIFEST, UNPLANNABLE,
 UNPARSEABLE, PROTECTED or BRANCH_PROTECTED (the verdict codes of the hook, which denies with JSON, never with an exit
 code); 11 UNKNOWN (also any engine exception, an exhausted budget, a claim in a newer format, a set
 record or a protection record that cannot be read or a failed install: plan and check fail closed); 12 INVALID_MANIFEST
@@ -1957,8 +1960,8 @@ exit 16 `NO_MERGE_BASE` at `integrated` (`set_blocked` with the operation `set-u
 ## Approval (version 1.0.7)
 
 The user-only subcommands (`override`, `arm`, `disarm`, `install`, `protect`) run only when the user approves them. The user
-approves a run in one of two ways. In a real terminal: the console gate, and for `override` the retyped fingerprint, on
-every host and at every level. Or, in Claude Code, by a click in Claude Code's own permission dialog: the host hook
+approves a run in one of two ways. In a real terminal: the console gate, and for `override` the confirmation that shows
+its denial (Override without a fingerprint (version 1.1.2)), on every host and at every level. Or, in Claude Code, by a click in Claude Code's own permission dialog: the host hook
 opens it for exactly one direct invocation of this guard, and the host then runs a command that carries a one-time
 approval token. In Codex the user approves by a click in Codex's own dialog through the MCP approval server, and the
 Codex hook names that route when it denies (Codex approval (version 1.0.8)). In Hermes the MAGOS Hermes plugin hands the
@@ -1994,8 +1997,8 @@ entry under `hooks:` denies every user-only command with the `protected` text.
 
 The Claude Code hook (`hook claude pre-tool`) takes the approval path only for a command in which the tamper filter
 finds a user-only subcommand (scope `always`, reason `override / arm / disarm / install / protect are user-only`). It denies with
-the `protected_shape` text, which ends with one cause code on a line of its own, every such command that is not all of
-the following:
+the `protected_shape` text, which ends with one cause code on a line of its own (followed, for `APPROVAL_FINGERPRINT`, by
+the `approval_fingerprint` sentence), every such command that is not all of the following:
 
 1. A call of the `Bash` or `PowerShell` tool (`APPROVAL_TOOL` otherwise: `Monitor`, MCP tools and every tool whose
    shell the hook cannot name).
@@ -2039,7 +2042,9 @@ carries the payload's `tool_use_id`, and holds the SHA-256 of exactly this comma
 so a host that runs its hooks again on the rewritten input runs it. When such a record (not yet consumed, same
 `tool_use_id`, same SHA-256) has expired, the hook denies with the `approval_expired` text: the click came too late,
 nothing runs, and the record stays for the command or a prune. At level `terminal` the hook denies with the
-`protected_level` text.
+`protected_level` text. After the level, an `override` without `--fingerprint` is denied with the `protected_shape` text, the
+cause `APPROVAL_FINGERPRINT` and the `approval_fingerprint` sentence (Override without a fingerprint (version 1.1.2), The
+routes of Claude Code and Hermes).
 
 ### The answer
 
@@ -2071,7 +2076,8 @@ nothing runs, and the record stays for the command or a prune. At level `termina
     guard), the destination `<home>/guard`, and with `--allow-downgrade` that it replaces a newer guard copy.
   - `override`: also the fingerprint, the lane its denial record names (the lane the click lets through) with its
     target (`-` when the record names none), the conflicting branches of that record (or that the lane and the branches
-    are not recorded here), and the reason, marked as written by the agent.
+    are not recorded here), and the reason, marked as written by the agent; when the MCP approval server filled the
+    fingerprint in, the sentence `approval_fp_auto` says so.
   - An `ask` says that the command carries a one-time token valid for 120 s; an `allow` says that the subcommand runs
     without a click under `auto-safe`.
 - Every value an agent can choose is shown as a JSON string: the reason, the fingerprint, the lane, the target, branch
@@ -2125,8 +2131,10 @@ nothing runs, and the record stays for the command or a prune. At level `termina
 ### Verification in the command
 
 - `override`, `arm`, `disarm`, `install` and `protect` take `--approval <token>`, hidden from their help.
-- The refusals that come before the console gate stay first: not a repository, a malformed fingerprint, `arm`'s
-  refusal with exit 3, the guard home `install` refuses on Windows.
+- The refusals that come before the console gate stay first: not a repository, a malformed fingerprint, an `override`
+  without `--fingerprint` that carries `--approval` or finds no live denial or several (exit 2; Override without a
+  fingerprint (version 1.1.2), The command, steps 2 and 3), `arm`'s refusal with exit 3, the guard home `install` refuses
+  on Windows.
 - Then, with `--approval`, the command verifies and consumes the token, and asks neither the console nor the
   challenge. A `--dry-run` with `--approval` consumes its token as well. Without `--approval`, the console gate and
   `override`'s challenge run as Public Contract states, and `--dry-run` skips them.
@@ -2177,10 +2185,12 @@ a reason typed in a terminal, `agent` for one that came through the dialog. The 
 ### Denial records
 
 `plan` (when it would write and denies with a conflict) and the host hook (when it denies a creation with a conflict)
-keep `<store>/denials/<fingerprint>.json`: `{"v": 1, "fp", "lane", "branches", "target", "at", "expires"}`.
+keep `<store>/denials/<fingerprint>.json`: `{"v": 1, "fp", "lane", "branches", "target", "entries", "at", "expires"}`;
+`entries` is the manifest the denial judged (the entries `plan` was given, or those of the claim whose creation the hook
+denied).
 `branches` holds the conflicting branches of the verdict (`(detached) <worktrees>` for a detached one); `at` and
-`expires` are seconds since the epoch. A record is valid for one hour, like an override record, and only the override
-dialog reads it. `check` writes none, and a failure
+`expires` are seconds since the epoch. A record is valid for one hour, like an override record. The override dialog, the confirmation of the `override` command and the
+fill-in of a missing fingerprint read it; `note_denial`, `override`, `plan`, `set-plan`, `release`, `set-release` and an allowed creation of the host hook retire it (Override without a fingerprint (version 1.1.2), Live denials). `check` writes none, and a failure
 to write one changes no verdict and no message.
 
 ### Tamper filter
@@ -2354,7 +2364,8 @@ works without that hook.
   - `subcommand`: `override`, `arm`, `disarm`, `install` or `protect`;
   - `repo`: the absolute path of the repository, required for `override`, `arm`, `disarm` and `protect`; for `install`
     it names the repository whose `magos.approval` applies, and without it the level is `prompt`;
-  - `fingerprint` and `reason` (`override`): the 12 lowercase hex digits a denial prints, and the user's words;
+  - `fingerprint` and `reason` (`override`): the 12 lowercase hex digits a denial prints (optional: left out, the server
+    takes the only live denial of the repository), and the user's words;
     `reason` (`protect`, optional): the reason the protection record and the audit line keep;
   - `host` (`install`): `claude`, `codex` or `hermes`;
   - `branch` (`protect`, required) and `release` (`protect`): the branch name, and a boolean that lifts the protection
@@ -2416,7 +2427,8 @@ works without that hook.
    drive spelling is mapped), a `/`-rooted path elsewhere, never relative, drive-relative or starting with `~`; it is
    normalised and written with `/` on Windows only (on POSIX a backslash is a character of a file name and stays, as for
    the guard home), and the directory tested is the one written; for `override`, `arm`, `disarm` and `protect` it lies
-   in a Git repository. `fingerprint` is 12 lowercase hex digits, the `reason` of `override`
+   in a Git repository. `fingerprint` is 12 lowercase hex digits (for `override` it may be absent: once the other arguments and the repository are checked, the server
+   resolves it, Override without a fingerprint (version 1.1.2), and a failure is one of the errors of the text), the `reason` of `override`
    holds a character that is not blank (that of `protect` may be empty), `host` is a host name, `branch` is a string
    (`protect` requires it; the command judges the name), and `dry_run` and `release` are booleans. The text lists every error, and
    nothing runs.
@@ -2602,7 +2614,8 @@ Claude Code and Codex.
 ### Recognition
 
 The Hermes hook takes the click route only with `--hermes-gate` and only for a command in which the tamper filter finds a
-user-only subcommand. It denies with the `protected_shape_hermes` text, whose last line is one cause code, every such
+user-only subcommand. It denies with the `protected_shape_hermes` text, whose last line is one cause code (followed, for
+`APPROVAL_FINGERPRINT`, by the `approval_fingerprint` sentence), every such
 command that does not meet Recognition 1 to 7 of Approval (version 1.0.7) read with these differences:
 
 1. The call is of the `terminal` tool, in the foreground and without a pseudo-terminal: `background` and `pty` absent
@@ -2619,7 +2632,8 @@ command that does not meet Recognition 1 to 7 of Approval (version 1.0.7) read w
 3. A command that names `--approval` is denied with the `approval_given_hermes` text. Hermes runs its hooks once per call,
    so no rewritten command comes back to the hook.
 4. The level is that of the repository `--repo` or `workdir` names; `install` without either has level `prompt`.
-   `terminal` denies with the `protected_level` text.
+   `terminal` denies with the `protected_level` text. After the level, an `override` without `--fingerprint` is denied with
+   the `protected_shape_hermes` text, the cause `APPROVAL_FINGERPRINT` and the `approval_fingerprint` sentence.
 5. Under `prompt`, and under `auto-safe` for every subcommand it does not allow, the hook asks only when Hermes would ask
    a human. It denies with the `protected_hermes_noask` text, which names the reason, when `--hermes-gate` is `bypass` or
    `absent`, when `HERMES_YOLO_MODE` is `1`, `true`, `yes` or `on` (any case) in its environment, when `approvals.mode`
@@ -3334,6 +3348,136 @@ PROTECT_NEWER_FORMAT; 30 PROTECT_LIMIT. `protect-show`: 0; 2; 11; 29.
   refspecs, `config` for `rebase.updateRefs` when a rebase is judged, and one read of the record and of a head-name
   file, all on the hook's 18 s budget; the current-branch walk checks the same deadline.
 
+## Override without a fingerprint (version 1.1.2)
+
+A denial of the creation check prints a 12-hex fingerprint, and `override` needs it. The guard fills it in when the
+repository has exactly one live denial: the MCP approval server of Codex when the call names none, and the command
+`override` in a real terminal. In a terminal the console shows what the denial lets through and the user confirms it
+with `y` instead of typing 12 digits again. The approval itself is the one of Approval (version 1.0.7) and Codex approval
+(version 1.0.8): the click of Codex's dialog, or the real console, is the only thing that lets an override run, and every
+route shows the user which denial it approves.
+
+### Live denials
+
+`live_denials(g)` lists the live denial records of a repository: the files of `<store>/denials` named `<12 hex digits>.json`
+that `denial_record` accepts (the `fp` equals the name, a string `lane`, a list `branches`, an `expires` in the future).
+A file that cannot be read or decoded (also one nested too deeply for the JSON reader), that holds another fingerprint,
+that has expired or that was removed while the directory was listed is skipped. The newest 200 files (by modification
+time) are looked at and the first 20 valid records kept; the list is ordered newest first by `at` (an `at` that is no
+finite number counts 0), then by fingerprint. `resolve_fingerprint(g)` is its answer for one repository, a pair:
+`("one", record)` for the only live denial (the record as `live_denials` read it, with its `fp`), `("none", None)` when
+there is none, `("many", records)` when there are several. The record that resolves a missing fingerprint is the one
+every later step shows: nothing reads it again. `denial_list(records, lang)` shows at most six of them, one `denial_line`
+each (the lane and the target as `_dialog` shows them, cut to 60 characters; the age in whole minutes, `?` for a record
+without a finite `at`), and then `show_more`. A count of denials, and the count of `show_more` after a list that
+`live_denials` cut, ends in `+` when `live_denials` returns its maximum of 20 records (`20+`, `+14+ more`).
+
+The records of the creation check are written by `plan` in write mode and by the host hook (`note_denial`) and expire after
+one hour. A record is retired as soon as its lane no longer waits for an answer. A record waits for the manifest it judged
+(`entries`, compared in the manifest parser's normal form, so `src/b.py`, `./src/b.py` and `src\b.py` are one entry), so a
+step that proves only the lane's registered manifest retires only the records of that manifest (a record without
+`entries` counts as one of it):
+
+- `note_denial` removes the older records of the same lane and manifest before it writes the new one;
+- `override` removes the record of the fingerprint it recorded;
+- `plan` in write mode that registers the claim of a lane, or amends it to another manifest, removes every record of that
+  lane, and the record of the fingerprint of an override it consumed; a `plan` whose manifest is the registered one (also
+  one that consumes an override, or an amend that only spells the manifest otherwise) removes the records of that
+  manifest and the record of the override's fingerprint;
+- the host hook removes the records of the registered manifest of a lane whose creation it allows (a denied
+  `plan --amend` of the lane keeps its record);
+- `set-plan` (also `--amend`) that writes the set removes every record of each lane and of the integration branch it
+  registers and of each lane whose claim it removes; an unchanged `set-plan --amend` removes the records of each lane's
+  manifest;
+- `release` and `set-release` remove every record of the lanes they release.
+
+The caller's manifest is brought to the normal form once per removal; an entry of a record that the caller's manifest
+holds as written is not parsed again, and a record of the lane is set aside at its first entry the manifest does not
+hold. Each removal is best effort: a record that cannot be read or removed stays until it
+expires. A denial that names no
+conflicting branch has no record and cannot be filled in; its fingerprint has to be given.
+
+### The command
+
+`override --reason R` has `--fingerprint` optional. Steps, the first that fails ends the call:
+
+1. Not a repository: exit 2.
+2. No `--fingerprint` and an `--approval` token: exit 2 (`override_token_needs_fp`). A token belongs to a command that names the
+   fingerprint: the MCP approval server resolves it before it builds the command, and the routes of Claude Code and Hermes
+   refuse an override without `--fingerprint` (The routes of Claude Code and Hermes).
+3. No `--fingerprint`: `resolve_fingerprint`. None: exit 2 with `override_no_denial`. Several: exit 2 with
+   `override_many_denials`, which counts the denials, lists at most six with `denial_list` and asks for `--fingerprint`.
+   One: its record and its fingerprint are used.
+4. A malformed fingerprint: exit 2.
+5. The gate. With `--approval` the token is verified and consumed (exit 25 to 28 when it does not verify). Without it the
+   console gate asks for a real console (exit 17 otherwise), and then the confirmation, which depends on the denial
+   record: the record step 3 resolved, or for a given `--fingerprint` the live record `denial_record` reads.
+   - A record: the console shows `override_confirm` (the fingerprint; the lane and the target the override lets through;
+     the conflicting branches, at most six, then `+<n> more` in the language of the request; the reason) with each value
+     as `_dialog` shows it: NFKC; every control, format, surrogate, line and paragraph separator character and every
+     quotation mark but the ASCII `"` replaced by a space; runs of blanks made one; JSON-quoted; cut to 80 characters,
+     the reason to 160. It reads one line: `y` or `yes` in any case, or the fingerprint itself, confirms; any other line,
+     or no line within 120 seconds (the process ends), is exit 17.
+   - No record (a given fingerprint whose record expired, was superseded or was never written): the user retypes the
+     fingerprint (`Type <fp> to confirm`); a wrong retype, or no line within 120 seconds, is exit 17.
+6. The one-shot record, the audit line and the output are those of `override` in Approval (version 1.0.7); the output is the
+   `overridden` text, and the record of the denial is removed.
+
+### The approval server
+
+`magos_approve` takes `fingerprint` as optional for `override`: its schema requires only `subcommand`, and the
+description of `fingerprint` says that the tool takes the only live denial when it is left out. Without it,
+`mcp_validate` checks the other arguments and the repository and then calls `resolve_fingerprint`: the only live denial
+gives its fingerprint and its record (kept as `ns.denial`), and the call goes on as if the agent had named it, with the
+sentence `approval_fp_auto` in the dialog text, the lane, target and branches of that record, and the fingerprint in the
+ready command. None or several is an error of the call (`fingerprint: no live denial in this repository (a denial record
+lives one hour): run the denied command again, or give the fingerprint a denial printed`, and `fingerprint: N live
+denials (<list>): give the fingerprint of the one the user means`, with N counted as above and the list naming at most six,
+lane and target cut to 40 characters), and nothing runs and no dialog opens. The snapshot of the call (Codex approval,
+The tool call 3) holds the resolved fingerprint, so a denial that appears after the dialog opened changes nothing. A
+fingerprint the agent gives is used as before: the dialog reads its record with `denial_record` and has no
+`approval_fp_auto`.
+
+### The routes of Claude Code and Hermes
+
+Their approval binds a token to the command words the agent wrote, and a command without a fingerprint would resolve to
+whatever denial is live when it runs. They therefore do not mint a token for an `override` without `--fingerprint`: after
+the level check (a repository at `magos.approval` `terminal` keeps its own text), the route answers the cause
+`APPROVAL_FINGERPRINT`: the usual shape text, the cause code on its own line, then the `approval_fingerprint` sentence.
+The Codex hook maps `override --reason R` (with or without `--repo`) onto `magos_approve` arguments without a fingerprint
+(`mcp_arguments`; the tool resolves it when it is called), and with one onto arguments that carry it.
+
+### Texts
+
+| Key | zh | en |
+| --- | --- | --- |
+| `override_confirm` | 覆盖拒绝 {fp}：\n  车道：{lane}\n  目标：{target}\n  冲突的分支：{branches}\n  理由：{reason}\n确认覆盖请输入 y（或指纹）后回车（其他任何输入都不覆盖）： | Override denial {fp}:\n  lane: {lane}\n  target: {target}\n  conflicting branches: {branches}\n  reason: {reason}\nType y (or the fingerprint) and Enter to confirm (anything else overrides nothing): |
+| `override_no_denial` | MAGOS：本仓库没有未过期的拒绝记录（记录保留一小时）：请重新执行被拒绝的命令，或给出拒绝信息里的 --fingerprint。 | MAGOS: this repository has no live denial (a denial record lives one hour): run the denied command again, or give the --fingerprint a denial printed. |
+| `override_many_denials` | MAGOS：本仓库有 {n} 条未过期的拒绝记录，请用 --fingerprint 指定要覆盖的那一条：\n{list} | MAGOS: this repository has {n} live denials; name the one to override with --fingerprint:\n{list} |
+| `override_token_needs_fp` | MAGOS：带 --approval 的 override 必须同时给出 --fingerprint。 | MAGOS: override with --approval must also name its --fingerprint. |
+| `denial_line` | {fp}　车道 {lane}　目标 {target}　{age} 分钟前 | {fp}  lane {lane}  target {target}  {age} min ago |
+| `approval_fp_auto` | 指纹 {fp} 由守卫自动填入：它是本仓库唯一未过期的拒绝记录；批准前请核对上面写的 lane 和分支。 | The fingerprint {fp} was filled in by the guard: it is the only live denial of this repository. Check the lane and the branches named above before you approve. |
+| `approval_fingerprint` | 没有 --fingerprint 的 override 在这里不能批准：守卫无法在对话框里告诉你它会放行哪一次拒绝。请在命令里写上拒绝信息给出的 --fingerprint；在 Codex 中，magos_approve 不带指纹也可以。 | An override without --fingerprint cannot be approved here: the dialog could not tell the user which denial it lets through. Write the --fingerprint the denial printed in the command; in Codex magos_approve also works without it. |
+
+`overridden` ends with the instruction to run `plan` for the lane again and then create it (zh: 请立即为该 lane 重新执行 plan（覆盖只通过 plan 生效），然后再创建它。
+en: Run plan for the lane again now (the override takes effect only through it), then create it.). The Options text of a denial names
+`magos_approve` with `subcommand` `override`, the repository and the reason, says that the tool fills in the fingerprint when
+the repository has exactly one live denial record (`check` writes none) and asks for the printed fingerprint otherwise.
+
+### Limits
+
+- A denial that names no conflicting branch has no record (`note_denial` writes none), and `check` writes none, so such a
+  denial needs its fingerprint; a record of another lane can be the only live one, and then the dialog and the console
+  show that lane, which the user declines.
+- The record of a denial lives one hour. Only the fill-in and the confirmation by `y` need a live record: an older denial
+  is overridden with its fingerprint, retyped at the console or given to `magos_approve`.
+- The confirmation `y` is as strong as the retyped fingerprint: both are typed on a real console (Public Contract, Console
+  gate). The prompt goes to the standard error, which is not tested for being a console.
+- A denial record lives in the store, so an agent that can write the store can forge it like the store's other records
+  (Codex approval (version 1.0.8), Limits); the console and the dialog show such a record as it stands, sanitised.
+- The MCP route is as strong as Codex's dialog: under Codex's approval policy `never` Codex declines the form itself, and
+  then the terminal remains.
+
 ## Change Notes
 
 Version 1.0.2 is a security release of the guard. Relative to the 1.0.1 product it:
@@ -3591,6 +3735,16 @@ really enters; it makes no Git call that 1.0.9 did not make for a write command 
 Version 1.1.1 of the guard (`GUARD_VERSION` 1.1.1) behaves as 1.1.0: its verdicts, texts, records and commands are those
 of 1.1.0. The release runs the Linux legs of the test workflow on `ubuntu-24.04`, the last Ubuntu image with a Python
 3.9 build, so the minimum Python is tested on Linux as well as on Windows.
+
+Version 1.1.2 of the guard (`GUARD_VERSION` 1.1.2) overrides a denial without a fingerprint (Override without a
+fingerprint (version 1.1.2)): the MCP approval server of Codex and the command `override` in a real terminal take the
+only live denial record of the repository; the console confirms a denial whose record is live with `y` or the
+fingerprint; the routes of Claude Code and Hermes refuse an `override` without `--fingerprint` (`APPROVAL_FINGERPRINT`);
+`note_denial`, `override`, `plan`, `set-plan`, `release`, `set-release` and the host hook retire the denial records whose
+lane no longer waits for an answer, each record carrying the manifest it judged; the readers of the denial, override
+and approval stores take a record too deeply nested to decode as unreadable; the texts
+`options` and `overridden` name the route and the re-plan. Every verdict of the creation check and of branch
+protection, every other text and every other record and command are those of 1.1.1.
 
 Compatibility: claim files of format 1 written by 1.0.0 to 1.0.3 are read unchanged, and line 1 of every claim stays
 `state=active`, so the git layer reads old and new claims alike; a claim stored under a name the Windows alias rule
