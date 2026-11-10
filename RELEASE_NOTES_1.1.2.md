@@ -11,7 +11,7 @@ A feature release for the override of a denial: nobody has to copy or retype its
 - **Codex**: `magos_approve` takes `override` without a fingerprint when there is exactly one live denial; the dialog names the denial it lets through.
 - **Terminal**: `override --reason ...` needs no `--fingerprint`; a `y` (or, as before, the fingerprint) confirms while the denial record is live.
 - **Claude Code and Hermes**: an `override` without `--fingerprint` is refused (the approval binds the command words).
-- **Records**: a denial whose lane no longer waits (answered, re-planned, released, or now creatable) is retired; a damaged record breaks nothing.
+- **Records**: a denial whose lane no longer waits (answered, re-planned, released, or now creatable) is retired; a damaged denial, override or approval record breaks nothing.
 
 ## Known limits
 

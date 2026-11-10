@@ -15,7 +15,7 @@ Tag `v1.1.2`. A feature release for the override of a denial: nobody has to copy
 ### Changed
 
 - **Claude Code and Hermes** refuse an `override` without `--fingerprint` (their approval binds the words of the command, so the denial has to be named in it); a repository at `magos.approval` `terminal` reports its level first.
-- **Denial records** are retired when their lane no longer waits for an answer: a new denial of a lane replaces the older ones, an override removes the record it answered, and `plan`, `set-plan`, `release` and an allowed creation remove the records of their lane. A damaged record (a time that is no finite number, JSON nested too deeply to read, a file that vanishes while it is listed) no longer breaks the reading.
+- **Denial records** are retired when their lane no longer waits for an answer: a new denial of a lane replaces the older one of the same manifest, an override removes the record it answered, `plan`, `set-plan`, `release` and `set-release` remove the records of the lanes they register, change or release, and an allowed creation removes those of the lane's registered manifest (a denied `plan --amend` keeps its own). A damaged record (a time that is no finite number, JSON nested too deeply to read, a file that vanishes while it is listed) no longer breaks the reading, and an override or approval record nested too deeply counts as unreadable instead of ending the command with an internal error.
 - The text printed after an override tells the agent to run `plan` for the lane again and then create it.
 
 ### Known limits

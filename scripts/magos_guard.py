@@ -4774,7 +4774,7 @@ def read_override(g, fp):
     try:
         doc = json.loads(_read_retry(os.path.join(store(g), "override", fp + ".json")))
         return doc if doc.get("fp") == fp and doc.get("expires", "") > now_iso() else None
-    except (OSError, ValueError):
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError, MemoryError):  # an unreadable record counts as none
         return None
 
 
@@ -4931,7 +4931,7 @@ def plan_core(g, name, entries, write, amend, lang, target_arg=None, worktree=""
             if v["decision"] == "deny":
                 return v
             if v["unchanged"] and not v["overridden"]:
-                drop_denials(g, lane=name)  # the lane is planned as it was: its denial records no longer wait for an answer
+                drop_denials(g, lane=name, entries=[e.raw for e in entries])  # the lane is planned as it was: the records of this manifest have their answer
                 return v
             old = claims.get(fold(name))
             owner = branch_set(g, name, old) if old else None
@@ -5012,7 +5012,7 @@ def cmd_plan(args, write):
         return finish(args, deny("INVALID_MANIFEST", message=T(args.lang, "invalid", errors="\n".join("  [%s] %s" % e for e in errors))), args.branch)
     v = plan_core(g, args.branch, entries, write, getattr(args, "amend", False), args.lang, getattr(args, "target", None), getattr(args, "worktree", ""))
     if write and v.get("decision") == "deny":  # the override dialog names the branches of this denial (check writes nothing)
-        note_denial(g, args.branch, v)
+        note_denial(g, args.branch, v, [e.raw for e in entries])
     path = v.pop("worktree", "") or "<path>"  # the worktree the claim registers, no key of the --json verdict
     if v["decision"] == "allow" and "message" not in v:
         v["message"] = "\n".join([T(args.lang, "ok_plan", b=args.branch, n=len(entries), example='git worktree add "%s" -b %s %s' % (path, args.branch, v["target"]["name"]))
@@ -5226,7 +5226,7 @@ def consume_approval(args, root, where):
         if not (isinstance(rec, dict) and rec.get("v") == 1 and rec.get("used") is False and rec.get("via") in ("prompt", "auto-safe")):
             raise ValueError("not an approval record of format 1")
         expires = _record_expiry(rec)
-    except (OSError, ValueError, TypeError, KeyError):
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, MemoryError):
         return refuse("APPROVAL_UNKNOWN", "approval_unknown")
     if time.time() > expires:
         return refuse("APPROVAL_EXPIRED", "approval_expired")
@@ -6589,7 +6589,7 @@ def plan_set(g, args, mdl):
         file_writes.append((path, data, _file_bytes(path)))
         written.append(path)
     wanted = {fold(w["branch"]) for w in wants}
-    deletes = []
+    deletes, gone = [], []
     for key, doc in own_claims.items():
         if key not in wanted:
             real = in_store(os.path.join(store(g), "claims"), doc["file"])
@@ -6597,6 +6597,7 @@ def plan_set(g, args, mdl):
                 warns.append({"code": "CLAIM_NOT_REMOVED", "text": "the claim file %s lies outside the claim store and was left alone" % doc["file"]})
             else:
                 deletes.append((doc["file"], _file_bytes(doc["file"])))
+                gone.append(doc["branch"])
     unchanged = rec is not None and core(new) == core(rec) and not file_writes and not deletes
     revision = rec["revision"] if unchanged else (rec["revision"] + 1 if rec else 1)
     if not unchanged:
@@ -6610,9 +6611,12 @@ def plan_set(g, args, mdl):
                               requirements=[r["id"] for r in new["requirements"]], lanes=lanes_audit, integration=ib, host="cli",
                               **({"previous_revision": rec["revision"], "removed": removed} if rec else {}))
             commit_store(file_writes, deletes)
-            for want in wants:  # the set registers these claims: their denial records no longer wait for an answer
-                drop_denials(g, lane=want["branch"])
+            for branch in [w["branch"] for w in wants] + gone:  # the set registers or removes these claims: their denial records have their answer
+                drop_denials(g, lane=branch)
             audit_after(g, line, warns)
+    elif write:
+        for want in wants:  # an unchanged set: the records of each lane's registered manifest have their answer
+            drop_denials(g, lane=want["branch"], entries=want["entries"])
     lane_rows = [{"id": ln["id"], "title": ln["title"], "branch": ln["branch"], "worktree": ln["worktree"], "entries": ln["paths"], "depends_on": ln["depends_on"],
                   "serves": ln["serves"], "outcome": ln["outcome"], "acceptance": ln["acceptance"], "state": ln["state"],
                   "create": 'git worktree add "%s" -b %s %s' % (ln["worktree"], ln["branch"], new["target"])} for ln in new_lanes]
@@ -7241,6 +7245,8 @@ def release_set(g, args):
     line = audit_line(g, op="set-release", set=name, revision=rec["revision"], reason=args.reason, abandon=args.abandon, lanes=[x["id"] for x in rec["lanes"]],
                       claims=released, host="cli")
     commit_store([], deletes + [(record, _file_bytes(record))])  # the claims first, the record last: one transaction
+    for branch in released:  # a released lane waits for no override
+        drop_denials(g, lane=branch)
     audit_after(g, line, warns)
     lines = [T(lang, "set_released", s=name, n=len(released))] + ["(%s) %s" % (w["code"], w["text"]) for w in warns]
     return {"decision": "allow", "code": "OK", "set": name, "abandoned": args.abandon, "released": released, "warnings": warns, "message": "\n".join(lines)}
@@ -7625,6 +7631,12 @@ def lane_signal(g, cwd_top):
     return any(b != (here or {}).get("branch") for b in list_refs(g)[0])
 
 
+def _claim_entries(g, name):
+    """The entries the claim of `name` registers, or None when it has no readable claim."""
+    doc = read_claims(g)[0].get(fold(name))
+    return [str(e) for e in doc["entries"]] if doc else None
+
+
 def check_creation(g, name, cr, lang, mode):
     """-> None (allow) or a deny verdict for creating branch `name`."""
     claims, bad = read_claims(g)
@@ -7748,10 +7760,10 @@ def judge_creation(cr, default_cwd, lang, seen=None):
         except GitFail as err:
             v = deny("UNKNOWN", unknowns=[{"code": err.code, "text": str(err)}]) if mode == "armed" or cr["kind"] == "worktree" else None
         else:
-            if v is None:
-                drop_denials(g, lane=n)  # the creation is allowed: the lane's denial records no longer wait for an answer
+            if v is None:  # the creation is allowed: the records of the lane's registered manifest have their answer (a denied amend keeps its own)
+                drop_denials(g, lane=n, entries=_claim_entries(g, n))
         if v:
-            note_denial(g, n, v)  # the override dialog names the branches of this denial
+            note_denial(g, n, v, _claim_entries(g, n))  # the override dialog names the branches of this denial
             if v["code"] == "NO_MANIFEST" and (cr.get("redirect") or cr["verb"] == "push"):  # the creation is in another repository: the plan command names it
                 v["message"] = T(lang, "nomanifest", b=n) + "\n" + T(lang, "how_plan", cmd='%s --repo "%s"' % (guard_cmd(), repo_dir(g)), b=n)
             return v["code"], v.get("message") or render(lang, v, n)
@@ -8573,7 +8585,7 @@ def approval_reentry(payload, cwd):
                 rec.get("command_sha256") == hashlib.sha256(inv["text"].encode("utf-8")).hexdigest()):
             return None
         return "live" if _record_expiry(rec) >= time.time() else "expired"
-    except (OSError, ValueError, TypeError, KeyError):
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, MemoryError):
         return None
 
 
@@ -8684,18 +8696,20 @@ def prune_denials(root, now):
     _prune(root, now, _DENIAL_FILE, 0, DENIAL_S, False)
 
 
-def note_denial(g, lane, v):
+def note_denial(g, lane, v, entries=None):
     """Keep the branches a conflict denial names in <store>/denials/<fingerprint>.json for the override dialog, the console confirmation and the
     fill-in of a missing fingerprint, after it retired the older records of the same lane (plan in write mode, the host hook
-    for a creation); best effort, so a failure changes no verdict and no message."""
+    for a creation), with the manifest the denial judged (`entries`: the planned entries, or those of the claim whose creation was denied); best
+    effort, so a failure changes no verdict and no message."""
     fp, conflicts = v.get("fingerprint"), v.get("conflicts")
     if v.get("decision") != "deny" or not fp or not conflicts:
         return
     now = time.time()
     try:
-        drop_denials(g, lane=lane)  # a new denial of the lane supersedes the older ones: its fingerprint reflects the state now
+        drop_denials(g, lane=lane, entries=entries)  # a new denial of the lane and manifest supersedes the older ones: its fingerprint is the state now
         rec = {"v": 1, "fp": fp, "lane": lane, "branches": [c["branch"] or "(detached) " + ", ".join(c["worktrees"]) for c in conflicts],
-               "target": (v.get("target") or {}).get("name"), "at": now, "expires": now + DENIAL_S}
+               "target": (v.get("target") or {}).get("name"), "entries": None if entries is None else [str(e) for e in entries], "at": now,
+               "expires": now + DENIAL_S}
         write_atomic(os.path.join(store(g), "denials", fp + ".json"), json.dumps(rec, ensure_ascii=False).encode("utf-8"))
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError, MemoryError):
         pass
@@ -8756,14 +8770,28 @@ def live_denials(g):
     return sorted(out, key=lambda r: (-r["at"], r["fp"]))
 
 
-def drop_denials(g, fp=None, lane=None):
+def _same_manifest(rec, entries):
+    """Does the denial record `rec` wait for the manifest `entries`?  Every record does when `entries` is None, and a record without a list
+    `entries` waits for any manifest."""
+    have = rec.get("entries")
+    return entries is None or not isinstance(have, list) or sorted(str(e) for e in have) == sorted(entries)
+
+
+def drop_denials(g, fp=None, lane=None, entries=None):
     """Retire denial records that no longer wait for an answer (Override without a fingerprint, Live denials): the record of the fingerprint `fp`,
-    and every record of the lane `lane` (compared folded); best effort: a record that cannot be read or removed stays until it expires."""
+    and the records of the lane `lane` (compared folded) that wait for the manifest `entries` (every record of the lane when it is None); best
+    effort: a record that cannot be read or removed stays until it expires."""
     root = os.path.join(store(g), "denials")
     for n in _denial_files(root):
         try:
             path = os.path.join(root, n)
-            if n == (fp or "") + ".json" or (lane is not None and fold(str(json.loads(_read_retry(path)).get("lane"))) == fold(lane)):
+            if n == (fp or "") + ".json":
+                os.remove(path)
+                continue
+            if lane is None:
+                continue
+            rec = json.loads(_read_retry(path))
+            if fold(str(rec.get("lane"))) == fold(lane) and _same_manifest(rec, entries):
                 os.remove(path)
         except (OSError, ValueError, TypeError, AttributeError, RecursionError, MemoryError):
             pass
@@ -8797,10 +8825,12 @@ def resolve_fingerprint(g):
 
 
 def denial_list(records, lang):
-    """At most six live denials, one `denial_line` each, then show_more."""
+    """At most six live denials, one `denial_line` each, then show_more (its count a floor, `<n>+`, after a list live_denials cut at 20)."""
     now = time.time()
     lines = [_denial_line(r, lang, 60, now) for r in records[:6]]
-    return "\n".join("  " + x for x in lines) + (("\n  " + T(lang, "show_more", n=len(records) - 6)) if len(records) > 6 else "")
+    rest = len(records) - 6
+    more = T(lang, "show_more", n="%d+" % rest if len(records) >= 20 else rest)  # live_denials keeps 20: after a cut list the rest is a floor
+    return "\n".join("  " + x for x in lines) + ("\n  " + more if rest > 0 else "")
 
 
 # ---------------------------------------------------------------- Codex approval (1.0.8): the MCP approval server and the Codex hook's route

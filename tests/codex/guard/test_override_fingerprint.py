@@ -134,11 +134,12 @@ def test_the_count_of_many_denials_says_when_the_list_was_cut(repo, monkeypatch)
         denial(repo, "%012x" % (k + 100), age=k)
     r = run(["--repo", str(repo.path), "--lang", "en", "override", "--reason", "x"])
     assert r.rc == 2 and G.T("en", "override_many_denials", n="20+", list="").split("\n")[0] in r.err, r
+    assert G.T("en", "show_more", n="14+") in r.err, r  # 20 of the 25 were read: the rest is a floor
     clear_denials(repo)
     for k in range(3):
         denial(repo, FP[k])
     r = run(["--repo", str(repo.path), "--lang", "en", "override", "--reason", "x"])
-    assert G.T("en", "override_many_denials", n=3, list="").split("\n")[0] in r.err, r
+    assert G.T("en", "override_many_denials", n=3, list="").split("\n")[0] in r.err and "more" not in r.err, r
 
 
 def test_a_real_denial_goes_through_the_approval_server_without_a_fingerprint(repo, guard):
@@ -315,21 +316,42 @@ def test_a_denial_is_retired_wherever_its_lane_stops_waiting(repo, guard, tmp_pa
 
     def lanes():
         return sorted(r["lane"] for r in G.live_denials(g))
+
+    def create(branch, wt="../wl"):
+        return G.decide(_hook_body(repo, 'git worktree add "%s" -b %s' % (wt, branch)), "en", "claude")
+
+    def spec(ids):
+        doc = {"v": 1, "title": "Demo", "requirements": [{"id": "R1", "text": "the task is done"}], "base": repo.git("rev-parse", "main").strip(),
+               "sheet": "# Plan demo -> main  rev 1\n" + "".join("- [ ] %s\n" % i for i in ids), "notes": [], "shared": [], "lanes": []}
+        for i in ids:
+            doc["lanes"].append({"id": i, "title": "lane " + i, "branch": "agent/demo/" + i, "worktree": P(tmp_path / "wt" / ("wt-demo-" + i)),
+                                 "serves": ["R1"], "outcome": "o", "paths": ["src/%s/" % i], "depends_on": [], "acceptance": "it works"})
+        f = tmp_path / ("spec-%s.json" % "-".join(ids))
+        f.write_text(json.dumps(doc), encoding="utf-8")
+        return str(f)
+
+    def lane_wt(i):
+        return P(tmp_path / "wt" / ("wt-demo-" + i))
     denial(repo, FP[7], lane="agent/other")  # a live record of another lane stays through all of it
     # the host hook allows a creation it denied before
     assert guard(repo, "plan", "--branch", "agent/l", "--paths", "src/b.py").rc == 0
     repo.branch_with("agent/z", "src/b.py")
-    create = _hook_body(repo, "git worktree add ../wl -b agent/l")
-    v = G.decide(create, "en", "claude")
+    v = create("agent/l")
     assert v and v[0] == "CONFLICT" and lanes() == ["agent/l", "agent/other"], (v, lanes())
     repo.git("branch", "-D", "agent/z")
-    assert G.decide(create, "en", "claude") is None and lanes() == ["agent/other"]
+    assert create("agent/l") is None and lanes() == ["agent/other"]
     # an unchanged plan of the lane
     repo.branch_with("agent/z", "src/b.py")
-    assert G.decide(create, "en", "claude")[0] == "CONFLICT" and lanes() == ["agent/l", "agent/other"]
+    assert create("agent/l")[0] == "CONFLICT" and lanes() == ["agent/l", "agent/other"]
     repo.git("branch", "-D", "agent/z")
     r = guard(repo, "--json", "plan", "--branch", "agent/l", "--paths", "src/b.py")
     assert r.rc == 0 and json.loads(r.out)["unchanged"] is True and lanes() == ["agent/other"], r
+    # a denied amend waits for its wider manifest: the creation under the registered one leaves it
+    repo.branch_with("agent/w", "src/c.py")
+    assert guard(repo, "plan", "--amend", "--branch", "agent/l", "--paths", "src/b.py", "src/c.py").rc == 10 and lanes() == ["agent/l", "agent/other"]
+    assert create("agent/l") is None and lanes() == ["agent/l", "agent/other"]
+    repo.git("branch", "-D", "agent/w")
+    assert guard(repo, "plan", "--amend", "--branch", "agent/l", "--paths", "src/b.py", "src/c.py").rc == 0 and lanes() == ["agent/other"]
     # release of the lane
     G.note_denial(g, "agent/l", {"decision": "deny", "fingerprint": FP[6], "conflicts": [{"branch": "agent/b", "worktrees": []}], "target": {"name": "main"}})
     assert lanes() == ["agent/l", "agent/other"]
@@ -338,13 +360,24 @@ def test_a_denial_is_retired_wherever_its_lane_stops_waiting(repo, guard, tmp_pa
     # set-plan registers a lane that plan was denied
     repo.branch_with("agent/x", "src/a.py")
     assert guard(repo, "plan", "--branch", "agent/demo/api", "--paths", "src/a.py").rc == 10 and lanes() == ["agent/demo/api", "agent/other"]
-    spec = {"v": 1, "title": "Demo", "requirements": [{"id": "R1", "text": "the task is done"}], "base": repo.git("rev-parse", "main").strip(),
-            "sheet": "# Plan demo -> main  rev 1\n- [ ] api\n", "notes": [], "shared": [],
-            "lanes": [{"id": "api", "title": "lane api", "branch": "agent/demo/api", "worktree": P(tmp_path / "wt" / "wt-demo-api"), "serves": ["R1"],
-                       "outcome": "o", "paths": ["src/api/"], "depends_on": [], "acceptance": "it works"}]}
-    spec_file = tmp_path / "spec.json"
-    spec_file.write_text(json.dumps(spec), encoding="utf-8")
-    r = guard(repo, "set-plan", "--set", "demo", "--target", "main", "--spec", str(spec_file))
+    r = guard(repo, "set-plan", "--set", "demo", "--target", "main", "--spec", spec(["api", "web"]))
+    assert r.rc == 0 and lanes() == ["agent/other"], (r, lanes())
+    # an unchanged set-plan --amend after the conflict of a lane went away
+    repo.branch_with("agent/y", "src/api/y.py")
+    v = create("agent/demo/api", lane_wt("api"))
+    assert v and v[0] == "CONFLICT" and lanes() == ["agent/demo/api", "agent/other"], (v, lanes())
+    repo.git("branch", "-D", "agent/y")
+    r = guard(repo, "set-plan", "--set", "demo", "--target", "main", "--spec", spec(["api", "web"]), "--amend", "--expect-revision", "1")
+    assert r.rc == 0 and "unchanged" in r.out and lanes() == ["agent/other"], (r, lanes())
+    # an amend that removes a lane
+    repo.branch_with("agent/y", "src/web/y.py")
+    assert create("agent/demo/web", lane_wt("web"))[0] == "CONFLICT" and lanes() == ["agent/demo/web", "agent/other"]
+    r = guard(repo, "set-plan", "--set", "demo", "--target", "main", "--spec", spec(["api"]), "--amend", "--expect-revision", "1")
+    assert r.rc == 0 and lanes() == ["agent/other"], (r, lanes())
+    # set-release
+    repo.branch_with("agent/v", "src/api/v.py")
+    assert create("agent/demo/api", lane_wt("api"))[0] == "CONFLICT" and lanes() == ["agent/demo/api", "agent/other"]
+    r = guard(repo, "set-release", "--set", "demo", "--abandon", "--reason", "dropped")
     assert r.rc == 0 and lanes() == ["agent/other"], (r, lanes())
     assert G.resolve_fingerprint(g)[1]["fp"] == FP[7]
 
@@ -392,3 +425,24 @@ def test_the_resolved_record_is_the_one_shown(repo, hosts, monkeypatch):
     assert G.T("en", "approval_no_record") not in text, text
     h.answer(msg["id"], {"action": "cancel"})
     h.next()
+
+
+def test_override_and_approval_records_too_deep_to_read(repo, guard):
+    repo.branch_with("agent/x", "src/a.py")
+    r = guard(repo, "--json", "plan", "--branch", "agent/new", "--paths", "src/a.py")
+    fp = json.loads(r.out)["fingerprint"]
+    over_dir = common(repo) / "magos" / "override"
+    over_dir.mkdir(parents=True, exist_ok=True)
+    (over_dir / (fp + ".json")).write_text("[" * 200000, encoding="utf-8")
+    (common(repo) / "magos" / "denials" / (fp + ".json")).unlink()
+    r = guard(repo, "--json", "plan", "--branch", "agent/new", "--paths", "src/a.py")
+    assert r.rc == 10 and json.loads(r.out)["fingerprint"] == fp, r  # the override record counts as none
+    assert (common(repo) / "magos" / "denials" / (fp + ".json")).exists()
+    (over_dir / (fp + ".json")).write_text("[1, 2]", encoding="utf-8")  # a record that is no object counts as none as well
+    assert guard(repo, "plan", "--branch", "agent/new", "--paths", "src/a.py").rc == 10
+    token = "A" * 43
+    root = approvals(repo)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / (G.hashlib.sha256(token.encode("ascii")).hexdigest() + ".json")).write_text("[" * 200000, encoding="utf-8")
+    r = run(["--repo", str(repo.path), "--lang", "en", "arm", "--approval=" + token])
+    assert r.rc == G.EXIT["APPROVAL_UNKNOWN"] and "internal error" not in r.err, r
