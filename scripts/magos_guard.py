@@ -8787,15 +8787,17 @@ def _manifest_key(entries):
     return frozenset(_entry_key(raw) for raw in entries)
 
 
-def _same_manifest(rec, key):
+def _same_manifest(rec, key, known=None):
     """Does the denial record `rec` wait for the manifest whose normal form is `key`?  Every record does when `key` is None, and a record
-    without a list `entries` waits for any manifest; the record is set aside at its first entry that `key` does not hold."""
+    without a list `entries` waits for any manifest; `known` maps the caller's entries as written to their keys, so they are not parsed
+    again, and the record is set aside at its first entry that `key` does not hold."""
     have = rec.get("entries")
     if key is None or not isinstance(have, list):
         return True
+    known = known or {}
     seen = set()
     for raw in have:
-        k = _entry_key(raw)
+        k = known[raw] if isinstance(raw, str) and raw in known else _entry_key(raw)
         if k not in key:
             return False
         seen.add(k)
@@ -8807,7 +8809,8 @@ def drop_denials(g, fp=None, lane=None, entries=None):
     and the records of the lane `lane` (compared folded) that wait for the manifest `entries` (every record of the lane when it is None); best
     effort: a record that cannot be read or removed stays until it expires."""
     root = os.path.join(store(g), "denials")
-    key = None if entries is None else _manifest_key(entries)  # the caller's manifest, brought to the normal form once
+    known = None if entries is None else {str(raw): _entry_key(raw) for raw in entries}  # the caller's manifest, brought to the normal form once
+    key = None if known is None else frozenset(known.values())
     for n in _denial_files(root):
         try:
             path = os.path.join(root, n)
@@ -8817,7 +8820,7 @@ def drop_denials(g, fp=None, lane=None, entries=None):
             if lane is None:
                 continue
             rec = json.loads(_read_retry(path))
-            if fold(str(rec.get("lane"))) == fold(lane) and _same_manifest(rec, key):
+            if fold(str(rec.get("lane"))) == fold(lane) and _same_manifest(rec, key, known):
                 os.remove(path)
         except (OSError, ValueError, TypeError, AttributeError, RecursionError, MemoryError):
             pass

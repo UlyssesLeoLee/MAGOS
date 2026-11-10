@@ -1,4 +1,4 @@
-"""Override without a fingerprint (TC-830 to TC-838): the live denials of a repository, `override` that takes the only one in a real terminal
+"""Override without a fingerprint (TC-830 to TC-843): the live denials of a repository, `override` that takes the only one in a real terminal
 and asks for a y instead of the retyped fingerprint, the MCP approval server that fills the fingerprint in, the routes of Claude Code and
 Hermes that do not, and the texts."""
 from __future__ import annotations
@@ -467,3 +467,21 @@ def test_override_and_approval_records_too_deep_to_read(repo, guard):
     (root / (G.hashlib.sha256(token.encode("ascii")).hexdigest() + ".json")).write_text("[" * 200000, encoding="utf-8")
     r = run(["--repo", str(repo.path), "--lang", "en", "arm", "--approval=" + token])
     assert r.rc == G.EXIT["APPROVAL_UNKNOWN"] and "internal error" not in r.err, r
+
+
+def test_a_record_that_repeats_the_manifest_is_not_parsed_again(repo, monkeypatch):
+    g = G.open_repo(str(repo.path))
+    manifest = ["src/m%02d.py" % k for k in range(20)]
+    deny = {"decision": "deny", "conflicts": [{"branch": "agent/q", "worktrees": []}], "target": {"name": "main"}}
+    for k in range(10):
+        denial(repo, "%012x" % (k + 900), lane="agent/m", entries=manifest + ["src/extra%02d.py" % k])
+    assert len(G.live_denials(g)) == 10
+    calls = []
+    real = G.parse_entry
+    monkeypatch.setattr(G, "parse_entry", lambda raw: calls.append(raw) or real(raw))
+    G.drop_denials(g, lane="agent/m", entries=manifest)
+    assert len(calls) == 20 + 10 and len(G.live_denials(g)) == 10, (len(calls), len(G.live_denials(g)))
+    monkeypatch.setattr(G, "parse_entry", real)
+    G.note_denial(g, "agent/m", dict(deny, fingerprint="%012x" % 950), manifest)
+    G.drop_denials(g, lane="agent/m", entries=list(reversed(manifest)))
+    assert len(G.live_denials(g)) == 10  # the record of the registered manifest is retired, the wider ones stay
