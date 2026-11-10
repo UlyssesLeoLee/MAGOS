@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "source": "scripts/magos_guard.py",
-  "baseline_source_sha256": "cedecb4ba645cac7bbd1fb48b9e16e04eb0a93e737ae8cbe2f97dbf201620c0d",
+  "baseline_source_sha256": "8211b312a82aa395c7f974b237fe6a20ad19597431cf6fe0305b629fac8fd5b9",
   "prepared_branch": "agent/codex-unlock",
   "technical_design": ".quality/docs/scripts/magos_guard.py.md",
   "test_design": ".quality/test-design/scripts/magos_guard.py.test.md",
-  "prepared_technical_design_sha256": "896df6f6b95cdcee4c40d734988b6830e7981ac9f5c3806ced32eb141c9715a3",
-  "prepared_test_design_sha256": "88d4ed03af83d33077c1132865e2b1abf1b7d30ba2ff6ec58be95390090c8451",
+  "prepared_technical_design_sha256": "30f20f1c1a561d53fd0f2c8b403d42e01ad2e7a41aadd12fecebd9ce45120dec",
+  "prepared_test_design_sha256": "e26fcf1b686beead4fca8db8d49154bc3939fb315f928d3f1de358fe0b4ef083",
   "prepared_related_design_sha256": {}
 }
