@@ -3391,8 +3391,9 @@ step that proves only the lane's registered manifest retires only the records of
   manifest;
 - `release` and `set-release` remove every record of the lanes they release.
 
-The caller's manifest is brought to the normal form once per removal, and a record of the lane is set aside at its first
-entry the manifest does not hold. Each removal is best effort: a record that cannot be read or removed stays until it
+The caller's manifest is brought to the normal form once per removal; an entry of a record that the caller's manifest
+holds as written is not parsed again, and a record of the lane is set aside at its first entry the manifest does not
+hold. Each removal is best effort: a record that cannot be read or removed stays until it
 expires. A denial that names no
 conflicting branch has no record and cannot be filled in; its fingerprint has to be given.
 
