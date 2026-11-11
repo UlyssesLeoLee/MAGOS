@@ -24,7 +24,9 @@ from test_hook import denied, hook
 from test_plan_store import claims_dir, verdict
 
 LAUNCHER = ROOT / "hooks" / "run-guard.cmd"
+POSIX_LAUNCHER = ROOT / "hooks" / "run-guard"
 WIN = sys.platform == "win32"
+OWN = "run-guard.cmd" if WIN else "run-guard"  # the launcher of the Hermes entry on this platform (The launchers)
 
 
 def P(path):
@@ -360,6 +362,7 @@ def test_arm_records_a_stable_guard_command_and_doctor_checks_it(repo, guard):
     copy.write_bytes(SCRIPT.read_bytes())
     (home / "guard" / "hooks").mkdir()
     (home / "guard" / "hooks" / "run-guard.cmd").write_bytes(LAUNCHER.read_bytes())
+    (home / "guard" / "hooks" / "run-guard").write_bytes(POSIX_LAUNCHER.read_bytes())
     recorded = common(repo) / "magos" / "guard"
     assert guard(repo, "arm").rc == 0
     assert recorded.read_text(encoding="utf-8").strip() == G.guard_cmd(str(copy)) and P(copy) in recorded.read_text(encoding="utf-8")
@@ -503,6 +506,7 @@ def test_doctor_flags_a_stale_copy_before_looking_for_a_repository(repo, tmp_pat
     script.write_bytes(stale_guard_bytes())
     (home / "guard" / "hooks").mkdir()
     (home / "guard" / "hooks" / "run-guard.cmd").write_bytes(LAUNCHER.read_bytes())
+    (home / "guard" / "hooks" / "run-guard").write_bytes(POSIX_LAUNCHER.read_bytes())
     gen = home / "guard" / "generated"
     gen.mkdir()
     (gen / "codex.json").write_text("{}", encoding="utf-8")
@@ -527,9 +531,9 @@ def test_doctor_flags_a_stale_copy_before_looking_for_a_repository(repo, tmp_pat
 def test_hermes_snippet_points_at_the_hermes_plugin_launcher(repo, guard, tmp_path, monkeypatch):
     hermes = tmp_path / "hermes-home"
     monkeypatch.setenv("HERMES_HOME", str(hermes))
-    own = hermes / "plugins" / "magos" / "hooks" / "run-guard.cmd"
+    own = hermes / "plugins" / "magos" / "hooks" / OWN
     own.parent.mkdir(parents=True)
-    own.write_bytes(LAUNCHER.read_bytes())
+    own.write_bytes((ROOT / "hooks" / OWN).read_bytes())
     (hermes / "plugins" / "magos" / "scripts").mkdir()
     (hermes / "plugins" / "magos" / "scripts" / "magos_guard.py").write_bytes(SCRIPT.read_bytes())
     home = tmp_path / "mh"
@@ -541,7 +545,7 @@ def test_hermes_snippet_points_at_the_hermes_plugin_launcher(repo, guard, tmp_pa
     assert P(own) not in G.host_snippet("codex", P(home))  # only the Hermes entry follows the Hermes plugin
     own.unlink()
     assert guard(repo, "install", "--host", "hermes", "--home", str(home)).rc == 0
-    assert "%s/guard/hooks/run-guard.cmd" % P(home) in saved.read_text(encoding="utf-8")
+    assert "%s/guard/hooks/%s" % (P(home), OWN) in saved.read_text(encoding="utf-8")
     monkeypatch.delenv("HERMES_HOME")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "lad"))
     assert G.hermes_home() == (os.path.join(str(tmp_path / "lad"), "hermes") if WIN else os.path.expanduser("~/.hermes"))
@@ -667,9 +671,9 @@ def test_codex_snippet_quotes_the_launcher_for_sh_and_powershell(repo, guard, tm
     home = tmp_path / "o'brien x" / ".magos"
     assert guard(repo, "install", "--host", "codex", "--home", str(home)).rc == 0
     entry = json.loads((home / "guard" / "generated" / "codex.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["hooks"][0]
-    launcher = P(home) + "/guard/hooks/run-guard.cmd"
+    launcher = P(home) + "/guard/hooks/run-guard"  # sh runs the POSIX launcher, PowerShell the polyglot one
     assert entry["command"] == "sh '%s' hook codex pre-tool" % launcher.replace("'", "'\\''")
-    assert entry["commandWindows"] == "& '%s' hook codex pre-tool; exit $LASTEXITCODE" % launcher.replace("'", "''")
+    assert entry["commandWindows"] == "& '%s.cmd' hook codex pre-tool; exit $LASTEXITCODE" % launcher.replace("'", "''")
     assert G.ps_quote("o’b") == "'o’’b'"  # PowerShell also closes a single-quoted string at a typographic quote
     payload, ran = lane_payload(repo), 0
     if SH:
@@ -688,13 +692,13 @@ def test_claude_snippet_quotes_the_launcher_for_bash(repo, guard, tmp_path, monk
     bash, payload, real = bash_exe(), lane_payload(repo), sys.platform
     for name in ("o'brien", "d$x", "t`ick", "a!b"):
         home = P(tmp_path / name / ".magos")
-        launcher = home + "/guard/hooks/run-guard.cmd"
+        launcher = home + "/guard/hooks/run-guard"
         quoted = "'%s'" % launcher.replace("'", "'\\''")
         for platform in ("linux", "win32"):
             monkeypatch.setattr(G.sys, "platform", platform)
             groups = json.loads(G.host_snippet("claude", home))["hooks"]["PreToolUse"]
             monkeypatch.setattr(G.sys, "platform", real)
-            assert [g["hooks"][0]["command"] for g in groups] == [quoted + " --strict hook claude pre-tool", quoted + " hook claude pre-tool"]
+            assert [g["hooks"][0]["command"] for g in groups] == ["sh " + quoted + " --strict hook claude pre-tool", "sh " + quoted + " hook claude pre-tool"]
             assert all(g["hooks"][0]["shell"] == "bash" for g in groups)
         if not bash:
             continue
@@ -714,16 +718,16 @@ def plugin_at(hermes, guard_bytes):
     root = hermes / "plugins" / "magos"
     (root / "hooks").mkdir(parents=True, exist_ok=True)
     (root / "scripts").mkdir(exist_ok=True)
-    (root / "hooks" / "run-guard.cmd").write_bytes(LAUNCHER.read_bytes())
+    (root / "hooks" / OWN).write_bytes((ROOT / "hooks" / OWN).read_bytes())
     (root / "scripts" / "magos_guard.py").write_bytes(guard_bytes)
-    return P(os.path.abspath(str(root / "hooks" / "run-guard.cmd")))
+    return P(os.path.abspath(str(root / "hooks" / OWN)))
 
 
 def test_hermes_entry_follows_the_plugin_only_at_the_same_version(repo, guard, tmp_path, monkeypatch):
     hermes = tmp_path / "hermes-home"
     monkeypatch.setenv("HERMES_HOME", str(hermes))
     home = tmp_path / "mh"
-    saved, copy = home / "guard" / "generated" / "hermes.yaml", P(home) + "/guard/hooks/run-guard.cmd"
+    saved, copy = home / "guard" / "generated" / "hermes.yaml", P(home) + "/guard/hooks/" + OWN
     own = plugin_at(hermes, SCRIPT.read_bytes())
     r = guard(repo, "install", "--host", "hermes", "--home", str(home))
     assert r.rc == 0 and own in saved.read_text(encoding="utf-8") and "holds guard" not in r.out

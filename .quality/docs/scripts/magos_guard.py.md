@@ -2,7 +2,7 @@
 
 Source: `scripts/magos_guard.py`
 
-Source-SHA256: `53bc548e315d5d0bb82a292998c0a9487fd0a3049c1cb91a9f72aa8ae8644c9c`
+Source-SHA256: `d308df3f0b9903909bb86cf193aae224a73af6ed4a745311beb1a4980965ec78`
 
 ## Responsibility
 
@@ -956,7 +956,7 @@ Invariants:
    which an agent cannot set (Invariant 7), and `protect --release` do.
 7. Tamper protection is best-effort matching of words and common writer commands. User-only subcommands (whatever the
    spelling of the global options before them, `--` included, and whether the guard script or its launcher
-   `run-guard.cmd` is named, also behind `start`, `cmd /c start` or `Start-Process`, and also as an element of a
+   `run-guard` or `run-guard.cmd` is named, also behind `start`, `cmd /c start` or `Start-Process`, and also as an element of a
    PowerShell comma or array list such as `Start-Process py <guard>,disarm`) and `git config magos.*` writes are
    denied by the host hook in every repository and outside any repository, and so is a git invocation that carries a
    word beginning with `magos.` beside an alias it defines with `-c alias.<name>=` or a subcommand that is not a

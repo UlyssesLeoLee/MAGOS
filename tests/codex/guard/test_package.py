@@ -33,8 +33,8 @@ def test_hooks_json_wiring():
     groups = doc["hooks"]["PreToolUse"]
     assert [g["matcher"] for g in groups] == ["^EnterWorktree$", G.claude_matcher()]
     strict, soft = (g["hooks"][0] for g in groups)
-    assert strict["command"] == '"${CLAUDE_PLUGIN_ROOT}/hooks/run-guard.cmd" --strict hook claude pre-tool'
-    assert soft["command"] == '"${CLAUDE_PLUGIN_ROOT}/hooks/run-guard.cmd" hook claude pre-tool'
+    assert strict["command"] == 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-guard" --strict hook claude pre-tool'  # never the .cmd: Git Bash
+    assert soft["command"] == 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-guard" hook claude pre-tool'  # would hand a *.cmd file to cmd.exe'
     assert strict["type"] == soft["type"] == "command" and strict["timeout"] == soft["timeout"] == 25
     assert strict["shell"] == soft["shell"] == "bash"  # the quoted ${CLAUDE_PLUGIN_ROOT} form is bash syntax
     for g in groups:  # anchored regexes: BashOutput, TaskList and similar tools never match
@@ -45,10 +45,10 @@ def test_hooks_json_wiring():
 
 def test_line_endings_are_pinned():
     attrs = (ROOT / ".gitattributes").read_text(encoding="utf-8")
-    for needle in ("*.cmd text eol=lf", "hooks/hooks.json text eol=lf", "scripts/magos_guard.py text eol=lf", "mcp.json text eol=lf",
+    for needle in ("*.cmd text eol=lf", "hooks/run-guard text eol=lf", "hooks/hooks.json text eol=lf", "scripts/magos_guard.py text eol=lf", "mcp.json text eol=lf",
                    ".quality/** text eol=lf"):
         assert needle in attrs
-    for rel in ("hooks/hooks.json", "scripts/magos_guard.py", "hooks/run-guard.cmd", "mcp.json"):
+    for rel in ("hooks/hooks.json", "scripts/magos_guard.py", "hooks/run-guard", "hooks/run-guard.cmd", "mcp.json"):
         assert b"\r" not in (ROOT / rel).read_bytes(), rel
 
 
@@ -66,8 +66,9 @@ def test_hook_body_is_valid_posix_sh():
         pytest.skip("no sh")
     assert G.HOOK_SH.startswith("#!/bin/sh\n") and "\r" not in G.HOOK_SH and G.MARK in G.HOOK_SH
     assert subprocess.run([SH, "-n"], input=G.HOOK_SH.encode("utf-8"), capture_output=True).returncode == 0
-    launcher = (ROOT / "hooks" / "run-guard.cmd").read_bytes()
-    assert subprocess.run([SH, "-n"], input=launcher, capture_output=True).returncode == 0  # the launcher's sh half parses too
+    for name in ("run-guard", "run-guard.cmd"):  # the POSIX launcher, and the sh half of the polyglot one, parse too
+        launcher = (ROOT / "hooks" / name).read_bytes()
+        assert subprocess.run([SH, "-n"], input=launcher, capture_output=True).returncode == 0, name
 
 
 def test_contract_and_skill_anchors():
@@ -100,11 +101,12 @@ def test_package_rules_still_hold():
 
 
 def test_launcher_is_staged_executable():
-    out = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-s", "hooks/run-guard.cmd"], capture_output=True, text=True,
+    out = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-s", "hooks/run-guard", "hooks/run-guard.cmd"], capture_output=True, text=True,
                          stdin=subprocess.DEVNULL).stdout
     if not out:  # an installed plugin copy has no .git: nothing to read the mode from
-        pytest.skip("hooks/run-guard.cmd is not tracked in a git work tree here")
-    assert out.startswith("100755"), out  # a plugin hook that is run directly on POSIX needs the executable bit
+        pytest.skip("the launchers are not tracked in a git work tree here")
+    lines = out.splitlines()
+    assert len(lines) == 2 and all(line.startswith("100755") for line in lines), out  # an entry run directly on POSIX needs the bit
 
 
 # The Hermes plugin scanner (tools/skills_guard.py, rule echo_pipe_exec) rates text echoed into a shell or an interpreter as
@@ -233,8 +235,8 @@ def test_hermes_snippet_is_valid_yaml_on_every_platform(monkeypatch):
         import yaml
     except ImportError:
         yaml = None
-    for platform, home, prefix in (("win32", "C:/Users/o'brien x/.magos", []), ("linux", "/home/o'brien x/.magos", ["sh"]),
-                                   ("linux", "/home/u/.magos", ["sh"])):
+    for platform, home, prefix, name in (("win32", "C:/Users/o'brien x/.magos", [], "run-guard.cmd"),
+                                         ("linux", "/home/o'brien x/.magos", ["sh"], "run-guard"), ("linux", "/home/u/.magos", ["sh"], "run-guard")):
         monkeypatch.setattr(G.sys, "platform", platform)
         text = G.host_snippet("hermes", home)
         docs = [_mini_yaml(text)] + ([yaml.safe_load(text)] if yaml else [])
@@ -243,7 +245,7 @@ def test_hermes_snippet_is_valid_yaml_on_every_platform(monkeypatch):
             assert len(entry) == 1 and set(entry[0]) == {"matcher", "command", "timeout", "fail_closed"}, (platform, doc)
             assert entry[0]["matcher"] == "terminal" and entry[0]["timeout"] == 25 and entry[0]["fail_closed"] is True, (platform, doc)
             command = entry[0]["command"]
-            assert shlex.split(command) == prefix + [home + "/guard/hooks/run-guard.cmd", "hook", "hermes", "pre-tool"], (platform, command)
+            assert shlex.split(command) == prefix + [home + "/guard/hooks/" + name, "hook", "hermes", "pre-tool"], (platform, command)
             assert "--strict" not in command  # fail-open on infrastructure errors by default; --strict is the documented opt-in
 
 

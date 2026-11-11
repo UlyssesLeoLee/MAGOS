@@ -279,7 +279,7 @@ def test_install_copies_the_guard_and_prints_the_snippet(repo, guard, tmp_path, 
     home = tmp_path / "magos-home"
     r = guard(repo, "install", "--host", host, "--home", str(home))
     assert r.rc == 0 and needle in r.out and "never edits it" in r.out
-    for rel in ("scripts/magos_guard.py", "hooks/run-guard.cmd"):  # the canonical copy keeps the layout and the exact bytes
+    for rel in ("scripts/magos_guard.py", "hooks/run-guard", "hooks/run-guard.cmd"):  # the canonical copy keeps the layout and the bytes
         assert (home / "guard" / rel).read_bytes() == (ROOT / rel).read_bytes(), rel
     saved = (home / "guard" / "generated" / ("%s.%s" % (host, suffix))).read_text(encoding="utf-8")
     assert needle in saved and str(home).replace("\\", "/") in saved

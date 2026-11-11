@@ -1,4 +1,5 @@
 *.cmd text eol=lf
+hooks/run-guard text eol=lf
 hooks/hooks.json text eol=lf
 scripts/magos_guard.py text eol=lf
 mcp.json text eol=lf
