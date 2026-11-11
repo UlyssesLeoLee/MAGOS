@@ -512,9 +512,11 @@ def test_the_posix_launcher_file():
     half = LAUNCHER.read_text(encoding="utf-8").split("\nCMDBLOCK\n", 1)[1].lstrip("\n")
     import difflib
     diff = [d for d in difflib.ndiff(_code_lines(half), _code_lines(text.split("\n", 1)[1])) if d[:2] in ("- ", "+ ")]
-    assert [d for d in diff if d.startswith("- ")] == ['- for cmd in python3 "py -3" python; do  # a Python 2 `python` is reached only when neither '
-                                                        'Python 3 name exists'], diff
-    assert [d[2:] for d in diff if d.startswith("+ ")] == ["candidates='python3,py -3,python'", "[ \"$OS\" = Windows_NT ] && candidates='py -3,python3,python'",
+    assert [d[2:] for d in diff if d.startswith("- ")] == ['[ "$MAGOS_GUARD" = "off" ] && exit 0',
+                                                           'for cmd in python3 "py -3" python; do  # a Python 2 `python` is reached only when neither '
+                                                           'Python 3 name exists'], diff
+    assert [d[2:] for d in diff if d.startswith("+ ")] == ["set +eu", 'case "$MAGOS_GUARD" in [Oo][Ff][Ff]) exit 0 ;; esac',
+                                                           "candidates='python3,py -3,python'", "[ \"$OS\" = Windows_NT ] && candidates='py -3,python3,python'",
                                                            "oldifs=$IFS", "IFS=,", "for cmd in $candidates; do", "    IFS=$oldifs"], diff
     import hashlib
     assert hashlib.sha256(LAUNCHER.read_bytes()).hexdigest() == POLYGLOT_SHA256  # the launcher of the entries merged before 1.1.3
@@ -613,6 +615,9 @@ def test_install_and_doctor_handle_both_launchers(repo, guard, tmp_path, monkeyp
     (home / "guard" / "hooks" / "run-guard").write_bytes(b"#!/bin/sh\nexit 0\n")
     r = guard(repo, "doctor", "--home", str(home))
     assert r.rc == 1 and "DIFFERS" in r.out and "the launcher %s/guard/hooks/run-guard (" % slashed in r.out, r.out
+    (home / "guard" / "hooks" / "run-guard").unlink()  # a guard home an install before 1.1.3 wrote
+    r = guard(repo, "doctor", "--home", str(home))
+    assert r.rc == 1 and "the launcher %s/guard/hooks/run-guard is missing" % slashed in r.out and "e3b0c44298fc" not in r.out, r.out
     (home / "guard" / "hooks" / "run-guard").write_bytes(saved)
     generated = home / "guard" / "generated"
     old = json.loads((generated / "codex.json").read_text(encoding="utf-8"))
@@ -620,11 +625,71 @@ def test_install_and_doctor_handle_both_launchers(repo, guard, tmp_path, monkeyp
     (generated / "codex.json").write_text(json.dumps(old), encoding="utf-8")
     (generated / "hermes.yaml").write_text("hooks:\n  pre_tool_call:\n    - matcher: \"terminal\"\n      command: 'sh ''%s/guard/hooks/run-guard.cmd'' "
                                            "hook hermes pre-tool'\n      timeout: 25\n      fail_closed: true\n" % slashed, encoding="utf-8")
+    claude = {"hooks": {"PreToolUse": [{"matcher": "^EnterWorktree$", "hooks": [{
+        "type": "command", "command": "'%s/guard/hooks/run-guard.cmd' --strict hook claude pre-tool" % slashed, "shell": "bash", "timeout": 25}]}]}}
+    (generated / "claude.json").write_text(json.dumps(claude), encoding="utf-8")
     r = guard(repo, "doctor", "--home", str(home))
     assert r.rc == base.rc and r.out.count("it runs run-guard.cmd through sh") == 2, r.out
     assert "install --host codex" in r.out and "install --host hermes" in r.out
+    assert "claude entry %s/guard/generated/claude.json: it runs run-guard.cmd" % slashed in r.out and "starts cmd.exe" in r.out, r.out
+    assert "install --host claude" in r.out and "~/.claude/settings.json" in r.out
     hermes = tmp_path / "hermes-home"
     (hermes / "plugins" / "magos" / "hooks").mkdir(parents=True)
     (hermes / "plugins" / "magos" / "hooks" / "run-guard").write_bytes(POSIX.read_bytes())
     monkeypatch.setenv("HERMES_HOME", str(hermes))
     assert G.pkey(os.path.abspath(str(hermes / "plugins" / "magos"))) in G.tamper_roots()
+
+
+def test_the_posix_launcher_ignores_inherited_shell_options(tmp_path, repo, guard):
+    bash = _bash()
+    if not bash:
+        pytest.skip("no bash to run the hooks.json commands")
+    plugin = tmp_path / "plugin"
+    (plugin / "hooks").mkdir(parents=True)
+    (plugin / "scripts").mkdir()
+    shutil.copy(POSIX, plugin / "hooks" / "run-guard")
+    strict, soft = (g["hooks"][0]["command"] for g in json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"])
+    assert guard(repo, "plan", "--branch", "agent/a", "--paths", "src/a.py").rc == 0
+    allowed = {"tool_name": "Bash", "tool_input": {"command": "echo hi"}, "cwd": str(tmp_path)}
+    denied = {"tool_name": "Bash", "tool_input": {"command": "git switch -c agent/unplanned"}, "cwd": str(repo.path)}
+    worktree = {"tool_name": "EnterWorktree", "tool_input": {"name": "x"}, "cwd": str(tmp_path)}
+    plain = {k: v for k, v in os.environ.items() if k not in ("SHELLOPTS", "MAGOS_GUARD")}
+
+    def entry(command, body, **extra):
+        env = dict(plain, CLAUDE_PLUGIN_ROOT=str(plugin), MAGOS_LANG="en", **extra)
+        return subprocess.run([bash, "-c", command], input=json.dumps(body).encode("utf-8"), capture_output=True, env=env, cwd=str(tmp_path),
+                              creationflags=NO_WINDOW, timeout=180)
+    for options in ("nounset", "errexit", "errexit:nounset"):
+        shutil.copy(SCRIPT, plugin / "scripts" / "magos_guard.py")
+        r = entry(soft, allowed, SHELLOPTS=options)
+        assert r.returncode == 0 and json.loads(r.stdout) == {}, (options, r)
+        r = entry(soft, denied, SHELLOPTS=options)
+        assert r.returncode == 0 and json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny", (options, r)
+        (plugin / "scripts" / "magos_guard.py").unlink()
+        r = entry(strict, worktree, SHELLOPTS=options)
+        assert r.returncode == 2 and b"the guard script is missing" in r.stderr, (options, r)
+    for value in ("OFF", "Off", "off"):  # the script is missing: the launcher ends before it looks for it
+        for command in (strict, soft):
+            r = entry(command, worktree, MAGOS_GUARD=value)
+            assert r.returncode == 0 and r.stdout == b"" and r.stderr == b"", (value, command, r)
+
+
+def test_install_names_a_hermes_plugin_that_is_out_of_date(tmp_path, monkeypatch):
+    hermes = tmp_path / "hermes-home"
+    plugin = hermes / "plugins" / "magos"
+    (plugin / "hooks").mkdir(parents=True)
+    (plugin / "scripts").mkdir()
+    (plugin / "hooks" / "run-guard.cmd").write_bytes(LAUNCHER.read_bytes())  # the layout of a Hermes plugin before 1.1.3
+    (plugin / "scripts" / "magos_guard.py").write_text('GUARD_VERSION = "1.1.2"\n', encoding="utf-8")
+    monkeypatch.setenv("HERMES_HOME", str(hermes))
+    for platform in ("linux", "win32"):
+        monkeypatch.setattr(G.sys, "platform", platform)
+        launcher, note = G.hermes_plugin()
+        assert launcher is None and note and "holds guard 1.1.2, not %s" % G.GUARD_VERSION in note, (platform, note)
+    (plugin / "scripts" / "magos_guard.py").write_bytes(SCRIPT.read_bytes())
+    monkeypatch.setattr(G.sys, "platform", "linux")
+    launcher, note = G.hermes_plugin()
+    assert launcher is None and note and "has no run-guard," in note, note
+    monkeypatch.setattr(G.sys, "platform", "win32")
+    launcher, note = G.hermes_plugin()
+    assert launcher and launcher.endswith("/hooks/run-guard.cmd") and note is None, (launcher, note)

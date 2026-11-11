@@ -10052,13 +10052,17 @@ def hermes_plugin():
     plugin launcher is not used, else None."""
     plugin = _slashed(os.path.abspath(os.path.join(hermes_home(), "plugins", "magos")))
     own = plugin + "/hooks/" + launcher_name(sys.platform != "win32")  # the Hermes entry runs run-guard.cmd on Windows, run-guard through sh elsewhere
-    if not os.path.isfile(own):
+    if not any(os.path.isfile(plugin + "/hooks/" + name) for name in LAUNCHERS):
         return None, None
     v = version_of(read_quiet(plugin + "/scripts/magos_guard.py"))
-    if v != GUARD_VERSION:
+    if v != GUARD_VERSION:  # whichever launchers it holds: a plugin laid out before 1.1.3 has only run-guard.cmd
         return None, ("the Hermes plugin %s holds guard %s, not %s, so the Hermes entry runs the copy under the guard home. Update the Hermes "
                       "plugin (hermes plugins update magos; when its security scan asks for confirmation: hermes plugins install "
                       "UlyssesLeoLee/MAGOS --force --enable), then run install --host hermes again" % (plugin, v or "unversioned", GUARD_VERSION))
+    if not os.path.isfile(own):
+        return None, ("the Hermes plugin %s has no %s, the launcher the Hermes entry runs on this platform, so the entry runs the copy under "
+                      "the guard home; reinstall the Hermes plugin (hermes plugins install UlyssesLeoLee/MAGOS --force --enable)"
+                      % (plugin, os.path.basename(own)))
     bad = cmd_unsafe(own)
     if bad:
         return None, ("the Hermes plugin launcher %s contains %r, which cmd.exe reads as an operator, a separator or an expansion when it "
@@ -10295,9 +10299,9 @@ def replace_files(items):
 
 
 def cmd_install(args):
-    """Copies the guard and its launcher to one canonical user-level directory and prints (and saves) the exact host snippet; never edits
-    host config.  Version-aware and atomic: identical copies are left alone, a newer copy is not downgraded without --allow-downgrade, both
-    files are replaced together or not at all (the launcher stays executable on POSIX), and guard/VERSION.json is rewritten by every install.
+    """Copies the guard and its two launchers to one canonical user-level directory and prints (and saves) the exact host snippet; never edits
+    host config.  Version-aware and atomic: identical copies are left alone, a newer copy is not downgraded without --allow-downgrade, the
+    three files are replaced together or not at all (the launchers stay executable on POSIX), and guard/VERSION.json is rewritten by every install.
     On Windows a guard home whose launcher path holds a character cmd.exe would misread is refused.  User-only: needs a real console or an
     approval token that verifies (its store is under the default guard home, whatever --home says), except with --dry-run."""
     home, dry = guard_home(args.home), args.dry_run
@@ -10391,7 +10395,7 @@ def provenance(rec, cur):
 
 
 def copy_report(home_arg=None):
-    """Compare the copy under the guard home (run by the Codex and Hermes hooks) with the running guard and its launcher, or, when the
+    """Compare the copy under the guard home (run by the Codex and Hermes hooks) with the running guard and its two launchers, or, when the
     running guard is that copy, with the guard VERSION.json names as its source; then the provenance line and the Hermes entry.
     -> True on a problem."""
     home = guard_home(home_arg)
@@ -10425,34 +10429,44 @@ def copy_report(home_arg=None):
         out_text("guard copy %s: %s DIFFERS from %s %s; refresh it (%s):\n%s"
                  % (dst, described(cur), label, described(data), _USER_RUN, "\n".join("  " + refresh % h for h in hosts)))
         for _lsrc, ldst, ldata, lcur in launchers:
-            if ldata is not None and lcur != ldata:
-                out_text("  the launcher %s (%s) differs as well" % (ldst, sha256_of(lcur or b"")[:12]))
+            if ldata is not None and lcur is None:
+                out_text("  the launcher %s is missing" % ldst)
+            elif ldata is not None and lcur != ldata:
+                out_text("  the launcher %s (%s) differs as well" % (ldst, sha256_of(lcur)[:12]))
     provenance(rec, cur)
     return entry_reports(home, home_arg) or problem
 
 
 def entry_reports(home, home_arg=None):
-    """The generated entries: a note for each that still runs run-guard.cmd through sh (written before 1.1.3; it keeps working), then the
-    Hermes entry (hermes_report).  -> True on a problem."""
-    for host, ext in (("codex", "json"), ("hermes", "yaml")):
+    """The generated entries an install before 1.1.3 wrote: a note for a Codex or Hermes entry that runs run-guard.cmd through sh (it keeps
+    working), and for a Claude entry that runs run-guard.cmd at all (under Git Bash on Windows it starts cmd.exe); then the Hermes entry
+    (hermes_report).  -> True on a problem."""
+    for host, ext in (("claude", "json"), ("codex", "json"), ("hermes", "yaml")):
         path = "%s/guard/generated/%s.%s" % (home, host, ext)
         raw = read_quiet(path)
-        if raw is not None and _sh_runs_polyglot(host, raw.decode("utf-8", "replace")):
-            redo = "%s install --host %s%s" % (guard_cmd(), host, ' --home "%s"' % home if home_arg else "")
+        if raw is None or not _sh_runs_polyglot(host, raw.decode("utf-8", "replace")):
+            continue
+        redo = "%s install --host %s%s" % (guard_cmd(), host, ' --home "%s"' % home if home_arg else "")
+        if host == "claude":
+            out_text("claude entry %s: it runs run-guard.cmd, as an install before 1.1.3 wrote it; under Git Bash on Windows that starts cmd.exe "
+                     "on every hooked call. To run the POSIX launcher run-guard instead, run %s (%s) and merge the new entry into "
+                     "~/.claude/settings.json" % (path, redo, _USER_RUN))
+        else:
             out_text("%s entry %s: it runs run-guard.cmd through sh, as an install before 1.1.3 wrote it; it keeps working. To run the POSIX "
                      "launcher run-guard instead, run %s (%s) and merge the new entry" % (host, path, redo, _USER_RUN))
     return hermes_report(home, home_arg)
 
 
 def _sh_runs_polyglot(host, text):
-    """Does a generated entry's POSIX command run run-guard.cmd through sh (the form of an install before 1.1.3)?"""
-    if host == "codex":
+    """Does a generated entry run run-guard.cmd in the form of an install before 1.1.3: a Codex or Hermes POSIX command through sh, a Claude
+    command in any form?"""
+    if host in ("claude", "codex"):
         try:
             groups = json.loads(text)["hooks"]["PreToolUse"]
             commands = [h.get("command") for g in groups for h in g.get("hooks", [])]
         except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
             return False
-        return any(isinstance(c, str) and c.startswith("sh ") and "run-guard.cmd" in c for c in commands)
+        return any(isinstance(c, str) and "run-guard.cmd" in c and (host == "claude" or c.startswith("sh ")) for c in commands)
     launcher = hermes_entry_launcher(text)
     return bool(launcher) and launcher.endswith("/run-guard.cmd") and re.search(r"command:\s*'sh ", text) is not None
 

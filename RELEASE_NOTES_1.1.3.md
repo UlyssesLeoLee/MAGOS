@@ -10,14 +10,16 @@ Claude Code no longer runs a batch file: its hooks start the guard through a POS
 
 - **Claude Code**: `hooks/hooks.json` runs `sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-guard"`; no hook starts cmd.exe or a batch file.
 - **Codex and Hermes**: the POSIX entries `install` prints run `run-guard`; the Windows entries still run `run-guard.cmd`.
-- **doctor**: compares both launchers and names an entry that still runs `run-guard.cmd` through `sh`.
+- **doctor**: compares both launchers and names an entry that still runs `run-guard.cmd`, including a Claude entry merged into `~/.claude/settings.json`.
+- **POSIX launcher**: a `nounset` or `errexit` in the host's `SHELLOPTS` cannot stop it, and `MAGOS_GUARD=off` is read in any case.
 
 ## Known limits
 
 - Codex and Hermes on Windows still start cmd.exe on `run-guard.cmd`, so a security product may still react there.
-- Entries merged before 1.1.3 keep running `run-guard.cmd`, which is unchanged; merge the new entry to move them.
+- Entries merged before 1.1.3 keep running `run-guard.cmd`, which is unchanged; merge the new entry to move them. A Claude entry from `install --host claude` in `~/.claude/settings.json` starts cmd.exe on Windows until you merge the new one.
+- On Windows, Git Bash reads a hook's payload one byte at a time: about 1.5 s more per MB than through cmd.exe.
 
 ## 升级 / Upgrade
 
 1. Upgrade the plugin on each host and restart it: Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`; Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`.
-2. Re-run `install --host <host>` to refresh copies under `~/.magos/guard`; on Linux and macOS merge the printed Codex or Hermes entry to move it to `run-guard`. `doctor` names a stale copy and an entry that still runs `run-guard.cmd` through `sh`.
+2. Re-run `install --host <host>` to refresh copies under `~/.magos/guard`; on Linux and macOS merge the printed Codex or Hermes entry to move it to `run-guard`; on Windows, if you use the `install --host claude` entry instead of the plugin, merge the new Claude entry into `~/.claude/settings.json`. `doctor` names a stale copy and every entry that still runs `run-guard.cmd`.

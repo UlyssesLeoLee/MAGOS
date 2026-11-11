@@ -10,8 +10,10 @@
 # cat. The payload is read once and handed to each candidate interpreter; the next candidate is tried only when one is missing: exit
 # 127, or 9009 (the Windows "not found" code and the Microsoft Store stub's), which sh sees as 49, or, for py -3 only, 103 or 112 (the
 # Python launcher found no runtime). Each candidate's stdout is held back until its exit code is known, so a stub's text never precedes
-# the verdict.
-[ "$MAGOS_GUARD" = "off" ] && exit 0
+# the verdict. A SHELLOPTS the host exports (nounset, errexit) is turned off first: it would end the launcher before the guard
+# runs, and keep --strict from turning a failure into exit 2. MAGOS_GUARD=off is read in any case, as the cmd launcher reads it.
+set +eu
+case "$MAGOS_GUARD" in [Oo][Ff][Ff]) exit 0 ;; esac
 STRICT=
 if [ "$1" = "--strict" ]; then STRICT=1; shift; fi
 if [ "$1" != hook ]; then

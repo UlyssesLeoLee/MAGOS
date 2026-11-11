@@ -10,17 +10,21 @@ Tag `v1.1.3`. Claude Code no longer runs a batch file: its hooks start the guard
 
 - **The POSIX launcher `hooks/run-guard`.** Claude Code runs its hooks under Git Bash on Windows, and Git Bash hands a file named `*.cmd` to cmd.exe, so every hooked tool call used to start cmd.exe on the batch-and-shell launcher `hooks/run-guard.cmd` in the plugin cache, which some security products block. `hooks/hooks.json` now runs `sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-guard" ...`, a plain shell script, on every platform. On Windows it tries `py -3` first, as the cmd launcher does.
 - **The entries `install` prints.** The Claude snippet, the Codex `command` and the Hermes entry outside Windows run `sh '<guard home>/guard/hooks/run-guard'`; the Codex `commandWindows` and the Hermes entry on Windows still run `run-guard.cmd`. `install` copies both launchers.
-- **`doctor`** compares both copied launchers, and names a generated entry that still runs `run-guard.cmd` through `sh` (an entry an earlier install wrote; it keeps working) with the install command that writes the new one.
+- **`doctor`** compares both copied launchers (a missing copy is named as missing), and names a generated entry an earlier install wrote that still runs `run-guard.cmd`, with the install command that writes the new one: a Codex or Hermes entry that runs it through `sh` (it keeps working), and a Claude entry, which under Git Bash on Windows still starts cmd.exe.
+- **`install --host hermes`** names a Hermes plugin that holds another guard version on every platform, also one laid out before 1.1.3.
+- **The POSIX launcher** turns off a `nounset` or `errexit` that the host's `SHELLOPTS` exports, and reads `MAGOS_GUARD=off` in any case, as the cmd launcher does.
 
 ### Known limits
 
 - Codex and Hermes on Windows still start cmd.exe on `run-guard.cmd` for each hooked call, so a security product that reacts to batch files may still react there.
 - `hooks/run-guard.cmd` is unchanged, so the Codex and Hermes entries you merged before 1.1.3 keep working; they move to `run-guard` only when you merge the new entry.
+- If you merged the Claude entry that `install --host claude` printed into `~/.claude/settings.json` (instead of using the plugin), it keeps running `run-guard.cmd`, and on Windows cmd.exe, until you merge the new entry.
+- On Windows, Git Bash reads a hook's payload one byte at a time, so a payload of 1 MB costs about 1.5 s more than through cmd.exe; a tool call's payload is usually a few KB.
 
 ### Upgrade
 
 1. Upgrade the plugin on each host and restart it: Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`; Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`.
-2. Copies under `~/.magos/guard` (Codex and Hermes entries) are refreshed by running `install --host <host>` again; `doctor` names a stale copy. On Linux and macOS, merge the entry `install` prints into the Codex or Hermes configuration to move it to `run-guard`.
+2. Copies under `~/.magos/guard` (Codex and Hermes entries) are refreshed by running `install --host <host>` again; `doctor` names a stale copy and every entry that still runs `run-guard.cmd`. On Linux and macOS, merge the entry `install` prints into the Codex or Hermes configuration to move it to `run-guard`; on Windows, if you use the `install --host claude` entry instead of the plugin, merge the new Claude entry into `~/.claude/settings.json`.
 
 ## 1.1.2
 
