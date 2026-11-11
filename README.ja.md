@@ -14,6 +14,129 @@
 - どのコミットがチェリーピックに向いているか
 - どのブランチがすでに安全にクリーンアップできるか
 - 複数のエージェントが同時に `main` を壊す事態をどう防ぐか
+
+**インストールとアップグレード：お使いのエージェントを選んでください**（クリックで展開）
+
+<details>
+<summary><b>Claude Code：インストールとアップグレード</b></summary>
+
+**インストール**
+
+```bash
+# 1. MAGOS のマーケットプレイスを追加
+claude plugin marketplace add UlyssesLeoLee/MAGOS
+# 2. MAGOS をインストール
+claude plugin install magos@magos
+# 3. バージョンを確認
+claude plugin list
+```
+
+**アップグレード**
+
+```bash
+# 1. MAGOS のマーケットプレイスを更新
+claude plugin marketplace update magos
+# 2. 最新の MAGOS をインストール
+claude plugin update magos@magos
+# 3. バージョンを確認
+claude plugin list
+```
+
+アップグレード後は、実行中の Claude Code セッションをすべて再起動してください。セッションは起動時のバージョンのフックを使い続けます。
+
+</details>
+
+<details>
+<summary><b>Codex：インストールとアップグレード</b></summary>
+
+**インストール**
+
+```bash
+# 1. MAGOS のマーケットプレイスを追加
+codex plugin marketplace add UlyssesLeoLee/MAGOS
+# 2. MAGOS をインストール
+codex plugin add magos@magos
+# 3. バージョンを確認
+codex plugin list
+```
+
+**アップグレード**
+
+```bash
+# 1. MAGOS のマーケットプレイスを更新
+codex plugin marketplace upgrade magos
+# 2. 最新の MAGOS をインストール
+codex plugin add magos@magos
+# 3. バージョンを確認
+codex plugin list
+```
+
+その後 Codex を再起動してください。Codex のレーンガードのフックは `install --host codex` から入り、`~/.magos` 配下のコピーを実行します。プラグインのアップグレードではこのコピーは変わらないので、アップグレード後にもう一度実行してください（`references/installation.md` を参照）。
+
+</details>
+
+<details>
+<summary><b>Hermes：インストールとアップグレード</b></summary>
+
+**インストール**
+
+```bash
+# 1. このリポジトリから MAGOS をインストールして有効化
+hermes plugins install UlyssesLeoLee/MAGOS --enable
+# 2. インストールされ有効になっていることを確認
+hermes plugins list
+```
+
+**アップグレード**
+
+```bash
+# 1. MAGOS を更新
+hermes plugins update magos
+# 1b. セキュリティスキャンの確認を求められて更新が拒否されたときだけ：再インストールします
+hermes plugins install UlyssesLeoLee/MAGOS --force --enable
+# 2. インストールされ有効になっていることを確認
+hermes plugins list
+```
+
+その後 Hermes を再起動してください。固定したインストール（`--ref` 付き）は、新しい `--ref` で固定先を移します（`references/installation.md` を参照）。ガードのバージョンは `py -3 "<Hermes home>/plugins/magos/scripts/magos_guard.py" version` で表示できます（macOS と Linux では `python3`）。
+
+</details>
+
+<details>
+<summary><b>マーケットプレイスを使わない場合：clone と同期スクリプト</b></summary>
+
+Claude Code：skills フォルダーへの clone：
+
+```bash
+# インストール：Claude Code の skills フォルダーに clone
+git clone https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+# アップグレード
+git -C ~/.claude/skills/magos pull
+```
+
+```powershell
+# インストール：Claude Code の skills フォルダーに clone
+git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
+# アップグレード
+git -C "$HOME\.claude\skills\magos" pull
+```
+
+Codex と Hermes のパッケージ：同期スクリプト（ファイルは削除しません）：
+
+```bash
+# 1. 最新のリポジトリを取得（初回は clone、以降は git pull）
+git clone https://github.com/UlyssesLeoLee/MAGOS
+cd MAGOS
+# 2. スキルパッケージを Codex と Hermes にコピー
+python -X utf8 scripts/sync_hosts.py --host codex --host hermes --apply --create-roots
+# 3. インストール済みのファイルをリポジトリと照合
+python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
+```
+
+特定のバージョンに留まるには、`references/installation.md` の固定の節を参照してください。
+
+</details>
+
 <img width="1254" height="1254" alt="MAGOS2" src="https://github.com/user-attachments/assets/4d450361-25b5-4d35-90d8-d5656bd496cb" />
 
 ---
@@ -1151,6 +1274,7 @@ MAGOS にはレーンガード（`scripts/magos_guard.py`）が付属してい�
 - **Set サブコマンド**。`/GitPlan` は、ガードの 4 つのサブコマンドで計画を登録し、維持します：`set-plan`（各レーンのファイル一覧が互いに重ならないことを証明して登録）、`set-show`（読み取り専用）、`set-update`（レーンの担当者が進み具合を記録）、`set-release`（締めくくり）。いずれもあなただけが実行できるコマンドではなく、`plan`、`release` と同じようにホストのフックを通ります。登録では、各レーンの登録（`set=` と `lane=` 付き）、統合ブランチ `agent/<set>/integration` の登録（ファイルを一切占有しません）、計画の記録（`<git-common-dir>/magos/sets/<set>.json`）が書き込まれます。終了コード 19 から 24 はこれらのサブコマンドのものです（古い、すでにある、存在しない、範囲外、より新しいバージョンが書いた記録、無効な計画）。計画の記録には、タスクの要件、各レーンが担当する要件と成果、そしてレーンが `integrated` と記録されたときにガードが計算した変更内容が入ります。ガードは名前と対応関係も確認します：レーンの id はトピックの slug でなければならず（連番や汎用的な id は拒否されます）、ブランチはちょうど `agent/<set>/<id>`、ワークツリーのディレクトリ名は `-<set>-<id>` で終わり、どの要件も少なくとも 1 つのレーンが担当します。計画が存在する間は、通常の `plan` はそのレーンまたは統合ブランチの登録の書き込みを拒否し（`--amend` と `override` の後の再登録も含みます）、通常の `release` もその登録を拒否します：計画は `/GitPlan` からしか変更できません。
 - **ブランチ保護**。`/GitProtect` はガードのユーザー専用サブコマンド `protect` でブランチを保護します（`protect-show` は読むだけです）。記録は `<git-common-dir>/magos/protected.json` にあります。以後、フックはそのブランチへのエージェントのすべての書き込み（コミット、マージ、書き換え、リセット、削除、名前の変更、強制的な移動、新しいワークツリーへのチェックアウト）を拒否し、拒否コードは `BRANCH_PROTECTED` です。記録が読めないときや、より新しいバージョンが書いたときは、リポジトリのすべてのブランチが保護されているものとして扱われます。保護を実行するのはホストのフックだけで、あなた自身のターミナルと Git のバックストップは影響を受けません。詳しくは `references/lane-split.md` の第 15 節を参照してください。
 - **承認するのはあなたです**。`override`、`arm`、`disarm`、`install`、`protect` は、あなたが承認したときだけ実行され、`magos.*` の git 設定（例：`magos.guard`、`magos.approval`）を書き込めるのもあなただけです。承認のレベルは `git config --local magos.approval <レベル>` で設定します（自分のターミナルで設定できます。エージェントは設定しません。値は大文字と小文字を区別せず、前後の空白も無視して比較し、それ以外の値は `terminal` として扱います）。`terminal`：あなたが実際のターミナルでコマンドを実行します。`prompt`（デフォルト）：エージェントが先にあなたに尋ね、同意すればガードのコマンドを実行します（Codex ではツール `magos_approve` を呼び出します）。ホストが自身の承認プロンプト（Claude Code の権限ダイアログ、Codex の Approve チェックボックス付きダイアログ、Hermes の承認プロンプト）を表示して、何を承認するのかとエージェントが書いた理由を示し、あなたのクリックが承認になります（Codex では Approve にチェックを入れてから Accept を押します）。`auto-safe`：`prompt` と同じですが、保護を足すだけの `arm` と、デフォルトのガードホームへガードをコピーするだけで `--allow-downgrade` を付けない `install` は、クリックなしで実行されます（あなたの設定そのものが承認です）。`override`、`disarm`、`protect`、および `install` のそれ以外の形は引き続き確認します。エージェントが無人で上書きするレベルはありません。ガードを止めたいときは、あなた自身が `git config --local magos.guard off` を実行します。Codex では `auto-safe` も `prompt` と同じく確認します（Codex の経路にはクリックなしで実行される場合がありません）。承認ポリシーが `never` のときは Codex が自分で断ります。Hermes は `/yolo`、`--yolo`、`approvals.mode: off` のもとではあなたを経ずに承認するため、ガードはそれが見える場合にクリックの経路を拒否します。ターミナルの経路は常に使えます。Claude Code で権限ダイアログが出るのは Bash と PowerShell のツールだけで、Hermes では `terminal` ツールだけです。それ以外の方法でこれらを実行しようとするエージェントは、フックに拒否されます。フックのランチャーもフックしか実行しません。新しいコンソールウィンドウで起動したコマンドもコンソールチェックを通過できるため、コンソールチェックも上書きも承認トークンも、アクセス制御ではありません。`override`、`disarm`、`protect` の前に立つのはホスト自身の承認プロンプトであり（Codex の経路が人の操作を証明できるのは Codex 自身が証明できる範囲まで、Hermes の経路は Hermes の承認ゲートの強さまでです）、監査ログの `via` と `reason_by` は、できる限り記録した出所の情報で、証明ではありません。
+- **拒否の上書き。** 作成が拒否されると、その拒否の 12 桁の 16 進フィンガープリントが表示されます。リポジトリに有効な拒否記録がちょうど 1 件だけあるとき（記録は 1 時間保持されます）は、それを書き写す必要はありません。Codex ではフィンガープリントなしで `magos_approve` を呼ぶとツールがその 1 件を使い、自分のターミナルでは `override --reason "<あなたの言葉>"` が同じようにそれを使って、許可される lane、ターゲット、競合するブランチを表示し、あなたの `y` を待ちます（フィンガープリントでも構いません）。Claude Code と Hermes では、承認がコマンドの文面に結び付いているため、引き続き `--fingerprint` が必要です。
 - **アップグレード後は毎回**。実行中の Claude Code、Codex、Hermes のセッションを再起動します（Hermes は `hermes plugins update magos` のあと）。`doctor` が列挙するホストごとに `install` を再実行し（`doctor` が正確なコマンドを表示します。`install --home <ディレクトリ>` でインストールしたコピーは、`doctor --home <ディレクトリ>` を実行します）、表示されたエントリがホストの設定にマージ済みのエントリと異なる場合は、マージ済みのエントリを表示されたものに置き換えます（Codex では `/hooks` で信頼し直し、Hermes では承認し直します。Hermes プラグインを入れている場合、Hermes のエントリは不要です。`config.yaml` の `hooks:` にある MAGOS のエントリは、Hermes が尋ねる前にユーザー専用のコマンドをすべて拒否するので、削除してください）。`arm` 済みのリポジトリでは `doctor` を実行し、`arm` コマンドが表示されたら、そのコマンドを再実行します（ホストの承認プロンプトで承認するか、自分のターミナルで実行します）。1.0.4 から、`/GitPlan` はガードの `set-*` サブコマンドを必要とし、古いガードのコピーにはそれがありません：`doctor` を実行し、それが表示する `install --host <host>` コマンドを実行してコピーを更新してください。そうしないと、`/GitPlan` は最初にバージョンを確認して停止します。
 - **制限**。フックが読み取るのはコマンドのテキストです。Python やガードのスクリプトが見つからない場合は呼び出しを通します（Claude Code の `EnterWorktree` フックと Hermes プラグインのコールバックは例外で、呼び出しを拒否します）。Git のバックストップはブランチの名前変更とコピー（`git branch -m/-c`）を検知できませんが、フックはどのオプションの書き方でもそれらを拒否します。`override`、`disarm`、`protect` の前にある障壁はホスト自身の承認プロンプトだけで、承認トークンはアクセス制御ではなく、監査ログの `via` と `reason_by` は、できる限り記録した出所の情報で、証明ではありません（「承認するのはあなたです」を参照）。すべての制限は `references/lane-split.md` の第 12 節を参照してください。
 

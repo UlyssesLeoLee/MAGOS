@@ -14,6 +14,129 @@
 - 哪些 Commit 适合 Cherry-pick
 - 哪些分支已经可以安全清理
 - 如何避免多个 Agent 同时破坏 `main`
+
+**安装与升级：选择你的 Agent**（点击展开）
+
+<details>
+<summary><b>Claude Code：安装与升级</b></summary>
+
+**安装**
+
+```bash
+# 1. 添加 MAGOS 插件市场
+claude plugin marketplace add UlyssesLeoLee/MAGOS
+# 2. 安装 MAGOS
+claude plugin install magos@magos
+# 3. 检查版本
+claude plugin list
+```
+
+**升级**
+
+```bash
+# 1. 更新 MAGOS 插件市场
+claude plugin marketplace update magos
+# 2. 安装最新 MAGOS
+claude plugin update magos@magos
+# 3. 检查版本
+claude plugin list
+```
+
+升级后重启每一个正在运行的 Claude Code 会话：会话会一直使用启动时那个版本的钩子。
+
+</details>
+
+<details>
+<summary><b>Codex：安装与升级</b></summary>
+
+**安装**
+
+```bash
+# 1. 添加 MAGOS 插件市场
+codex plugin marketplace add UlyssesLeoLee/MAGOS
+# 2. 安装 MAGOS
+codex plugin add magos@magos
+# 3. 检查版本
+codex plugin list
+```
+
+**升级**
+
+```bash
+# 1. 更新 MAGOS 插件市场
+codex plugin marketplace upgrade magos
+# 2. 安装最新 MAGOS
+codex plugin add magos@magos
+# 3. 检查版本
+codex plugin list
+```
+
+然后重启 Codex。Codex 的车道守卫钩子来自 `install --host codex`，运行 `~/.magos` 下的一份副本，插件升级不会改变它，所以升级之后要再运行一次（见 `references/installation.md`）。
+
+</details>
+
+<details>
+<summary><b>Hermes：安装与升级</b></summary>
+
+**安装**
+
+```bash
+# 1. 从本仓库安装 MAGOS 并启用
+hermes plugins install UlyssesLeoLee/MAGOS --enable
+# 2. 检查是否已安装并启用
+hermes plugins list
+```
+
+**升级**
+
+```bash
+# 1. 更新 MAGOS
+hermes plugins update magos
+# 1b. 只有更新因为安全扫描要求确认而被拒绝时：改为重新安装
+hermes plugins install UlyssesLeoLee/MAGOS --force --enable
+# 2. 检查是否已安装并启用
+hermes plugins list
+```
+
+然后重启 Hermes。固定版本的安装（带 `--ref`）要用新的 `--ref` 移动固定点，见 `references/installation.md`。守卫版本由 `py -3 "<Hermes home>/plugins/magos/scripts/magos_guard.py" version` 输出（macOS 与 Linux 用 `python3`）。
+
+</details>
+
+<details>
+<summary><b>不用插件市场：clone 与同步脚本</b></summary>
+
+Claude Code：clone 到它的 skills 目录：
+
+```bash
+# 安装：clone 到 Claude Code 的 skills 目录
+git clone https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+# 升级
+git -C ~/.claude/skills/magos pull
+```
+
+```powershell
+# 安装：clone 到 Claude Code 的 skills 目录
+git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
+# 升级
+git -C "$HOME\.claude\skills\magos" pull
+```
+
+Codex 与 Hermes 的包，用同步脚本（它从不删除文件）：
+
+```bash
+# 1. 取得最新的仓库（第一次 clone，以后 git pull）
+git clone https://github.com/UlyssesLeoLee/MAGOS
+cd MAGOS
+# 2. 把 Skill 包复制到 Codex 和 Hermes
+python -X utf8 scripts/sync_hosts.py --host codex --host hermes --apply --create-roots
+# 3. 对照仓库检查已安装的文件
+python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
+```
+
+要停留在某个版本，见 `references/installation.md` 的固定版本一节。
+
+</details>
+
 <img width="1254" height="1254" alt="MAGOS2" src="https://github.com/user-attachments/assets/4d450361-25b5-4d35-90d8-d5656bd496cb" />
 
 ---
@@ -1142,6 +1265,7 @@ MAGOS 带有车道守卫（`scripts/magos_guard.py`）：创建分支或工作�
 - **Set 子命令。**`/GitPlan` 通过守卫的四个子命令登记并维护计划：`set-plan`（证明各车道的文件清单两两不相交并登记）、`set-show`（只读）、`set-update`（车道负责人记录进度）和 `set-release`（收尾）。它们都不是只有你能运行的命令，和 `plan`、`release` 一样经过宿主钩子。登记会写入每个车道的登记（带 `set=` 与 `lane=`）、集成分支 `agent/<set>/integration` 的登记（不占用任何文件）和计划记录（`<git-common-dir>/magos/sets/<set>.json`）；退出码 19 到 24 属于这些子命令（过期、已存在、不存在、越界、记录来自更新版本、规划无效）。计划记录里有任务的需求、每个车道承担的需求与成果，以及车道被记为 `integrated` 时守卫算出的修改内容；守卫也检查命名与对应关系：车道 id 必须是主题 slug（序号式和泛称的 id 被拒绝），分支必须恰好是 `agent/<set>/<id>`，工作区目录名以 `-<set>-<id>` 结尾，每条需求至少由一个车道承担。计划存在期间，普通的 `plan` 会拒绝写入它的车道或集成分支的登记（包括 `--amend` 和 `override` 之后的重新登记），普通的 `release` 也会拒绝它的登记：计划只能经 `/GitPlan` 修改。
 - **分支保护。**`/GitProtect` 通过守卫的用户专属子命令 `protect` 保护一条分支（`protect-show` 只读）；记录在 `<git-common-dir>/magos/protected.json`。之后钩子拒绝代理对该分支的每一次写入（提交、合并、改写、重置、删除、改名、强制移动、检出到新工作区），拒绝码为 `BRANCH_PROTECTED`；记录读不出或来自更新的版本时，仓库的每个分支都按受保护处理。只有宿主钩子执行保护，你自己的终端与 Git 兜底不受影响。详见 `references/lane-split.md` 第 15 节。
 - **由你批准。**`override`、`arm`、`disarm`、`install`、`protect` 只有经你批准才会运行，`magos.*` 的 git 配置（例如 `magos.guard`、`magos.approval`）也只有你能写。批准的级别用 `git config --local magos.approval <级别>` 设置（你可以在自己的终端里设置，代理从不设置；取值比较时不区分大小写，也忽略首尾空白，其他取值按 `terminal` 处理）：`terminal`——你在真实终端里运行命令；`prompt`（默认）——代理先问你，你同意后它运行守卫命令（在 Codex 里是调用工具 `magos_approve`），宿主弹出自己的批准提示（Claude Code 的权限对话框、Codex 带 Approve 勾选框的对话框、Hermes 的批准提示），写明批准的是什么和代理写的理由，你点一下就是批准（在 Codex 里是先勾选 Approve，再点 Accept）；`auto-safe`——同 `prompt`，但只增加保护的 `arm`，以及复制到默认守卫目录且不带 `--allow-downgrade` 的 `install`（只复制守卫），不用点击，你的设置本身就是批准，`override`、`disarm`、`protect` 与 `install` 的其他写法仍然要问你。没有让代理无人值守地覆盖的级别；想关掉守卫，由你自己运行 `git config --local magos.guard off`。在 Codex 里 `auto-safe` 与 `prompt` 一样要问你（Codex 的路径没有不点击就运行的情形），批准策略为 `never` 时 Codex 会自己拒绝；Hermes 在 `/yolo`、`--yolo` 或 `approvals.mode: off` 下不经你就批准，守卫看得到这种情形时就拒绝点击路径。终端路径始终可用。Claude Code 里只有 Bash 与 PowerShell 工具有对话框，Hermes 里只有 `terminal` 工具。代理用其他任何方式运行它们，都会被钩子拒绝，钩子启动器也只运行钩子。在新控制台窗口里启动的命令也能通过控制台检查，所以控制台检查、覆盖与批准令牌都不是访问控制：挡在 `override`、`disarm` 与 `protect` 前面的是宿主自己的批准提示（Codex 的路径只证明有人点击，以 Codex 本身能证明的为限；Hermes 的路径以 Hermes 的批准关口为限），审计日志里的 `via` 与 `reason_by` 是尽力而为的来源记录，不是证明。
+- **覆盖一次拒绝。** 被拒绝的创建会打印这次拒绝的 12 位十六进制指纹。仓库里恰好有一条未过期的拒绝记录时（记录保留一小时），不必再抄指纹：在 Codex 里，调用不带指纹的 `magos_approve`，工具会取这一条；在你自己的终端里，`override --reason "<你的原话>"` 同样取这一条，先显示它放行的 lane、目标和冲突的分支，再等你输入 `y`（输入指纹也可以）。Claude Code 和 Hermes 仍然需要 `--fingerprint`，因为它们的批准绑定的是命令原文。
 - **每次升级之后。**重启正在运行的 Claude Code、Codex 与 Hermes 会话（Hermes 在 `hermes plugins update magos` 之后）；为 `doctor` 列出的每个宿主重新运行 `install`（`doctor` 会打印确切的命令；用 `install --home <目录>` 装的副本，运行 `doctor --home <目录>`），打印的条目与宿主配置里已合并的条目不同时替换它（Codex 要在 `/hooks` 里重新信任，Hermes 要重新批准；装了 Hermes 插件时不需要 Hermes 条目，`config.yaml` 里 `hooks:` 下的 MAGOS 条目请删掉，它在 Hermes 询问之前就拒绝每一条用户专属命令）；在已 `arm` 的仓库里运行 `doctor`，它打印 `arm` 命令时，重新运行该命令（在宿主的批准提示里点一下批准，或在自己的终端里运行）。1.0.4 起，`/GitPlan` 需要守卫的 `set-*` 子命令，较老的守卫副本没有它们：运行 `doctor`，再运行它打印的 `install --host <host>` 命令刷新副本，否则 `/GitPlan` 会在开头检查版本并停下。
 - **限制。**钩子读的是命令文本；找不到 Python 或守卫脚本时放行调用（Claude Code 的 `EnterWorktree` 钩子和 Hermes 插件的回调除外，它们拒绝调用）；Git 兜底看不到分支改名与复制（`git branch -m/-c`），钩子则在任何选项写法下都拒绝它们。`override`、`disarm` 与 `protect` 前面只有一道屏障，就是宿主自己的批准提示；批准令牌不是访问控制，审计日志里的 `via` 与 `reason_by` 是尽力而为的来源记录，不是证明（见“由你批准”）。全部限制见 `references/lane-split.md` 第 12 节。
 

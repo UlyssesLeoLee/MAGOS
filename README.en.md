@@ -15,6 +15,128 @@ It actively inspects the current repository's **branch / worktree / commit / ahe
 - Which branches are now safe to delete
 - How to stop several agents from destroying `main`
 
+**Install and upgrade: pick your agent** (click a block to expand)
+
+<details>
+<summary><b>Claude Code: install and upgrade</b></summary>
+
+**Install**
+
+```bash
+# 1. Add the MAGOS marketplace
+claude plugin marketplace add UlyssesLeoLee/MAGOS
+# 2. Install MAGOS
+claude plugin install magos@magos
+# 3. Check the version
+claude plugin list
+```
+
+**Upgrade**
+
+```bash
+# 1. Update the MAGOS marketplace
+claude plugin marketplace update magos
+# 2. Install the latest MAGOS
+claude plugin update magos@magos
+# 3. Check the version
+claude plugin list
+```
+
+Restart every running Claude Code session afterwards: a session keeps the hooks of the version it started with.
+
+</details>
+
+<details>
+<summary><b>Codex: install and upgrade</b></summary>
+
+**Install**
+
+```bash
+# 1. Add the MAGOS marketplace
+codex plugin marketplace add UlyssesLeoLee/MAGOS
+# 2. Install MAGOS
+codex plugin add magos@magos
+# 3. Check the version
+codex plugin list
+```
+
+**Upgrade**
+
+```bash
+# 1. Update the MAGOS marketplace
+codex plugin marketplace upgrade magos
+# 2. Install the latest MAGOS
+codex plugin add magos@magos
+# 3. Check the version
+codex plugin list
+```
+
+Restart Codex afterwards. The lane guard hook of Codex comes from `install --host codex` and runs a copy under `~/.magos` that a plugin upgrade does not change, so run it again after an upgrade (see `references/installation.md`).
+
+</details>
+
+<details>
+<summary><b>Hermes: install and upgrade</b></summary>
+
+**Install**
+
+```bash
+# 1. Install MAGOS from this repository and enable it
+hermes plugins install UlyssesLeoLee/MAGOS --enable
+# 2. Check that it is installed and enabled
+hermes plugins list
+```
+
+**Upgrade**
+
+```bash
+# 1. Update MAGOS
+hermes plugins update magos
+# 1b. Only when the update refuses because its security scan asks for confirmation: reinstall instead
+hermes plugins install UlyssesLeoLee/MAGOS --force --enable
+# 2. Check that it is installed and enabled
+hermes plugins list
+```
+
+Restart Hermes afterwards. A pinned install (made with `--ref`) is moved with a new `--ref` instead, see `references/installation.md`. The guard version is printed by `py -3 "<Hermes home>/plugins/magos/scripts/magos_guard.py" version` (`python3` on macOS and Linux).
+
+</details>
+
+<details>
+<summary><b>Without a marketplace: clone and sync script</b></summary>
+
+Claude Code from a clone in its skills folder:
+
+```bash
+# Install: clone into Claude Code's skills folder
+git clone https://github.com/UlyssesLeoLee/MAGOS ~/.claude/skills/magos
+# Upgrade
+git -C ~/.claude/skills/magos pull
+```
+
+```powershell
+# Install: clone into Claude Code's skills folder
+git clone https://github.com/UlyssesLeoLee/MAGOS "$HOME\.claude\skills\magos"
+# Upgrade
+git -C "$HOME\.claude\skills\magos" pull
+```
+
+The Codex and Hermes packages with the sync script (it never deletes files):
+
+```bash
+# 1. Get the latest repository (first time: clone; later: git pull)
+git clone https://github.com/UlyssesLeoLee/MAGOS
+cd MAGOS
+# 2. Copy the skill package to Codex and Hermes
+python -X utf8 scripts/sync_hosts.py --host codex --host hermes --apply --create-roots
+# 3. Check the installed files against the repository
+python -X utf8 scripts/sync_hosts.py --host codex --host hermes --verify
+```
+
+To stay on one version see the pin section of `references/installation.md`.
+
+</details>
+
 ![MAGOS](https://github.com/user-attachments/assets/4d450361-25b5-4d35-90d8-d5656bd496cb)
 
 ---
@@ -1123,6 +1245,7 @@ MAGOS ships a lane guard (`scripts/magos_guard.py`). Before a branch or worktree
 - **Set subcommands.** `/GitPlan` registers and maintains its plans through four subcommands of the guard: `set-plan` (proves that the file lists of the lanes are pairwise disjoint, then registers), `set-show` (read-only), `set-update` (a lane's owner records progress) and `set-release` (closes the set). None of them is user-only: like `plan` and `release` they pass through the host hooks. Registering writes the claim of every lane (with `set=` and `lane=`), the claim of the integration branch `agent/<set>/integration` (it holds no files) and the plan record (`<git-common-dir>/magos/sets/<set>.json`); exit codes 19 to 24 belong to these subcommands (stale, exists, unknown, out of lane, written by a newer version, invalid plan). The plan record holds the requirements of the task, the requirements and the outcome of every lane, and the changes the guard computes when a lane is recorded `integrated`; the guard also checks names and correspondences: a lane id must be a topic slug (ordinal and generic ids are refused), the branch is exactly `agent/<set>/<id>`, the worktree directory name ends with `-<set>-<id>`, and every requirement is served by at least one lane. While a set exists, a plain `plan` refuses to write the claim of one of its lanes or of its integration branch (`--amend` and the re-plan after an `override` included) and a plain `release` refuses its claims: a set is changed only through `/GitPlan`.
 - **Branch protection.** `/GitProtect` protects a branch through the guard's user-only subcommand `protect` (`protect-show` only reads); the record is `<git-common-dir>/magos/protected.json`. From then on the hooks refuse every write to that branch that an agent makes (commit, merge, rewrite, reset, delete, rename, forced move, checkout into a new worktree) with the code `BRANCH_PROTECTED`; a record that cannot be read, or that a newer version wrote, protects every branch of the repository. Only the host hooks enforce it; your own terminal and the Git backstop are not affected. See `references/lane-split.md` section 15.
 - **You approve.** `override`, `arm`, `disarm`, `install` and `protect` run only with your approval, and only you write `magos.*` git configuration (for example `magos.guard` and `magos.approval`). The level of approval is `git config --local magos.approval <level>` (you may set it in your own terminal; an agent never does; the value is compared without regard to case and surrounding blanks, and any other value counts as `terminal`): `terminal` means you run the command yourself in a real terminal; `prompt` (the default) means that the agent asks you first, then runs the guard command (in Codex: calls the tool `magos_approve`), and the host shows its own approval prompt (Claude Code's permission dialog, Codex's dialog with its Approve checkbox, Hermes' approval prompt) that says what is being approved and quotes the reason the agent wrote, and your click approves it (in Codex you tick Approve, then accept); `auto-safe` is `prompt` except that `arm` (it only adds protection) and `install` into the default guard home without `--allow-downgrade` (it only copies the guard) run without a click, your setting being the approval, while `override`, `disarm`, `protect` and every other form of `install` still ask. No level lets an agent override or disarm unattended; the opt-out is `git config --local magos.guard off`, which only you set. In Codex `auto-safe` asks like `prompt` (the Codex route has no path without a click), and Codex declines on its own under the approval policy `never`; Hermes approves without you under `/yolo` or `approvals.mode: off`, and the guard then refuses the click where it can see that. The terminal always remains. In Claude Code only the Bash and PowerShell tools get the dialog, in Hermes only the `terminal` tool. The hooks deny every other way an agent might run these commands, and the hook launcher runs nothing but the hook. A command started in a new console window passes the console check, so neither that check nor an override nor the approval token is access control: what stands in front of `override`, `disarm` and `protect` is the host's own approval prompt (the Codex route proves a human only as far as Codex does, and the Hermes route only as far as Hermes' approval gate), and the `via` and `reason_by` fields of the audit log are best-effort provenance, not proof.
+- **Overriding a denial.** A denied creation prints the 12-hex fingerprint of that denial. When the repository has exactly one live denial (a record lives one hour) you do not have to copy it: in Codex the tool `magos_approve` takes it when the call names none, and in your own terminal `override --reason "<your words>"` takes it, shows the lane, the target and the conflicting branches it lets through, and waits for your `y` (the fingerprint also works). Claude Code and Hermes still need `--fingerprint`, because their approval is bound to the words of the command.
 - **After every upgrade.** Restart the running Claude Code, Codex and Hermes sessions (Hermes after `hermes plugins update magos`). Re-run `install` for each host `doctor` lists (`doctor` prints the exact command; for a copy installed with `install --home <dir>`, run `doctor --home <dir>`), and replace the entry merged into the host's configuration when the printed one differs (trust it again in Codex's `/hooks`; approve it again in Hermes; with the Hermes plugin no Hermes entry is needed, and a MAGOS entry under `hooks:` in `config.yaml` should be removed, since it denies every user-only command before Hermes can ask). In an armed repository, run `doctor` and, when it prints an `arm` command, run that command again (click Approve in the host's approval prompt, or run it in your own terminal). From 1.0.4 on, `/GitPlan` needs the guard's `set-*` subcommands, which an older guard copy lacks: run `doctor`, then the `install --host <host>` commands it prints, to refresh the copy; otherwise `/GitPlan` checks the version first and stops.
 - **Limits.** The hooks read command text, and they let a call through when Python or the guard script is missing (Claude Code's `EnterWorktree` hook and the Hermes plugin's callbacks block the call instead); the Git backstop does not see a branch rename or copy (`git branch -m/-c`), which the hooks deny in every option spelling. The only barrier in front of `override`, `disarm` and `protect` is the host's own approval prompt; the approval token is no access control, and the audit fields `via` and `reason_by` are best-effort provenance, not proof (see **You approve**). `references/lane-split.md` section 12 lists every limit.
 
