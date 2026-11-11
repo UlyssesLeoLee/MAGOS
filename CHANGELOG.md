@@ -2,6 +2,26 @@
 
 Every version of the `magos` package (the `version` in `plugin.json`, `.claude-plugin/plugin.json`, `plugin.yaml`, `SKILL.md` and the lane guard's `GUARD_VERSION`). A release is tagged `v<version>` on its release commit. The tag `v1.0` marks the skill release 3.4.0 from before the package became a plugin and was renumbered; it is not a plugin version. Install, pin, upgrade and roll back as `references/installation.md` describes.
 
+## 1.1.3
+
+Tag `v1.1.3`. Claude Code no longer runs a batch file: its hooks start the guard through a POSIX shell launcher, so no Claude Code hook starts cmd.exe. Every verdict of the guard is that of 1.1.2.
+
+### Changed
+
+- **The POSIX launcher `hooks/run-guard`.** Claude Code runs its hooks under Git Bash on Windows, and Git Bash hands a file named `*.cmd` to cmd.exe, so every hooked tool call used to start cmd.exe on the batch-and-shell launcher `hooks/run-guard.cmd` in the plugin cache, which some security products block. `hooks/hooks.json` now runs `sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-guard" ...`, a plain shell script, on every platform. On Windows it tries `py -3` first, as the cmd launcher does.
+- **The entries `install` prints.** The Claude snippet, the Codex `command` and the Hermes entry outside Windows run `sh '<guard home>/guard/hooks/run-guard'`; the Codex `commandWindows` and the Hermes entry on Windows still run `run-guard.cmd`. `install` copies both launchers.
+- **`doctor`** compares both copied launchers, and names a generated entry that still runs `run-guard.cmd` through `sh` (an entry an earlier install wrote; it keeps working) with the install command that writes the new one.
+
+### Known limits
+
+- Codex and Hermes on Windows still start cmd.exe on `run-guard.cmd` for each hooked call, so a security product that reacts to batch files may still react there.
+- `hooks/run-guard.cmd` is unchanged, so the Codex and Hermes entries you merged before 1.1.3 keep working; they move to `run-guard` only when you merge the new entry.
+
+### Upgrade
+
+1. Upgrade the plugin on each host and restart it: Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`; Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`.
+2. Copies under `~/.magos/guard` (Codex and Hermes entries) are refreshed by running `install --host <host>` again; `doctor` names a stale copy. On Linux and macOS, merge the entry `install` prints into the Codex or Hermes configuration to move it to `run-guard`.
+
 ## 1.1.2
 
 Tag `v1.1.2`. A feature release for the override of a denial: nobody has to copy or retype its 12-hex fingerprint any more when the repository has exactly one live denial. Branch protection and every verdict of the creation check are those of 1.1.1.
