@@ -24,7 +24,7 @@ Tag `v1.1.3`. Claude Code no longer runs a batch file: its hooks start the guard
 ### Upgrade
 
 1. Upgrade the plugin on each host and restart it: Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`; Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`.
-2. Copies under `~/.magos/guard` (Codex and Hermes entries) are refreshed by running `install --host <host>` again; `doctor` names a stale copy and every entry that still runs `run-guard.cmd`. On Linux and macOS, merge the entry `install` prints into the Codex or Hermes configuration to move it to `run-guard`; on Windows, if you use the `install --host claude` entry instead of the plugin, merge the new Claude entry into `~/.claude/settings.json`.
+2. Copies under `~/.magos/guard` (Codex and Hermes entries) are refreshed by running `install --host <host>` again; `doctor` names a stale copy and a generated entry that still runs `run-guard.cmd`; `doctor` reads the entries `install` generated under `~/.magos/guard/generated/`, not `~/.claude/settings.json` or the Codex and Hermes configuration: after `install` has written the new entry, replace the old one there yourself. On Linux and macOS, merge the entry `install` prints into the Codex or Hermes configuration to move it to `run-guard`; on Windows, if you use the `install --host claude` entry instead of the plugin, merge the new Claude entry into `~/.claude/settings.json`.
 
 ## 1.1.2
 

@@ -10,7 +10,7 @@ Claude Code no longer runs a batch file: its hooks start the guard through a POS
 
 - **Claude Code**: `hooks/hooks.json` runs `sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-guard"`; no hook starts cmd.exe or a batch file.
 - **Codex and Hermes**: the POSIX entries `install` prints run `run-guard`; the Windows entries still run `run-guard.cmd`.
-- **doctor**: compares both launchers and names an entry that still runs `run-guard.cmd`, including a Claude entry merged into `~/.claude/settings.json`.
+- **doctor**: compares both launchers and names a generated entry that still runs `run-guard.cmd`, a Claude one included; it reads the entries `install` generated, not your host configuration.
 - **POSIX launcher**: a `nounset` or `errexit` in the host's `SHELLOPTS` cannot stop it, and `MAGOS_GUARD=off` is read in any case.
 
 ## Known limits
@@ -22,4 +22,4 @@ Claude Code no longer runs a batch file: its hooks start the guard through a POS
 ## 升级 / Upgrade
 
 1. Upgrade the plugin on each host and restart it: Claude Code `claude plugin marketplace update magos`, then `claude plugin update magos@magos`; Codex `codex plugin marketplace upgrade magos`, then `codex plugin add magos@magos`; Hermes `hermes plugins update magos`.
-2. Re-run `install --host <host>` to refresh copies under `~/.magos/guard`; on Linux and macOS merge the printed Codex or Hermes entry to move it to `run-guard`; on Windows, if you use the `install --host claude` entry instead of the plugin, merge the new Claude entry into `~/.claude/settings.json`. `doctor` names a stale copy and every entry that still runs `run-guard.cmd`.
+2. Re-run `install --host <host>` to refresh copies under `~/.magos/guard`; on Linux and macOS merge the printed Codex or Hermes entry to move it to `run-guard`; on Windows, if you use the `install --host claude` entry instead of the plugin, merge the new Claude entry into `~/.claude/settings.json`. `doctor` names a stale copy and a generated entry that still runs `run-guard.cmd`; `doctor` reads the entries `install` generated under `~/.magos/guard/generated/`, not `~/.claude/settings.json` or the Codex and Hermes configuration: after `install` has written the new entry, replace the old one there yourself.
