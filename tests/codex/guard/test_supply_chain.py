@@ -488,8 +488,9 @@ def test_the_hook_code_opens_no_network_connection(monkeypatch, tmp_path):
     assert {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute) and getattr(n.value, "id", "") == "ctypes"} == {"windll", "byref", "c_uint32"}
 
     # The launcher only finds an interpreter and runs the guard; the git-layer hook `arm` installs runs git rev-parse and the chained hook.
-    launcher = (ROOT / "hooks" / "run-guard.cmd").read_text(encoding="utf-8")
-    assert not NETWORK_WORDS.search(launcher), NETWORK_WORDS.findall(launcher)
+    for name in ("run-guard", "run-guard.cmd"):
+        launcher = (ROOT / "hooks" / name).read_text(encoding="utf-8")
+        assert not NETWORK_WORDS.search(launcher), (name, NETWORK_WORDS.findall(launcher))
     assert not NETWORK_WORDS.search(G.HOOK_SH), NETWORK_WORDS.findall(G.HOOK_SH)
     assert not re.search(r"\b(?:%s)\b" % "|".join(map(re.escape, sorted(NETWORK_GIT))), G.HOOK_SH)
     assert not re.search(r"\beval\b|\b(?:ba|z|da)?sh\s+-c\b", G.HOOK_SH)

@@ -121,7 +121,7 @@ def test_the_hooks_entry_route_keeps_todays_denial(repo, elsewhere, monkeypatch,
     assert not approvals(repo).exists()
     monkeypatch.setattr(sys, "platform", platform)
     snippet = G.host_snippet("hermes", "/h")
-    command = "'\"/h/guard/hooks/run-guard.cmd\" hook hermes pre-tool'" if platform == "win32" else "'sh ''/h/guard/hooks/run-guard.cmd'' hook hermes pre-tool'"
+    command = "'\"/h/guard/hooks/run-guard.cmd\" hook hermes pre-tool'" if platform == "win32" else "'sh ''/h/guard/hooks/run-guard'' hook hermes pre-tool'"
     assert snippet == ('hooks:\n  pre_tool_call:\n    - matcher: "terminal"\n      command: %s\n      timeout: 25\n      fail_closed: true\n' % command)
 
 
